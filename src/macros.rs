@@ -1,5 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
-// Wait for Ctrl+C macro
+// wait for ctrl-c to exit an application
 #[macro_export]
 macro_rules! wait_for_ctrl_c {
     ($($actor:expr),+ $(,)?) => {{
