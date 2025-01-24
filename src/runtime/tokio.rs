@@ -45,12 +45,13 @@ pub mod runtime {
     where
         A: Actor + Debug + 'static,
         A::MessageSet: From<Message<StandardPayload>>,
+        A::InitArgs: Default,
     {
         fn spawn(&self, id: u16) -> Result<StandardMessageHandle, ActorError> {
             let (tx, mut rx) =
                 mpsc::channel::<Message<StandardPayload>>(STANDARD_MESSAGE_CHANNEL_SIZE);
             let handle = StandardMessageHandle::new(id, tx);
-            let mut actor = A::new(id, handle.clone());
+            let mut actor = A::new(id, handle.clone(), Default::default());
 
             tokio::spawn(async move {
                 while let Some(msg) = rx.recv().await {

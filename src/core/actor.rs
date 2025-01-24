@@ -8,8 +8,9 @@ pub trait Actor: Send + 'static {
     type StateEnum: State<ActorData = Self::ActorData>;
     type MessageSet;
     type ActorError;
+    type InitArgs;
 
-    fn new(id: u16, handle: StandardMessageHandle) -> Self;
+    fn new(id: u16, handle: StandardMessageHandle, args: Self::InitArgs) -> Self;
     fn current_state(&self) -> &'static Self::StateEnum;
     fn self_standard_handle(&self) -> &StandardMessageHandle;
 
@@ -79,7 +80,8 @@ pub trait Actor: Send + 'static {
 
 //This is an Actor's "extended state" or "context"
 pub trait ActorData: Send + 'static {
-    fn new() -> Self;
+    type InitArgs;
+    fn new(args: Self::InitArgs) -> Self;
 }
 
 #[derive(Debug)]
