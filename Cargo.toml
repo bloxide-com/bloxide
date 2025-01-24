@@ -39,3 +39,12 @@ skip_feature_sets = [
     # Skip testing all features together
     ["runtime-tokio", "runtime-embassy"]
 ]
+
+[lib]
+name = "bloxide"
+path = "src/lib.rs"
+
+[[example]]
+name = "counter"
+path = "examples/counter/main.rs"
+required-features = ["runtime-tokio"]

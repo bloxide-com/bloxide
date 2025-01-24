@@ -16,7 +16,9 @@ pub mod std_exports {
     pub use std::boxed::Box;
     pub use std::fmt::Debug;
     pub use std::fmt::Formatter;
+    pub use std::future::Future;
     pub use std::marker::PhantomData;
+    pub use std::pin::Pin;
     pub use std::string::String;
     pub use std::sync::Arc;
     pub use std::vec::Vec;
@@ -32,7 +34,9 @@ pub mod std_exports {
     pub use core::any::Any;
     pub use core::fmt::Debug;
     pub use core::fmt::Formatter;
+    pub use core::future::Future;
     pub use core::marker::PhantomData;
+    pub use core::pin::Pin;
     pub use embassy_sync::channel::TrySendError;
 }
 

@@ -1,17 +1,16 @@
 // Copyright 2025 Bloxide, all rights reserved
 
-use crate::core::actor::ActorSpawner;
 use crate::std_exports::*;
 
 /// Basic message type that wraps any payload and has an id. Usually used as a "source id"
 #[derive(Debug)]
-pub struct Message<T> {
+pub struct Message<P> {
     pub id: u16,
-    pub payload: T,
+    pub payload: P,
 }
 
-impl<T> Message<T> {
-    pub fn new(id: u16, payload: T) -> Self {
+impl<P> Message<P> {
+    pub fn new(id: u16, payload: P) -> Self {
         Self { id, payload }
     }
 
@@ -22,13 +21,13 @@ impl<T> Message<T> {
 
 /// Handle type that corresponds to a specific message type
 #[derive(Debug)]
-pub struct Handle<M, S> {
+pub struct Handle<P, S> {
     pub id: u16,
     pub sender: S,
-    pub _phantom: PhantomData<M>,
+    pub _phantom: PhantomData<P>,
 }
 
-impl<M, S> Handle<M, S> {
+impl<P, S> Handle<P, S> {
     pub fn new(id: u16, sender: S) -> Self {
         Self {
             id,
@@ -44,7 +43,7 @@ impl<M, S> Handle<M, S> {
 
 /// Add manual Clone implementation that only requires S: Clone
 /// This allows `Message<T>`to be passed by value if necessary
-impl<M, S: Clone + Send> Clone for Handle<M, S> {
+impl<P, S: Clone> Clone for Handle<P, S> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -55,8 +54,8 @@ impl<M, S: Clone + Send> Clone for Handle<M, S> {
 }
 
 /// Implement type erasure to send any Handle over channels
-impl<M: Send + 'static, S: Clone + Send + 'static> Handle<M, S> {
-    pub fn into_erased(self) -> Box<dyn Any + Send> {
+impl<P: 'static, S: Clone + 'static> Handle<P, S> {
+    pub fn into_erased(self) -> Box<dyn Any> {
         Box::new(self)
     }
 }
@@ -75,8 +74,12 @@ pub enum StandardPayload {
     Initialize,
     Shutdown,
     RegisterSender(Box<dyn Any + Send>),
-    SpawnRequest(Box<dyn ActorSpawner>),
-    Error(String),
+    SpawnRequest(
+        Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + Send + 'static>> + Send + 'static>,
+    ),
+    //TODO: Make seperate Send and !Send Payload versions
+    //SpawnLocalRequest(Box<dyn FnOnce() -> Pin<Box<dyn Future<Output = ()> + 'static>>>),
+    Error(Box<String>),
 }
 
 impl Debug for StandardPayload {
@@ -86,6 +89,7 @@ impl Debug for StandardPayload {
             StandardPayload::Shutdown => write!(f, "Shutdown"),
             StandardPayload::RegisterSender(_) => write!(f, "RegisterSender(...)"),
             StandardPayload::SpawnRequest(_) => write!(f, "SpawnRequest(...)"),
+            //StandardPayload::SpawnLocalRequest(_) => write!(f, "SpawnLocalRequest(...)"),
             StandardPayload::Error(msg) => write!(f, "Error({})", msg),
         }
     }
