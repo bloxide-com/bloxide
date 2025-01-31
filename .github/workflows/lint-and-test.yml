@@ -16,6 +16,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
+  copyright_compliance:
+    name: Check Copyright Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Copyright Compliance
+        run: |
+          INCORRECT_COPYRIGHT=$(find . -name '*.rs' -not -path "./target/*" -o -name 'Cargo.toml' -not -path "./target/*" \
+          | xargs grep -LE '(#|//) Copyright 202[0-9] Bloxide, all rights reserved')
+          if [ -n "$INCORRECT_COPYRIGHT" ]; then
+            echo "Incorrect copyright notice found:"
+            echo "$INCORRECT_COPYRIGHT" | tr ' ' '\n'
+            exit 1
+          fi
+
   lint:
     name: Lint (Check with both default and embassy features)
     runs-on: ubuntu-latest
