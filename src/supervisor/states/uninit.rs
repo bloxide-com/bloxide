@@ -5,6 +5,11 @@ use super::*;
 use crate::runtime::*;
 use crate::{core::state_machine::*, std_exports::*};
 use log::*;
+use embassy_executor::SendSpawner;
+use embassy_executor::Spawner;
+
+
+use crate::core::components::*;
 #[derive(Clone, PartialEq, Debug)]
 pub struct Uninit;
 
@@ -21,18 +26,19 @@ impl State<SupervisorComponents> for Uninit {
         //Uninit never handles messages
         None
     }
-    fn on_entry(&self, _data: &mut StateMachine<SupervisorComponents>) {
+    fn on_entry(&self, _state_machine: &mut StateMachine<SupervisorComponents>) {
         trace!("State on_entry: {:?}", self);
         info!("This is the Blox Shutdown");
     }
-    fn on_exit(&self, data: &mut StateMachine<SupervisorComponents>) {
+    fn on_exit(&self, state_machine: &mut StateMachine<SupervisorComponents>) {
         trace!("State on_exit: {:?}", self);
         info!("This is the Blox Initialization");
 
-        if let Some(spawn_fn) = data.extended_state.root_spawn_fn.take() {
+        if let Some(spawner) = state_machine.extended_state.spawner {
             trace!("Running root spawn function");
-            let future = spawn_fn();
-            self.spawn_root(future);
+            if let Err(e) = spawner.spawn(root_task(state_machine.extended_state.root_spawn_fn.take().unwrap())) {
+                error!("Failed to spawn root: {:?}", e);
+            }
         } else {
             panic!("Root spawn function not found");
         }
@@ -46,9 +52,8 @@ impl Uninit {
     }
 }
 
-#[cfg(feature = "runtime-embassy")]
-impl Uninit {
-    fn spawn_root(&self, _future: Pin<Box<dyn Future<Output = ()> + Send>>) {
-        todo!()
-    }
+
+#[embassy_executor::task]
+pub async fn root_task(spawn_fn: RootSpawnFn) {
+   spawn_fn().await;
 }

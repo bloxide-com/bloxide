@@ -2,16 +2,29 @@
 
 use super::components::*;
 use crate::{
-    core::{messaging::*, state_machine::*},
+    core::{messaging::*, state_machine::*, components::*},
     runtime::*,
     std_exports::*,
 };
+use embassy_executor::{Spawner, SendSpawner};
 
+
+#[cfg(feature = "runtime-tokio")]
 #[derive(Default)]
 pub struct SupervisorExtendedState {
     pub blox: HashMap<u16, StandardMessageHandle>,
     pub root_spawn_fn: Option<RootSpawnFn>,
     pub next_id: u16,
+    pub spawner: Spawner,
+}
+
+#[cfg(feature = "runtime-embassy")]
+#[derive(Default)]
+pub struct SupervisorExtendedState {
+    pub blox: HashMap<u16, StandardMessageHandle>,
+    pub next_id: u16,
+    pub spawner: Option<SendSpawner>,
+    pub root_spawn_fn: Option<RootSpawnFn>,
 }
 
 impl SupervisorExtendedState {
@@ -39,8 +52,9 @@ impl ExtendedState for SupervisorExtendedState {
 
         SupervisorExtendedState {
             blox,
-            root_spawn_fn: Some(args.root_spawn_fn),
             next_id: 2, //0 is reserved for the Supervisor, 1 is reserved for the Root
+            spawner: args.spawner,
+            root_spawn_fn: args.root_spawn_fn,
         }
     }
 }

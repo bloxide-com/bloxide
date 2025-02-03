@@ -4,6 +4,7 @@ use super::{RootComponents, RootStates};
 use crate::blox::counter::messaging::*;
 use crate::blox::root::{messaging::*, states::*};
 use bloxide::core::{messaging::*, state_machine::*};
+use bloxide::std_exports::*;
 
 use log::*;
 
@@ -18,8 +19,8 @@ impl State<RootComponents> for Counting {
     fn handle_message(
         &self,
         state_machine: &mut StateMachine<RootComponents>,
-        msg: Components::MessageSet,
-    ) -> Option<Transition<RootStates, RootMessage>> {
+        msg: <RootComponents as Components>::MessageSet,
+    ) -> Option<Transition<RootStates, <RootComponents as Components>::MessageSet>> {
         match msg {
             RootMessage::CounterMessage(msg) => match msg.payload {
                 CounterPayload::CountEvent(event) => match *event {

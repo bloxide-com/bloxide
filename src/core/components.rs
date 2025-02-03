@@ -46,7 +46,7 @@ where
 }
 
 //Implement Runnable or RunnableLocal depending on if the blox implements Send
-pub trait Runnable<B: Components> {
+pub trait Runnable<C: Components> {
     fn run(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
     fn into_request(self: Box<Self>) -> SupervisorPayload
     where
@@ -61,7 +61,7 @@ pub trait Runnable<B: Components> {
     }
 }
 
-pub trait RunnableLocal<B: Components> {
+pub trait RunnableLocal<C: Components> {
     fn run_local(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + 'static>>;
     fn into_request(self: Box<Self>) -> SupervisorLocalPayload
     where

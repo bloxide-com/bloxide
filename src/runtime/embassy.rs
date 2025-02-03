@@ -5,9 +5,9 @@ pub mod runtime {
     use crate::{core::messaging::*, std_exports::*};
     use core::cell::RefCell;
     use embassy_sync::blocking_mutex::raw::RawMutex;
+    pub use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
     use embassy_sync::channel::{Channel, TrySendError};
-
-    pub type DefaultChannelMutex = embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+    pub type DefaultChannelMutex = CriticalSectionRawMutex;
     pub const DEFAULT_CHANNEL_SIZE: usize = 8;
 
     pub type StandardMessageChannelMutex = DefaultChannelMutex;

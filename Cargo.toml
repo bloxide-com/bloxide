@@ -6,11 +6,11 @@ version = "0.0.1"
 edition = "2021"
 
 [features]
-default = ["runtime-tokio"]
+default = ["runtime-embassy"]
 
 # Create a feature group for runtimes
 runtime-tokio = ["tokio", "tokio-stream", "tokio-util", "env_logger", "log/std"]
-runtime-embassy = ["embassy-sync", "embassy-executor"]
+runtime-embassy = ["embassy-sync", "embassy-futures", "embassy-executor"]
 
 [dependencies]
 # Logging - configured via runtime features
@@ -24,8 +24,8 @@ env_logger = { version = "0.11.6", optional = true }
 
 # Optional dependencies for embassy runtime
 embassy-sync = { version = "0.6.1", optional = true }
-embassy-executor = { version = "0.6.3", optional = true }
-embassy-futures = "0.1.1"
+embassy-executor = { version = "0.7.0", optional = true }
+embassy-futures = { version = "0.1.1", optional = true }
 
 futures = { version = "0.3.31", optional = true }
 rand = { version = "0.8.5", optional = true }
@@ -48,3 +48,15 @@ path = "src/lib.rs"
 name = "demo"
 path = "examples/demo/main.rs"
 required-features = ["runtime-tokio"]
+
+[[example]]
+name = "demo-embassy"
+path = "examples/demo-embassy/main.rs"
+default-features = false
+required-features = ["runtime-embassy"]
+
+[dev-dependencies]
+embassy-executor = { version = "0.7.0", features = ["arch-std", "task-arena-size-1048576", "executor-thread", "log"] }
+embassy-time = { version = "0.4.0", features = ["std", "log"] }
+env_logger = "0.11.6"
+embassy-futures = { version = "0.1.1" }
