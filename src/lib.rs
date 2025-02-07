@@ -16,32 +16,19 @@ pub use supervisor::*;
 // Conditional type exports
 #[cfg(feature = "runtime-tokio")]
 pub mod std_exports {
-    pub use std::any::Any;
-    pub use std::boxed::Box;
-    pub use std::cell::OnceCell;
-    pub use std::fmt::{Debug, Formatter};
-    pub use std::future::Future;
-    pub use std::marker::PhantomData;
-    pub use std::pin::Pin;
-    pub use std::string::String;
-    pub use std::sync::Arc;
-    pub use std::vec::Vec;
+    pub use crate::common_exports::*;
     pub use tokio::sync::mpsc::error::TrySendError;
-
-    pub use hashbrown::HashMap;
-    pub use hashbrown::HashSet;
-    pub use std::cell::LazyCell;
-    pub use std::cell::RefCell;
-    pub use std::fmt;
-    pub use std::hash::Hash;
-    pub use std::hash::Hasher;
-    pub use std::rc::Rc;
-    pub use std::sync::LazyLock;
-    pub use std::sync::OnceLock;
 }
 
 #[cfg(feature = "runtime-embassy")]
 pub mod std_exports {
+    pub use crate::common_exports::*;
+    pub use embassy_sync::channel::TrySendError;
+    pub use embassy_sync::once_lock::OnceLock;
+}
+
+#[cfg(any(feature = "runtime-tokio", feature = "runtime-embassy"))]
+pub mod common_exports {
     extern crate alloc;
     pub use alloc::boxed::Box;
     pub use alloc::string::String;
@@ -55,8 +42,6 @@ pub mod std_exports {
     pub use core::hash::Hasher;
     pub use core::marker::PhantomData;
     pub use core::pin::Pin;
-    pub use embassy_sync::channel::TrySendError;
-    pub use embassy_sync::once_lock::OnceLock;
     pub use hashbrown::HashMap;
 }
 
