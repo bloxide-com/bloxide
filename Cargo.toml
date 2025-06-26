@@ -1,7 +1,7 @@
 # Copyright 2025 Bloxide, all rights reserved
 
 [workspace]
-members = ["bloxide-tokio","core"]
+members = [ "bloxide-embassy","bloxide-tokio","core"]
 resolver = "2"
 
 [workspace.package]

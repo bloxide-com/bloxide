@@ -126,6 +126,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "bloxide-embassy"
+version = "0.0.1"
+dependencies = [
+ "bloxide-core",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync",
+ "env_logger",
+ "log",
+]
+
+[[package]]
 name = "bloxide-tokio"
 version = "0.0.1"
 dependencies = [
