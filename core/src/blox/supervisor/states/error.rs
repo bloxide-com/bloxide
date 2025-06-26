@@ -1,7 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 
 use super::*;
-use crate::state_machine::*;
+use crate::prelude::*;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Error;

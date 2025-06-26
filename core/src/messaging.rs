@@ -1,7 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
 
-use crate::components::Runtime;
-use crate::std_exports::*;
+use crate::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// Basic message type that wraps any payload and has an id

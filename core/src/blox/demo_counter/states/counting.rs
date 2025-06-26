@@ -1,8 +1,15 @@
 // Copyright 2025 Bloxide, all rights reserved
 
-use crate::blox::demo_counter::{components::*, messaging::*, states::*};
-use crate::{messaging::*, state_machine::*};
+use crate::{
+    blox::demo_counter::{
+        components::CounterComponents,
+        messaging::{CountEvent, CounterMessageSet, CounterPayload},
+    },
+    prelude::*,
+};
 use log::*;
+
+use super::{CounterStateEnum, Finished, NotStarted, Uninit};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Counting;

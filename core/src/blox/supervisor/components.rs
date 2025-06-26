@@ -1,12 +1,14 @@
 // Copyright 2025 Bloxide, all rights reserved
 
 use super::{ext_state::*, messaging::*, states::*};
-use crate::merge::*;
-use crate::{components::*, messaging::*, std_exports::*};
+use crate::{
+    merge::{MergedItem, MergedStream2},
+    prelude::*,
+};
 use futures_util::StreamExt;
 use log::*;
 pub struct SupervisorComponents<R: Runtime> {
-    phantom: std::marker::PhantomData<R>,
+    phantom: PhantomData<R>,
 }
 
 pub struct SupervisorHandles<R: Runtime>

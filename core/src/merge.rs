@@ -1,5 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
-use core::pin::Pin;
+use crate::prelude::*;
 use core::task::{Context, Poll};
 use futures_core::Stream;
 

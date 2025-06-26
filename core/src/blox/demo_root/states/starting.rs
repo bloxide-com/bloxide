@@ -1,11 +1,18 @@
 // Copyright 2025 Bloxide, all rights reserved
 
-use super::{RootComponents, RootStates};
-use crate::blox::demo_counter::{components::*, ext_state::*, messaging::*};
-use crate::blox::demo_root::{messaging::*, states::*};
-use crate::blox::supervisor::messaging::*;
-use crate::components::Runtime;
-use crate::{components::*, messaging::*, state_machine::*};
+use super::{counting::Counting, idle::Idle, RootComponents, RootStates};
+use crate::{
+    blox::{
+        demo_counter::{
+            components::{CounterComponents, CounterHandles, CounterReceivers},
+            ext_state::{CounterExtendedState, CounterInitArgs},
+            messaging::{CountEvent, CounterPayload},
+        },
+        demo_root::messaging::RootMessageSet,
+        supervisor::messaging::*,
+    },
+    prelude::*,
+};
 use log::*;
 
 #[derive(Clone, PartialEq, Debug)]

@@ -2,6 +2,4 @@
 pub mod runtime;
 pub use runtime::*;
 
-pub use bloxide_core::{
-    self, blox::supervisor, components, merge, messaging, state_machine, std_exports,
-};
+pub use bloxide_core::{self, prelude::*};

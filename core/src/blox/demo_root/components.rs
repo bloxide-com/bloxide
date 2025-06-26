@@ -1,18 +1,19 @@
 // Copyright 2025 Bloxide, all rights reserved
 
 use super::{ext_state::*, messaging::*, states::*};
-use crate::blox::demo_counter::messaging::CounterPayload;
-use crate::{components::*, merge::*, messaging::*};
+use crate::{
+    blox::demo_counter::messaging::CounterPayload,
+    merge::{MergedItem, MergedStream2},
+    prelude::*,
+};
 use futures_util::StreamExt;
 use log::*;
-use std::future::Future;
-use std::pin::Pin;
 pub struct RootComponents<R: Runtime>
 where
     <R::MessageHandle<StandardPayload<R>> as MessageSender>::ReceiverType: Send + 'static,
     <R::MessageHandle<CounterPayload> as MessageSender>::ReceiverType: Send + 'static,
 {
-    phantom: std::marker::PhantomData<R>,
+    phantom: PhantomData<R>,
 }
 
 impl<R: Runtime> Components for RootComponents<R>

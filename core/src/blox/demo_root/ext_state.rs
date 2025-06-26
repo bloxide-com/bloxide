@@ -1,8 +1,10 @@
 // Copyright 2025 Bloxide, all rights reserved
 
-use crate::blox::demo_counter::messaging::CounterPayload;
-use crate::components::Runtime;
-use crate::{state_machine::*, SupervisorPayload};
+use crate::{
+    blox::{demo_counter::messaging::CounterPayload, supervisor::SupervisorPayload},
+    prelude::*,
+};
+
 #[derive(Debug)]
 pub struct RootExtState<R: Runtime> {
     pub supervisor_handle: R::MessageHandle<SupervisorPayload>,

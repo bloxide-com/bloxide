@@ -1,9 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 
 use super::{RootComponents, RootStates};
-use crate::blox::demo_counter::messaging::CounterPayload;
-use crate::components::Runtime;
-use crate::{components::*, messaging::*, state_machine::*};
+use crate::{blox::demo_counter::messaging::CounterPayload, prelude::*};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Uninit;

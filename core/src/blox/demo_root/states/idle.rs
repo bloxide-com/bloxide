@@ -2,9 +2,7 @@
 
 use super::uninit::Uninit;
 use super::{RootComponents, RootStates};
-use crate::blox::demo_counter::messaging::CounterPayload;
-use crate::components::Runtime;
-use crate::{components::*, messaging::*, state_machine::*};
+use crate::{blox::demo_counter::messaging::CounterPayload, components::Runtime, prelude::*};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Idle;

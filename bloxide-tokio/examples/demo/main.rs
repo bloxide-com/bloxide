@@ -5,10 +5,7 @@ use bloxide_core::{
         demo_root::{components::*, ext_state::*},
         supervisor::{components::*, ext_state::*},
     },
-    components::*,
-    messaging::*,
-    state_machine::*,
-    std_exports::*,
+    prelude::*,
 };
 use bloxide_tokio::{TokioMessageHandle, TokioRuntime, DEFAULT_CHANNEL_SIZE};
 use log::*;
@@ -30,17 +27,15 @@ async fn main() {
     let (root_counter_handle, root_counter_rx) =
         TokioMessageHandle::create_channel_with_size(2, DEFAULT_CHANNEL_SIZE);
 
-    let root_receivers: <RootComponents<TokioRuntime> as bloxide_core::Components>::Receivers =
-        RootReceivers {
-            std_rx: root_standard_rx,
-            counter_rx: root_counter_rx,
-        };
+    let root_receivers: <RootComponents<TokioRuntime> as Components>::Receivers = RootReceivers {
+        std_rx: root_standard_rx,
+        counter_rx: root_counter_rx,
+    };
 
-    let root_handles: <RootComponents<TokioRuntime> as bloxide_core::Components>::Handles =
-        RootHandles {
-            standard_handle: root_standard_handle.clone(),
-            counter_handle: root_counter_handle,
-        };
+    let root_handles: <RootComponents<TokioRuntime> as Components>::Handles = RootHandles {
+        standard_handle: root_standard_handle.clone(),
+        counter_handle: root_counter_handle,
+    };
 
     let root_init_args = RootInitArgs {
         supervisor_handle: supervisor_supervisor_handle.clone(),

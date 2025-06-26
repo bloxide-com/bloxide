@@ -1,8 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 
 use super::messaging::CounterPayload;
-use crate::components::Runtime;
-use crate::{state_machine::*, SupervisorPayload};
+use crate::{blox::supervisor::SupervisorPayload, prelude::*};
 
 #[derive(Default)]
 pub struct CounterExtendedState<R: Runtime> {

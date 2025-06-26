@@ -8,9 +8,7 @@ pub mod starting;
 pub mod uninit;
 
 use super::components::RootComponents;
-use crate::blox::demo_counter::messaging::CounterPayload;
-use crate::components::Runtime;
-use crate::{components::*, messaging::*, state_machine::*};
+use crate::{blox::demo_counter::messaging::CounterPayload, components::Runtime, prelude::*};
 use counting::Counting;
 use error::Error;
 use finished::Finished;

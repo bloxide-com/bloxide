@@ -1,8 +1,10 @@
 // Copyright 2025 Bloxide, all rights reserved
 
 use super::*;
-use crate::blox::demo_counter::{components::*, messaging::*};
-use crate::{messaging::*, state_machine::*};
+use crate::{
+    blox::demo_counter::{components::*, messaging::*},
+    prelude::*,
+};
 use log::*;
 
 #[derive(Clone, PartialEq, Debug)]

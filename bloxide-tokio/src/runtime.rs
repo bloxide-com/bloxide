@@ -1,8 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
 
-use bloxide_core::messaging::Message;
-use bloxide_core::messaging::*;
-use bloxide_core::std_exports::*;
+use bloxide_core::prelude::*;
 pub use tokio::{pin, select, sync::mpsc, sync::mpsc::error::TrySendError, time::*};
 
 pub const DEFAULT_CHANNEL_SIZE: usize = 32;

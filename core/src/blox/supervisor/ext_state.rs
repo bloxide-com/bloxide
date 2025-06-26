@@ -1,8 +1,8 @@
 // Copyright 2025 Bloxide, all rights reserved
 
-use super::components::*;
-use crate::components::Runtime;
-use crate::{messaging::*, state_machine::*, std_exports::*};
+use crate::prelude::*;
+
+use super::SupervisorInitArgs;
 
 #[derive(Default)]
 pub struct SupervisorExtendedState<R: Runtime>

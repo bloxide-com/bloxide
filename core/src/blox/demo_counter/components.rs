@@ -1,7 +1,10 @@
 // Copyright 2025 Bloxide, all rights reserved
 
 use super::{ext_state::*, messaging::*, states::*};
-use crate::{components::*, merge::*, messaging::*, std_exports::*};
+use crate::{
+    merge::{MergedItem, MergedStream2},
+    prelude::*,
+};
 use futures_util::stream::StreamExt;
 use log::*;
 pub struct CounterComponents<R: Runtime>
@@ -9,7 +12,7 @@ where
     <R::MessageHandle<StandardPayload<R>> as MessageSender>::ReceiverType: Send + 'static,
     <R::MessageHandle<CounterPayload> as MessageSender>::ReceiverType: Send + 'static,
 {
-    phantom: std::marker::PhantomData<R>,
+    phantom: PhantomData<R>,
 }
 
 impl<R: Runtime> Components for CounterComponents<R>
