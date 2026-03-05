@@ -1,0 +1,12 @@
+[package]
+name = "bloxide-spawn"
+version.workspace = true
+edition.workspace = true
+description = "Dynamic actor spawning and peer introduction for bloxide"
+
+[features]
+default = []
+std = ["bloxide-core/std"]
+
+[dependencies]
+bloxide-core = { path = "../bloxide-core" }

@@ -7,8 +7,11 @@ on:
   pull_request:
     paths:
       - ".github/**"
-      - "src/**"
-      - "Cargo.*"
+      - "crates/**"
+      - "runtimes/**"
+      - "examples/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
   workflow_dispatch:
 
 concurrency:
@@ -50,6 +53,13 @@ jobs:
           echo "Building with default features..."
           cargo build
 
+      - name: Cargo Feature Matrix Check
+        run: |
+          cargo check -p bloxide-core --no-default-features
+          cargo check -p bloxide-core --no-default-features --features alloc
+          cargo check -p bloxide-core --features std
+          cargo check -p ping-pong-messages --no-default-features
+
       - name: Cargo Format
         run: |
           cargo fmt -- --check
@@ -77,6 +87,10 @@ jobs:
         run: |
           rustup toolchain list
           cargo --version
+
+      - name: Run std-gated core tests
+        run: |
+          cargo test -p bloxide-core --features std
 
       - name: Run tests and report code coverage
         run: |

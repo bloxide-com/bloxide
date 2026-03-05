@@ -1,0 +1,18 @@
+[package]
+name = "bloxide-supervisor"
+version.workspace = true
+edition.workspace = true
+description = "OTP-style supervision for bloxide — no_std"
+
+[features]
+default = ["alloc"]
+alloc   = ["bloxide-core/alloc"]
+std     = ["bloxide-core/std", "alloc"]
+
+[dependencies]
+bloxide-core = { path = "../bloxide-core" }
+bloxide-log = { path = "../bloxide-log" }
+bloxide-macros = { path = "../bloxide-macros" }
+
+[dev-dependencies]
+bloxide-core = { path = "../bloxide-core", features = ["std"] }

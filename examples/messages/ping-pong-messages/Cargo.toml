@@ -1,0 +1,5 @@
+[package]
+name = "ping-pong-messages"
+version.workspace = true
+edition.workspace = true
+description = "Shared message types for the ping-pong example bloxes"

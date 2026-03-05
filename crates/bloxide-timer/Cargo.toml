@@ -1,0 +1,14 @@
+[package]
+name = "bloxide-timer"
+version.workspace = true
+edition.workspace = true
+description = "Timer service for bloxide — messages, queue, actions, and TimerService trait"
+
+[features]
+default = ["alloc"]
+alloc = ["bloxide-core/alloc"]
+std = ["bloxide-core/std", "alloc"]
+
+[dependencies]
+bloxide-core = { path = "../bloxide-core" }
+bloxide-log = { path = "../bloxide-log" }

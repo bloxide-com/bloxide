@@ -1,0 +1,16 @@
+[package]
+name = "bloxide-core"
+version.workspace = true
+edition.workspace = true
+description = "HSM engine, topology, transition rules, capability traits — no_std"
+
+[features]
+default = []
+alloc   = []
+std     = ["alloc"]
+tracing = ["dep:tracing"]
+
+[dependencies]
+bloxide-macros = { path = "../bloxide-macros" }
+futures-core = { version = "0.3", default-features = false }
+tracing = { version = "0.1", default-features = false, optional = true }

@@ -1,0 +1,22 @@
+[package]
+name = "tokio-pool-demo"
+version.workspace = true
+edition.workspace = true
+description = "Worker pool dynamic-spawning demo (Tokio runtime)"
+
+[[bin]]
+name = "tokio-pool-demo"
+path = "src/main.rs"
+
+[dependencies]
+bloxide-core    = { path = "../../crates/bloxide-core", features = ["std", "tracing"] }
+bloxide-tokio   = { path = "../../runtimes/bloxide-tokio" }
+bloxide-log     = { path = "../../crates/bloxide-log", features = ["log"] }
+bloxide-spawn   = { path = "../../crates/bloxide-spawn", features = ["std"] }
+pool-messages   = { path = "../messages/pool-messages" }
+pool-blox       = { path = "../bloxes/pool", features = ["std"] }
+worker-blox     = { path = "../bloxes/worker", features = ["std"] }
+tokio           = { version = "1", features = ["full"] }
+tracing         = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log     = "0.2"
