@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use crate::messaging::{ActorId, ActorRef, Envelope};
 
 /// Base trait for sending and receiving messages.

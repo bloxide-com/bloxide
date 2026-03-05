@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 // Embassy static wiring demo (std target) — fully event-driven.
 //
 // HSM features demonstrated:

@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 /// Convenience re-exports for blox authors using the macro-based workflow.
 ///
 /// Covers the types needed to implement a `MachineSpec` with `#[derive(BloxCtx)]`,

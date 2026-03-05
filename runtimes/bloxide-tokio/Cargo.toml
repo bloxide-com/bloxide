@@ -1,3 +1,4 @@
+# Copyright 2025 Bloxide, all rights reserved
 [package]
 name = "bloxide-tokio"
 version.workspace = true

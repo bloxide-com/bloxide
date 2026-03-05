@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use crate::registry::ChildGroup;
 use bloxide_core::{accessor::HasSelfId, capability::BloxRuntime};
 

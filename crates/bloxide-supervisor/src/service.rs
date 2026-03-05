@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use bloxide_core::{engine::StateMachine, messaging::ActorId, spec::MachineSpec};
 
 use crate::lifecycle::{ChildLifecycleEvent, LifecycleCommand};

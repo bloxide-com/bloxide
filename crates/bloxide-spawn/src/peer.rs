@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 extern crate alloc;
 use alloc::vec::Vec;
 

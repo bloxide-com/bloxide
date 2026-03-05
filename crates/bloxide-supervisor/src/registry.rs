@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use alloc::vec::Vec;
 use bloxide_core::{
     capability::BloxRuntime,

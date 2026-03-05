@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Procedural macros for bloxide.
 //!
 //! Provides ergonomic derive and attribute macros that complement the

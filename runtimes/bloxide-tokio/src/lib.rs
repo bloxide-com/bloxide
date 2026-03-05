@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use bloxide_core::{mailboxes::Mailboxes, spec::MachineSpec, StateMachine};
 use core::future::poll_fn;
 

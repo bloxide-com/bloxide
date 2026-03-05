@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Worker actor blox — runtime-agnostic.
 //!
 //! States:

@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 /// Convenience re-exports for Tokio-based wiring sites.
 ///
 /// Re-exports everything from `bloxide_core::prelude` plus Tokio-specific

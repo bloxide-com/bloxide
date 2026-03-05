@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 

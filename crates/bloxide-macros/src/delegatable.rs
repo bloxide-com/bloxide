@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 /// `#[delegatable]` — attribute macro that generates a companion `macro_rules!`
 /// delegation macro alongside a trait definition.
 ///

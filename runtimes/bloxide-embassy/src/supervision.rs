@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use bloxide_core::{
     capability::{BloxRuntime, StaticChannelCap},
     engine::{DispatchOutcome, StateMachine},

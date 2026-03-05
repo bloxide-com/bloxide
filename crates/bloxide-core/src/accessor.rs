@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 /// Universal accessor traits for blox context types.
 ///
 /// These traits are the building blocks for trait-bounded action functions.

@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! HSM engine unit tests.
 //!
 //! Each test corresponds to one or more acceptance criteria from

@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 // ── Observability macros ──────────────────────────────────────────────────────
 //
 // Feature-gated tracing instrumentation for the HSM engine.

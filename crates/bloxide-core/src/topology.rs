@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 /// Describes the parent-child relationship of a state enum and provides
 /// precomputed root-first ancestry paths.
 ///

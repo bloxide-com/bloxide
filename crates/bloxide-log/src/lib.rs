@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Feature-gated logging macros for the bloxide framework.
 //!
 //! This crate provides `blox_log_trace!`, `blox_log_debug!`, `blox_log_info!`,

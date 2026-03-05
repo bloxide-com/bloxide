@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Pool context — tracks spawned workers and pending completions.
 extern crate alloc;
 use alloc::vec::Vec;

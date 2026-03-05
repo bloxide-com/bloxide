@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Domain action traits and generic functions for the ping-pong example.
 //!
 //! This crate is a **pure interface crate** — it defines traits and trait-bounded

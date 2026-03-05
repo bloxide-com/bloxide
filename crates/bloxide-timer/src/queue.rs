@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 

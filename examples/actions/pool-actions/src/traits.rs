@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Accessor traits for the worker pool domain.
 extern crate alloc;
 use alloc::vec::Vec;

@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use crate::capability::BloxRuntime;
 use crate::event_tag::EventTag;
 use crate::mailboxes::Mailboxes;

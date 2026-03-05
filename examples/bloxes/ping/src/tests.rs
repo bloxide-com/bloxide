@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 // Unit tests for the Ping blox.
 //
 // Each test corresponds to one acceptance criterion from `spec/bloxes/ping.md`.

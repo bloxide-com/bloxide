@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use crate::capability::BloxRuntime;
 
 /// Unique actor identifier. Assigned statically by the wiring crate.

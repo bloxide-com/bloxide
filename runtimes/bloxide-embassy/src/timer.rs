@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use core::future::poll_fn;
 use core::pin::Pin;
 

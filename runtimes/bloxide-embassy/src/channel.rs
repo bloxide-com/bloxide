@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use bloxide_core::messaging::Envelope;
 use core::pin::Pin;
 use core::task::{Context, Poll};

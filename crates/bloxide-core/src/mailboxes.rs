@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use core::task::{Context, Poll};
 
 // ── Mailboxes trait ───────────────────────────────────────────────────────────

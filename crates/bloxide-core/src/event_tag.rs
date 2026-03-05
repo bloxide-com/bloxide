@@ -1,4 +1,5 @@
-/// Sentinel value for [`TransitionRule::event_tag`] that bypasses the
+// Copyright 2025 Bloxide, all rights reserved
+/// Sentinel value for [`crate::TransitionRule::event_tag`] that bypasses the
 /// fast-reject check — a rule with this tag always proceeds to the `matches`
 /// call regardless of the incoming event's tag.
 ///
@@ -11,7 +12,7 @@ pub const WILDCARD_TAG: u8 = u8::MAX;
 ///
 /// Every event type used with `MachineSpec` implements this trait. The `u8`
 /// tag is assigned by declaration order (0, 1, 2, ...). [`WILDCARD_TAG`]
-/// (255) is reserved as the wildcard sentinel in [`TransitionRule::event_tag`]
+/// (255) is reserved as the wildcard sentinel in [`crate::TransitionRule::event_tag`]
 /// — a rule with this tag always proceeds to the `matches` call regardless of
 /// the incoming event's tag.
 ///

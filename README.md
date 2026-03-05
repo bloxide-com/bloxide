@@ -1,7 +1,12 @@
 # Bloxide
 
+<p align="center">
+  <img src="bloxide.jpg" alt="Bloxide" width="600" />
+</p>
+
 **Hierarchical state machine actors for Rust — from bare-metal Embassy to Tokio, with the same domain code.**
 
+[![CI](https://github.com/bloxide-com/bloxide/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/bloxide-com/bloxide/actions/workflows/lint-and-test.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 2021](https://img.shields.io/badge/rust-2021_edition-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2021/)
 [![no_std](https://img.shields.io/badge/no__std-core-brightgreen.svg)](#crates)
@@ -263,7 +268,7 @@ No executor, no async, no spawning. Each blox has acceptance tests derived direc
 4. **Actions before guards** — `transitions!` enforces `actions: fn(&mut Ctx, &Event)` then `guard: fn(&Ctx, &ActionResults, &Event) -> Guard`. Side effects are separated from decisions; the borrow checker enforces the ordering.
 5. **Bubbling is implicit** — states with no matching rule automatically bubble to the parent. An empty `transitions: &[]` means "handle nothing; let everything bubble." No explicit catch-all needed.
 6. **`on_entry` / `on_exit` are infallible** — they are `fn(&mut Ctx)`. Fallible work belongs in a `TransitionRule`'s `actions` function, where it returns `ActionResult::Err` and the guard can route to an error state.
-7. **Spec-driven development** — write the blox spec first (`spec/bloxes/<name>.md`), write `TestRuntime` tests next, implement `MachineSpec` last. See [`skills/spec-driven-development/SKILL.md`](skills/spec-driven-development/SKILL.md).
+7. **Spec-driven development** — write the blox spec first (`spec/bloxes/<name>.md`), write `TestRuntime` tests next, implement `MachineSpec` last.
 
 ---
 
@@ -285,13 +290,14 @@ bloxide/
 │   ├── messages/      # shared message crates
 │   ├── actions/       # action trait crates
 │   ├── bloxes/        # ping, pong, worker, pool
+│   ├── embassy-demo-impl/ # concrete behavior types (e.g. PingBehavior)
 │   ├── embassy-demo/
-│   └── tokio-demo/
+│   ├── tokio-demo/
+│   └── tokio-pool-demo/
 ├── spec/              # architecture docs and per-blox specs
-│   ├── architecture/  # 00–10 design docs
-│   └── bloxes/        # spec/bloxes/ping.md, etc.
-├── skills/            # agent/developer workflow guides
-└── tools/             # check-spec-drift: detects stale spec identifiers
+│   ├── architecture/  # 00–11 design docs
+│   ├── bloxes/        # spec/bloxes/ping.md, pong.md, supervisor.md
+│   └── templates/     # blox-spec template
 ```
 
 ---

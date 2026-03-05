@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 /// Shared HSM fixture for engine unit tests.
 ///
 /// Provides a minimal but complete `MachineSpec` implementation (`TSpec`) used
