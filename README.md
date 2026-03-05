@@ -10,7 +10,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 2021](https://img.shields.io/badge/rust-2021_edition-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2021/)
 
-Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domain actors ("bloxes") are generic over a `Runtime` trait so the same state machine logic runs on Embassy bare-metal *and* Tokio without modification. A separate runtime crate wires channels, spawns tasks, and drives the state machine.
+Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domain actors ("bloxes") are generic over `BloxRuntime` so the same state machine logic runs on Embassy *and* Tokio without modification. A separate runtime crate wires channels, spawns tasks, and drives the state machine.
 
 ---
 
@@ -26,26 +26,33 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 
 ## Quick look
 
-A blox is a state machine plus a set of components (handles, receivers, extended state). Here is a trimmed view of the demo wiring with the Tokio runtime:
+A blox implements `MachineSpec` to define states, transitions, and context. At startup the runtime creates channels, builds `StateMachine` instances, and spawns tasks. Here is a trimmed view of the Tokio demo wiring two supervised ping-pong actors:
 
 ```rust
-// Create channels for Root blox
-let (root_handle, root_rx) =
-    TokioMessageHandle::create_channel_with_size(1, DEFAULT_CHANNEL_SIZE);
+// Create typed channels for each actor
+let ((ping_ref,), ping_mbox) = bloxide_tokio::channels! { PingPongMsg(16) };
+let ((pong_ref,), pong_mbox) = bloxide_tokio::channels! { PingPongMsg(16) };
 
-// Build and run the supervisor (manages Root's lifecycle)
-let supervisor_blox = Blox::<SupervisorComponents<TokioRuntime>>::new(
-    supervisor_receivers,
-    supervisor_extended_state,
-    supervisor_handles,
-);
+// Build state machines — PingSpec and PongSpec are runtime-agnostic MachineSpec impls
+let ping_machine = StateMachine::new(PingCtx::new(/* peer refs, timer, behavior */));
+let pong_machine = StateMachine::new(PongCtx::new(/* peer ref */));
 
-tokio::spawn(async move {
-    Box::new(supervisor_blox).run().await;
-});
+// Supervise both actors
+let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+bloxide_tokio::spawn_child!(group, ping_task(ping_machine, ping_mbox, ping_id),
+    ChildPolicy::Restart { max: 1 });
+bloxide_tokio::spawn_child!(group, pong_task(pong_machine, pong_mbox, pong_id),
+    ChildPolicy::Stop);
+
+// Start the supervisor and run until shutdown
+let (children, sup_notify_rx) = group.finish();
+let sup_ctx = SupervisorCtx::new(bloxide_tokio::next_actor_id!(), children);
+let mut sup_machine = StateMachine::<SupervisorSpec<TokioRuntime>>::new(sup_ctx);
+sup_machine.start();
+run_root(sup_machine, (sup_notify_rx,)).await;
 ```
 
-The identical blox types run on Embassy by swapping `TokioRuntime` for an Embassy `Runtime` impl — no changes to the blox code itself.
+The blox crates (`PingSpec`, `PongSpec`) are generic over `R: BloxRuntime` — the same code runs on Embassy by swapping `TokioRuntime` for `EmbassyRuntime`.
 
 ---
 
