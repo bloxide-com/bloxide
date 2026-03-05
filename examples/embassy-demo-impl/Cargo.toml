@@ -1,0 +1,9 @@
+[package]
+name = "embassy-demo-impl"
+version.workspace = true
+edition.workspace = true
+description = "Concrete behavior implementations for the embassy demo binary"
+
+[dependencies]
+ping-pong-actions  = { path = "../actions/ping-pong-actions" }
+bloxide-timer      = { path = "../../crates/bloxide-timer" }

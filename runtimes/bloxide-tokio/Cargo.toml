@@ -1,0 +1,14 @@
+[package]
+name = "bloxide-tokio"
+version.workspace = true
+edition.workspace = true
+description = "Tokio runtime implementation for bloxide"
+
+[dependencies]
+bloxide-core = { path = "../../crates/bloxide-core", features = ["std"] }
+bloxide-macros = { path = "../../crates/bloxide-macros" }
+bloxide-spawn = { path = "../../crates/bloxide-spawn", features = ["std"] }
+bloxide-supervisor = { path = "../../crates/bloxide-supervisor", features = ["std"] }
+bloxide-timer = { path = "../../crates/bloxide-timer", features = ["std"] }
+futures-core = { version = "0.3", default-features = false }
+tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }

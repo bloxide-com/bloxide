@@ -1,0 +1,19 @@
+[package]
+name = "bloxide-embassy"
+version.workspace = true
+edition.workspace = true
+description = "Embassy runtime implementation for bloxide"
+
+[dependencies]
+bloxide-core = { path = "../../crates/bloxide-core", features = ["alloc"] }
+bloxide-macros = { path = "../../crates/bloxide-macros" }
+bloxide-supervisor = { path = "../../crates/bloxide-supervisor", features = ["alloc"] }
+bloxide-timer = { path = "../../crates/bloxide-timer", features = ["alloc"] }
+embassy-futures = "0.1"
+embassy-sync = { version = "0.7" }
+embassy-time = { version = "0.5" }
+embassy-executor = { version = "0.9", features = ["executor-thread"] }
+futures-core = { version = "0.3", default-features = false }
+
+[features]
+std = ["bloxide-core/std", "bloxide-supervisor/std", "bloxide-timer/std"]

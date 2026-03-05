@@ -1,9 +1,34 @@
-# Copyright 2025 Bloxide, all rights reserved
-
 [workspace]
-members = ["bloxide-tokio","core"]
+members = [
+    "crates/bloxide-core",
+    "crates/bloxide-log",
+    "crates/bloxide-macros",
+    "crates/bloxide-spawn",
+    "crates/bloxide-supervisor",
+    "crates/bloxide-timer",
+    "runtimes/bloxide-embassy",
+    "runtimes/bloxide-tokio",
+    "examples/actions/ping-pong-actions",
+    "examples/actions/pool-actions",
+    "examples/messages/ping-pong-messages",
+    "examples/messages/pool-messages",
+    "examples/bloxes/ping",
+    "examples/bloxes/pong",
+    "examples/bloxes/worker",
+    "examples/bloxes/pool",
+    "examples/embassy-demo-impl",
+    "examples/embassy-demo",
+    "examples/tokio-demo",
+    "examples/tokio-pool-demo",
+]
 resolver = "2"
 
 [workspace.package]
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

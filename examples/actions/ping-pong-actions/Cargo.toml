@@ -1,0 +1,12 @@
+[package]
+name = "ping-pong-actions"
+version.workspace = true
+edition.workspace = true
+description = "Domain action traits and generic functions for the ping-pong example"
+
+[dependencies]
+bloxide-core = { path = "../../../crates/bloxide-core" }
+bloxide-log = { path = "../../../crates/bloxide-log" }
+bloxide-macros = { path = "../../../crates/bloxide-macros" }
+bloxide-timer = { path = "../../../crates/bloxide-timer" }
+ping-pong-messages = { path = "../../messages/ping-pong-messages" }
