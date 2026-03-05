@@ -19,8 +19,8 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 - **Hierarchical state machines** — composite states, event bubbling, entry/exit callbacks, run-to-completion dispatch
 - **Runtime-agnostic actors** — blox code depends only on `bloxide-core`; never imports a runtime
 - **Built-in supervisor** — reusable OTP-inspired supervisor blox manages child actor lifecycle out of the box
-- **Tokio runtime** — `bloxide-tokio` provides `TokioRuntime`, async channels, and `spawn` wired to Tokio
-- **Embassy-ready** — `bloxide-core` supports a `runtime-embassy` feature flag for bare-metal targets
+- **Tokio + Embassy runtimes** — `bloxide-tokio` and `bloxide-embassy` (`no_std`) ship ready to use; each provides async channels, supervision, and timer services wired to its executor
+- **Dynamic actors** — spawn new actors at runtime with factory injection and automatic peer introduction (`bloxide-spawn`)
 
 ---
 
@@ -100,13 +100,13 @@ RUST_LOG=trace cargo run --bin embassy-demo
 | Crate | Path | `no_std` | Purpose |
 |---|---|:---:|---|
 | `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, `TestRuntime` |
-| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(StateTopology)]`, `#[derive(BloxCtx)]`, `transitions!`, `#[blox_event]` |
+| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(StateTopology)]`, `#[derive(BloxCtx)]`, `#[derive(EventTag)]`, `transitions!`, `#[blox_event]` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer` |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `ChildGroup`, `ChildPolicy`, `GroupShutdown` |
 | `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | Dynamic actor spawning and peer introduction |
-| `bloxide-embassy` | `runtimes/bloxide-embassy` | — | Embassy runtime: `EmbassyRuntime`, `channels!`, `actor_task!`, `spawn_child!` |
-| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `actor_task!`, `spawn_child!` |
+| `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `actor_task!`, `actor_task_supervised!`, `root_task!`, `timer_task!`, `spawn_child!`, `spawn_timer!` |
+| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!` |
 
 ¹ Proc-macro crates compile for the host; they have no `no_std` impact on the target binary.
 
