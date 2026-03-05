@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Pool actor blox — runtime-agnostic.
 //!
 //! States:

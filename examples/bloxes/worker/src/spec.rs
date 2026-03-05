@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! State machine specification for the Worker actor.
 //!
 //! State topology:

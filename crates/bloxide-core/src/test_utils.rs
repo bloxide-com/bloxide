@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 /// Test runtime: in-memory channels and a manual virtual clock.
 ///
 /// Enabled by the `std` feature (tests always build with std on the host).

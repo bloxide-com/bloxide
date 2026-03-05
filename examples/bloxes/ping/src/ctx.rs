@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use bloxide_core::{capability::BloxRuntime, ActorId, ActorRef};
 use bloxide_macros::BloxCtx;
 use bloxide_timer::{HasTimerRef, TimerCommand, TimerId};

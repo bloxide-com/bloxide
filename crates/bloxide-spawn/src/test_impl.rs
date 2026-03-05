@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! SpawnCap implementation for TestRuntime.
 //!
 //! Collects spawned futures in a thread-local Vec for inspection in tests.

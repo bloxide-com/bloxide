@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::quote;
 use std::collections::HashMap;

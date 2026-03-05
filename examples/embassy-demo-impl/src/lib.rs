@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Concrete behavior trait implementations for the embassy demo.
 //!
 //! This crate provides a composite behavior type that implements all behavior

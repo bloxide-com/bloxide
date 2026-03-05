@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use syn::{DeriveInput, Error};

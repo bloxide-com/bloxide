@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Pure domain message types for the worker pool example.
 //!
 //! No runtime dependencies — only plain data.

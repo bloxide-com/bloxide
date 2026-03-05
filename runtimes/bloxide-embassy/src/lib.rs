@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 #![no_std]
 
 extern crate alloc;

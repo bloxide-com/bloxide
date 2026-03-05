@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use bloxide_core::messaging::ActorId;

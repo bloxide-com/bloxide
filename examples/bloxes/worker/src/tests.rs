@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Unit tests for the Worker blox.
 //!
 //! Run with: `cargo test -p worker-blox --features std`

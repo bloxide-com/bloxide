@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Domain action traits and generic functions for the worker pool example.
 //!
 //! This crate is a **pure interface crate** — traits and trait-bounded generic

@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use crate::command::TimerCommand;
 
 /// Trait that runtimes implement to provide a timer service.

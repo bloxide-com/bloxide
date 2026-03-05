@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use bloxide_macros::delegatable;
 
 // ── Trait with associated type + multiple methods ────────────────────────────

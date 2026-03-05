@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use bloxide_core::{accessor::HasSelfId, capability::BloxRuntime, messaging::ActorRef};
 
 use crate::command::{next_timer_id, TimerCommand, TimerId, TIMER_ACTOR_ID};

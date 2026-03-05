@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 /// `#[derive(BloxCtx)]` — generate accessor trait impls and constructor for blox context structs.
 ///
 /// # Supported field annotations

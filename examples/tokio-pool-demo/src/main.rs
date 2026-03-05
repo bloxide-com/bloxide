@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 // Tokio worker pool demo — dynamic actor creation via SpawnCap.
 //
 // Demonstrates:

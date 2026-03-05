@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Worker context — holds runtime refs and task state.
 extern crate alloc;
 use alloc::vec::Vec;

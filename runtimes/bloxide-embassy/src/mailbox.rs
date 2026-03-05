@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use crate::channel::{EmbassySender, EmbassyStream, EmbassyTrySendError};
 use crate::EmbassyRuntime;
 use alloc::boxed::Box;

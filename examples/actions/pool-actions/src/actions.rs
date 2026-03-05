@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! Generic action functions for the worker pool domain.
 //!
 //! All functions are trait-bounded against accessor traits from this crate.

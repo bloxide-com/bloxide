@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 pub use crate::{
     run_actor, run_root, ChildGroupBuilder, EmbassyRuntime, EmbassySender, EmbassyStream,
 };

@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use proc_macro2::{Delimiter, Ident, TokenStream as TokenStream2, TokenTree};
 use quote::quote;
 

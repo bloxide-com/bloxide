@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 //! State machine specification for the Pool actor.
 //!
 //! State topology:

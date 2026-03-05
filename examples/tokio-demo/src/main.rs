@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 // Tokio runtime demo — fully event-driven.
 //
 // Mirrors the embassy-demo but wired with TokioRuntime instead of EmbassyRuntime.

@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use bloxide_core::messaging::ActorId;
 
 /// Commands sent from a supervisor to a supervised child actor.

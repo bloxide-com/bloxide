@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 // ── Imports ──────────────────────────────────────────────────────────────────
 
 use crate::event_tag::{EventTag, WILDCARD_TAG};
