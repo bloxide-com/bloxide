@@ -144,7 +144,7 @@ pub fn derive_state_topology(input: TokenStream) -> TokenStream {
 /// so transition rules can reference them for fast pre-filtering.
 ///
 /// Enums with more than 254 variants are rejected at compile time (255 is
-/// reserved as [`WILDCARD_TAG`] in `TransitionRule::event_tag`).
+/// reserved as the `WILDCARD_TAG` sentinel in `TransitionRule::event_tag`).
 ///
 /// # Example
 ///
@@ -156,8 +156,6 @@ pub fn derive_state_topology(input: TokenStream) -> TokenStream {
 /// // impl EventTag for TEvent { fn event_tag(&self) -> u8 { match self { Self::GoB => 0, ... } } }
 /// // impl TEvent { pub const GO_B_TAG: u8 = 0; pub const GO_C_TAG: u8 = 1; pub const START_TAG: u8 = 2; }
 /// ```
-///
-/// [`WILDCARD_TAG`]: bloxide_core::event_tag::WILDCARD_TAG
 #[proc_macro_derive(EventTag)]
 pub fn derive_event_tag(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
