@@ -119,6 +119,26 @@ RUST_LOG=trace cargo run --bin embassy-demo
 
 ---
 
+## Using bloxide in your project
+
+If you are building actors with bloxide in a separate project, copy the agent guide into your repo so your AI agents understand the framework patterns:
+
+```bash
+cp -r skills/building-with-bloxide/ <your-project>/skills/
+```
+
+Then reference it from your project's `AGENTS.md`:
+
+```markdown
+| Task | Skill |
+|---|---|
+| Building bloxes with bloxide | `skills/building-with-bloxide/SKILL.md` |
+```
+
+The guide covers the five-layer architecture, spec-driven development workflow, step-by-step blox creation, and key invariants.
+
+---
+
 ## License
 
 Licensed under the [MIT License](LICENSE).

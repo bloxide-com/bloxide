@@ -16,8 +16,11 @@ bloxide/
     bloxes/                    ← per-blox specs (ping, pong, ...)
     templates/                 ← blox-spec.md template for new bloxes
   skills/                      ← agent skills (workflows you should follow)
-    spec-driven-development/
-      SKILL.md                 ← SDD workflow for creating / modifying bloxes
+    building-with-bloxide/
+      SKILL.md                 ← how to build bloxes with bloxide (portable — copy to downstream projects)
+      reference.md             ← deep-dive companion: macro syntax, timer/supervision patterns, worked example
+    contributing-to-bloxide/
+      SKILL.md                 ← how to evolve the framework: engine, runtimes, stdlib crates, macros
   crates/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
@@ -75,8 +78,10 @@ Skills are reusable workflows. Read the relevant skill file before starting the 
 
 | Task | Skill |
 |---|---|
-| Creating or modifying a blox | `skills/spec-driven-development/SKILL.md` |
-| Syncing specs after code changes | `skills/spec-sync/SKILL.md` |
+| Building bloxes (new or modified) | `skills/building-with-bloxide/SKILL.md` |
+| Evolving the framework (engine, runtimes, stdlib crates, macros) | `skills/contributing-to-bloxide/SKILL.md` |
+
+The building guide is portable — downstream projects that depend on bloxide should copy `skills/building-with-bloxide/` into their repo and reference it from their own AGENTS.md.
 
 ## Key Invariants — Never Violate These
 
@@ -104,4 +109,4 @@ then code   →  implement MachineSpec to pass tests
 keep in sync →  update spec diagrams if implementation reveals spec errors
 ```
 
-See `skills/spec-driven-development/SKILL.md` for the full step-by-step workflow.
+See `skills/building-with-bloxide/SKILL.md` for the full step-by-step workflow.
