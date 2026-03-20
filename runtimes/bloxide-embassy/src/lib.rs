@@ -9,7 +9,7 @@ extern crate std;
 use bloxide_core::{mailboxes::Mailboxes, spec::MachineSpec, StateMachine};
 use core::future::poll_fn;
 
-pub use bloxide_core::{run_actor, run_actor_to_completion};
+pub use bloxide_core::{run_actor, run_actor_auto_start, run_actor_to_completion};
 
 #[doc(hidden)]
 pub use bloxide_macros::channels as __channels_proc_macro;
@@ -22,9 +22,9 @@ pub mod prelude;
 pub mod supervision;
 pub mod timer;
 
-pub use bloxide_supervisor::{ChildLifecycleEvent, LifecycleCommand, SupervisedRunLoop};
+pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{EmbassySender, EmbassyStream, EmbassyTrySendError};
-pub use supervision::ChildGroupBuilder;
+pub use supervision::{run_supervised_actor, ChildGroupBuilder};
 
 // ── EmbassyRuntime ────────────────────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ macro_rules! actor_task_supervised {
             actor_id: ::bloxide_core::messaging::ActorId,
             supervisor_notify: $crate::EmbassySender<$crate::ChildLifecycleEvent>,
         ) {
-            <$crate::EmbassyRuntime as $crate::SupervisedRunLoop>::run_supervised_actor(
+            $crate::supervision::run_supervised_actor(
                 machine,
                 domain_mailboxes,
                 lifecycle_rx,

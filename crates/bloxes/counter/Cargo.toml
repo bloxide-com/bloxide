@@ -1,0 +1,18 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "counter-blox"
+version.workspace = true
+edition.workspace = true
+description = "Counter actor blox — runtime-agnostic layered demo"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["std"]
+std = ["bloxide-core/std"]
+
+[dependencies]
+bloxide-core = { workspace = true, features = ["alloc"] }
+bloxide-macros = { workspace = true }
+counter-actions = { workspace = true }
+counter-messages = { workspace = true }

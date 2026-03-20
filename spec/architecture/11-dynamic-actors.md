@@ -1,5 +1,9 @@
 # Dynamic Actors
 
+> **When would I use this?** Use this document when implementing dynamic actor
+> spawning, understanding factory injection, or working with `SpawnCap` and
+> peer introduction patterns.
+
 Dynamic actor creation allows a running actor to spawn new actors at runtime — after
 the executor has started. This is the v3 goal referenced in earlier specs, now
 implemented for runtimes that support it (Tokio, TestRuntime).
@@ -47,18 +51,31 @@ and the framework action functions — keeping all dynamic-spawning concerns out
 | Module | Contents |
 |--------|---------|
 | `capability` | `SpawnCap` trait — Tier 2, extends `DynamicChannelCap` |
-| `peer` | `PeerCtrl<M, R>`, `HasPeers<M, R>`, `apply_peer_ctrl`, `introduce_peers`, `AddPeer`, `RemovePeer` |
+| `peer` | `SpawnCap`, `DynamicChannelCap` — runtime capabilities for dynamic actors |
 | `test_impl` | `SpawnCap` impl for `TestRuntime`; `drain_spawned()`, `spawned_count()` |
 | `prelude` | Re-exports for convenient glob imports |
 
 `bloxide-spawn` is `no_std` (uses `extern crate alloc` for `Vec`).
+
+### Domain-Specific Peer Control (Recommended)
+
+For peer introduction, use domain-specific control types defined in your message and action crates. This enables the `#[delegates]` annotation and provides better type safety.
+
+**Why domain-specific?**
+1. **Enables `#[delegates]`** — When your context has a `peers` field implementing `HasWorkerPeers<R>`, you can annotate it with `#[delegates(HasWorkerPeers)]` and the macro generates forwarding impls. 
+2. **Type safety** — `WorkerCtrl<R>` is specific to worker actors; you can't accidentally send it to a pool actor's ctrl channel.
+3. **Clearer names** — `HasWorkerPeers<R>` is domain-specific and self-documenting.
+
+**Where to define types:**
+- **Control message types** (`WorkerCtrl<R>`) — in the **message crate** alongside domain messages
+- **Peer accessor traits** (`HasWorkerPeers<R>`) — in the **action crate** with `#[delegatable]` annotation
 
 ### Dependency Graph
 
 ```mermaid
 flowchart TD
     BloxideCore["bloxide-core\n(BloxRuntime, DynamicChannelCap,\nrun_actor_to_completion)"]
-    BloxideSpawn["bloxide-spawn\n(SpawnCap, PeerCtrl,\nHasPeers, introduce_peers)"]
+    BloxideSpawn["bloxide-spawn\n(SpawnCap,\nDynamicChannelCap)"]
     TokioRuntime["bloxide-tokio\n(impl SpawnCap)"]
     TestImpl["bloxide-spawn/test_impl\n(impl SpawnCap for TestRuntime)"]
     PoolBlox["pool-blox / worker-blox\n(R: BloxRuntime only)"]
@@ -73,8 +90,151 @@ flowchart TD
     WiringBinary --> PoolBlox
 ```
 
-Blox crates depend on `bloxide-spawn` (for `PeerCtrl`, `HasPeers`, `introduce_peers`)
+Blox crates depend on `bloxide-spawn` (for `SpawnCap`, `DynamicChannelCap`)
 and `bloxide-core` but never on `bloxide-tokio`. Blox crates declare `R: BloxRuntime`
+
+## Domain-Specific Peer Control Types
+
+The recommended pattern for peer control is defining domain-specific types in your
+message and action crates. This section shows the full pattern with concrete examples.
+
+### Defining a Control Message Type
+
+Control messages are defined in the **message crate** alongside domain messages:
+
+```rust
+// In pool-messages/src/lib.rs
+use bloxide_core::actor::{ActorId, ActorRef};
+use bloxide_core::capability::BloxRuntime;
+
+/// Domain-specific control message for worker actors.
+/// Domain-specific control type for workers
+/// and provides better type safety.
+pub enum WorkerCtrl<R: BloxRuntime> {
+    AddPeer(AddWorkerPeer<R>),
+    RemovePeer(RemoveWorkerPeer),
+}
+
+pub struct AddWorkerPeer<R: BloxRuntime> {
+    pub peer_id: ActorId,
+    pub peer_ref: ActorRef<WorkerMsg, R>,
+}
+
+pub struct RemoveWorkerPeer {
+    pub peer_id: ActorId,
+}
+```
+
+**Key characteristics:**
+- Only `R` is generic — the message type (`WorkerMsg`) is fixed
+- Named for the specific actor type (e.g., WorkerCtrl)
+- Lives in the domain's message crate, not `bloxide-spawn`
+
+### Defining a Peer Accessor Trait
+
+Peer accessor traits are defined in the **action crate** with `#[delegatable]`:
+
+```rust
+// In pool-actions/src/traits.rs
+use bloxide_core::actor::{ActorId, ActorRef};
+use bloxide_core::capability::BloxRuntime;
+use bloxide_macros::delegatable;
+use pool_messages::WorkerMsg;
+
+/// Accessor trait for worker peer management.
+/// Marked #[delegatable] so #[derive(BloxCtx)] can generate forwarding impls.
+#[delegatable]
+pub trait HasWorkerPeers<R: BloxRuntime> {
+    /// Immutable access to peer refs.
+    fn peer_refs(&self) -> &Vec<ActorRef<WorkerMsg, R>>;
+    
+    /// Mutable access to peer refs (for AddPeer/RemovePeer handlers).
+    fn peer_refs_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, R>>;
+    
+    /// Ctrl refs for sending peer control messages.
+    fn peer_ctrls(&self) -> &Vec<ActorRef<WorkerCtrl<R>, R>>;
+}
+```
+
+**Why this enables `#[delegates]`:**
+- `HasWorkerPeers<R>` has only one generic parameter (`R`)
+- The macro can generate `impl HasWorkerPeers<R> for WorkerCtx<R>` via delegation
+
+With the domain-specific trait defined, context structs can delegate:
+
+```rust
+// In worker-blox/src/ctx.rs
+use bloxide_macros::BloxCtx;
+use pool_actions::HasWorkerPeers;
+
+#[derive(BloxCtx)]
+pub struct WorkerCtx<R: BloxRuntime> {
+    pub self_id: ActorId,
+    pub pool_ref: ActorRef<PoolMsg, R>,
+    
+    #[delegates(HasWorkerPeers)]
+    pub peers: WorkerPeers<R>,
+}
+
+// The macro generates:
+// impl<R: BloxRuntime> HasWorkerPeers<R> for WorkerCtx<R> {
+//     fn peer_refs(&self) -> &Vec<ActorRef<WorkerMsg, R>> { self.peers.peer_refs() }
+//     fn peer_refs_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, R>> { self.peers.peer_refs_mut() }
+//     fn peer_ctrls(&self) -> &Vec<ActorRef<WorkerCtrl<R>, R>> { self.peers.peer_ctrls() }
+// }
+```
+
+### Applying Peer Control Messages
+
+Handlers for domain-specific control messages are defined in the blox:
+
+```rust
+// In worker-blox/src/spec.rs
+use pool_messages::WorkerCtrl;
+use pool_actions::HasWorkerPeers;
+
+fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionResult {
+    match ctrl {
+        WorkerCtrl::AddPeer(add) => {
+            ctx.peer_refs_mut().push(add.peer_ref.clone());
+            blox_log_info!("worker {:?}: added peer {:?}", ctx.self_id, add.peer_id);
+        }
+        WorkerCtrl::RemovePeer(remove) => {
+            ctx.peer_refs_mut().retain(|r| r.id() != remove.peer_id);
+            blox_log_info!("worker {:?}: removed peer {:?}", ctx.self_id, remove.peer_id);
+        }
+    }
+    ActionResult::Ok
+}
+
+// In the transitions! table:
+transitions![
+    WorkerCtrl(add) => {
+        actions [|ctx, ev| {
+            if let Some(ctrl) = ev.ctrl_payload() {
+                handle_worker_ctrl(ctx, ctrl);
+            }
+            ActionResult::Ok
+        }]
+        stay
+    },
+]
+```
+
+### Factory Type with Domain-Specific Ctrl
+
+The spawn factory returns the domain-specific control type:
+
+```rust
+// In pool-actions/src/traits.rs
+pub type WorkerSpawnFn<R> = fn(
+    ActorId,
+    &ActorRef<PoolMsg, R>,
+) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>);
+```
+
+
+---
 — not `R: SpawnCap`. The runtime dependency flows only through the wiring binary,
 and `SpawnCap` is used only inside factory functions defined there.
 
@@ -132,8 +292,8 @@ classDiagram
 | `BloxRuntime` | yes | yes | yes |
 | `StaticChannelCap` | yes | — | — |
 | `DynamicChannelCap` | — | yes | yes |
-| `TimerService` | yes | — | — |
-| `SupervisedRunLoop` | yes | — | — |
+| `TimerService` | yes | yes | — |
+| `SupervisedRunLoop` | yes | yes | — |
 | `SpawnCap` | — | yes | yes |
 
 ---
@@ -146,15 +306,21 @@ Defined in `bloxide-core::actor`:
 /// Start an actor and run until it reaches a terminal/error state or resets.
 ///
 /// Calls `machine.start()` to transition out of Init, then dispatches events
-/// until `DispatchOutcome::Transition` into a terminal or error state, or
-/// `DispatchOutcome::Reset`. Suitable for dynamically spawned actors that
-/// should exit their task when their work is done.
+/// until `DispatchOutcome::Started` or `DispatchOutcome::Transition` enters a
+/// terminal or error state, or `DispatchOutcome::Reset` is observed. Suitable
+/// for dynamically spawned actors that should exit their task when their work
+/// is done.
 pub async fn run_actor_to_completion<S, M>(mut machine: StateMachine<S>, mut mailboxes: M)
 where
     S: MachineSpec + 'static,
     M: Mailboxes<S::Event>,
 {
-    machine.start();
+    match machine.start() {
+        DispatchOutcome::Started(state) if S::is_terminal(&state) || S::is_error(&state) => {
+            return;
+        }
+        _ => {}
+    }
     loop {
         let event = poll_fn(|cx| mailboxes.poll_next(cx)).await;
         match machine.dispatch(event) {
@@ -177,10 +343,12 @@ where
 | Calls `machine.start()` | No — caller is responsible | Yes — called internally |
 | Exit condition | Never (permanent) | Terminal state, error state, or Reset |
 | Use case | Permanent actors (Embassy, supervised actors) | Dynamically spawned finite-lifetime actors |
-| Supervision | Used by `run_supervised_actor` | Not supervised (unsupervised dynamic tasks) |
+| Supervision | Used by `run_supervised_actor` | Unsupervised by default; use `run_supervised_actor` + `SupervisorControl::RegisterChild` for supervised dynamic actors |
 
 `run_actor_to_completion` calls `machine.start()` internally so the wiring binary
 only needs to construct the `StateMachine` and pass it to `SpawnCap::spawn`.
+When you need supervision for dynamic children, use `run_supervised_actor` and
+register each child through the supervisor control-plane channel.
 
 ---
 
@@ -215,7 +383,7 @@ domain ref and a ctrl ref for the spawned child.
 pub type ChildSpawnFn<ParentMsg, ChildMsg, R> = fn(
     ActorId,                                     // parent's own ActorId
     &ActorRef<ParentMsg, R>,                     // parent's ActorRef (child stores for replies)
-) -> (ActorRef<ChildMsg, R>, ActorRef<PeerCtrl<ChildMsg, R>, R>);
+) -> (ActorRef<ChildMsg, R>, ActorRef<WorkerCtrl<R>, R>);
 ```
 
 The concrete pool example specializes this:
@@ -225,27 +393,27 @@ The concrete pool example specializes this:
 pub type WorkerSpawnFn<R> = fn(
     ActorId,
     &ActorRef<PoolMsg, R>,
-) -> (ActorRef<WorkerMsg, R>, ActorRef<PeerCtrl<WorkerMsg, R>, R>);
+) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>);
 ```
 
 ### Factory Implementation (Wiring Layer)
 
-The factory lives in the wiring binary — the **only** place that knows the concrete
-child type (`WorkerCtx`, `WorkerSpec`):
+The factory lives in a Layer 3 impl crate consumed by the wiring binary — the
+**only** place that knows the concrete child type (`WorkerCtx`, `WorkerSpec`):
 
 ```rust
-// In tokio-pool-demo/src/main.rs
-fn spawn_worker(
+// In crates/impl/tokio-pool-demo-impl/src/lib.rs
+fn spawn_worker_tokio(
     _pool_id: ActorId,
     pool_ref: &ActorRef<PoolMsg, TokioRuntime>,
 ) -> (
     ActorRef<WorkerMsg, TokioRuntime>,
-    ActorRef<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
+    ActorRef<WorkerCtrl<TokioRuntime>, TokioRuntime>,
 ) {
     // Ctrl channel at index 0 (higher priority) so AddPeer messages are
     // processed before DoWork arrives on the domain channel.
     let ((ctrl_ref, domain_ref), worker_mbox) =
-        channels! { PeerCtrl<WorkerMsg, TokioRuntime>(16), WorkerMsg(16) };
+        channels! { WorkerCtrl<TokioRuntime>(16), WorkerMsg(16) };
     let worker_id = ctrl_ref.id();
 
     let worker_ctx = WorkerCtx::new(worker_id, pool_ref.clone());
@@ -262,7 +430,7 @@ fn spawn_worker(
 The factory is injected into `PoolCtx` at wiring time:
 
 ```rust
-let pool_ctx = PoolCtx::new(pool_id, pool_ref, spawn_worker);
+let pool_ctx = PoolCtx::new(pool_id, pool_ref, spawn_worker_tokio);
 ```
 
 ### Factory Storage and Accessor
@@ -306,8 +474,8 @@ Each dynamically spawned child actor that participates in peer-to-peer messaging
 
 | Ref | Type | Purpose |
 |-----|------|---------|
-| Domain ref | `ActorRef<ChildMsg, R>` | Application messages (DoWork, etc.) |
-| Ctrl ref | `ActorRef<PeerCtrl<ChildMsg, R>, R>` | Framework peer control (AddPeer, RemovePeer) |
+| Domain ref | `ActorRef<WorkerMsg, R>` | Application messages (DoWork, etc.) |
+| Ctrl ref | `ActorRef<WorkerCtrl<R>, R>` | Peer control (AddPeer, RemovePeer) |
 
 The parent stores both in its context and uses them for different purposes:
 - Domain ref: send work messages and keep the channel alive (self-sender invariant)
@@ -329,7 +497,7 @@ impl<R: BloxRuntime> MachineSpec for WorkerSpec<R> {
     /// Ctrl stream at index 0 (higher priority) ensures AddPeer commands are
     /// processed before DoWork arrives on the domain stream at index 1.
     type Mailboxes<Rt: BloxRuntime> = (
-        R::Stream<PeerCtrl<WorkerMsg, R>>,   // index 0 — ctrl (higher priority)
+        R::Stream<WorkerCtrl<R>>,   // index 0 — ctrl (higher priority)
         R::Stream<WorkerMsg>,                 // index 1 — domain
     );
     // ...
@@ -338,22 +506,38 @@ impl<R: BloxRuntime> MachineSpec for WorkerSpec<R> {
 
 ---
 
-## P2P via Control Channel (`PeerCtrl<M, R>`)
+## P2P via Control Channel
 
 When actors need to discover each other after they are running (e.g., a pool that
-introduces two workers), use `PeerCtrl<M, R>` — a framework type from `bloxide-spawn`.
-**Never define your own control message type** for this purpose.
+introduces two workers), use a **domain-specific control message type** defined in your
+message crate. This is the recommended pattern that enables `#[delegates]` and provides
+better type safety.
 
-`PeerCtrl<M, R>` is a second mailbox entry in the actor's `Mailboxes` tuple. There is
-no new recv loop: the same single `poll_next` / dispatch cycle handles both domain
-messages and control messages.
+### Domain-Specific Control Message (Recommended)
+
+The control message type is defined in the **message crate** with only `R` as a generic
+parameter:
 
 ```rust
-pub enum PeerCtrl<M: Send + 'static, R: BloxRuntime> {
-    AddPeer(AddPeer<M, R>),
-    RemovePeer(RemovePeer),
+// In pool-messages/src/lib.rs
+pub enum WorkerCtrl<R: BloxRuntime> {
+    AddPeer(AddWorkerPeer<R>),
+    RemovePeer(RemoveWorkerPeer),
+}
+
+pub struct AddWorkerPeer<R: BloxRuntime> {
+    pub peer_id: ActorId,
+    pub peer_ref: ActorRef<WorkerMsg, R>,
+}
+
+pub struct RemoveWorkerPeer {
+    pub peer_id: ActorId,
 }
 ```
+
+`WorkerCtrl<R>` is a second mailbox entry in the actor's `Mailboxes` tuple. There is
+no new recv loop: the same single `poll_next` / dispatch cycle handles both domain
+messages and control messages.
 
 **Actor event enum** — `#[blox_event]` handles generic event enums:
 
@@ -362,36 +546,40 @@ pub enum PeerCtrl<M: Send + 'static, R: BloxRuntime> {
 #[derive(Debug)]
 pub enum WorkerEvent<R: BloxRuntime> {
     Msg(Envelope<WorkerMsg>),
-    Ctrl(Envelope<PeerCtrl<WorkerMsg, R>>),
+    Ctrl(Envelope<WorkerCtrl<R>>),
 }
 ```
 
-**Handling `PeerCtrl` in a transition rule** — use a thin blox-local wrapper that
-calls `apply_peer_ctrl` from `bloxide-spawn`:
+**Handling `WorkerCtrl` in a transition rule:**
 
 ```rust
-// Blox-local adapter — thin wrapper, no domain logic
-fn handle_ctrl(ctx: &mut WorkerCtx<R>, ev: &WorkerEvent<R>) -> ActionResult {
-    if let Some(ctrl) = ev.ctrl_payload() {
-        apply_peer_ctrl(ctx, ctrl);
+// In worker-blox/src/spec.rs
+fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionResult {
+    match ctrl {
+        WorkerCtrl::AddPeer(add) => {
+            ctx.peer_refs_mut().push(add.peer_ref.clone());
+        }
+        WorkerCtrl::RemovePeer(remove) => {
+            ctx.peer_refs_mut().retain(|r| r.id() != remove.peer_id);
+        }
     }
     ActionResult::Ok
 }
 
 // In the transitions! table:
 transitions![
-    PeerCtrl(_) => {
-        actions [Self::handle_ctrl]
+    WorkerCtrl(_) => {
+        actions [|ctx, ev| {
+            if let Some(ctrl) = ev.ctrl_payload() {
+                handle_worker_ctrl(ctx, ctrl);
+            }
+            ActionResult::Ok
+        }]
         stay
     },
 ]
 ```
 
----
-
-## Peer Introduction Lifecycle
-
-When a new worker is spawned into a pool that already has running workers, the pool
 introduces the newcomer to all existing workers via bidirectional `AddPeer` messages.
 The sequence for adding worker N (with N-1 workers already running):
 
@@ -412,8 +600,8 @@ sequenceDiagram
 
     Note over Pool: introduce_new_worker(ctx)
     loop for each existing worker i in 0..N-1
-        Pool->>NewWorker: PeerCtrl::AddPeer(domain_ref_i) via ctrl_ref_N
-        Pool->>OldWorker: PeerCtrl::AddPeer(domain_ref_N) via ctrl_ref_i
+        Pool->>NewWorker: WorkerCtrl::AddPeer(domain_ref_i) via ctrl_ref_N
+        Pool->>OldWorker: WorkerCtrl::AddPeer(domain_ref_N) via ctrl_ref_i
     end
 
     Pool->>NewWorker: WorkerMsg::DoWork(task_id) via domain_ref_N
@@ -441,7 +629,7 @@ where
 }
 ```
 
-`introduce_peers` (from `bloxide-spawn`) sends `PeerCtrl::AddPeer` to both actors,
+`introduce_peers` (from `bloxide-spawn`) sends `WorkerCtrl::AddPeer` to both actors,
 each receiving the other's domain `ActorRef`. The control channel is separate from
 the domain channel so existing message ordering is unaffected.
 
@@ -453,8 +641,8 @@ spawn time, wire them directly at construction without a control channel:
 ```rust
 // Both actors are constructed before either is spawned.
 // Cross-refs are injected directly into each Ctx.
-let ((ctrl_a, domain_a), mbox_a) = channels! { PeerCtrl<WorkerMsg, R>(16), WorkerMsg(16) };
-let ((ctrl_b, domain_b), mbox_b) = channels! { PeerCtrl<WorkerMsg, R>(16), WorkerMsg(16) };
+let ((ctrl_a, domain_a), mbox_a) = channels! { WorkerCtrl<R>(16), WorkerMsg(16) };
+let ((ctrl_b, domain_b), mbox_b) = channels! { WorkerCtrl<R>(16), WorkerMsg(16) };
 
 let ctx_a = WorkerCtx::new(ctrl_a.id(), pool_ref.clone());
 let ctx_b = WorkerCtx::new(ctrl_b.id(), pool_ref.clone());
@@ -465,14 +653,14 @@ R::spawn(run_actor_to_completion(StateMachine::new(ctx_b), mbox_b));
 introduce_peers(&pool_ctx, &ctrl_a, &domain_a, &ctrl_b, &domain_b);
 ```
 
-Use Batch Spawn when all peers are known before any task starts. Use `PeerCtrl` when
+Use Batch Spawn when all peers are known before any task starts. Use domain control types when
 peers are discovered incrementally at runtime.
 
 ### Parent-Mediated Routing
 
 A parent that routes messages to children by forwarding from its own mailbox requires
 no control channel. The parent holds `Vec<ActorRef<ChildMsg, R>>` and calls
-`try_send` in its action functions. No `PeerCtrl` is needed because workers never
+`try_send` in its action functions. No control channel is needed because workers never
 need direct peer references.
 
 ---
@@ -499,7 +687,7 @@ pub struct PoolCtx<R: BloxRuntime> {
     /// Domain ActorRefs for all spawned workers (keeps their channels alive).
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
     /// Ctrl ActorRefs for all spawned workers (used for peer introduction).
-    pub worker_ctrls: Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>,
+    pub worker_ctrls: Vec<ActorRef<WorkerCtrl<R>, R>>,
     /// Number of workers whose `WorkDone` we are still waiting for.
     pub pending: u32,
 }
@@ -530,6 +718,8 @@ An actor run with `run_actor_to_completion` exits when any of the following occu
 stateDiagram-v2
     [*] --> Init
     Init --> Running : "machine.start() (inside run_actor_to_completion)"
+    Init --> Done : "start() enters terminal state"
+    Init --> Error : "start() enters error state"
     Running --> Running : "domain events (stay / self-transition)"
     Running --> Done : "transition to terminal state (is_terminal)"
     Running --> Error : "transition to error state (is_error)"
@@ -541,10 +731,10 @@ stateDiagram-v2
 
 | Exit condition | `DispatchOutcome` | Notes |
 |---|---|---|
-| Terminal state | `Transition(s)` where `is_terminal(&s)` | Normal completion — task exits cleanly |
-| Error state | `Transition(s)` where `is_error(&s)` | Fault — task exits; parent may notice dropped channel |
+| Terminal state | `Started(s)` or `Transition(s)` where `is_terminal(&s)` | Normal completion — task exits cleanly |
+| Error state | `Started(s)` or `Transition(s)` where `is_error(&s)` | Fault — task exits; parent may notice dropped channel |
 | Reset | `Reset` | Explicit reset via `Guard::Reset`; task exits |
-| Domain shutdown | `Transition(s)` where `is_terminal(&s)` | Actor defines a `Shutdown` state marked `is_terminal` |
+| Domain shutdown | `Started(s)` or `Transition(s)` where `is_terminal(&s)` | Actor defines a `Shutdown` state marked `is_terminal` |
 
 ### Shutdown via Domain Messages
 
@@ -578,17 +768,18 @@ same factory interface the production wiring binary uses.
 ```rust
 use bloxide_core::{capability::DynamicChannelCap, StateMachine};
 use bloxide_core::test_utils::TestRuntime;
-use bloxide_spawn::{peer::PeerCtrl, SpawnCap};
+use bloxide_spawn::SpawnCap;
+use pool_messages::WorkerCtrl;
 
 fn test_spawn_worker(
     _pool_id: ActorId,
     pool_ref: &ActorRef<PoolMsg, TestRuntime>,
 ) -> (
     ActorRef<WorkerMsg, TestRuntime>,
-    ActorRef<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
+    ActorRef<WorkerCtrl<TestRuntime>, TestRuntime>,
 ) {
     let worker_id = TestRuntime::alloc_actor_id();
-    let (ctrl_ref, ctrl_rx) = TestRuntime::channel::<PeerCtrl<WorkerMsg, TestRuntime>>(worker_id, 8);
+    let (ctrl_ref, ctrl_rx) = TestRuntime::channel::<WorkerCtrl<TestRuntime>>(worker_id, 8);
     let (domain_ref, domain_rx) = TestRuntime::channel::<WorkerMsg>(worker_id, 8);
 
     let worker_ctx = WorkerCtx::new(worker_id, pool_ref.clone());
@@ -686,25 +877,28 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
    `R`, and must never contain `ActorRef`. A worker that needs to reply to its parent
    stores the parent's `ActorRef<ReplyMsg, R>` in its `Ctx`, not in the message.
 
-2. **Framework control messages only** — `PeerCtrl<M, R>` (from `bloxide-spawn`) is
-   the only permitted "ActorRef-carrying" message type. Blox crates never define their
-   own control message types with `ActorRef` payloads.
-
-3. **Self-sender invariant** — the spawning actor must store the child's domain `ActorRef`
-   in its own `Ctx` before the factory returns. This keeps the channel alive for the
+2. **Control messages can carry ActorRef** — domain-specific control message types
+   (e.g., `WorkerCtrl<R>`) may contain `ActorRef` fields. These are defined in message
    actor's lifetime.
 
-4. **One recv loop per actor** — control channels (`PeerCtrl`) are merged into the
+4. **One recv loop per actor** — control channels are merged into the
    actor's `Mailboxes` tuple. There is one `poll_next` → `dispatch` cycle regardless
    of how many channel types the actor monitors.
 
 5. **Ctrl before domain in mailboxes** — when a child actor has both a domain channel
-   and a `PeerCtrl` channel, place ctrl at index 0. This ensures `AddPeer` commands
+   and a control channel, place ctrl at index 0. This ensures `AddPeer` commands
    from the parent are processed before any domain work messages.
 
 6. **Factory injection over direct SpawnCap** — blox crates receive a spawn factory
    via `#[ctor]` injection rather than declaring `R: SpawnCap`. Only the wiring binary
    and test helpers use `SpawnCap` directly.
+
+7. **Prefer domain-specific peer types** — define `WorkerCtrl<R>` in your message crate (with `AddPeer`/`RemovePeer` variants)
+   and `HasWorkerPeers<R>` in your action crate with `#[delegatable]`.
+
+8. **Peer accessor traits in action crates** — traits like `HasWorkerPeers<R>` must be
+   defined in action crates (not message or blox crates) with the `#[delegatable]`
+   annotation so context structs can use `#[delegates(HasWorkerPeers)]`.
 
 ---
 
@@ -715,10 +909,22 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
   use the static wiring pattern in [04-static-wiring.md](04-static-wiring.md).
 
 - **`alloc` required for `Vec<ActorRef<M, R>>`** — dynamic collections require heap
-  allocation. Blox crates using `HasPeers` or `HasWorkers` must declare
+  allocation. Blox crates using `HasWorkerPeers` or `HasWorkers` must declare
   `extern crate alloc` and configure their `no_std` crate accordingly.
 
-- **Supervised dynamic actors — future work** — integrating `run_actor_to_completion`
-  with `SupervisedRunLoop` requires mutable access to a `ChildGroup` from within a
-  running actor's action function. This is not yet implemented. Dynamic actors spawned
-  via factory functions are currently unsupervised.
+- **Supervised dynamic actors — implemented via explicit registration** — dynamic
+  children can be supervised by using the supervisor control-plane protocol:
+  1. Spawn the child with `run_supervised_actor(...)` and a per-child lifecycle channel.
+  2. Send `SupervisorControl::RegisterChild(RegisterChild { ... })` to the supervisor.
+  3. Supervisor adds the child to `ChildGroup` and sends `Start`.
+  On Tokio, prefer `spawn_dynamic_supervised_child(...)` or the
+  `spawn_child_dynamic!` macro from `bloxide-tokio` to avoid wiring boilerplate.
+  This keeps the model deterministic and explicit without requiring mutable access to
+  the supervisor's `ChildGroup` from inside domain action functions.
+
+## Related Docs
+
+- **Priority mailboxes** → `spec/architecture/07-typed-mailboxes.md`
+- **Peer introduction API** → `crates/bloxide-spawn/src/peer.rs`
+- **Pool/Worker blox specs** → `spec/bloxes/pool.md`, `spec/bloxes/worker.md`
+- **Runtime SpawnCap impl** → `runtimes/tokio/src/spawn.rs`, `crates/bloxide-spawn/src/test_impl.rs`

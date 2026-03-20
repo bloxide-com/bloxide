@@ -139,6 +139,8 @@ Every actor **must retain a clone of its own `ActorRef`** for each mailbox it ow
 
 **Consequence for `Mailboxes` impls:** The blanket tuple impls in `mailboxes.rs` silently treat `Poll::Ready(None)` (stream closed) as `Poll::Pending`. In debug builds a `debug_assert!` fires if a stream closes — this indicates the self-sender invariant was violated.
 
+**Failure example:** If an actor drops its last self-held `ActorRef`, its mailbox stream may close and the debug assertion will trigger on the next poll.
+
 **For future runtimes with dynamic actor creation (e.g., Tokio):** Runtime implementors must either:
 - Uphold the self-sender invariant (store a clone of each `ActorRef` in `Ctx`), OR
 - Provide a custom `Mailboxes` impl that maps `Ready(None)` to a sentinel `ChannelClosed` event variant so the `MachineSpec` can handle actor teardown explicitly.

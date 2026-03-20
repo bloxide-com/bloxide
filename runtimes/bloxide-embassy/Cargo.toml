@@ -4,12 +4,14 @@ name = "bloxide-embassy"
 version.workspace = true
 edition.workspace = true
 description = "Embassy runtime implementation for bloxide"
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
-bloxide-core = { path = "../../crates/bloxide-core", features = ["alloc"] }
-bloxide-macros = { path = "../../crates/bloxide-macros" }
-bloxide-supervisor = { path = "../../crates/bloxide-supervisor", features = ["alloc"] }
-bloxide-timer = { path = "../../crates/bloxide-timer", features = ["alloc"] }
+bloxide-core = { workspace = true, features = ["alloc"] }
+bloxide-macros = { workspace = true }
+bloxide-supervisor = { workspace = true, features = ["alloc"] }
+bloxide-timer = { workspace = true, features = ["alloc"] }
 embassy-futures = "0.1"
 embassy-sync = { version = "0.7" }
 embassy-time = { version = "0.5" }

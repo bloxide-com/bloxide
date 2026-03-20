@@ -11,10 +11,10 @@
 
 > Where does this blox live in the workspace?
 
-- Blox crate: `bloxes/<blox-name>/`
-- Messages crate: `messages/<blox-name>-messages/` _(if new messages are needed; share with peers using the same protocol)_
-- Actions crate: `actions/<blox-name>-actions/` _(accessor/behavior traits + generic action functions; no concrete types)_
-- Impl crate: provided by the wiring binary (e.g. `embassy-demo-impl/`); contains concrete behavior trait implementations injected into the blox context
+- Blox crate: `crates/bloxes/<blox-name>/`
+- Messages crate: `crates/messages/<blox-name>-messages/` _(if new messages are needed; share with peers using the same protocol)_
+- Actions crate: `crates/actions/<blox-name>-actions/` _(accessor/behavior traits + generic action functions; no concrete types)_
+- Impl crate: a separate crate consumed by the wiring binary (e.g. `crates/impl/embassy-demo-impl/`); contains concrete behavior trait implementations injected into the blox context
 
 ## State Hierarchy
 
@@ -74,7 +74,7 @@ stateDiagram-v2
 ## Context
 
 > Describe every field in `<BloxName>Ctx<R>`. Use `#[derive(BloxCtx)]` with field annotations.
-> See `spec/architecture/10-action-crate-pattern.md` for annotation semantics.
+> See `spec/architecture/12-action-crate-pattern.md` for annotation semantics.
 > No `supervisor_ref` field — actors don't hold a reference to their supervisor.
 
 ```rust
@@ -108,7 +108,7 @@ Behavior traits (implemented manually, delegating to fields):
 
 ### Receives (`SharedMsg`)
 
-Defined in `messages/<msg-crate-name>/`.
+Defined in `crates/messages/<msg-crate-name>/`.
 
 | Variant | Payload | Sent by |
 |---------|---------|---------|
@@ -166,4 +166,4 @@ Each listed action is a free function from the actions crate with signature `fn<
 
 - [ ] Should `Done` be a terminal state or support re-entry via reset?
 - [ ] What is the correct mailbox capacity for this actor?
-- [ ] Which logger concrete type does the binary inject?
+- [ ] Which `bloxide-log` backend does the wiring crate enable?

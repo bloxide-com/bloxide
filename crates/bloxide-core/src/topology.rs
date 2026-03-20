@@ -13,7 +13,7 @@
 /// - `parent()` forms a forest (no cycles). Every chain of `parent()` calls
 ///   must terminate at `None`.
 /// - `path(self)` is root-first and ends with `self`.
-/// - `as_index(self)` returns the `#[repr(u8)]` discriminant cast to `usize`,
+/// - `as_index(self)` returns the declaration-order index (0..STATE_COUNT-1),
 ///   suitable for indexing `HANDLER_TABLE`.
 /// - `STATE_COUNT` equals the total number of variants in the enum.
 pub trait StateTopology: Copy + Eq + core::fmt::Debug + Send + 'static {
@@ -33,7 +33,7 @@ pub trait StateTopology: Copy + Eq + core::fmt::Debug + Send + 'static {
     /// For a top-level state `A`: `path()` returns `&[A]`.
     fn path(self) -> &'static [Self];
 
-    /// Returns the `#[repr(u8)]` discriminant of this state as a `usize`,
+    /// Returns the declaration-order index (0..STATE_COUNT-1) of this state,
     /// suitable for indexing into `HANDLER_TABLE`.
     fn as_index(self) -> usize;
 }
@@ -61,6 +61,16 @@ pub struct LeafState<S: StateTopology>(S);
 
 impl<S: StateTopology> LeafState<S> {
     /// Wrap `state` as a `LeafState`. Asserts in debug builds that `state.is_leaf()`.
+    ///
+    /// # Safety (Internal)
+    ///
+    /// The caller must ensure `state` is a leaf state (one with no children).
+    /// In debug builds, this is verified via `debug_assert!`. In release builds,
+    /// passing a non-leaf state is undefined behavior — the engine assumes
+    /// all active states and transition targets are leaves.
+    ///
+    /// The `#[derive(StateTopology)]` macro only generates `LeafState` values
+    /// for leaf states; manual construction must ensure the same.
     #[inline]
     pub fn new(state: S) -> Self {
         debug_assert!(

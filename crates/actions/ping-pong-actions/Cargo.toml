@@ -1,0 +1,15 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "ping-pong-actions"
+version.workspace = true
+edition.workspace = true
+description = "Domain action traits and generic functions for the ping-pong example"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxide-core = { workspace = true }
+bloxide-log = { workspace = true }
+bloxide-macros = { workspace = true }
+bloxide-timer = { workspace = true }
+ping-pong-messages = { workspace = true }

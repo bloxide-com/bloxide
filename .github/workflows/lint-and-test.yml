@@ -46,6 +46,7 @@ jobs:
         run: |
           rustup show
           rustup component add rustfmt clippy
+          rustup target add riscv32imc-unknown-none-elf
 
       # Decide which Cargo flags to use based on matrix.feature-set
       - name: Cargo Build
@@ -58,6 +59,7 @@ jobs:
           cargo check -p bloxide-core --no-default-features
           cargo check -p bloxide-core --no-default-features --features alloc
           cargo check -p bloxide-core --features std
+          cargo check -p bloxide-timer --target riscv32imc-unknown-none-elf
           cargo check -p ping-pong-messages --no-default-features
 
       - name: Cargo Format

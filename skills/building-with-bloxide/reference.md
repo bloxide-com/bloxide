@@ -1,430 +1,398 @@
 # Building with Bloxide — Reference
 
-Deep-dive companion to SKILL.md. Read this when you need detailed syntax or patterns.
+Quick reference for macro syntax, common patterns, and generated code.
 
-## `#[derive(BloxCtx)]` Annotation Reference
+## Macros Quick Reference
 
-| Annotation | Generated code | Notes |
-|---|---|---|
-| `#[self_id]` | `impl HasSelfId for Ctx { fn self_id() -> ActorId }` | Exactly one field. Constructor arg. |
-| `#[provides(Trait<R>)]` | `impl Trait<R> for Ctx { fn field_name() -> &FieldType }` | Field name must match trait method name. Constructor arg. |
-| `#[delegates(TraitA, TraitB)]` | Forwarding impls via `__delegate_TraitName!()` macros | Each listed trait must be `#[delegatable]`. Constructor arg. |
-| _(none)_ | Field initialized via `Default::default()` | Not a constructor arg. |
-
-The generated `fn new(...)` takes constructor args in field declaration order: `#[self_id]` first, then `#[provides]` fields, then `#[delegates]` fields.
-
-## `transitions!` Macro Syntax
-
-The `transitions!` macro builds a `&'static [StateRule<S>]` slice. Every rule has this shape:
-
-```
-PATTERN => BODY,
-```
-
-### Event patterns
-
-**Full event pattern** — matches the outer event enum variant:
+### `blox_messages!` — Message Enum
 
 ```rust
-MyEvent::Msg(Envelope(_, MyProtocolMsg::Request(req))) => { ... }
-```
-
-**Message shorthand** — the macro detects types ending in `Msg` and generates the envelope unwrap:
-
-```rust
-MyProtocolMsg::Request(req) => { ... }
-```
-
-### Body forms
-
-```rust
-// Pure Transition
-MyMsg::Foo(_) => { transition MyState::Bar }
-
-// Sink (absorb, prevent bubbling)
-MyMsg::Foo(_) => stay,
-
-// Reset (self-terminate via engine enter_init path)
-MyMsg::Foo(_) => reset,
-
-// Actions + stay
-MyMsg::Foo(foo) => {
-    actions [Self::action_a, Self::action_b]
-    stay
-}
-
-// Actions + unconditional transition
-MyMsg::Foo(foo) => {
-    actions [Self::action_a]
-    transition MyState::Bar
-}
-
-// Actions + conditional guard
-MyMsg::Foo(foo) => {
-    actions [Self::action_a, Self::action_b]
-    guard(ctx, results) {
-        results.any_failed()  => MyState::Error,
-        ctx.count() >= MAX    => MyState::Done,
-        _                     => MyState::Active,
-    }
-}
-
-// Guard only (no actions)
-MyMsg::Tick(_) => {
-    guard(ctx, _results) {
-        ctx.deadline_elapsed() => MyState::Timeout,
-        _                      => stay,
-    }
-}
-
-// Actions + conditional reset
-MyMsg::ChildDone(_) => {
-    actions [Self::record_child_done]
-    guard(ctx, _results) {
-        ctx.all_done() => reset,
-        _              => stay,
+blox_messages! {
+    pub enum PingPongMsg {
+        Ping { round: u32 },
+        Pong { round: u32 },
+        Resume {},
     }
 }
 ```
 
-Inside `guard(ctx, results) { ... }`:
-- `ctx` is `&Ctx` (read-only)
-- `results` is `&ActionResults`
-- `stay` keeps current state
-- `reset` triggers full exit chain then `on_init_entry`
-- State variants trigger LCA transition
+Generates:
+- `pub struct Ping { pub round: u32 }`
+- `pub struct Pong { pub round: u32 }`
+- `pub struct Resume {}`
+- `pub enum PingPongMsg { Ping(Ping), Pong(Pong), Resume(Resume) }`
 
-Inside `actions [fn1, fn2]`:
-- Each function is `fn(&mut Ctx, &Event) -> ActionResult`
-- Executed in order; results collected into `ActionResults`
-- Use `ActionResult::from(try_send_result)` for send operations
+### `event!` — Event Enum
 
-## `on_entry`/`on_exit` Action Slices
+```rust
+// Single mailbox
+event!(Ping { Msg: PingPongMsg });
 
-`StateFns` uses slices for composable entry/exit actions:
+// Multiple mailboxes (index 0 polled first)
+event!(Worker<R> { 
+    Ctrl: WorkerCtrl<R>, 
+    Msg: WorkerMsg 
+});
+```
+
+Generates:
+- `pub enum PingEvent { Msg(Envelope<PingPongMsg>) }`
+- `EventTag` impl with `MSG_TAG` constant
+- `msg_payload(&self) -> Option<&PingPongMsg>` helper
+- `From<Envelope<M>>` for stream conversion
+
+### `#[derive(BloxCtx)]` — Context Struct
+
+**Field conventions (auto-detected):**
+
+| Field | Generated |
+|-------|-----------|
+| `self_id: ActorId` | `impl HasSelfId` |
+| `peer_ref: ActorRef<M, R>` | `impl HasPeerRef<R>` |
+| `timer_ref: ActorRef<TimerCommand, R>` | `impl HasTimerRef<R>` |
+| `pool_ref: ActorRef<PoolMsg, R>` | `impl HasPoolRef<R>` |
+| `worker_factory: fn(...) -> ...` | Constructor parameter (no trait) |
+
+**Required annotation:**
+
+```rust
+#[delegates(TraitA, TraitB)]
+pub behavior: B,
+```
+
+Generates forwarding impls. Import `__delegate_TraitA` from the action crate.
+
+**Generated constructor signature:**
+
+```rust
+// For fields: self_id, peer_ref, timer_ref, worker_factory, behavior
+fn new(
+    self_id: ActorId,
+    peer_ref: ActorRef<M, R>,
+    timer_ref: ActorRef<TimerCommand, R>,
+    worker_factory: WorkerSpawnFn<R>,
+    behavior: B,
+) -> Self
+```
+
+### `#[derive(StateTopology)]` — State Enum
+
+```rust
+#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(u8)]
+#[handler_fns(ACTIVE_FNS, PAUSED_FNS, DONE_FNS)]
+pub enum PingState {
+    #[composite]
+    Operating,
+    #[parent(Operating)]
+    Active,
+    #[parent(Operating)]
+    Paused,
+    Done,
+    Error,
+}
+```
+
+Generates:
+- `parent(&self) -> Option<Self>`
+- `is_leaf(&self) -> bool`
+- `as_index(&self) -> usize`
+- `STATE_COUNT: usize`
+- `ping_state_handler_table!(Self)` macro
+
+### `transitions!` — Transition Rules
+
+```rust
+transitions![
+    // Message pattern → actions + guard
+    PingPongMsg::Pong(pong) => {
+        actions [Self::log_pong, Self::forward_ping]
+        guard(ctx, results) {
+            results.any_failed()    => PingState::Error,
+            ctx.round() >= MAX      => PingState::Done,
+            _                       => stay,
+        }
+    },
+    
+    // Multiple patterns
+    WorkerCtrl::AddPeer(_) | WorkerCtrl::RemovePeer(_) => {
+        actions [Self::handle_ctrl]
+        stay
+    },
+    
+    // Simple transition
+    PoolMsg::SpawnWorker(_) => {
+        actions [Self::spawn_worker]
+        transition PoolState::Active
+    },
+    
+    // Guard only
+    CounterMsg::Tick(_) => {
+        actions [Self::count_tick]
+        guard(ctx, _results) {
+            ctx.count() >= MAX => CounterState::Done,
+            _                  => stay,
+        }
+    },
+]
+```
+
+**Body options:**
+- `transition State` — change state
+- `stay` — absorb event, keep state
+- `reset` — exit to Init
+- `guard(ctx, results) { ... }` — conditional decision
+
+## StateFns Structure
 
 ```rust
 const ACTIVE_FNS: StateFns<Self> = StateFns {
-    on_entry: &[increment_round, send_initial_ping],
-    on_exit:  &[cancel_current_timer],
-    transitions: transitions![ ... ],
+    on_entry: &[increment_round, send_ping],  // fn(&mut Ctx)
+    on_exit: &[cancel_timer],                  // fn(&mut Ctx)
+    transitions: transitions![...],            // &'static [StateRule<Self>]
 };
 ```
 
-Each function is `fn(&mut Ctx)` (infallible, no event access). Multiple actions execute in slice order. Entry actions from action crates compose with blox-local helpers.
+**Entry/exit functions:** `fn(&mut Ctx)` — infallible, no event access
 
-## `#[blox_event]` and Mailboxes
+**Transition actions:** `fn(&mut Ctx, &Event) -> ActionResult`
 
-The `#[blox_event]` attribute generates `EventTag` impl and stream-to-event conversion. Each enum variant maps to one mailbox stream:
+## MachineSpec Trait
 
 ```rust
-#[blox_event]
-#[derive(Debug)]
-pub enum MyEvent {
-    Msg(Envelope<MyProtocolMsg>),      // from Mailbox stream 0
-    Timer(Envelope<TimerCommand>),     // from Mailbox stream 1
+impl<R, B> MachineSpec for MySpec<R, B>
+where
+    R: BloxRuntime,
+    B: MyBehavior + 'static,
+{
+    type State = MyState;
+    type Event = MyEvent;
+    type Ctx = MyCtx<R, B>;
+    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<MyMsg>,);
+
+    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = my_state_handler_table!(Self);
+
+    fn initial_state() -> MyState { MyState::Ready }
+    
+    fn is_terminal(state: &MyState) -> bool {
+        matches!(state, MyState::Done)
+    }
+    
+    fn is_error(state: &MyState) -> bool {
+        matches!(state, MyState::Error)
+    }
+    
+    fn on_init_entry(ctx: &mut MyCtx<R, B>) {
+        // Reset context state
+    }
 }
 ```
 
-The `Mailboxes` associated type in `MachineSpec` is a tuple of streams matching the variant order:
+**Optional methods:**
+- `is_error` — marks fault states for supervisor intervention
+- `on_init_entry` — reset logic when entering engine-implicit Init
+
+## Common Patterns
+
+### Timer Setup
 
 ```rust
-type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<MyProtocolMsg>, Rt::Stream<TimerCommand>);
-```
-
-Use `ev.msg_payload()` in action functions to extract the message from the envelope.
-
-## Timer Patterns
-
-Timers use the `bloxide-timer` crate. The blox needs:
-- `HasTimerRef<R>` accessor trait (provided by `#[provides]`)
-- `HasCurrentTimer` behavior trait (for storing the pending timer ID)
-
-### Setting a timer
-
-```rust
-use bloxide_timer::{set_timer, HasTimerRef, TimerId};
-
-pub fn schedule_resume<R, C>(ctx: &mut C, duration_ms: u64)
+// In actions crate
+pub fn set_timer<R, C, M>(ctx: &mut C, duration_ms: u64, target: &ActorRef<M, R>, msg: M) -> TimerId
 where
     R: BloxRuntime,
-    C: HasSelfRef<R> + HasTimerRef<R> + HasSelfId + HasCurrentTimer,
+    C: HasTimerRef<R> + HasSelfId,
 {
-    let id = set_timer::<R, C, PingPongMsg>(
-        ctx, duration_ms, ctx.self_ref(), PingPongMsg::Resume(Resume),
+    let id = TimerId::new();
+    let _ = ctx.timer_ref().try_send(
+        ctx.self_id(),
+        TimerCommand::Set {
+            id,
+            duration_ms,
+            target: target.clone(),
+            msg: Envelope(ctx.self_id(), msg),
+        },
     );
+    id
+}
+
+// In blox crate, on_entry
+fn schedule_pause_timer(ctx: &mut PingCtx<R, B>) {
+    let id = set_timer(ctx, PAUSE_DURATION_MS, ctx.self_ref(), Resume {});
     ctx.set_current_timer(Some(id));
 }
-```
 
-`set_timer` sends a `TimerCommand::Set` to the timer service via `ctx.timer_ref()`. After `duration_ms`, the timer service sends the payload message to `self_ref`.
-
-### Canceling a timer
-
-```rust
-pub fn cancel_current_timer<R, C>(ctx: &mut C)
-where
-    R: BloxRuntime,
-    C: HasSelfId + HasTimerRef<R> + HasCurrentTimer,
-{
+// In blox crate, on_exit
+fn cancel_current_timer(ctx: &mut PingCtx<R, B>) {
     if let Some(id) = ctx.current_timer() {
-        cancel_timer::<R, C>(ctx, id);
+        let _ = ctx.timer_ref().try_send(ctx.self_id(), TimerCommand::Cancel { id });
         ctx.set_current_timer(None);
     }
 }
 ```
 
-### Timer context setup
+### Error Handling in Guards
 
 ```rust
+PingPongMsg::Pong(_) => {
+    actions [Self::send_ping]
+    guard(ctx, results) {
+        results.any_failed() => PingState::Error,
+        _                    => stay,
+    }
+}
+```
+
+### Factory Injection (Dynamic Spawning)
+
+```rust
+// Pool context with factory
 #[derive(BloxCtx)]
-pub struct MyCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds> {
-    #[self_id]
+pub struct PoolCtx<R: BloxRuntime> {
     pub self_id: ActorId,
-    #[provides(HasSelfRef<R>)]
-    pub self_ref: ActorRef<MyProtocolMsg, R>,
-    #[provides(HasTimerRef<R>)]
-    pub timer_ref: ActorRef<TimerCommand, R>,
-    #[delegates(HasCurrentTimer, CountsRounds)]
-    pub behavior: B,
-}
-```
-
-## Supervision Patterns
-
-Supervision uses `bloxide-supervisor`. The supervisor is a reusable blox — you don't write one, you configure it.
-
-### Wiring a supervisor
-
-```rust
-let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-
-runtime::spawn_child!(group, my_task(machine, mbox, id),
-    ChildPolicy::Restart { max: 3 });
-
-runtime::spawn_child!(group, other_task(machine, mbox, id),
-    ChildPolicy::Stop);
-
-let (children, sup_notify_rx) = group.finish();
-let sup_ctx = SupervisorCtx::new(sup_id, children);
-let mut sup_machine = StateMachine::<SupervisorSpec<R>>::new(sup_ctx);
-sup_machine.start();
-```
-
-### Child policies
-
-| Policy | Behavior |
-|---|---|
-| `ChildPolicy::Restart { max }` | Restart child up to `max` times on failure/done |
-| `ChildPolicy::Stop` | Permanently stop child on failure/done |
-
-### Group shutdown strategies
-
-| Strategy | Behavior |
-|---|---|
-| `GroupShutdown::WhenAnyDone` | Begin shutdown when any child reaches terminal state |
-| `GroupShutdown::WhenAllDone` | Begin shutdown when all children reach terminal state |
-
-### How supervision works from the blox perspective
-
-Bloxes are unaware of supervision. The runtime manages lifecycle:
-- `machine.start()` enters `initial_state()` from Init
-- `machine.reset()` exits all states and re-enters Init (for restart)
-- `is_terminal(state)` signals Done to the supervisor
-- `is_error(state)` signals Failed (takes precedence over `is_terminal`)
-
-No lifecycle message types, no supervisor refs in blox contexts.
-
-## Dynamic Actor Spawning
-
-For runtimes that support it (Tokio), actors can spawn new actors at runtime using `bloxide-spawn`.
-
-### Factory injection
-
-The binary provides a spawn factory function to the parent actor's context:
-
-```rust
-pub type WorkerSpawnFn<R> = Box<dyn Fn(ActorId, /* other args */) -> JoinHandle<()> + Send>;
-```
-
-The parent stores the factory and calls it to spawn children dynamically.
-
-### Peer introduction
-
-After spawning a new actor, use `introduce_peers` to exchange `ActorRef`s between existing actors and the new one. This uses `PeerCtrl` messages sent through a control channel.
-
-## Topology Patterns
-
-### Flat FSM
-
-All states are leaves. Simplest topology.
-
-```
-[VirtualRoot]
-├── Ready  (leaf)
-├── Active (leaf)
-└── Done   (leaf)
-```
-
-### Composite with shared handler
-
-Parent composite state handles events common to all children (typically Sink rules).
-
-```
-[VirtualRoot]
-└── Operating  (composite)
-    ├── Active (leaf)
-    └── Paused (leaf)
-```
-
-### Pause/Resume
-
-Active leaf + Paused leaf under a composite parent. Paused sets a timer on entry; Resume transitions back to Active.
-
-### Terminal with notification
-
-Override `is_terminal` on the spec. The runtime auto-notifies the supervisor. The Done state itself needs no special logic.
-
-```rust
-fn is_terminal(state: &MyState) -> bool {
-    matches!(state, MyState::Done)
-}
-```
-
-### Error state
-
-Override `is_error`. The runtime emits `ChildLifecycleEvent::Failed`. `is_error` takes precedence over `is_terminal`.
-
-```rust
-fn is_error(state: &MyState) -> bool {
-    matches!(state, MyState::Error)
-}
-```
-
-## Complete Worked Example: Pong Blox
-
-Pong is the simplest possible blox. It receives `Ping` messages and replies with `Pong`.
-
-### Messages (shared crate)
-
-```rust
-#[derive(Debug, Clone, Copy)]
-pub struct Ping { pub round: u32 }
-
-#[derive(Debug, Clone, Copy)]
-pub struct Pong { pub round: u32 }
-
-#[derive(Debug, Clone)]
-pub enum PingPongMsg {
-    Ping(Ping),
-    Pong(Pong),
-    Resume(Resume),
-}
-```
-
-### Actions (actions crate)
-
-```rust
-pub trait HasPeerRef<R: BloxRuntime> {
-    fn peer_ref(&self) -> &ActorRef<PingPongMsg, R>;
+    pub self_ref: ActorRef<PoolMsg, R>,
+    pub worker_factory: WorkerSpawnFn<R>,  // fn(ActorId, &ActorRef<PoolMsg, R>) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>)
+    pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
 }
 
-pub fn send_pong<R, C>(ctx: &mut C, ping: &Ping) -> ActionResult
-where
-    R: BloxRuntime, C: HasSelfId + HasPeerRef<R>,
+// Binary provides factory
+fn spawn_worker_tokio(pool_id: ActorId, pool_ref: &ActorRef<PoolMsg, TokioRuntime>) 
+    -> (ActorRef<WorkerMsg, TokioRuntime>, ActorRef<WorkerCtrl<TokioRuntime>, TokioRuntime>) 
 {
-    ActionResult::from(ctx.peer_ref().try_send(
-        ctx.self_id(), PingPongMsg::Pong(Pong { round: ping.round }),
-    ))
+    let ((domain_ref,), domain_mbox) = bloxide_tokio::channels! { WorkerMsg(8) };
+    let ((ctrl_ref,), ctrl_mbox) = bloxide_tokio::channels! { WorkerCtrl<TokioRuntime>(4) };
+    let worker_id = domain_ref.id();
+    // ... spawn worker task ...
+    (domain_ref, ctrl_ref)
+}
+
+let pool_ctx = PoolCtx::new(pool_id, pool_ref, spawn_worker_tokio);
+```
+
+### Peer Introduction
+
+```rust
+// In actions crate
+pub fn introduce_new_worker<R, C>(ctx: &mut C)
+where
+    R: BloxRuntime,
+    C: HasWorkerPeers<R>,
+{
+    let new_peer = ctx.worker_refs().last().unwrap();
+    for ctrl_ref in ctx.worker_ctrls() {
+        let _ = ctrl_ref.try_send(
+            ctx.self_id(),
+            WorkerCtrl::AddPeer(AddWorkerPeer { peer_ref: new_peer.clone() }),
+        );
+    }
 }
 ```
 
-### Context
+## Runtime Wiring (Tokio)
+
+### Channel Creation
+
+```rust
+let ((actor_ref,), mbox) = bloxide_tokio::channels! { MyMsg(16) };
+```
+
+### Timer Service
+
+```rust
+let timer_ref = bloxide_tokio::spawn_timer!(8);
+```
+
+### Supervised Actor Task
+
+```rust
+bloxide_tokio::actor_task_supervised!(my_task, MySpec<TokioRuntime, MyBehavior>);
+
+let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+bloxide_tokio::spawn_child!(
+    group,
+    my_task(machine, mbox, actor_id),
+    ChildPolicy::Restart { max: 1 }
+);
+```
+
+### Supervisor Task
+
+```rust
+bloxide_tokio::root_task!(supervisor_task, SupervisorSpec<TokioRuntime>);
+
+let (children, notify_rx, control_rx) = group.finish();
+let sup_machine = StateMachine::<SupervisorSpec<TokioRuntime>>::new(sup_ctx);
+sup_machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+supervisor_task(sup_machine, (notify_rx, control_rx)).await;
+```
+
+## Test Utilities
+
+### TestRuntime
+
+```rust
+use bloxide_core::test_utils::TestRuntime;
+
+// Create test machine
+let ctx = MyCtx::new(TestRuntime::alloc_actor_id(), TestBehavior::default());
+let mut machine = StateMachine::new(ctx);
+
+// Dispatch events
+machine.dispatch(MyEvent::Msg(Envelope(0, MyMsg::Foo {})));
+
+// Check state
+assert!(matches!(machine.current_state(), MachineState::State(MyState::Ready)));
+
+// Check context
+assert_eq!(machine.ctx().behavior.count(), 1);
+```
+
+### Virtual Clock (for timers)
+
+```rust
+use bloxide_timer::test_utils::VirtualClock;
+
+let clock = VirtualClock::new(timer_rx);
+clock.advance(100);  // Advance 100ms, fire ready timers
+```
+
+## Field Annotation Details
+
+### Auto-detected fields
+
+The `#[derive(BloxCtx)]` macro detects fields by naming convention:
+
+| Field | Convention | Generated |
+|-------|------------|-----------|
+| `self_id: ActorId` | Field named exactly `self_id` | `impl HasSelfId` |
+| `foo_ref: ActorRef<M, R>` | Field ends with `_ref` | `impl HasFooRef<R>` |
+| `foo_factory: fn(...) -> ...` | Field ends with `_factory` | Constructor parameter only |
+
+### `#[delegates(...)]` — Required for behavior fields
+
+```rust
+#[delegates(TraitA, TraitB)]
+pub behavior: B,
+```
+
+Generates forwarding impls. Import `__delegate_TraitA` from the action crate.
+
+### `#[ctor]` — Override auto-detection
+
+Use `#[ctor]` when a field matches the naming convention but you *don't* want a trait impl generated:
 
 ```rust
 #[derive(BloxCtx)]
-pub struct PongCtx<R: BloxRuntime> {
-    #[self_id]
-    pub self_id: ActorId,
-    #[provides(HasPeerRef<R>)]
-    pub peer_ref: ActorRef<PingPongMsg, R>,
+pub struct PoolCtx<R: BloxRuntime> {
+    pub self_id: ActorId,              // → impl HasSelfId (auto-detected)
+    #[ctor]                            // → no HasSelfRef<R> trait (we don't need it)
+    pub self_ref: ActorRef<PoolMsg, R>,
+    #[ctor]                            // → no trait impl (we implement HasWorkerFactory manually)
+    pub worker_factory: WorkerSpawnFn<R>,
 }
 ```
 
-### Events
-
-```rust
-#[blox_event]
-#[derive(Debug)]
-pub enum PongEvent {
-    Msg(Envelope<PingPongMsg>),
-}
-```
-
-### State topology
-
-```rust
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(READY_FNS, ERROR_FNS)]
-pub enum PongState {
-    Ready,
-    Error,
-}
-```
-
-### MachineSpec
-
-```rust
-impl<R: BloxRuntime> MachineSpec for PongSpec<R> {
-    type State = PongState;
-    type Event = PongEvent;
-    type Ctx = PongCtx<R>;
-    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<PingPongMsg>,);
-
-    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = pong_state_handler_table!(Self);
-
-    fn initial_state() -> PongState { PongState::Ready }
-
-    fn is_error(state: &PongState) -> bool {
-        matches!(state, PongState::Error)
-    }
-
-    fn on_init_entry(ctx: &mut PongCtx<R>) {
-        bloxide_log::blox_log_info!(ctx.self_id(), "reset");
-    }
-}
-```
-
-### Handlers
-
-```rust
-const READY_FNS: StateFns<Self> = StateFns {
-    on_entry: &[],
-    on_exit: &[],
-    transitions: transitions![
-        PingPongMsg::Ping(_ping) => {
-            actions [Self::reply_pong_action]
-            guard(_ctx, results) {
-                results.any_failed() => PongState::Error,
-                _                    => stay,
-            }
-        },
-    ],
-};
-
-const ERROR_FNS: StateFns<Self> = StateFns {
-    on_entry: &[Self::log_error],
-    on_exit: &[],
-    transitions: &[],
-};
-```
-
-### Wiring (binary)
-
-```rust
-let ((pong_ref,), pong_mbox) = runtime::channels! { PingPongMsg(16) };
-let pong_ctx = PongCtx::new(pong_id, ping_ref);
-let pong_machine = StateMachine::new(pong_ctx);
-// Spawn as supervised child or standalone
-```
+**When to use `#[ctor]`:**
+- Field matches `_ref` pattern but you don't need the accessor trait
+- Field matches `_factory` pattern but you implement a different trait manually
+- Any field that should be a constructor parameter without generating a trait

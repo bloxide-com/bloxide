@@ -5,6 +5,10 @@ use syn::{DeriveInput, Error};
 
 /// Convert a PascalCase identifier to UPPER_SNAKE_CASE.
 /// E.g. "Lifecycle" -> "LIFECYCLE", "GoB" -> "GO_B", "SelfLoop" -> "SELF_LOOP".
+/// Maximum number of event variants supported by the EventTag derive.
+/// Limited to 254 to reserve 0 and 255 for internal use.
+pub const MAX_EVENT_VARIANTS: usize = 254;
+
 pub(crate) fn to_upper_snake_case(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 4);
     let chars: Vec<char> = s.chars().collect();
@@ -37,7 +41,7 @@ pub(crate) fn derive_event_tag_inner(input: &DeriveInput) -> syn::Result<TokenSt
     };
 
     let count = variants.len();
-    if count > 254 {
+    if count > MAX_EVENT_VARIANTS {
         return Err(Error::new_spanned(
             input,
             "#[derive(EventTag)] supports at most 254 variants (255 is reserved for the wildcard sentinel)",

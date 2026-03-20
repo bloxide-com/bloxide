@@ -1,5 +1,9 @@
 # Actions: Portable Building Blocks
 
+> **When would I use this?** Use this document when implementing action functions,
+> understanding the composition model (messages + actions + blox), or learning the
+> portable building-block pattern for bloxide actors.
+
 Bloxide uses a composition model inspired by visual block programming: a blox is assembled from three kinds of reusable building blocks — **messages**, **actions**, and **state machine logic**. This keeps each concern in its own crate and ensures the blox itself contains no platform-specific code.
 
 ## Composition Model
@@ -37,7 +41,9 @@ The **blox explicitly calls actions** — this is part of the state machine defi
 
 ## Guards
 
-Guards are the `guard` function in a `TransitionRule` — a pure `fn(&Ctx, &ActionResults, &Event) -> Guard<S>`. They receive the collected action results and the event, plus read-only access to context (the borrow checker prevents mutation). Guards can inspect `ActionResults` to react to action failures (e.g. send errors).
+Guards are the `guard` function in a `TransitionRule` — a pure `fn(&Ctx, &ActionResults, &Event) -> Guard<S>`. The engine calls `guard(ctx, results, event)` after running all actions. Guards receive the collected action results and the event, plus read-only access to context (the borrow checker prevents mutation). Guards can inspect `ActionResults` to react to action failures (e.g. send errors).
+
+**`ActionResult` vs `ActionResults`**: Each action returns `ActionResult` (Ok/Err). The engine collects all results into `ActionResults` before calling the guard. Guards receive `&ActionResults` to inspect `any_failed()`, `all_ok()`, etc.
 
 ### Explicit struct form
 
@@ -74,7 +80,24 @@ TransitionRule {
 
 The `transitions!` macro builds a `&'static [TransitionRule<S>]`. Actions are specified as a bracketed list of `fn` references — `actions [fn1, fn2]`. The macro does not accept inline closures; action logic lives in named functions defined on the spec `impl` block or in an actions crate.
 
-Guards are specified as `guard(ctx, results) { match_arm => target, ... }`. Both `ctx` and `results` parameter names are required.
+Guards are specified as `guard(ctx, results) { match_arm => target, ... }`. The two
+parameters can be any identifiers; `ctx` and `results` are the conventional names.
+The engine calls `guard(ctx, results, event)` — the event is passed implicitly by the macro.
+
+#### Macro arm -> `TransitionRule` field mapping
+
+Each `transitions!` arm expands into one `TransitionRule`:
+
+- Pattern (`MyEvent::Foo(_)`, `MyMsg::Ping(_)`, `_`) -> `event_tag` + `matches`
+- `actions [fn1, fn2]` -> `actions`
+- `stay` / `transition MyState::X` / `reset` / `guard(ctx, results) { ... }` -> `guard`
+
+The execution order is engine-defined: actions always run before the guard, regardless
+of how the arm is visually arranged.
+
+**Event pattern shorthand:**
+- **`*Msg`** — patterns on types ending in `Msg` (e.g. `PingPongMsg::Ping(ping)`) use `msg_payload()` for matching. The macro expands to `ev.msg_payload().map_or(false, |m| matches!(m, ...))`. Bindings like `ping` are extracted via `msg_payload()` in actions/guards.
+- **`*Ctrl`** — patterns on types ending in `Ctrl` (e.g. `WorkerCtrl::AddPeer(p)`) use `ctrl_payload()` for matching. Bindings are extracted via `ctrl_payload()`.
 
 ```rust
 transitions![
@@ -136,7 +159,7 @@ root_transitions![
 ]
 ```
 
-For supervised actors, the runtime handles Start/Terminate/Ping via `machine.start()` and `machine.reset()` — no lifecycle root rules are needed. `root_transitions()` defaults to `&[]` and is optional.
+For supervised actors, the runtime handles Start/Reset/Ping via `machine.start()` and `machine.reset()` — no lifecycle root rules are needed. `root_transitions()` defaults to `&[]` and is optional.
 
 ## `bloxide-log` Crate
 
@@ -179,8 +202,9 @@ fn active_on_entry(ctx: &mut MyCtx<R>) {
 ### Activating in the application
 
 ```toml
-# embassy-demo/Cargo.toml
-bloxide-log = { path = "../../crates/bloxide-log", features = ["log"] }
+# Cargo.toml (workspace root package)
+[dev-dependencies]
+bloxide-log = { workspace = true, features = ["log"] }
 ```
 
 No changes to the blox crates are needed. Cargo's additive feature resolution enables `log` in `bloxide-log` for the entire build graph.
@@ -188,6 +212,13 @@ No changes to the blox crates are needed. Cargo's additive feature resolution en
 ## Rules
 
 - Blox crates depend on `bloxide-log` with **no features** enabled — they must compile without any logging backend.
-- Action implementations live in `bloxide-log`, never in blox crates.
+- Logging macros live in `bloxide-log`; domain action functions live in action crates or reusable standard-library crates such as `bloxide-supervisor`.
 - Application / wiring crates select the backend by enabling a feature on `bloxide-log`.
 - `bloxide-log` is `no_std` — it must compile for bare-metal targets.
+
+## Related Docs
+
+- **Handler patterns** → `spec/architecture/05-handler-patterns.md`
+- **Action crate pattern** → `spec/architecture/12-action-crate-pattern.md`
+- **Logging macros** → `crates/bloxide-log/src/lib.rs`
+- **transitions! macro** → `skills/building-with-bloxide/reference.md`

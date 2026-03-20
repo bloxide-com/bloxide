@@ -1,4 +1,11 @@
 # Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "bloxide"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Workspace host crate for runnable examples"
+
 [workspace]
 members = [
     "crates/bloxide-core",
@@ -9,24 +16,82 @@ members = [
     "crates/bloxide-timer",
     "runtimes/bloxide-embassy",
     "runtimes/bloxide-tokio",
-    "examples/actions/ping-pong-actions",
-    "examples/actions/pool-actions",
-    "examples/messages/ping-pong-messages",
-    "examples/messages/pool-messages",
-    "examples/bloxes/ping",
-    "examples/bloxes/pong",
-    "examples/bloxes/worker",
-    "examples/bloxes/pool",
-    "examples/embassy-demo-impl",
-    "examples/embassy-demo",
-    "examples/tokio-demo",
-    "examples/tokio-pool-demo",
+    "crates/actions/ping-pong-actions",
+    "crates/actions/pool-actions",
+    "crates/actions/counter-actions",
+    "crates/messages/ping-pong-messages",
+    "crates/messages/pool-messages",
+    "crates/messages/counter-messages",
+    "crates/bloxes/ping",
+    "crates/bloxes/pong",
+    "crates/bloxes/worker",
+    "crates/bloxes/pool",
+    "crates/bloxes/counter",
+    "crates/impl/embassy-demo-impl",
+    "crates/impl/counter-demo-impl",
+    "crates/impl/tokio-pool-demo-impl",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.3"
 edition = "2021"
+repository = "https://github.com/bloxide-com/bloxide"
+license = "MIT"
+readme = "README.md"
+authors = ["Bloxide Contributors"]
+keywords = ["actor", "hsm", "state-machine", "embedded", "no_std", "async"]
+categories = ["embedded", "no-std", "asynchronous", "rust-patterns"]
+
+[workspace.dependencies]
+bloxide-core = { path = "crates/bloxide-core" }
+bloxide-log = { path = "crates/bloxide-log" }
+bloxide-macros = { path = "crates/bloxide-macros" }
+bloxide-spawn = { path = "crates/bloxide-spawn" }
+bloxide-supervisor = { path = "crates/bloxide-supervisor" }
+bloxide-timer = { path = "crates/bloxide-timer" }
+bloxide-embassy = { path = "runtimes/bloxide-embassy" }
+bloxide-tokio = { path = "runtimes/bloxide-tokio" }
+ping-pong-actions = { path = "crates/actions/ping-pong-actions" }
+pool-actions = { path = "crates/actions/pool-actions" }
+counter-actions = { path = "crates/actions/counter-actions" }
+ping-pong-messages = { path = "crates/messages/ping-pong-messages" }
+pool-messages = { path = "crates/messages/pool-messages" }
+counter-messages = { path = "crates/messages/counter-messages" }
+ping-blox = { path = "crates/bloxes/ping" }
+pong-blox = { path = "crates/bloxes/pong" }
+worker-blox = { path = "crates/bloxes/worker" }
+pool-blox = { path = "crates/bloxes/pool" }
+counter-blox = { path = "crates/bloxes/counter" }
+embassy-demo-impl = { path = "crates/impl/embassy-demo-impl" }
+counter-demo-impl = { path = "crates/impl/counter-demo-impl" }
+tokio-pool-demo-impl = { path = "crates/impl/tokio-pool-demo-impl" }
+
+[dev-dependencies]
+bloxide-core = { workspace = true, features = ["std", "tracing"] }
+bloxide-embassy = { workspace = true, features = ["std"] }
+bloxide-tokio = { workspace = true }
+bloxide-log = { workspace = true, features = ["log"] }
+bloxide-timer = { workspace = true, features = ["std"] }
+ping-blox = { workspace = true }
+pong-blox = { workspace = true }
+pool-blox = { workspace = true, features = ["std"] }
+counter-blox = { workspace = true }
+ping-pong-messages = { workspace = true }
+pool-messages = { workspace = true }
+counter-messages = { workspace = true }
+embassy-demo-impl = { workspace = true }
+counter-demo-impl = { workspace = true }
+tokio-pool-demo-impl = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = "0.2"
+embassy-executor = { version = "0.9", features = ["arch-std", "executor-thread"] }
+embassy-sync = { version = "0.7" }
+embassy-time = { version = "0.5", features = ["std", "generic-queue-8"] }
+critical-section = { version = "1.2", features = ["std"] }
+static_cell = "2"
 
 [profile.dev]
 panic = "abort"

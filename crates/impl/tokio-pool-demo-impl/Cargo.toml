@@ -1,0 +1,16 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "tokio-pool-demo-impl"
+version.workspace = true
+edition.workspace = true
+description = "Concrete worker factory for the Tokio pool demo"
+publish = false
+
+[dependencies]
+bloxide-core = { workspace = true, features = ["std"] }
+bloxide-tokio = { workspace = true }
+bloxide-spawn = { workspace = true, features = ["std"] }
+pool-messages = { workspace = true }
+pool-actions = { workspace = true }
+worker-blox = { workspace = true, features = ["std"] }
+tokio = { version = "1", features = ["rt"] }

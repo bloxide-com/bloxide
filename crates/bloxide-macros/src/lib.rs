@@ -22,6 +22,10 @@
 //! - `channels!(RuntimeType; MsgType1(CAP1), MsgType2(CAP2), ...)` — generate
 //!   channel creation code for any number of mailboxes via `StaticChannelCap`.
 //!
+//! - `dyn_channels!(RuntimeType; MsgType1(CAP1), MsgType2(CAP2), ...)` —
+//!   generate channel creation code for any number of mailboxes via
+//!   `DynamicChannelCap`.
+//!
 //! - `transitions!(ARMS)` / `root_transitions!(ARMS)` — build typed transition
 //!   rule slices with automatic event-tag extraction.
 //!
@@ -40,6 +44,10 @@ mod mailboxes_impls;
 mod state_topology;
 mod transitions;
 
+mod blox_event_new;
+mod blox_mailboxes;
+mod blox_messages;
+
 // ── BloxCtx derive ────────────────────────────────────────────────────────────
 
 /// Derive accessor trait impls and a `fn new(...)` constructor for a blox context struct.
@@ -50,8 +58,21 @@ mod transitions;
 /// - `#[provides(TraitName<R>)]` — generates `impl TraitName<R> for Struct` with a
 ///   single accessor method (method name = field name, return type = `&FieldType`)
 /// - `#[ctor]` — marks the field as a constructor parameter without generating any
-///   trait impl; useful for fields like `ActorRef` or factory functions that are
-///   passed in at construction but do not have a single-accessor trait
+///   trait impl; useful for fields that the runtime injects (e.g., factory closures,
+///   spawn capabilities) that should not be exposed as `HasXRef` accessor traits.
+///
+///   Example:
+///   ```ignore
+///   #[derive(BloxCtx)]
+///   pub struct PoolCtx<R: BloxRuntime> {
+///       #[self_id]
+///       pub self_ref: ActorRef<PoolMsg, R>,
+///       #[provides(WorkerRef)]
+///       pub workers: Vec<ActorRef<WorkerMsg, R>>,
+///       #[ctor]
+///       spawn_worker: WorkerSpawnFn<R>,  // Injected at construction, no accessor trait
+///   }
+///   ```
 /// - `#[delegates(TraitName)]` — emits `__delegate_TraitName!(...)` companion macro
 ///   invocations that generate forwarding impls (the trait must be annotated with
 ///   `#[delegatable]` from this crate)
@@ -97,7 +118,31 @@ pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
 ///
 /// Requires `#[repr(u8)]` on the enum. Each variant must be a unit variant.
 ///
-/// Use the following attributes on variants:
+/// # Attributes
+///
+/// ## Enum-level: `#[handler_fns(...)]`
+///
+/// Specifies handler function names for each state variant. Auto-generates a companion
+/// macro `{snake_case_state_enum_name}_handler_table!(Self)` for constructing the
+/// `HANDLER_TABLE` const array.
+///
+/// Example:
+/// ```ignore
+/// #[derive(StateTopology)]
+/// #[handler_fns(on_entry_state_a, on_exit_state_a, on_entry_state_b)]
+/// enum State {
+///     StateA,
+///     StateB,
+/// }
+///
+/// // Generated macro (call in impl MachineSpec):
+/// // fn state_handler_table() -> &'static [StateFns<Self>] {
+/// //     &state_handler_table!(Self)
+/// // }
+/// ```
+///
+/// ## Variant attributes
+///
 /// - `#[composite]` — marks a state as having children (not a leaf).
 ///   Composite states may not be transition targets.
 /// - `#[parent(ParentVariant)]` — declares the parent state for non-top-level
@@ -294,6 +339,26 @@ pub fn dyn_channels(input: TokenStream) -> TokenStream {
 /// This proc-macro version automatically extracts the `event_tag` from
 /// each arm's pattern, enabling the engine to skip non-matching rules
 /// without a function pointer call.
+///
+/// # Pattern Classification Rules
+///
+/// The macro inspects pattern syntax to determine how to match events:
+///
+/// | Pattern Syntax | Generated Match | Use Case |
+/// |----------------|-----------------|----------|
+/// | `_Msg(Ping { .. })` | `event.msg_payload()` | Match message payloads from `Event::Msg(Envelope<T>)` |
+/// | `_Ctrl(Stop)` | `event.ctrl_payload()` | Match control payloads from `Event::Ctrl(T)` |
+/// | `Event::Msg(Envelope(Ping { .. }))` | Direct pattern match | Full explicit path |
+/// | `Ping { .. }` (no suffix) | Direct struct pattern | Custom event types |
+///
+/// ## Important Naming Convention
+///
+/// For the shorthand patterns to work:
+/// - Message events must have variants ending in `Msg` (e.g., `PingMsg`, `PongMsg`)
+/// - Control events must have variants ending in `Ctrl` (e.g., `StopCtrl`, `ResetCtrl`)
+///
+/// **Common Pitfall**: If your event enum uses `PingMessage` instead of `PingMsg`,
+/// the shorthand won't work. Either rename your variant or use the full path syntax.
 #[proc_macro]
 pub fn transitions(input: TokenStream) -> TokenStream {
     transitions::transitions_inner(input, false)
@@ -357,4 +422,55 @@ pub fn delegatable(_attr: TokenStream, item: TokenStream) -> TokenStream {
     delegatable::delegatable_inner(item.into())
         .unwrap_or_else(|e| e.to_compile_error())
         .into()
+}
+
+// ── blox_messages!(...) ──────────────────────────────────────────────────────
+
+/// Generate message structs and enum from a declarative specification.
+///
+/// # Syntax
+///
+/// ```ignore
+/// blox_messages! {
+///     pub enum PingPongMsg {
+///         Ping { round: u32 },
+///         Pong { round: u32 },
+///         Resume {},
+///     }
+/// }
+/// ```
+#[proc_macro]
+pub fn blox_messages(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as blox_messages::BloxMessagesInput);
+    match blox_messages::blox_messages_inner(&input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+// ── blox_event!(Name { Mailbox: Type }) ───────────────────────────────────────
+
+// ── event!(Name { Mailbox: Type }) ───────────────────────────────────────────
+
+/// Generate a complete blox event type from a mailbox specification.
+///
+/// # Syntax
+///
+/// ```ignore
+/// // Single mailbox:
+/// event!(Ping { Msg: PingPongMsg });
+///
+/// // Multi-mailbox with generics:
+/// event!(Worker<R: BloxRuntime> {
+///     Peer: PeerCtrl<WorkerMsg, R>,
+///     Msg: WorkerMsg,
+/// });
+/// ```
+#[proc_macro]
+pub fn event(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as blox_event_new::BloxEventInput);
+    match blox_event_new::blox_event_inner(&input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
 }

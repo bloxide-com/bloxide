@@ -1,0 +1,11 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "ping-pong-messages"
+version.workspace = true
+edition.workspace = true
+description = "Shared message types for the ping-pong example bloxes"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxide-macros = { path = "../../bloxide-macros" }

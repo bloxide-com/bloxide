@@ -4,16 +4,14 @@
 extern crate alloc;
 
 pub mod actions;
+pub mod control;
 pub mod event;
-pub mod lifecycle;
 pub mod prelude;
 pub mod registry;
-pub mod service;
 pub mod supervisor;
 
 pub use actions::HasChildren;
+pub use control::{RegisterChild, SupervisorControl};
 pub use event::SupervisorEvent;
-pub use lifecycle::{ChildLifecycleEvent, LifecycleCommand};
-pub use registry::{ChildAction, ChildGroup, ChildPolicy, GroupShutdown};
-pub use service::SupervisedRunLoop;
+pub use registry::{ChildGroup, ChildPolicy, GroupShutdown};
 pub use supervisor::{SupervisorCtx, SupervisorSpec, SupervisorState};

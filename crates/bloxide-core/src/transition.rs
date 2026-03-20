@@ -15,6 +15,11 @@ pub enum ActionResult {
     Err,
 }
 
+/// Converts a `Result<(), E>` into an `ActionResult`.
+///
+/// **Note**: Error details are discarded. The guard receives only the
+/// `any_failed()` boolean via `ActionResults`. If you need to preserve
+/// error information for the guard, store it in the context before returning.
 impl<E> From<Result<(), E>> for ActionResult {
     fn from(r: Result<(), E>) -> Self {
         if r.is_ok() {
@@ -93,9 +98,13 @@ impl core::iter::FromIterator<ActionResult> for ActionResults {
 
 // ── Unified rule struct ───────────────────────────────────────────────────────
 
-/// A single transition rule, parameterized over the guard return type `G`.
+/// Internal representation of a transition rule.
 ///
-/// Use the type alias [`StateRule`] rather than naming this struct directly.
+/// **Users should not name this type directly.** Use the `StateRule<S>` type alias instead,
+/// which adds the `Guard<S>` type parameter.
+///
+/// This type is kept public for proc-macro generated code compatibility, but
+/// the type alias is the preferred API surface.
 ///
 /// # Enforcement
 ///
@@ -145,7 +154,7 @@ pub type ActionFn<S> = fn(&mut <S as MachineSpec>::Ctx, &<S as MachineSpec>::Eve
 /// State-level transition rule. Guard returns [`Guard<S>`] (Transition or Stay).
 pub type StateRule<S> = TransitionRule<S, Guard<S>>;
 
-// ── Guard outcomes ────────────────────────────────────────────────────────────
+// ── Guard outcomes ───────────────────────────────────────────────────────────
 
 /// The outcome of a guard evaluation (state-level or root-level).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -160,10 +169,10 @@ pub enum Guard<S: MachineSpec> {
     /// Stay in the current state. No `on_exit` or `on_entry` is called.
     Stay,
     /// Exit the entire operational state chain and re-enter engine-implicit Init.
-    ///
     /// The engine calls `on_exit` for every state from the current leaf up to
-    /// the topmost ancestor (full LCA exit chain), then calls
-    /// `MachineSpec::on_init_entry`. This is the same path used by
-    /// `machine.reset()` — the LCA exit order is always respected.
+    /// the topmost ancestor, then calls `MachineSpec::on_init_entry`.
     Reset,
+    /// Exit to implicit Init, report Failed to supervisor.
+    /// Used for error propagation that should trigger supervisor intervention.
+    Fail,
 }

@@ -6,9 +6,9 @@ The Pong actor responds to every `PingPongMsg::Ping` it receives by sending `Pin
 
 ## Crate Location
 
-- Blox crate: `examples/bloxes/pong/`
-- Messages crate: `examples/messages/ping-pong-messages/`
-- Actions crate: `examples/actions/ping-pong-actions/`
+- Blox crate: `crates/bloxes/pong/`
+- Messages crate: `crates/messages/ping-pong-messages/`
+- Actions crate: `crates/actions/ping-pong-actions/`
 
 ## State Hierarchy
 
@@ -97,6 +97,15 @@ The response message is sent inside the transition action `reply_pong_action`, d
 - The round echo (`Pong { round: n }` echoes the same `n`) is intentional: Pong is a mirror.
 - `try_send` is used (not `send`) because `on_event` runs synchronously inside dispatch.
 - Pong does not know when the exchange ends — it will keep responding to pings indefinitely. When Ping transitions to `Done`, it simply stops sending, and Pong's mailbox goes quiet.
-- The blox crate only imports `ping-pong-actions` for the `HasPeerRef` trait and `send_pong` function. Concrete logger types come from the binary, not the blox.
+- The blox crate only imports `ping-pong-actions` for the `HasPeerRef` trait and `send_pong` function. Logging, when enabled, comes from `bloxide-log` feature flags selected by the wiring crate.
 - See `spec/architecture/08-supervision.md` for how the runtime manages lifecycle.
-- See `spec/architecture/10-action-crate-pattern.md` for the full five-layer architecture.
+- See `spec/architecture/12-action-crate-pattern.md` for the full five-layer architecture.
+
+## Acceptance Criteria → Test Mapping
+
+| Acceptance Criterion | Test Function | File |
+|---|---|---|
+| `machine.start()` exits Init → Ready | `test_start_enters_ready` | `tests.rs` |
+| Ping in Ready triggers send_pong → stay | `test_ping_sends_pong` | `tests.rs` |
+| send_pong failure → Error | `test_send_failure` | `tests.rs` |
+| `is_error(Error)` returns true | (inline assertion) | `tests.rs` |

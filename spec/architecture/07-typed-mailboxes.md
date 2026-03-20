@@ -75,16 +75,16 @@ type Mailboxes<R: BloxRuntime> = NoMailboxes;
 
 ## Lifecycle and the Runtime
 
-**Lifecycle is not a domain mailbox.** The runtime manages Start and Terminate
+**Lifecycle is not a domain mailbox.** The runtime manages Start and Reset
 commands through a separate, runtime-internal `LifecycleCommand` channel that is
 never part of the actor's `Mailboxes` tuple.
 
 - `machine.start()` — called by the runtime to exit Init and enter `initial_state()`
-- `machine.reset()` — called by the runtime (on Terminate) to exit all operational
+- `machine.reset()` — called by the runtime (on Reset) to exit all operational
   states and re-enter Init
 
 Domain mailboxes contain only peer-to-peer messages. The domain run loop never
-inspects `LifecycleMsg` variants.
+inspects `LifecycleCommand` values as domain events.
 
 ## Priority Semantics
 
@@ -116,6 +116,10 @@ signature is runtime-agnostic. The Embassy implementation supplies `EmbassyStrea
 After every dispatch the runtime observes `DispatchOutcome` and sends
 `ChildLifecycleEvent` to the supervisor's domain mailbox automatically.
 
+`SupervisorSpec` itself uses a two-stream domain mailbox tuple:
+- child lifecycle events (`Stream<ChildLifecycleEvent>`)
+- supervisor control-plane events (`Stream<SupervisorControl<R>>`) for dynamic registration and health ticks
+
 ## Wiring Pattern
 
 Create one domain channel per message type, then build the mailbox tuple:
@@ -130,6 +134,10 @@ The `channels!` macro creates channels via `StaticChannelCap` and returns
 `(refs_tuple, streams_tuple)` ready to pass to an actor task.
 
 ## Key Invariants
+
+> **See `AGENTS.md` → "Key Invariants" for the canonical list.**
+
+Typed-mailbox-specific invariants:
 
 - Domain `Mailboxes` tuples contain **no lifecycle stream** — lifecycle is runtime-internal.
 - Callers only hold `ActorRef<M, R>` for the specific message type `M` they are

@@ -11,7 +11,7 @@ knowledge needed beyond the Embassy executor entry point.
 lifecycle through a separate internal channel and direct engine calls:
 
 - `machine.start()` — called by the runtime when a child's supervisor sends Start
-- `machine.reset()` — called by the runtime when Terminate is received
+- `machine.reset()` — called by the runtime when Reset is received
 
 The runtime observes `DispatchOutcome` after every dispatch and automatically sends
 `ChildLifecycleEvent` to the supervisor's domain mailbox. Supervisors receive these
@@ -49,17 +49,19 @@ defaults internal state. The wiring site never initializes counters or round num
 flowchart TD
     A["setup(spawner) called"] --> B
     B["channels! per domain actor\nreturns refs + mailboxes"] --> C
-    C["ChildGroupBuilder::new(strategy)\nspawn_child! for each supervised actor"] --> D
-    D["builder.finish()\nreturns ChildGroup + sup_notify_rx"] --> E
-    E["Ctx::new() per actor\ninject refs; zero internal state"] --> F
-    F["StateMachine::new(ctx)\nconstruction is silent"] --> G
+    C["Ctx::new() per actor\ninject refs; zero internal state"] --> D
+    D["StateMachine::new(ctx)\nconstruction is silent"] --> E
+    E["ChildGroupBuilder::new(strategy)\nspawn_child! for each supervised actor"] --> F
+    F["builder.finish()\nreturns ChildGroup + sup_notify_rx + sup_control_rx"] --> G
     G["sup_machine.start()\nRunning::on_entry calls start_children"] --> H
     H["spawner.must_spawn for supervisor\nrun_supervised_actor tasks running"]
 ```
 
+Canonical wiring order matches [04-static-wiring.md](04-static-wiring.md): build refs -> contexts -> machines -> supervised child group -> supervisor.
+
 ## Example (embassy-demo wiring)
 
-See `examples/embassy-demo/src/main.rs` for the canonical implementation. Summary:
+See `examples/embassy-demo.rs` for the canonical implementation. Summary:
 
 ```rust
 fn setup(spawner: Spawner) {
@@ -74,19 +76,22 @@ fn setup(spawner: Spawner) {
     // Build contexts
     let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref, PingBehavior::default());
     let pong_ctx = PongCtx::new(pong_id, ping_ref);
+    let ping_machine = StateMachine::new(ping_ctx);
+    let pong_machine = StateMachine::new(pong_ctx);
 
     // Supervised group — lifecycle plumbing is hidden
     let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-    bloxide_embassy::spawn_child!(spawner, group, ping_task(StateMachine::new(ping_ctx), ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
-    bloxide_embassy::spawn_child!(spawner, group, pong_task(StateMachine::new(pong_ctx), pong_mbox, pong_id), ChildPolicy::Stop);
+    bloxide_embassy::spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
+    bloxide_embassy::spawn_child!(spawner, group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
     let sup_id = bloxide_embassy::next_actor_id!();
-    let (children, sup_notify_rx) = group.finish();
+    let _sup_control_ref = group.control_ref();
+    let (children, sup_notify_rx, sup_control_rx) = group.finish();
 
     // Supervisor — started directly, no supervised wrapper needed
     let sup_ctx = SupervisorCtx::new(sup_id, children);
     let mut sup_machine = StateMachine::new(sup_ctx);
     sup_machine.start();  // Running::on_entry calls start_children → sends Start to ping and pong
-    spawner.must_spawn(supervisor_task(sup_machine, (sup_notify_rx,)));
+    spawner.must_spawn(supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)));
 }
 ```
 

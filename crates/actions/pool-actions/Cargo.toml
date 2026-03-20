@@ -1,0 +1,18 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "pool-actions"
+version.workspace = true
+edition.workspace = true
+description = "Domain action traits and generic functions for the worker pool example"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+std = ["bloxide-core/std", "bloxide-spawn/std"]
+
+[dependencies]
+bloxide-core  = { workspace = true, features = ["alloc"] }
+bloxide-spawn = { workspace = true }
+pool-messages = { workspace = true }
+bloxide-macros = { workspace = true }

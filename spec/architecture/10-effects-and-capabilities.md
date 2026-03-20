@@ -1,5 +1,10 @@
 # Effects and Capabilities
 
+> **When would I use this?** Use this document when implementing timer
+> patterns, understanding how capabilities flow through the action layer, or
+> working with `TestRuntime` and `VirtualClock` for deterministic testing.
+> For the two-tier trait system overview, see `00-layered-architecture.md`.
+
 The capability system is how Bloxide exposes runtime effects (timers, I/O, storage,
 network) to domain code without coupling blox crates to any specific runtime.
 
@@ -12,7 +17,7 @@ future runtimes.
 
 ## Design Philosophy
 
-Effects are modeled through the **two-tier trait system** (see [00-layered-architecture.md](00-layered-architecture.md)), not as orthogonal HSM state regions or background threads. The HSM engine remains pure: it calls `on_entry`, `on_exit`, and `actions` functions and updates the current state. It never calls runtime methods directly. All side effects originate from user-written functions in those callbacks.
+Effects are modeled through the **two-tier trait system** (see [00-layered-architecture.md](00-layered-architecture.md) for the full reference), not as orthogonal HSM state regions or background threads. The HSM engine remains pure: it calls `on_entry`, `on_exit`, and `actions` functions and updates the current state. It never calls runtime methods directly. All side effects originate from user-written functions in those callbacks.
 
 Blox crates are generic over a single Tier 1 trait: `R: BloxRuntime`. All additional capabilities (timers, supervision) are exposed through **standard library crates** that define accessor traits, action functions, and messages — never as additional runtime bounds on the blox.
 
@@ -42,74 +47,9 @@ Blox crates are generic over a single Tier 1 trait: `R: BloxRuntime`. All additi
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## Two-Tier Trait System
-
-### Tier 1 — Blox-facing
-
-`BloxRuntime` is the **sole trait** that blox crates are generic over. It defines the minimum contract for actor messaging:
-
-```rust
-pub trait BloxRuntime: Clone + Send + 'static {
-    type SendError: Debug + Send + 'static;
-    type TrySendError: Debug + Send + 'static;
-    type Sender<M: Send + 'static>: Clone + Send + Sync + 'static;
-    type Receiver<M: Send + 'static>: Send + 'static;
-    type Stream<M: Send + 'static>: Stream<Item = Envelope<M>> + Send + Unpin + 'static;
-
-    /// Convert a `Receiver` into the stream type consumed by `Mailboxes` impls.
-    fn to_stream<M: Send + 'static>(rx: Self::Receiver<M>) -> Self::Stream<M>;
-
-    fn send_via<M: Send + 'static>(
-        sender: &Self::Sender<M>,
-        envelope: Envelope<M>,
-    ) -> impl Future<Output = Result<(), Self::SendError>> + Send;
-
-    fn try_send_via<M: Send + 'static>(
-        sender: &Self::Sender<M>,
-        envelope: Envelope<M>,
-    ) -> Result<(), Self::TrySendError>;
-}
-```
-
-Blox crates write `R: BloxRuntime` and nothing else. They never add `TimerService`, `SupervisedRunLoop`, or any other runtime-facing trait as a bound.
-
-### Tier 2 — Wiring/runtime-facing
-
-These traits formalize the contract that runtime crates must fulfill. They are **never** used as bounds on blox crates.
-
-```rust
-/// Compile-time capacity channel creation. Used by `channels!` macro.
-pub trait StaticChannelCap: BloxRuntime {
-    fn channel<M: Send + 'static, const N: usize>(id: ActorId) -> (ActorRef<M, Self>, Self::Receiver<M>);
-}
-
-/// Runtime-configurable channel creation. Used by `TestRuntime`.
-pub trait DynamicChannelCap: BloxRuntime {
-    fn alloc_actor_id() -> ActorId;
-    fn channel<M: Send + 'static>(id: ActorId, capacity: usize) -> (ActorRef<M, Self>, Self::Receiver<M>);
-}
-
-/// Dynamic actor spawning. Extends `DynamicChannelCap` for runtimes that can spawn
-/// futures at runtime (Tokio, TestRuntime). Defined in `bloxide-spawn`.
-/// See [11-dynamic-actors.md](11-dynamic-actors.md).
-pub trait SpawnCap: DynamicChannelCap {
-    fn spawn(future: impl Future<Output = ()> + Send + 'static);
-}
-
-/// Timer service run loop. Each runtime bridges `TimerQueue` to its native timer.
-/// Defined in `bloxide-timer`.
-pub trait TimerService: BloxRuntime { /* ... */ }
-
-/// Supervised actor run loop. Each runtime merges lifecycle commands with domain mailboxes.
-/// Defined in `bloxide-supervisor`.
-pub trait SupervisedRunLoop: BloxRuntime { /* ... */ }
-```
-
-**Rule**: blox crates are never generic over `StaticChannelCap`, `DynamicChannelCap`, `TimerService`, or `SupervisedRunLoop`. Channel creation happens only in the wiring layer. Timer and supervision functionality is accessed through standard library accessor traits and action functions.
-
 ## Timer-as-Service Pattern (`bloxide-timer`)
 
-Timers are no longer a runtime capability trait on the blox. Instead, `bloxide-timer` provides a **standard library crate** with both blox-facing and runtime-facing components:
+Timers are a **standard library crate** with both blox-facing and runtime-facing components:
 
 ### Blox-facing (used by blox crates)
 
@@ -170,7 +110,9 @@ pub trait TimerService: BloxRuntime {
 }
 ```
 
-`EmbassyRuntime` implements `TimerService` by spawning `timer_task!` tasks that await `embassy_time::Timer` and deliver events via `try_send`.
+`EmbassyRuntime` and `TokioRuntime` both implement `TimerService`, bridging
+`TimerQueue` to their native timer primitives while keeping the blox-facing API
+identical.
 
 ### Usage in a blox context
 
@@ -180,7 +122,7 @@ A blox that uses timers stores a `timer_ref` (an `ActorRef<TimerCommand, R>`) pl
 #[derive(BloxCtx)]
 pub struct PingCtx<
     R: BloxRuntime,
-    B: HasCurrentTimer + CountsRounds + TracksActiveExits + TracksOperatingExits,
+    B: HasCurrentTimer + CountsRounds,
 > {
     #[self_id]
     pub self_id: ActorId,
@@ -190,7 +132,7 @@ pub struct PingCtx<
     pub self_ref: ActorRef<PingPongMsg, R>,
     #[provides(HasTimerRef<R>)]
     pub timer_ref: ActorRef<TimerCommand, R>,
-    #[delegates(HasCurrentTimer, CountsRounds, TracksActiveExits, TracksOperatingExits)]
+    #[delegates(HasCurrentTimer, CountsRounds)]
     pub behavior: B,
 }
 ```
@@ -199,7 +141,7 @@ Timer state (the current `TimerId`) is held by `B` via the `HasCurrentTimer` tra
 
 ```rust
 // In ping-pong-actions — generic over HasTimerRef + HasCurrentTimer
-pub fn schedule_resume<R, C>(ctx: &mut C, duration_ms: u64) -> TimerId
+pub fn schedule_resume<R, C>(ctx: &mut C, duration_ms: u64)
 where
     R: BloxRuntime,
     C: HasSelfId + HasSelfRef<R> + HasTimerRef<R> + HasCurrentTimer,
@@ -289,10 +231,10 @@ StateMachine::process_event
              └─▶ cancel_timer(ctx, ...)           ← action function call in user code
 ```
 
-**Guards are pure.** `guard: fn(&Ctx, &Event) -> Guard<S>` receives `&Ctx` (shared
-reference), not `&mut Ctx`. This borrow-checks the intent: a guard may inspect
-state to decide which target to transition to, but it must not fire side effects.
-Side effects belong in `actions`.
+**Guards are pure.** `guard: fn(&Ctx, &ActionResults, &Event) -> Guard<S>` receives
+`&Ctx` (shared reference) and `&ActionResults`, not `&mut Ctx`. This borrow-checks
+the intent: a guard may inspect state and action results to decide which target
+to transition to, but it must not fire side effects. Side effects belong in `actions`.
 
 **The engine never calls runtime methods directly.** `StateMachine` is generic
 over `S: MachineSpec` and knows nothing about `BloxRuntime`, `TimerService`, or any
@@ -307,17 +249,18 @@ logic can be unit-tested without an executor. `TestRuntime` lives in
 - `BloxRuntime` — unbounded in-memory queues; `try_send` never returns an error.
 - `DynamicChannelCap` — creates `(ActorRef, TestReceiver)` pairs on demand.
 
-Timer testing is handled inline per test harness. `TestRuntime` itself has no
-`advance_time` method. Instead, a test harness drains pending `TimerCommand`
-messages from a `TestReceiver<TimerCommand>`, fires the callbacks manually using
-a `TimerQueue`, and dispatches the resulting events to the state machine. This
-keeps timer simulation deterministic without requiring any executor.
+Timer testing is not built into `TestRuntime` itself, but `bloxide-timer`
+provides a reusable std-only helper: `bloxide_timer::test_utils::VirtualClock`.
+It owns the timer command receiver, drains pending `TimerCommand`s into a
+`TimerQueue`, and fires ready callbacks when time advances. This keeps timer
+simulation deterministic without requiring any executor or creating a circular
+dependency from `bloxide-core` back to `bloxide-timer`.
 
 ### Typical test pattern
 
 ```rust
 use bloxide_core::{DynamicChannelCap, TestRuntime};
-use bloxide_timer::TimerQueue;
+use bloxide_timer::{test_utils::VirtualClock, TimerCommand};
 
 #[test]
 fn paused_state_resumes_after_timeout() {
@@ -337,16 +280,9 @@ fn paused_state_resumes_after_timeout() {
     machine.start();
     // ... drive rounds until Paused ...
 
-    // Manually advance the timer by processing pending commands
-    let mut queue = TimerQueue::new();
-    let mut now_ms = 0u64;
-    for cmd in timer_rx.drain_envelopes() {
-        queue.handle_command(cmd.1, now_ms);
-    }
-    now_ms += PAUSE_DURATION_MS;
-    for deliver in queue.drain_expired(now_ms) {
-        deliver();  // fires try_send to self_ref, enqueuing Resume
-    }
+    // Manually advance the virtual clock; ready callbacks enqueue Resume.
+    let mut clock = VirtualClock::new(timer_rx);
+    clock.advance(PAUSE_DURATION_MS);
 
     // Resume should now be in the mailbox
     let msgs = to_ping_rx.drain_payloads();
@@ -366,12 +302,16 @@ with `no_std`:
 |---|---|
 | Actor ID generation (production) | Proc-macro counter assigns literal IDs at compile time via `channels!` and `next_actor_id!`; no runtime counter |
 | Actor ID generation (test) | `TestRuntime` uses a runtime `AtomicUsize` via `DynamicChannelCap::alloc_actor_id()` |
-| Timer ID generation | `TimerId` assigned by `set_timer()` in `bloxide-timer`; monotonic counter |
+| Timer ID generation | `TimerId` assigned by `set_timer()` in `bloxide-timer`; uses core atomics on pointer-atomic targets and a `critical-section`-protected counter otherwise |
 | `TestRuntime` | Uses `std` (enabled by the `std` feature); only used in host tests |
 | Action crates | `#![no_std]`; call only trait methods; no OS imports |
 | Core traits | Defined in `bloxide-core` which is `#![no_std]` |
-| `critical-section` | Available if shared mutable state in ISR context is required; not used by core |
+| `critical-section` | Used by `bloxide-timer` as the fallback for targets without pointer-sized atomics; embedded apps must provide an implementation via their HAL/runtime stack |
 
 **`bloxide-core` invariant**: zero OS, Tokio, or Embassy imports in any file.
 The only permitted external dependency is `futures-core` for the `Stream` bound on
 `BloxRuntime::Stream`.
+
+For embedded targets such as ESP32-C3 (`riscv32imc-unknown-none-elf`), this keeps
+`bloxide-timer` buildable without hardware atomics while avoiding target-specific
+`portable-atomic` cfg requirements in the framework itself.

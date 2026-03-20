@@ -2,6 +2,17 @@
 
 This directory is the single source of truth for all architecture decisions, state machine designs, and blox contracts. Write the spec before writing code.
 
+## Recommended Reading Order (New Blox Authors)
+
+When you are new to the codebase, this order minimizes context-switching:
+
+1. [architecture/00-layered-architecture.md](architecture/00-layered-architecture.md)
+2. [architecture/02-hsm-engine.md](architecture/02-hsm-engine.md)
+3. [architecture/12-action-crate-pattern.md](architecture/12-action-crate-pattern.md)
+4. [architecture/05-handler-patterns.md](architecture/05-handler-patterns.md)
+5. [architecture/06-actions.md](architecture/06-actions.md)
+6. [architecture/09-application.md](architecture/09-application.md)
+
 ## Spec-Driven Development Workflow
 
 ```
@@ -30,14 +41,15 @@ spec/
     07-typed-mailboxes.md            ← Mailboxes trait, priority ordering
     08-supervision.md                ← lifecycle messages, ChildPolicy, GroupShutdown, SupervisedRunLoop
     09-application.md                ← wiring patterns, prelude imports, setup() example
-    09-effects-and-capabilities.md   ← effects, capabilities, two-tier traits, timer-as-service
-    10-action-crate-pattern.md       ← action crate pattern, four-layer architecture
+    10-effects-and-capabilities.md   ← effects, capabilities, two-tier traits, timer-as-service
+    11-dynamic-actors.md             ← dynamic actor creation, peer control, factory injection
+    12-action-crate-pattern.md       ← action crate pattern, five-layer architecture
   templates/
     blox-spec.md                     ← copy this to start a new blox spec
   bloxes/
     ping.md                          ← spec for the Ping blox
     pong.md                          ← spec for the Pong blox
-    supervisor.md                    ← spec for the Supervisor blox
+    (supervisor is documented in architecture/08-supervision.md)
 ```
 
 ## Quick Navigation
@@ -54,9 +66,10 @@ spec/
 | Understand typed mailboxes and priority ordering | [architecture/07-typed-mailboxes.md](architecture/07-typed-mailboxes.md) |
 | Understand the lifecycle / supervision model | [architecture/08-supervision.md](architecture/08-supervision.md) |
 | See a complete wiring example | [architecture/09-application.md](architecture/09-application.md) |
-| Understand effects, capabilities, and timers | [architecture/09-effects-and-capabilities.md](architecture/09-effects-and-capabilities.md) |
-| Understand the action crate pattern (four-layer architecture) | [architecture/10-action-crate-pattern.md](architecture/10-action-crate-pattern.md) |
-| Create a new blox | Copy [templates/blox-spec.md](templates/blox-spec.md) to `bloxes/<name>.md` |
+| Understand effects, capabilities, and timers | [architecture/10-effects-and-capabilities.md](architecture/10-effects-and-capabilities.md) |
+| Understand dynamic actors and factory injection | [architecture/11-dynamic-actors.md](architecture/11-dynamic-actors.md) |
+| Understand the action crate pattern (five-layer architecture) | [architecture/12-action-crate-pattern.md](architecture/12-action-crate-pattern.md) |
+| Create a new blox | Copy [templates/blox-spec.md](templates/blox-spec.md) to `spec/bloxes/<name>.md` |
 | Read the Ping spec | [bloxes/ping.md](bloxes/ping.md) |
 | Read the Pong spec | [bloxes/pong.md](bloxes/pong.md) |
 | Read the Supervisor spec | [architecture/08-supervision.md](architecture/08-supervision.md) |
@@ -65,7 +78,7 @@ spec/
 1. Copy `spec/templates/blox-spec.md` → `spec/bloxes/<your-blox-name>.md`
 2. Fill in every section (delete the instructional blockquotes as you go)
 3. Get the spec reviewed before creating any Rust code
-4. Create crates: `bloxes/<your-blox-name>/` and (if needed) `messages/<your-blox-name>-messages/`
+4. Create crates under `crates/`: `crates/bloxes/<your-blox-name>/`, and when needed `crates/messages/<your-blox-name>-messages/`, `crates/actions/<your-blox-name>-actions/`, and an impl crate such as `crates/impl/<name>/` consumed by the wiring binary
 5. Write unit tests in the blox crate using `TestRuntime`, one test per acceptance criterion
 6. Implement `MachineSpec` to make the tests pass
 7. Add wiring in the application crate

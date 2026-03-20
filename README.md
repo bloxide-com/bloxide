@@ -1,9 +1,5 @@
 # Bloxide
 
-<p align="center">
-  <img src="bloxide.jpg" alt="Bloxide" width="600" />
-</p>
-
 **Hierarchical state machine actors for Rust — runtime-agnostic, from Embassy bare-metal to Tokio.**
 
 [![CI](https://github.com/bloxide-com/bloxide/actions/workflows/lint-and-test.yml/badge.svg)](https://github.com/bloxide-com/bloxide/actions/workflows/lint-and-test.yml)
@@ -18,9 +14,18 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 
 - **Hierarchical state machines** — composite states, event bubbling, entry/exit callbacks, run-to-completion dispatch
 - **Runtime-agnostic actors** — blox code depends only on `bloxide-core`; never imports a runtime
-- **Built-in supervisor** — reusable OTP-inspired supervisor blox manages child actor lifecycle out of the box
+- **Built-in supervision** — reusable OTP-inspired `SupervisorSpec<R>` and `bloxide-supervisor` primitives manage child actor lifecycle out of the box
 - **Tokio + Embassy runtimes** — `bloxide-tokio` and `bloxide-embassy` (`no_std`) ship ready to use; each provides async channels, supervision, and timer services wired to its executor
 - **Dynamic actors** — spawn new actors at runtime with factory injection and automatic peer introduction (`bloxide-spawn`)
+
+---
+
+## Start Here
+
+- Read [START_HERE.md](START_HERE.md) for the three-layer principle, five-layer application structure, and two-tier trait system in one place.
+- Use [skills/building-with-bloxide/SKILL.md](skills/building-with-bloxide/SKILL.md) as the step-by-step build workflow.
+- Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the macro and API reference while you build.
+- For the smallest runnable example, start with `cargo run --example tokio-minimal-demo` (now fully five-layered via `counter-*` crates).
 
 ---
 
@@ -45,14 +50,17 @@ bloxide_tokio::spawn_child!(group, pong_task(pong_machine, pong_mbox, pong_id),
     ChildPolicy::Stop);
 
 // Start the supervisor and run until shutdown
-let (children, sup_notify_rx) = group.finish();
+let _sup_control_ref = group.control_ref();
+let (children, sup_notify_rx, sup_control_rx) = group.finish();
 let sup_ctx = SupervisorCtx::new(bloxide_tokio::next_actor_id!(), children);
 let mut sup_machine = StateMachine::<SupervisorSpec<TokioRuntime>>::new(sup_ctx);
 sup_machine.start();
-run_root(sup_machine, (sup_notify_rx,)).await;
+run_root(sup_machine, (sup_notify_rx, sup_control_rx)).await;
 ```
 
 The blox crates (`PingSpec`, `PongSpec`) are generic over `R: BloxRuntime` — the same code runs on Embassy by swapping `TokioRuntime` for `EmbassyRuntime`.
+
+**Unsupervised vs supervised:** `run_actor_to_completion` calls `machine.start()` internally and runs until `DispatchOutcome::Transition`/`Started` hits a terminal or error state, or `DispatchOutcome::Reset`. Supervised actors use `run_supervised_actor`, which waits for `LifecycleCommand::Start` from the parent before calling `start()`; the supervisor drives `reset()` via Reset/Stop. See `tokio-minimal-demo` for unsupervised layered wiring, and `tokio-demo` for supervised layered wiring.
 
 ---
 
@@ -60,27 +68,28 @@ The blox crates (`PingSpec`, `PongSpec`) are generic over `R: BloxRuntime` — t
 
 ```
 bloxide/
-├── crates/            # core library crates
-│   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, TestRuntime (no_std)
+├── crates/            # framework + layered application crates
+│   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, std-gated TestRuntime
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
 │   ├── bloxide-macros/    # proc macros: #[derive(StateTopology)], transitions!, #[blox_event]
 │   ├── bloxide-spawn/     # dynamic actor spawning and peer introduction
 │   ├── bloxide-supervisor/ # reusable OTP-style supervisor
-│   └── bloxide-timer/     # timer service: set_timer / cancel_timer
+│   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
+│   ├── messages/          # shared message crates (ping-pong, pool, counter)
+│   ├── actions/           # action trait crates (ping-pong, pool, counter)
+│   ├── bloxes/            # ping, pong, worker, pool, counter
+│   └── impl/              # concrete behavior/factory crates for wiring demos
 ├── runtimes/          # runtime implementations
 │   ├── bloxide-embassy/   # Embassy runtime (embedded target)
 │   └── bloxide-tokio/     # Tokio runtime (std target)
-├── examples/          # worked examples (ping-pong, pool/worker)
-│   ├── messages/          # shared message crates
-│   ├── actions/           # action trait crates
-│   ├── bloxes/            # ping, pong, worker, pool
-│   ├── embassy-demo-impl/ # concrete behavior types (e.g. PingBehavior)
-│   ├── embassy-demo/
-│   ├── tokio-demo/
-│   └── tokio-pool-demo/
+├── examples/          # top-level runnable example entrypoints
+│   ├── embassy-demo.rs
+│   ├── tokio-minimal-demo.rs
+│   ├── tokio-demo.rs
+│   └── tokio-pool-demo.rs
 ├── spec/              # architecture docs and per-blox specs
-│   ├── architecture/      # 00–11 design docs
-│   ├── bloxes/            # per-blox specs (ping, pong, supervisor)
+│   ├── architecture/      # numbered design docs
+│   ├── bloxes/            # per-blox specs (ping, pong)
 │   └── templates/         # blox-spec template
 └── .github/workflows/ # CI: copyright, fmt, clippy, tests, rustdoc
 ```
@@ -90,14 +99,17 @@ bloxide/
 ## Running the examples
 
 ```bash
+# Minimal single-actor Tokio example
+cargo run --example tokio-minimal-demo
+
 # Ping-pong with OTP supervision, timer-driven pause, and full HSM tracing
-RUST_LOG=trace cargo run --bin tokio-demo
+RUST_LOG=trace cargo run --example tokio-demo
 
 # Worker pool with dynamic spawning
-RUST_LOG=info cargo run --bin tokio-pool-demo
+RUST_LOG=info cargo run --example tokio-pool-demo
 
 # Embassy (std target, simulates embedded)
-RUST_LOG=trace cargo run --bin embassy-demo
+RUST_LOG=trace cargo run --example embassy-demo
 ```
 
 ---
@@ -106,14 +118,14 @@ RUST_LOG=trace cargo run --bin embassy-demo
 
 | Crate | Path | `no_std` | Purpose |
 |---|---|:---:|---|
-| `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, `TestRuntime` |
+| `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, std-gated `TestRuntime` |
 | `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(StateTopology)]`, `#[derive(BloxCtx)]`, `#[derive(EventTag)]`, `transitions!`, `#[blox_event]` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer` |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `ChildGroup`, `ChildPolicy`, `GroupShutdown` |
 | `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | Dynamic actor spawning and peer introduction |
-| `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `actor_task!`, `actor_task_supervised!`, `root_task!`, `timer_task!`, `spawn_child!`, `spawn_timer!` |
-| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!` |
+| `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `next_actor_id!`, `actor_task!`, `actor_task_supervised!`, `root_task!`, `timer_task!`, `spawn_child!`, `spawn_timer!`, `run_root` |
+| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `next_actor_id!`, `actor_task!`, `actor_task_supervised!`, `root_task!`, `spawn_child!`, `spawn_timer!`, `run_root` |
 
 ¹ Proc-macro crates compile for the host; they have no `no_std` impact on the target binary.
 

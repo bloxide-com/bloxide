@@ -1,12 +1,16 @@
 # Handler and Topology Patterns
 
+> **When would I use this?** Use this document when implementing event
+> handlers, transition rules, or state topologies for a blox. For the
+> dispatch algorithm and lifecycle handling, see `02-hsm-engine.md`.
+
 This document defines named, reusable patterns for event handler rules and blox state topologies. When building a blox, refer to these patterns by name in your spec and implementation. AI agents should use these patterns as the canonical vocabulary for describing blox behavior.
 
 ---
 
 ## Handler Model
 
-Each state's `StateFns` contains a `transitions` slice of `TransitionRule` structs. The engine evaluates rules in declaration order; the first matching rule wins. If no rule matches, the event implicitly bubbles to the parent state.
+Each state's `StateFns` contains a `transitions` slice of `TransitionRule` structs. The engine evaluates rules in declaration order; the first matching rule wins. **Bubbling is implicit**: if no rule matches in the current state, the engine moves to the parent and evaluates its rules. No manual "return Parent" — bubbling happens automatically.
 
 ```rust
 pub struct TransitionRule<S: MachineSpec, G> {
@@ -17,7 +21,7 @@ pub struct TransitionRule<S: MachineSpec, G> {
 }
 ```
 
-The ordering enforces the invariant: **actions always precede the guard**. The borrow checker enforces that **guards cannot mutate context** (`&Ctx`, not `&mut Ctx`).
+The ordering enforces the invariant: **actions always precede the guard**. The borrow checker enforces that **guards cannot mutate context** (`&Ctx`, not `&mut Ctx`). Each action returns `ActionResult`; the engine collects them into `ActionResults` before calling the guard. Guards receive `&ActionResults` to inspect failures (e.g. `results.any_failed()`).
 
 Root-level rules use `StateRule<S>`, the same type as state-level rules — both use `Guard<S>`. `Guard::Reset` is available at all levels — state rules and root rules have identical guard capabilities.
 
@@ -123,9 +127,12 @@ Use when: context state (not the event) determines the transition, and the event
 
 ### 6. Bubble (Implicit)
 
-No rule is needed. When no rule matches, the engine automatically bubbles the event to the parent state.
+No rule is needed. When no rule matches in the current state, the engine automatically bubbles the event to the parent state (moves the cursor up and evaluates that state's rules).
 
-The "Bubble" pattern is the **absence of a rule**. To make bubbling explicit in code, simply do not add a rule for the event variant.
+The "Bubble" pattern is the **absence of a rule**. Do not add a catch-all rule that manually returns a parent — bubbling is implicit. Simply omit a rule for the event variant.
+
+> See `AGENTS.md` invariant #8 for the formal constraint: never add a catch-all
+> rule that manually returns a parent; bubbling is implicit.
 
 Use when: a leaf state does not handle an event and wants its parent (or root) to handle it.
 
@@ -137,7 +144,10 @@ Use when: a leaf state does not handle an event and wants its parent (or root) t
 
 Root rules use `StateRule<S>` with `Guard` (`Transition`, `Stay`, or `Reset`). Root rules are the same type as state-level rules — `root_transitions()` returns `&'static [StateRule<Self>]`.
 
-**In the new runtime model, supervised actors do not need lifecycle root rules.** The runtime handles Start and Terminate commands via `machine.start()` and `machine.reset()` through a runtime-internal channel — actors never see lifecycle commands as domain events.
+> **Canonical source for lifecycle handling**: `spec/architecture/02-hsm-engine.md`
+> documents how lifecycle commands (Start, Reset, Stop, Ping) flow through
+> `dispatch()` at the VirtualRoot level. Supervised actors return `&[]` from
+> `root_transitions()` — lifecycle is handled by engine defaults.
 
 `root_transitions()` has a default empty implementation (`&[]`) and is **optional** for most actors. Override it only if you need fallback rules that apply when an event bubbles past all user-declared states:
 
@@ -148,7 +158,7 @@ fn root_transitions() -> &'static [StateRule<Self>] { &[] }
 
 ### `reset` in State-Level Transitions
 
-Since `Guard::Reset` is available in any transition rule, actors can self-terminate directly from a state handler without root rules. When a guard returns `Reset`, the engine fires `on_exit` for every state from the current leaf up to the topmost ancestor (full LCA exit chain), then calls `on_init_entry`. This is the same code path used by `machine.reset()`.
+Since `Guard::Reset` is available in any transition rule, actors can self-terminate directly from a state handler without root rules. When a guard returns `Reset`, the engine fires `on_exit` for every state from the current leaf up to the topmost ancestor (full LCA exit chain), then calls `on_init_entry`. This is the same code path used by `DispatchOutcome::Reset`.
 
 ```rust
 // Supervisor's ShuttingDown state: reset when all children have shut down
@@ -252,8 +262,8 @@ fn is_terminal(state: &MyState) -> bool {
 ```
 
 The `Done` state itself needs only an `on_entry` for any local teardown. The `transitions`
-slice can be empty — all events silently drop. The runtime will send `Terminate` to
-trigger `machine.reset()` when the supervisor is ready.
+slice can be empty — all events silently drop. The runtime will send `Reset` to
+trigger the reset code path when the supervisor is ready.
 
 **Example**: Ping's `Done` state.
 
@@ -334,3 +344,10 @@ transitions![
 In `guard(ctx, results) { }` blocks, `ctx` is `&Ctx` (read-only — no mutation possible).
 In `actions [fn1, fn2]` slices, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.
 The `reset` outcome triggers the full LCA exit chain (leaf → root) followed by `on_init_entry`.
+
+## Related Docs
+
+- **Action functions** → `spec/architecture/06-actions.md`
+- **transitions! macro syntax** → `skills/building-with-bloxide/reference.md`
+- **Dispatch algorithm and lifecycle** → `spec/architecture/02-hsm-engine.md`
+- **Examples in practice** → `spec/bloxes/ping.md`, `spec/bloxes/pong.md`

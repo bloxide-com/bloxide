@@ -1,0 +1,28 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "pool-blox"
+version.workspace = true
+edition.workspace = true
+description = "Pool actor blox for the worker pool example — runtime-agnostic"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["std"]
+std = [
+    "bloxide-core/std",
+    "bloxide-spawn/std",
+    "pool-actions/std",
+]
+
+[dependencies]
+bloxide-core    = { workspace = true, features = ["alloc"] }
+bloxide-spawn   = { workspace = true }
+bloxide-macros  = { workspace = true }
+bloxide-log     = { workspace = true }
+pool-messages   = { workspace = true }
+pool-actions    = { workspace = true }
+
+[dev-dependencies]
+bloxide-core    = { workspace = true, features = ["std"] }
+bloxide-spawn   = { workspace = true, features = ["std"] }

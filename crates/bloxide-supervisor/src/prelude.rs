@@ -1,9 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 pub use crate::{
     actions::HasChildren,
+    control::{RegisterChild, SupervisorControl},
     event::SupervisorEvent,
-    lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     registry::{ChildGroup, ChildPolicy, GroupShutdown},
-    service::SupervisedRunLoop,
     supervisor::{SupervisorCtx, SupervisorSpec, SupervisorState},
 };
+pub use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};

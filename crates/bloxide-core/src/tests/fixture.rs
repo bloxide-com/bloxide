@@ -1,38 +1,13 @@
 // Copyright 2025 Bloxide, all rights reserved
-/// Shared HSM fixture for engine unit tests.
-///
-/// Provides a minimal but complete `MachineSpec` implementation (`TSpec`) used
-/// by all engine tests. The topology exercises every structural case the engine
-/// must handle:
-///
-/// ```text
-/// [VirtualRoot — engine implicit]
-/// ├── Top       (composite, top-level)
-/// │   ├── A     (leaf)
-/// │   └── B     (leaf)
-/// └── Other     (composite, top-level)
-///     └── C     (leaf)
-/// ```
-///
-/// `initial_state()` = `A` (first operational leaf after `Start`).
-///
-/// This fixture is the canonical example of how to build a `TestRuntime`-based
-/// test harness. Blox-level tests follow the same pattern — see
-/// `skills/spec-driven-development/SKILL.md` and `spec/bloxes/<name>.md`.
 use crate::engine::StateMachine;
+use crate::event_tag::LifecycleEvent;
+use crate::lifecycle::LifecycleCommand;
 use crate::spec::{MachineSpec, StateFns};
 use crate::topology::LeafState;
 use crate::transition::{ActionResult, Guard, StateRule};
 use std::cell::RefCell;
 use std::thread_local;
 use std::vec::Vec;
-
-// ── Shared event log ──────────────────────────────────────────────────────────
-//
-// Thread-local sink for on_entry / on_exit callbacks. Tests call `log(msg)`
-// inside handlers and `take_log()` to assert the firing sequence.
-// Using a thread-local (rather than storing in Ctx) keeps `TCtx` trivial
-// and makes the log independent of the machine's borrow.
 
 thread_local! {
     static LOG: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
@@ -51,15 +26,10 @@ pub fn take_log() -> Vec<&'static str> {
     })
 }
 
-// ── States ────────────────────────────────────────────────────────────────────
-//
-// Root and Init are engine-implicit — never declared in the user's State enum.
-// TState implements StateTopology manually so we can test the engine independently
-// of proc-macro infrastructure.
-
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Default)]
 pub enum TState {
     Top,
+    #[default]
     A,
     B,
     Other,
@@ -102,34 +72,29 @@ impl crate::topology::StateTopology for TState {
     }
 }
 
-// ── Events ────────────────────────────────────────────────────────────────────
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum TEvent {
+    Lifecycle(LifecycleCommand),
     GoB,
     GoC,
     Unhandled,
     UnhandledDeep,
     NoOp,
     SelfLoop,
-    /// Satisfied by `is_start` — transitions out of Init into `initial_state()` (A).
-    Start,
-    /// Triggers `Guard::Reset` from root rules.
     Reset,
-    /// Triggers an action that returns `ActionResult::Err`, used to test the error guard path.
     TriggerErr,
 }
 
 impl crate::event_tag::EventTag for TEvent {
     fn event_tag(&self) -> u8 {
         match self {
+            TEvent::Lifecycle(_) => crate::event_tag::LIFECYCLE_TAG,
             TEvent::GoB => 0,
             TEvent::GoC => 1,
             TEvent::Unhandled => 2,
             TEvent::UnhandledDeep => 3,
             TEvent::NoOp => 4,
             TEvent::SelfLoop => 5,
-            TEvent::Start => 6,
             TEvent::Reset => 7,
             TEvent::TriggerErr => 8,
         }
@@ -147,11 +112,16 @@ impl TEvent {
     pub const TRIGGER_ERR_TAG: u8 = 8;
 }
 
-// ── Context ───────────────────────────────────────────────────────────────────
+impl LifecycleEvent for TEvent {
+    fn as_lifecycle_command(&self) -> Option<LifecycleCommand> {
+        match self {
+            TEvent::Lifecycle(cmd) => Some(*cmd),
+            _ => None,
+        }
+    }
+}
 
 pub struct TCtx;
-
-// ── Spec ──────────────────────────────────────────────────────────────────────
 
 pub struct TSpec;
 
@@ -161,14 +131,8 @@ impl MachineSpec for TSpec {
     type Ctx = TCtx;
     type Mailboxes<R: crate::capability::BloxRuntime> = crate::mailboxes::NoMailboxes;
 
-    // HANDLER_TABLE uses TState index order (Top=0, A=1, B=2, Other=3, C=4)
-    const HANDLER_TABLE: &'static [&'static crate::spec::StateFns<Self>] = &[
-        &TOP_FNS,   // index 0 = Top
-        &A_FNS,     // index 1 = A
-        &B_FNS,     // index 2 = B
-        &OTHER_FNS, // index 3 = Other
-        &C_FNS,     // index 4 = C
-    ];
+    const HANDLER_TABLE: &'static [&'static crate::spec::StateFns<Self>] =
+        &[&TOP_FNS, &A_FNS, &B_FNS, &OTHER_FNS, &C_FNS];
 
     fn initial_state() -> TState {
         TState::A
@@ -182,16 +146,10 @@ impl MachineSpec for TSpec {
         log("Init:exit");
     }
 
-    fn is_start(event: &TEvent) -> bool {
-        matches!(event, TEvent::Start)
-    }
-
-    fn root_transitions() -> &'static [StateRule<TSpec>] {
+    fn root_transitions() -> &'static [StateRule<Self>] {
         &ROOT_RULES
     }
 }
-
-// ── Root rules ────────────────────────────────────────────────────────────────
 
 pub static ROOT_RULES: [StateRule<TSpec>; 2] = [
     StateRule {
@@ -210,8 +168,6 @@ pub static ROOT_RULES: [StateRule<TSpec>; 2] = [
         guard: |_, _, _| Guard::Reset,
     },
 ];
-
-// ── State function tables ─────────────────────────────────────────────────────
 
 pub static TOP_FNS: StateFns<TSpec> = StateFns {
     on_entry: &[|_| log("Top:entry")],
@@ -291,20 +247,16 @@ pub static C_FNS: StateFns<TSpec> = StateFns {
     transitions: &[],
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Create a machine that is in operational state A (post-Start).
 pub fn machine_in_a() -> StateMachine<TSpec> {
     let mut m = StateMachine::<TSpec>::new(TCtx);
-    m.dispatch(TEvent::Start);
-    take_log(); // discard "Init:exit", "Top:entry", "A:entry"
+    m.dispatch(TEvent::Lifecycle(LifecycleCommand::Start));
+    take_log();
     m
 }
 
-/// Create a machine that is in operational state C (under Other).
 pub fn machine_in_c() -> StateMachine<TSpec> {
     let mut m = machine_in_a();
     m.dispatch(TEvent::GoC);
-    take_log(); // discard transition logs
+    take_log();
     m
 }

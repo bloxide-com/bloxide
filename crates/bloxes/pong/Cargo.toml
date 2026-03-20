@@ -1,0 +1,22 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "pong-blox"
+version.workspace = true
+edition.workspace = true
+description = "Pong actor blox — runtime-agnostic"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["std"]
+std = ["bloxide-core/std"]
+
+[dependencies]
+bloxide-core        = { workspace = true, features = ["alloc"] }
+bloxide-macros      = { workspace = true }
+bloxide-log         = { workspace = true }
+ping-pong-actions   = { workspace = true }
+ping-pong-messages  = { workspace = true }
+
+[dev-dependencies]
+bloxide-core        = { workspace = true, features = ["std"] }

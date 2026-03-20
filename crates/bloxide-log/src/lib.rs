@@ -29,6 +29,7 @@
 
 // Re-export backends so macros can reference them via $crate paths.
 // This means calling crates don't need log/defmt as direct dependencies.
+pub mod prelude;
 
 #[cfg(feature = "defmt")]
 #[doc(hidden)]
@@ -44,7 +45,11 @@ pub use log as __log;
 #[macro_export]
 macro_rules! blox_log_trace {
     ($actor_id:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {
-        $crate::__defmt::trace!(concat!("[{}] ", $fmt), $actor_id $(, $arg)*)
+        $crate::__defmt::trace!(
+            "[{}] {}",
+            $actor_id,
+            $crate::__defmt::Display2Format(&core::format_args!($fmt $(, $arg)*))
+        )
     };
 }
 
@@ -52,7 +57,11 @@ macro_rules! blox_log_trace {
 #[macro_export]
 macro_rules! blox_log_info {
     ($actor_id:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {
-        $crate::__defmt::info!(concat!("[{}] ", $fmt), $actor_id $(, $arg)*)
+        $crate::__defmt::info!(
+            "[{}] {}",
+            $actor_id,
+            $crate::__defmt::Display2Format(&core::format_args!($fmt $(, $arg)*))
+        )
     };
 }
 
@@ -60,7 +69,11 @@ macro_rules! blox_log_info {
 #[macro_export]
 macro_rules! blox_log_debug {
     ($actor_id:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {
-        $crate::__defmt::debug!(concat!("[{}] ", $fmt), $actor_id $(, $arg)*)
+        $crate::__defmt::debug!(
+            "[{}] {}",
+            $actor_id,
+            $crate::__defmt::Display2Format(&core::format_args!($fmt $(, $arg)*))
+        )
     };
 }
 
@@ -68,7 +81,11 @@ macro_rules! blox_log_debug {
 #[macro_export]
 macro_rules! blox_log_warn {
     ($actor_id:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {
-        $crate::__defmt::warn!(concat!("[{}] ", $fmt), $actor_id $(, $arg)*)
+        $crate::__defmt::warn!(
+            "[{}] {}",
+            $actor_id,
+            $crate::__defmt::Display2Format(&core::format_args!($fmt $(, $arg)*))
+        )
     };
 }
 
@@ -76,7 +93,11 @@ macro_rules! blox_log_warn {
 #[macro_export]
 macro_rules! blox_log_error {
     ($actor_id:expr, $fmt:literal $(, $arg:expr)* $(,)?) => {
-        $crate::__defmt::error!(concat!("[{}] ", $fmt), $actor_id $(, $arg)*)
+        $crate::__defmt::error!(
+            "[{}] {}",
+            $actor_id,
+            $crate::__defmt::Display2Format(&core::format_args!($fmt $(, $arg)*))
+        )
     };
 }
 

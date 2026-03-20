@@ -3,13 +3,27 @@ use proc_macro2::{Delimiter, Ident, TokenStream as TokenStream2, TokenTree};
 use quote::quote;
 
 // ── Shorthand pattern detection ───────────────────────────────────────────────
+//
+// Pattern classification determines how a transition arm's pattern is matched:
+//
+// **Full-event patterns** — The pattern matches the entire event directly.
+//   Examples: `PingEvent::Msg(Envelope { ... })`, `_`, `SomeEvent::GoB`.
+//   Used when the pattern is a full event enum variant or wildcard.
+//
+// **Shorthand patterns** — The pattern matches only the inner payload; the macro
+//   generates the appropriate accessor call:
+//   - `*Msg`  (ident ending with "Msg")  → `msg_payload()`  — matches `Option<&Msg>`
+//   - `*Ctrl` (ident ending with "Ctrl") → `ctrl_payload()` — matches `Option<&Ctrl>`
+//
+// Shorthand patterns like `PingPongMsg::Pong(pong)` are expanded to:
+//   `__ev.msg_payload().map_or(false, |__m| matches!(__m, PingPongMsg::Pong(_)))`
+// and the binding `pong` is extracted in guards via `msg_payload()` / `ctrl_payload()`.
 
 /// How a transition arm's pattern should be interpreted.
 ///
-/// The project convention is:
-/// - **message enums** end with `Msg`  → `MsgShorthand`  (access via `.msg_payload()`)
-/// - **ctrl enums**    end with `Ctrl` → `CtrlShorthand` (access via `.ctrl_payload()`)
-/// - **event enums**   end with `Event`, or wildcard `_` → `FullEvent` (direct pattern match)
+/// - **message enums** (`*Msg`)  → `MsgShorthand`  — matching via `.msg_payload()`
+/// - **ctrl enums** (`*Ctrl`)   → `CtrlShorthand` — matching via `.ctrl_payload()`
+/// - **event enums** / wildcard → `FullEvent`    — direct pattern match on the event
 #[derive(Copy, Clone)]
 enum PatternKind {
     FullEvent,
@@ -444,6 +458,14 @@ fn parse_brace_body(
                 guard: |_, _, _| ::bloxide_core::transition::Guard::Reset,
             }
         }),
+        TokenTree::Ident(kw) if kw == "fail" => Ok(quote! {
+            #rule_type {
+                event_tag: #event_tag_expr,
+                matches: #matches_expr,
+                actions: #actions_ts,
+                guard: |_, _, _| ::bloxide_core::transition::Guard::Fail,
+            }
+        }),
         TokenTree::Ident(kw) if kw == "transition" => {
             i += 1;
             let state_tokens: TokenStream2 = tokens[i..].iter().cloned().collect();
@@ -714,6 +736,9 @@ fn build_guard_target(tokens: &[TokenTree], _is_root: bool) -> TokenStream2 {
             }
             if kw == "reset" {
                 return quote! { ::bloxide_core::transition::Guard::Reset };
+            }
+            if kw == "fail" {
+                return quote! { ::bloxide_core::transition::Guard::Fail };
             }
         }
     }

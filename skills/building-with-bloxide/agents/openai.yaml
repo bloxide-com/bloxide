@@ -1,0 +1,7 @@
+interface:
+  display_name: "Building with Bloxide"
+  short_description: "Build bloxes (actors) with Bloxide framework"
+  default_prompt: "Use $building-with-bloxide to create or modify this blox."
+
+policy:
+  allow_implicit_invocation: true

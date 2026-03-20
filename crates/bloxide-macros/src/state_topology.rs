@@ -258,7 +258,7 @@ pub(crate) fn derive_state_topology_inner(input: &DeriveInput) -> syn::Result<To
         })
         .collect();
 
-    // Generate as_index() — just cast discriminant to usize
+    // Generate as_index() — declaration-order index (0..STATE_COUNT-1) for HANDLER_TABLE
     let as_index_arms: Vec<TokenStream2> = variant_info
         .iter()
         .map(|v| {

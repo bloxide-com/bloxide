@@ -1,0 +1,11 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "counter-messages"
+version.workspace = true
+edition.workspace = true
+description = "Domain message types for the layered counter demo"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxide-macros = { path = "../../bloxide-macros" }

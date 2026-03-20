@@ -4,6 +4,8 @@ name = "bloxide-log"
 version.workspace = true
 edition.workspace = true
 description = "Feature-gated logging macros for bloxide (log / defmt backends)"
+repository.workspace = true
+license.workspace = true
 
 [features]
 default = []

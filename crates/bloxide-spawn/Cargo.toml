@@ -4,10 +4,13 @@ name = "bloxide-spawn"
 version.workspace = true
 edition.workspace = true
 description = "Dynamic actor spawning and peer introduction for bloxide"
+repository.workspace = true
+license.workspace = true
 
 [features]
 default = []
 std = ["bloxide-core/std"]
 
 [dependencies]
-bloxide-core = { path = "../bloxide-core" }
+bloxide-core = { workspace = true }
+bloxide-macros = { workspace = true }

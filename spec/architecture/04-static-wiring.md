@@ -9,7 +9,7 @@ flowchart TD
     A["channels! per domain actor\nreturns refs_tuple + mailboxes_tuple"] --> B
     B["Ctx::new() per actor\ninject ActorRefs"] --> C
     C["ChildGroupBuilder::new(strategy)\nspawn_child! per child task"] --> D
-    D["group.finish()\nreturns ChildGroup + sup_notify_rx"] --> E
+    D["group.finish()\nreturns ChildGroup + sup_notify_rx + sup_control_rx"] --> E
     E["sup_id = next_actor_id!()\nSupervisorCtx::new(sup_id, children)\nStateMachine::new(sup_ctx)"] --> F
     F["sup_machine.start()\nspawner.must_spawn(supervisor_task(...))"] --> G
     G["Start executor\nrun loops begin"]
@@ -22,8 +22,9 @@ Domain actors have one channel per message type they receive. Supervised actors 
 | Channel | Sender held by | Purpose |
 |---------|---------------|---------|
 | `ActorRef<DomainMsg, R>` | Peer actors | Domain message exchange |
-| `ActorRef<LifecycleCommand, R>` (internal) | `ChildGroup` | Runtime-internal: Start/Terminate/Ping |
+| `ActorRef<LifecycleCommand, R>` (internal) | `ChildGroup` | Runtime-internal: Start/Reset/Ping |
 | `EmbassySender<ChildLifecycleEvent>` (internal) | `run_supervised_actor` run loop | Runtime-internal: notifies supervisor |
+| `ActorRef<SupervisorControl<R>, R>` (internal) | Wiring/control plane | Supervisor control: dynamic registration and health ticks |
 
 The `Mailboxes` tuple for domain actors contains only domain streams. The lifecycle channel is threaded through `run_supervised_actor` separately, invisible to the blox author.
 
@@ -37,7 +38,7 @@ flowchart LR
 
     subgraph sup_actor [Supervisor Actor]
         SC["SupervisorCtx {\n  self_id: SUP_ID,\n  children: ChildGroup\n}"]
-        SSM["StateMachine&lt;SuperSpec&gt;\nmailboxes: (child_event_rx,)"]
+        SSM["StateMachine&lt;SuperSpec&gt;\nmailboxes: (child_event_rx, control_rx)"]
         SC --> SSM
     end
 
@@ -106,13 +107,19 @@ Expands to: create lifecycle channel → `group.add(id, handle, policy)` → `sp
 
 ### `ChildGroupBuilder`
 
-Accumulates children and creates the notification channel. Call `finish()` to get the `ChildGroup` and the supervisor's notification stream. The supervisor's own `ActorId` is allocated separately via `next_actor_id!()`:
+Accumulates children and creates both supervisor mailbox streams:
+- child lifecycle events (`sup_notify_rx`)
+- supervisor control-plane events (`sup_control_rx`)
+
+Call `finish()` to get `ChildGroup` plus both streams. The supervisor's own
+`ActorId` is allocated separately via `next_actor_id!()`:
 
 ```rust
 let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Restart { max: 3 });
-spawn_child!(spawner, group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Restart { max: 3 });
-let (children, sup_notify_rx) = group.finish();
+spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
+spawn_child!(spawner, group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
+let _sup_control_ref = group.control_ref();
+let (children, sup_notify_rx, sup_control_rx) = group.finish();
 ```
 
 ## Full Wiring Example
@@ -136,12 +143,13 @@ fn setup(spawner: Spawner) {
     bloxide_embassy::spawn_child!(spawner, group, ping_task(StateMachine::new(ping_ctx), ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
     bloxide_embassy::spawn_child!(spawner, group, pong_task(StateMachine::new(pong_ctx), pong_mbox, pong_id), ChildPolicy::Stop);
     let sup_id = bloxide_embassy::next_actor_id!();
-    let (children, sup_notify_rx) = group.finish();
+    let _sup_control_ref = group.control_ref();
+    let (children, sup_notify_rx, sup_control_rx) = group.finish();
 
     let sup_ctx = SupervisorCtx::new(sup_id, children);
     let mut sup_machine = StateMachine::new(sup_ctx);
     sup_machine.start();
-    spawner.must_spawn(supervisor_task(sup_machine, (sup_notify_rx,)));
+    spawner.must_spawn(supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)));
 }
 ```
 

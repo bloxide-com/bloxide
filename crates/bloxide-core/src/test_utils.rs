@@ -5,13 +5,11 @@
 /// `TestRuntime` implements `BloxRuntime` so it can be used as
 /// the `R` type parameter in unit tests without an Embassy or Tokio executor.
 ///
-/// Timer simulation is intentionally not part of `TestRuntime` itself; it is
-/// the responsibility of each test harness to drain `TimerCommand` messages
-/// from the timer receiver, parse them, and schedule their callbacks via a
-/// `(deadline_ms, Box<dyn FnOnce()>)` list advanced by the harness's own
-/// `advance_time` helper. This mirrors the Embassy timer task without
-/// introducing a circular crate dependency (`bloxide-timer` already depends on
-/// `bloxide-core`).
+/// Timer simulation is intentionally not part of `TestRuntime` itself.
+/// `bloxide-core` cannot depend on `bloxide-timer`, so shared timer harnesses
+/// live in `bloxide_timer::test_utils` instead. Tests that use timers should
+/// pair `TestRuntime` with that helper rather than re-implementing timer queues
+/// inline.
 use crate::capability::BloxRuntime;
 use crate::messaging::{ActorId, ActorRef, Envelope};
 use futures_core::Stream;
@@ -87,11 +85,31 @@ impl<M: Send + 'static> Stream for TestReceiver<M> {
 
 impl<M: Send + 'static> Unpin for TestReceiver<M> {}
 
-#[derive(Debug)]
+/// Error returned by `TestRuntime::send_via` (always succeeds in test).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TestSendError;
 
-#[derive(Debug)]
+impl core::fmt::Display for TestSendError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "test send error (should never occur)")
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for TestSendError {}
+
+/// Error returned by `TestRuntime::try_send_via` when capacity is exhausted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TestTrySendError;
+
+impl core::fmt::Display for TestTrySendError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "test try_send error: channel full")
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for TestTrySendError {}
 
 // ── TestRuntime ──────────────────────────────────────────────────────────
 

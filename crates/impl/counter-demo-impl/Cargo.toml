@@ -1,0 +1,10 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "counter-demo-impl"
+version.workspace = true
+edition.workspace = true
+description = "Concrete behavior implementation for the layered counter demo"
+publish = false
+
+[dependencies]
+counter-actions = { workspace = true }

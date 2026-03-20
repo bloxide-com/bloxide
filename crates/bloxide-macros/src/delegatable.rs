@@ -7,25 +7,35 @@
 /// 2. Generates a `#[macro_export] macro_rules! __delegate_TraitName` macro that
 ///    accepts struct/field/generics information and produces a forwarding impl.
 ///
-/// # Limitations (Phase A)
+/// # Generic Trait Support
 ///
-/// - Trait must not have type parameters (associated types are fine).
-/// - Method arguments must use simple ident patterns.
+/// For generic traits like `HasPeers<M, R>`, the generated macro accepts a `trait_args`
+/// parameter to specify the concrete types:
+///
+/// ```ignore
+/// __delegate_HasPeers!(
+///     struct_name: MyCtx,
+///     field: behavior,
+///     field_type: B,
+///     impl_generics: { impl<R, B> },
+///     ty_generics: { <R, B> },
+///     where_clause: { ... },
+///     trait_args: { WorkerMsg, R }
+/// );
+/// ```
+///
+/// For non-generic traits, `trait_args` can be empty.
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Error, FnArg, ItemTrait, Pat, Result, TraitItem};
+use syn::{FnArg, ItemTrait, Pat, Result, TraitItem};
 
 pub fn delegatable_inner(item: TokenStream) -> Result<TokenStream> {
     let trait_def: ItemTrait = syn::parse2(item)?;
     let trait_name = &trait_def.ident;
     let macro_name = format_ident!("__delegate_{}", trait_name);
 
-    if !trait_def.generics.params.is_empty() {
-        return Err(Error::new_spanned(
-            &trait_def.generics,
-            "#[delegatable] does not yet support generic trait parameters",
-        ));
-    }
+    // Check if trait has generic parameters
+    let has_generics = !trait_def.generics.params.is_empty();
 
     let mut assoc_type_items = Vec::new();
     let mut method_items = Vec::new();
@@ -34,9 +44,17 @@ pub fn delegatable_inner(item: TokenStream) -> Result<TokenStream> {
         match item {
             TraitItem::Type(assoc) => {
                 let type_name = &assoc.ident;
-                assoc_type_items.push(quote! {
-                    type #type_name = <$field_type as #trait_name>::#type_name;
-                });
+                if has_generics {
+                    // For generic traits, use the trait with trait_args from macro
+                    assoc_type_items.push(quote! {
+                        type #type_name = <$field_type as #trait_name<$($trait_args)*>>::#type_name;
+                    });
+                } else {
+                    // For non-generic traits, use the trait without angle brackets
+                    assoc_type_items.push(quote! {
+                        type #type_name = <$field_type as #trait_name>::#type_name;
+                    });
+                }
             }
             TraitItem::Fn(method) => {
                 let sig = &method.sig;
@@ -59,28 +77,78 @@ pub fn delegatable_inner(item: TokenStream) -> Result<TokenStream> {
         }
     }
 
-    let output = quote! {
-        #trait_def
+    // Generate the macro
+    let output = if has_generics {
+        // Generic trait: macro requires trait_args parameter
+        quote! {
+            #trait_def
 
-        #[macro_export]
-        macro_rules! #macro_name {
-            (
-                struct_name: $struct_name:ident,
-                field: $field:ident,
-                field_type: $field_type:ty,
-                impl_generics: { $($impl_generics:tt)* },
-                ty_generics: { $($ty_generics:tt)* },
-                where_clause: { $($where_clause:tt)* }
-            ) => {
-                impl $($impl_generics)* #trait_name for $struct_name $($ty_generics)*
-                where
-                    $field_type: #trait_name,
-                    $($where_clause)*
-                {
-                    #(#assoc_type_items)*
-                    #(#method_items)*
-                }
-            };
+            #[macro_export]
+            macro_rules! #macro_name {
+                (
+                    struct_name: $struct_name:ident,
+                    field: $field:ident,
+                    field_type: $field_type:ty,
+                    impl_generics: { $($impl_generics:tt)* },
+                    ty_generics: { $($ty_generics:tt)* },
+                    where_clause: { $($where_clause:tt)* },
+                    trait_args: { $($trait_args:tt)* }
+                ) => {
+                    impl $($impl_generics)* #trait_name<$($trait_args)*> for $struct_name $($ty_generics)*
+                    where
+                        $field_type: #trait_name<$($trait_args)*>,
+                        $($where_clause)*
+                    {
+                        #(#assoc_type_items)*
+                        #(#method_items)*
+                    }
+                };
+            }
+        }
+    } else {
+        // Non-generic trait: trait_args is accepted but ignored
+        quote! {
+            #trait_def
+
+            #[macro_export]
+            macro_rules! #macro_name {
+                (
+                    struct_name: $struct_name:ident,
+                    field: $field:ident,
+                    field_type: $field_type:ty,
+                    impl_generics: { $($impl_generics:tt)* },
+                    ty_generics: { $($ty_generics:tt)* },
+                    where_clause: { $($where_clause:tt)* },
+                    trait_args: { $($trait_args:tt)* }
+                ) => {
+                    impl $($impl_generics)* #trait_name for $struct_name $($ty_generics)*
+                    where
+                        $field_type: #trait_name,
+                        $($where_clause)*
+                    {
+                        #(#assoc_type_items)*
+                        #(#method_items)*
+                    }
+                };
+                // Backward compatibility: allow omitting trait_args
+                (
+                    struct_name: $struct_name:ident,
+                    field: $field:ident,
+                    field_type: $field_type:ty,
+                    impl_generics: { $($impl_generics:tt)* },
+                    ty_generics: { $($ty_generics:tt)* },
+                    where_clause: { $($where_clause:tt)* }
+                ) => {
+                    impl $($impl_generics)* #trait_name for $struct_name $($ty_generics)*
+                    where
+                        $field_type: #trait_name,
+                        $($where_clause)*
+                    {
+                        #(#assoc_type_items)*
+                        #(#method_items)*
+                    }
+                };
+            }
         }
     };
 
@@ -90,7 +158,7 @@ pub fn delegatable_inner(item: TokenStream) -> Result<TokenStream> {
 fn extract_arg_ident(pat: &Pat) -> Result<&syn::Ident> {
     match pat {
         Pat::Ident(pat_ident) => Ok(&pat_ident.ident),
-        _ => Err(Error::new_spanned(
+        _ => Err(syn::Error::new_spanned(
             pat,
             "#[delegatable]: method arguments must use simple ident patterns",
         )),

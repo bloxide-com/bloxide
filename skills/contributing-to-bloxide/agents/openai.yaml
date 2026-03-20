@@ -1,0 +1,7 @@
+interface:
+  display_name: "Contributing to Bloxide"
+  short_description: "Evolve the Bloxide framework itself"
+  default_prompt: "Use $contributing-to-bloxide to modify the framework core, runtimes, or stdlib crates."
+
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,11 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "embassy-demo-impl"
+version.workspace = true
+edition.workspace = true
+description = "Concrete Ping behavior implementations shared by ping-pong demos"
+publish = false
+
+[dependencies]
+ping-pong-actions  = { workspace = true }
+bloxide-timer      = { workspace = true }

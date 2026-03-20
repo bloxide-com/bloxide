@@ -8,10 +8,12 @@ use bloxide_core::{
 };
 use bloxide_macros::{BloxCtx, StateTopology};
 
+use bloxide_core::lifecycle::ChildLifecycleEvent;
+
 use crate::{
     actions::{start_children, stop_all_children, HasChildren},
+    control::SupervisorControl,
     event::SupervisorEvent,
-    lifecycle::ChildLifecycleEvent,
     registry::{ChildAction, ChildGroup},
 };
 
@@ -44,7 +46,7 @@ pub struct SupervisorSpec<R: BloxRuntime>(core::marker::PhantomData<R>);
 
 fn handle_done_or_failed_action<R: BloxRuntime>(
     ctx: &mut SupervisorCtx<R>,
-    ev: &SupervisorEvent,
+    ev: &SupervisorEvent<R>,
 ) -> ActionResult {
     if let SupervisorEvent::Child(
         ChildLifecycleEvent::Done { child_id } | ChildLifecycleEvent::Failed { child_id },
@@ -57,7 +59,7 @@ fn handle_done_or_failed_action<R: BloxRuntime>(
 
 fn handle_reset_action<R: BloxRuntime>(
     ctx: &mut SupervisorCtx<R>,
-    ev: &SupervisorEvent,
+    ev: &SupervisorEvent<R>,
 ) -> ActionResult {
     if let SupervisorEvent::Child(ChildLifecycleEvent::Reset { child_id }) = ev {
         ctx.children.handle_reset(*child_id, ctx.self_id);
@@ -67,10 +69,52 @@ fn handle_reset_action<R: BloxRuntime>(
 
 fn record_stopped_action<R: BloxRuntime>(
     ctx: &mut SupervisorCtx<R>,
-    ev: &SupervisorEvent,
+    ev: &SupervisorEvent<R>,
 ) -> ActionResult {
     if let SupervisorEvent::Child(ChildLifecycleEvent::Stopped { child_id }) = ev {
         ctx.children.record_stopped(*child_id);
+    }
+    ActionResult::Ok
+}
+
+fn record_started_action<R: BloxRuntime>(
+    ctx: &mut SupervisorCtx<R>,
+    ev: &SupervisorEvent<R>,
+) -> ActionResult {
+    if let SupervisorEvent::Child(ChildLifecycleEvent::Started { child_id }) = ev {
+        ctx.children.handle_started(*child_id);
+    }
+    ActionResult::Ok
+}
+
+fn record_alive_action<R: BloxRuntime>(
+    ctx: &mut SupervisorCtx<R>,
+    ev: &SupervisorEvent<R>,
+) -> ActionResult {
+    if let SupervisorEvent::Child(ChildLifecycleEvent::Alive { child_id }) = ev {
+        ctx.children.handle_alive(*child_id);
+    }
+    ActionResult::Ok
+}
+
+fn register_child_action<R: BloxRuntime>(
+    ctx: &mut SupervisorCtx<R>,
+    ev: &SupervisorEvent<R>,
+) -> ActionResult {
+    if let SupervisorEvent::Control(SupervisorControl::RegisterChild(child)) = ev {
+        ctx.children
+            .add(child.id, child.lifecycle_ref.clone(), child.policy);
+        ctx.children.start_child(child.id, ctx.self_id);
+    }
+    ActionResult::Ok
+}
+
+fn handle_health_check_action<R: BloxRuntime>(
+    ctx: &mut SupervisorCtx<R>,
+    ev: &SupervisorEvent<R>,
+) -> ActionResult {
+    if let SupervisorEvent::Control(SupervisorControl::HealthCheckTick) = ev {
+        ctx.pending = ctx.children.health_check_tick(ctx.self_id);
     }
     ActionResult::Ok
 }
@@ -82,27 +126,47 @@ impl<R: BloxRuntime> SupervisorSpec<R> {
         on_entry: &[start_children::<R, SupervisorCtx<R>>],
         on_exit: &[],
         transitions: transitions![
-            SupervisorEvent::Child(ChildLifecycleEvent::Done { .. }) => {
+            SupervisorEvent::<R>::Child(ChildLifecycleEvent::Done { .. }) => {
                 actions [handle_done_or_failed_action::<R>]
                 guard(ctx, _results) {
                     ctx.pending == ChildAction::BeginShutdown => SupervisorState::ShuttingDown,
                     _ => stay,
                 }
             },
-            SupervisorEvent::Child(ChildLifecycleEvent::Failed { .. }) => {
+            SupervisorEvent::<R>::Child(ChildLifecycleEvent::Failed { .. }) => {
                 actions [handle_done_or_failed_action::<R>]
                 guard(ctx, _results) {
                     ctx.pending == ChildAction::BeginShutdown => SupervisorState::ShuttingDown,
                     _ => stay,
                 }
             },
-            SupervisorEvent::Child(ChildLifecycleEvent::Reset { .. }) => {
+            SupervisorEvent::<R>::Child(ChildLifecycleEvent::Reset { .. }) => {
                 actions [handle_reset_action::<R>]
                 guard(_ctx, _results) {
                     _ => stay,
                 }
             },
-            SupervisorEvent::Child(_) => { stay },
+            SupervisorEvent::<R>::Child(ChildLifecycleEvent::Started { .. }) => {
+                actions [record_started_action::<R>]
+                stay
+            },
+            SupervisorEvent::<R>::Child(ChildLifecycleEvent::Alive { .. }) => {
+                actions [record_alive_action::<R>]
+                stay
+            },
+            SupervisorEvent::<R>::Control(SupervisorControl::RegisterChild(_)) => {
+                actions [register_child_action::<R>]
+                stay
+            },
+            SupervisorEvent::<R>::Control(SupervisorControl::HealthCheckTick) => {
+                actions [handle_health_check_action::<R>]
+                guard(ctx, _results) {
+                    ctx.pending == ChildAction::BeginShutdown => SupervisorState::ShuttingDown,
+                    _ => stay,
+                }
+            },
+            SupervisorEvent::<R>::Child(_) => { stay },
+            SupervisorEvent::<R>::Control(_) => { stay },
         ],
     };
 
@@ -110,14 +174,15 @@ impl<R: BloxRuntime> SupervisorSpec<R> {
         on_entry: &[stop_all_children::<R, SupervisorCtx<R>>],
         on_exit: &[],
         transitions: transitions![
-            SupervisorEvent::Child(ChildLifecycleEvent::Stopped { .. }) => {
+            SupervisorEvent::<R>::Child(ChildLifecycleEvent::Stopped { .. }) => {
                 actions [record_stopped_action::<R>]
                 guard(ctx, _results) {
                     ctx.all_children_stopped() => reset,
                     _ => stay,
                 }
             },
-            SupervisorEvent::Child(_) => { stay },
+            SupervisorEvent::<R>::Child(_) => { stay },
+            SupervisorEvent::<R>::Control(_) => { stay },
         ],
     };
 }
@@ -126,9 +191,12 @@ impl<R: BloxRuntime> SupervisorSpec<R> {
 
 impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
     type State = SupervisorState;
-    type Event = SupervisorEvent;
+    type Event = SupervisorEvent<R>;
     type Ctx = SupervisorCtx<R>;
-    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<ChildLifecycleEvent>,);
+    type Mailboxes<Rt: BloxRuntime> = (
+        Rt::Stream<ChildLifecycleEvent>,
+        Rt::Stream<SupervisorControl<R>>,
+    );
 
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = supervisor_state_handler_table!(Self);
 
@@ -148,13 +216,16 @@ mod tests {
     use alloc::vec::Vec;
 
     use crate::{
+        control::{RegisterChild, SupervisorControl},
         event::SupervisorEvent,
-        lifecycle::{ChildLifecycleEvent, LifecycleCommand},
         registry::{ChildAction, ChildGroup, ChildPolicy, GroupShutdown},
         supervisor::{SupervisorCtx, SupervisorSpec, SupervisorState},
     };
+    use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
     use bloxide_core::test_utils::{TestReceiver, TestRuntime};
-    use bloxide_core::{capability::DynamicChannelCap, engine::DispatchOutcome, StateMachine};
+    use bloxide_core::{
+        capability::DynamicChannelCap, engine::DispatchOutcome, engine::MachineState, StateMachine,
+    };
 
     fn make_supervisor(
         shutdown: GroupShutdown,
@@ -183,7 +254,14 @@ mod tests {
         machine: &mut StateMachine<SupervisorSpec<TestRuntime>>,
         event: ChildLifecycleEvent,
     ) -> DispatchOutcome<SupervisorState> {
-        machine.dispatch(SupervisorEvent::Child(event))
+        machine.dispatch(SupervisorEvent::<TestRuntime>::Child(event))
+    }
+
+    fn dispatch_control_event(
+        machine: &mut StateMachine<SupervisorSpec<TestRuntime>>,
+        event: SupervisorControl<TestRuntime>,
+    ) -> DispatchOutcome<SupervisorState> {
+        machine.dispatch(SupervisorEvent::<TestRuntime>::Control(event))
     }
 
     fn drain_start_commands(receivers: &mut [TestReceiver<LifecycleCommand>]) {
@@ -203,8 +281,11 @@ mod tests {
             GroupShutdown::WhenAnyDone,
             &[ChildPolicy::Stop, ChildPolicy::Stop],
         );
-        let outcome = machine.start();
-        assert_eq!(outcome, DispatchOutcome::Started(SupervisorState::Running));
+        let outcome = machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+        assert_eq!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(SupervisorState::Running))
+        );
 
         for rx in receivers.iter_mut() {
             let cmds = rx.drain_payloads();
@@ -219,15 +300,15 @@ mod tests {
             GroupShutdown::WhenAnyDone,
             &[ChildPolicy::Restart { max: 3 }],
         );
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
-        assert_eq!(outcome, DispatchOutcome::Stay);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
         let cmds = receivers[0].drain_payloads();
         assert_eq!(cmds.len(), 1);
-        assert!(matches!(cmds[0], LifecycleCommand::Terminate));
+        assert!(matches!(cmds[0], LifecycleCommand::Reset));
     }
 
     #[test]
@@ -236,7 +317,7 @@ mod tests {
             GroupShutdown::WhenAnyDone,
             &[ChildPolicy::Restart { max: 3 }],
         );
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
@@ -244,7 +325,7 @@ mod tests {
 
         let outcome =
             dispatch_child_event(&mut machine, ChildLifecycleEvent::Reset { child_id: 1 });
-        assert_eq!(outcome, DispatchOutcome::Stay);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
         let cmds = receivers[0].drain_payloads();
         assert_eq!(cmds.len(), 1);
@@ -257,7 +338,7 @@ mod tests {
             GroupShutdown::WhenAnyDone,
             &[ChildPolicy::Restart { max: 1 }],
         );
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
@@ -268,7 +349,7 @@ mod tests {
         let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
         assert_eq!(
             outcome,
-            DispatchOutcome::Transition(SupervisorState::ShuttingDown)
+            DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
         );
     }
 
@@ -276,13 +357,13 @@ mod tests {
     fn stop_policy_transitions_to_shutting_down() {
         let (mut machine, mut receivers) =
             make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop]);
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
         assert_eq!(
             outcome,
-            DispatchOutcome::Transition(SupervisorState::ShuttingDown)
+            DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
         );
     }
 
@@ -292,7 +373,7 @@ mod tests {
             GroupShutdown::WhenAnyDone,
             &[ChildPolicy::Stop, ChildPolicy::Stop],
         );
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
@@ -308,7 +389,7 @@ mod tests {
 
         let outcome =
             dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
-        assert_eq!(outcome, DispatchOutcome::Stay);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
         let outcome =
             dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
@@ -321,16 +402,16 @@ mod tests {
             GroupShutdown::WhenAllDone,
             &[ChildPolicy::Stop, ChildPolicy::Stop],
         );
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
-        assert_eq!(outcome, DispatchOutcome::Stay);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
         let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 2 });
         assert_eq!(
             outcome,
-            DispatchOutcome::Transition(SupervisorState::ShuttingDown)
+            DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
         );
     }
 
@@ -338,23 +419,23 @@ mod tests {
     fn stray_events_absorbed_in_running() {
         let (mut machine, mut receivers) =
             make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop]);
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         let outcome =
             dispatch_child_event(&mut machine, ChildLifecycleEvent::Started { child_id: 1 });
-        assert_eq!(outcome, DispatchOutcome::Stay);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
         let outcome =
             dispatch_child_event(&mut machine, ChildLifecycleEvent::Alive { child_id: 1 });
-        assert_eq!(outcome, DispatchOutcome::Stay);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
     }
 
     #[test]
     fn stray_events_absorbed_in_shutting_down() {
         let (mut machine, mut receivers) =
             make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop]);
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
@@ -364,18 +445,18 @@ mod tests {
 
         let outcome =
             dispatch_child_event(&mut machine, ChildLifecycleEvent::Started { child_id: 1 });
-        assert_eq!(outcome, DispatchOutcome::Stay);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
         let outcome =
             dispatch_child_event(&mut machine, ChildLifecycleEvent::Alive { child_id: 1 });
-        assert_eq!(outcome, DispatchOutcome::Stay);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
     }
 
     #[test]
     fn on_init_entry_clears_counters() {
         let (mut machine, mut receivers) =
             make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop]);
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
@@ -397,15 +478,65 @@ mod tests {
             GroupShutdown::WhenAnyDone,
             &[ChildPolicy::Restart { max: 3 }],
         );
-        machine.start();
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
         drain_start_commands(&mut receivers);
 
         let outcome =
             dispatch_child_event(&mut machine, ChildLifecycleEvent::Failed { child_id: 1 });
-        assert_eq!(outcome, DispatchOutcome::Stay);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
         let cmds = receivers[0].drain_payloads();
         assert_eq!(cmds.len(), 1);
-        assert!(matches!(cmds[0], LifecycleCommand::Terminate));
+        assert!(matches!(cmds[0], LifecycleCommand::Reset));
+    }
+
+    #[test]
+    fn register_child_event_adds_child_and_sends_start() {
+        let (mut machine, mut receivers) =
+            make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop]);
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+        drain_start_commands(&mut receivers);
+
+        let child_id = 77usize;
+        let (lifecycle_ref, mut lifecycle_rx) =
+            TestRuntime::channel::<LifecycleCommand>(child_id, 8);
+        let register = RegisterChild::<TestRuntime> {
+            id: child_id,
+            lifecycle_ref,
+            policy: ChildPolicy::Stop,
+        };
+
+        let outcome =
+            dispatch_control_event(&mut machine, SupervisorControl::RegisterChild(register));
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
+
+        let cmds = lifecycle_rx.drain_payloads();
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], LifecycleCommand::Start));
+    }
+
+    #[test]
+    fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
+        let (mut machine, mut receivers) = make_supervisor(
+            GroupShutdown::WhenAnyDone,
+            &[ChildPolicy::Restart { max: 2 }],
+        );
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+        drain_start_commands(&mut receivers);
+
+        // Tick #1: ping all monitored children.
+        let outcome = dispatch_control_event(&mut machine, SupervisorControl::HealthCheckTick);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
+        let first = receivers[0].drain_payloads();
+        assert_eq!(first.len(), 1);
+        assert!(matches!(first[0], LifecycleCommand::Ping));
+
+        // Tick #2 with no Alive from child:
+        // stale child is handled as failure (Reset), then re-pinged.
+        let outcome = dispatch_control_event(&mut machine, SupervisorControl::HealthCheckTick);
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
+        let second = receivers[0].drain_payloads();
+        assert_eq!(second.len(), 1);
+        assert!(matches!(second[0], LifecycleCommand::Reset));
     }
 }

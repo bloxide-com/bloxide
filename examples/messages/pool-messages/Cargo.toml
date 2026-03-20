@@ -1,6 +1,0 @@
-# Copyright 2025 Bloxide, all rights reserved
-[package]
-name = "pool-messages"
-version.workspace = true
-edition.workspace = true
-description = "Shared message types for the worker pool example"
