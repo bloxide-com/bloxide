@@ -101,6 +101,19 @@ Use this model when you are wiring runtimes, reading macro output, or adding new
 
 ## Where to Find Things
 
+## Suggested Reading Order
+
+1. **README.md** — repo map and runnable examples
+2. **AGENTS.md** (this file) — mental models, key invariants, where-to-find-things table
+3. **skills/building-with-bloxide/SKILL.md** — end-to-end build workflow
+4. **QUICK_REFERENCE.md** — decision trees and lookup tables when you're stuck
+
+Then dive deeper as needed:
+- `spec/architecture/02-hsm-engine.md` — `MachineSpec`, dispatch, Init/start/reset
+- `spec/architecture/05-handler-patterns.md` — transition patterns and `transitions!` macro
+- `spec/architecture/08-supervision.md` — supervisor patterns
+- `spec/architecture/11-dynamic-actors.md` — dynamic spawning and factory injection
+
 | Question | File |
 |---|---|
 | What is the layered architecture and two-tier trait system? | `spec/architecture/00-layered-architecture.md` |
