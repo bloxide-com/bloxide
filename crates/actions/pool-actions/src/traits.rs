@@ -17,10 +17,8 @@ use pool_messages::{PoolMsg, WorkerMsg};
 /// and returns the worker's domain and ctrl `ActorRef`s to the caller.
 /// Sending `DoWork` and introducing peers is handled by the caller (the pool)
 /// after the factory returns, so the pool controls message ordering.
-pub type WorkerSpawnFn<R> = fn(
-    ActorId,
-    &ActorRef<PoolMsg, R>,
-) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>);
+pub type WorkerSpawnFn<R> =
+    fn(ActorId, &ActorRef<PoolMsg, R>) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>);
 
 /// Accessor for contexts that hold a worker spawn factory.
 ///

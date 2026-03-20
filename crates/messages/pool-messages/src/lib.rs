@@ -8,8 +8,8 @@ pub mod prelude {
     pub use crate::*;
 }
 
-use bloxide_macros::blox_messages;
 use bloxide_core::{ActorId, ActorRef, BloxRuntime};
+use bloxide_macros::blox_messages;
 
 // Messages sent to the pool actor.
 blox_messages! {

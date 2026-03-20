@@ -37,9 +37,7 @@ pub enum WorkerState {
     Done,
 }
 
-pub struct WorkerSpec<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask>(
-    PhantomData<(R, B)>,
-);
+pub struct WorkerSpec<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask>(PhantomData<(R, B)>);
 
 impl<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> WorkerSpec<R, B> {
     /// Apply an incoming `PeerCtrl` command (AddPeer / RemovePeer) to the peer list.

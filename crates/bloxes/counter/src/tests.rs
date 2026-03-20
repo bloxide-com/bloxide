@@ -48,7 +48,10 @@ mod counter_tests {
         assert!(matches!(machine.current_state(), MachineState::Init));
 
         machine.dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start));
-        assert!(matches!(machine.current_state(), MachineState::State(CounterState::Ready)));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(CounterState::Ready)
+        ));
     }
 
     #[test]
@@ -58,7 +61,10 @@ mod counter_tests {
 
         // First tick should stay in Ready (count becomes 1, threshold is 2)
         machine.dispatch(CounterEvent::Msg(Envelope(0, CounterMsg::Tick(Tick {}))));
-        assert!(matches!(machine.current_state(), MachineState::State(CounterState::Ready)));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(CounterState::Ready)
+        ));
         assert_eq!(machine.ctx().behavior.count(), 1);
     }
 
@@ -69,16 +75,26 @@ mod counter_tests {
 
         // First tick
         machine.dispatch(CounterEvent::Msg(Envelope(0, CounterMsg::Tick(Tick {}))));
-        assert!(matches!(machine.current_state(), MachineState::State(CounterState::Ready)));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(CounterState::Ready)
+        ));
 
         // Second tick should transition to Done (count >= 2)
         machine.dispatch(CounterEvent::Msg(Envelope(0, CounterMsg::Tick(Tick {}))));
-        assert!(matches!(machine.current_state(), MachineState::State(CounterState::Done)));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(CounterState::Done)
+        ));
     }
 
     #[test]
     fn test_done_is_terminal() {
-        assert!(CounterSpec::<TestRuntime, TestBehavior>::is_terminal(&CounterState::Done));
-        assert!(!CounterSpec::<TestRuntime, TestBehavior>::is_terminal(&CounterState::Ready));
+        assert!(CounterSpec::<TestRuntime, TestBehavior>::is_terminal(
+            &CounterState::Done
+        ));
+        assert!(!CounterSpec::<TestRuntime, TestBehavior>::is_terminal(
+            &CounterState::Ready
+        ));
     }
 }

@@ -14,9 +14,9 @@ mod worker_tests {
         capability::DynamicChannelCap, messaging::ActorRef, spec::MachineSpec, Envelope,
         MachineState, StateMachine,
     };
+    use pool_actions::traits::HasCurrentTask;
     use pool_actions::traits::HasWorkerPeers;
     use pool_messages::{AddWorkerPeer, WorkerCtrl};
-    use pool_actions::traits::HasCurrentTask;
     use pool_messages::{DoWork, PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
     use crate::{WorkerCtx, WorkerEvent, WorkerSpec, WorkerState};
@@ -31,7 +31,6 @@ mod worker_tests {
         result: u32,
         peers: Vec<ActorRef<WorkerMsg, TestRuntime>>,
     }
-
 
     impl HasCurrentTask for TestBehavior {
         fn task_id(&self) -> u32 {

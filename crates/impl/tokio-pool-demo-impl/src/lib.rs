@@ -12,13 +12,11 @@ use bloxide_core::{
     messaging::{ActorId, ActorRef},
     run_actor_auto_start, StateMachine,
 };
-use bloxide_spawn::{
-    SpawnCap,
-};
+use bloxide_spawn::SpawnCap;
 use bloxide_tokio::{channels, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasWorkerPeers};
-use pool_messages::{PoolMsg, WorkerMsg};
 use pool_messages::WorkerCtrl;
+use pool_messages::{PoolMsg, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
 
 pub mod prelude {

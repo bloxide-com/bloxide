@@ -37,30 +37,38 @@ A blox implements `MachineSpec` to define states, transitions, and context. At s
 // Create typed channels for each actor
 let ((ping_ref,), ping_mbox) = bloxide_tokio::channels! { PingPongMsg(16) };
 let ((pong_ref,), pong_mbox) = bloxide_tokio::channels! { PingPongMsg(16) };
+let ping_id = ping_ref.id();
+let pong_id = pong_ref.id();
 
 // Build state machines — PingSpec and PongSpec are runtime-agnostic MachineSpec impls
-let ping_machine = StateMachine::new(PingCtx::new(/* peer refs, timer, behavior */));
-let pong_machine = StateMachine::new(PongCtx::new(/* peer ref */));
+let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref, PingBehavior::default());
+let pong_ctx = PongCtx::new(pong_id, ping_ref.clone());
+let ping_machine = StateMachine::new(ping_ctx);
+let pong_machine = StateMachine::new(pong_ctx);
+
+// Define task wrappers (typically in a prelude or near main)
+bloxide_tokio::actor_task_supervised!(ping_task, PingSpec<TokioRuntime, PingBehavior>);
+bloxide_tokio::actor_task_supervised!(pong_task, PongSpec<TokioRuntime>);
+bloxide_tokio::root_task!(supervisor_task, SupervisorSpec<TokioRuntime>);
 
 // Supervise both actors
 let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-bloxide_tokio::spawn_child!(group, ping_task(ping_machine, ping_mbox, ping_id),
-    ChildPolicy::Restart { max: 1 });
-bloxide_tokio::spawn_child!(group, pong_task(pong_machine, pong_mbox, pong_id),
-    ChildPolicy::Stop);
+bloxide_tokio::spawn_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
+bloxide_tokio::spawn_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
 
-// Start the supervisor and run until shutdown
-let _sup_control_ref = group.control_ref();
+// Build and start the supervisor
 let (children, sup_notify_rx, sup_control_rx) = group.finish();
 let sup_ctx = SupervisorCtx::new(bloxide_tokio::next_actor_id!(), children);
 let mut sup_machine = StateMachine::<SupervisorSpec<TokioRuntime>>::new(sup_ctx);
-sup_machine.start();
-run_root(sup_machine, (sup_notify_rx, sup_control_rx)).await;
+sup_machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+
+// Run until shutdown
+supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
 ```
 
 The blox crates (`PingSpec`, `PongSpec`) are generic over `R: BloxRuntime` — the same code runs on Embassy by swapping `TokioRuntime` for `EmbassyRuntime`.
 
-**Unsupervised vs supervised:** `run_actor_to_completion` calls `machine.start()` internally and runs until `DispatchOutcome::Transition`/`Started` hits a terminal or error state, or `DispatchOutcome::Reset`. Supervised actors use `run_supervised_actor`, which waits for `LifecycleCommand::Start` from the parent before calling `start()`; the supervisor drives `reset()` via Reset/Stop. See `tokio-minimal-demo` for unsupervised layered wiring, and `tokio-demo` for supervised layered wiring.
+**Key insight:** Lifecycle commands (Start/Reset/Stop) flow through `dispatch()`, not through direct `start()` calls. Supervised actors wait for `LifecycleCommand::Start` from the supervisor before entering their initial operational state.
 
 ---
 
@@ -71,7 +79,7 @@ bloxide/
 ├── crates/            # framework + layered application crates
 │   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, std-gated TestRuntime
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
-│   ├── bloxide-macros/    # proc macros: #[derive(StateTopology)], transitions!, #[blox_event]
+│   ├── bloxide-macros/    # proc macros: #[derive(StateTopology)], transitions!, event!
 │   ├── bloxide-spawn/     # dynamic actor spawning and peer introduction
 │   ├── bloxide-supervisor/ # reusable OTP-style supervisor
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
@@ -87,9 +95,12 @@ bloxide/
 │   ├── tokio-minimal-demo.rs
 │   ├── tokio-demo.rs
 │   └── tokio-pool-demo.rs
+├── skills/            # agent skills (workflows for building/evolving)
+│   ├── building-with-bloxide/
+│   └── contributing-to-bloxide/
 ├── spec/              # architecture docs and per-blox specs
 │   ├── architecture/      # numbered design docs
-│   ├── bloxes/            # per-blox specs (ping, pong)
+│   ├── bloxes/            # per-blox specs (ping, pong, pool, worker, counter)
 │   └── templates/         # blox-spec template
 └── .github/workflows/ # CI: copyright, fmt, clippy, tests, rustdoc
 ```
@@ -99,7 +110,7 @@ bloxide/
 ## Running the examples
 
 ```bash
-# Minimal single-actor Tokio example
+# Minimal single-actor Tokio example (5-layer architecture)
 cargo run --example tokio-minimal-demo
 
 # Ping-pong with OTP supervision, timer-driven pause, and full HSM tracing
@@ -119,13 +130,13 @@ RUST_LOG=trace cargo run --example embassy-demo
 | Crate | Path | `no_std` | Purpose |
 |---|---|:---:|---|
 | `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, std-gated `TestRuntime` |
-| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(StateTopology)]`, `#[derive(BloxCtx)]`, `#[derive(EventTag)]`, `transitions!`, `#[blox_event]` |
+| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(StateTopology)]`, `#[derive(BloxCtx)]`, `transitions!`, `event!`, `blox_messages!` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
-| `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer` |
+| `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `VirtualClock` |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `ChildGroup`, `ChildPolicy`, `GroupShutdown` |
 | `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | Dynamic actor spawning and peer introduction |
-| `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `next_actor_id!`, `actor_task!`, `actor_task_supervised!`, `root_task!`, `timer_task!`, `spawn_child!`, `spawn_timer!`, `run_root` |
-| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `next_actor_id!`, `actor_task!`, `actor_task_supervised!`, `root_task!`, `spawn_child!`, `spawn_timer!`, `run_root` |
+| `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
+| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
 
 ¹ Proc-macro crates compile for the host; they have no `no_std` impact on the target binary.
 

@@ -9,8 +9,7 @@ use bloxide_core::{
 };
 use bloxide_macros::BloxCtx;
 use pool_actions::{
-    __delegate_HasCurrentTask,
-    __delegate_HasWorkerPeers,
+    __delegate_HasCurrentTask, __delegate_HasWorkerPeers,
     traits::{HasCurrentTask, HasPoolRef, HasWorkerPeers},
 };
 use pool_messages::{PoolMsg, WorkerMsg};
