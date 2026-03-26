@@ -1,0 +1,34 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "bloxide-wasm"
+version.workspace = true
+edition.workspace = true
+description = "Browser-oriented BloxRuntime using async-channel and spawn_local on WASM"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxide-core = { workspace = true, features = ["std"] }
+bloxide-macros = { workspace = true }
+bloxide-timer = { workspace = true }
+async-channel = "2"
+futures-core = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "async-await",
+    "async-await-macro",
+] }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "Window",
+    "WorkerGlobalScope",
+    "DedicatedWorkerGlobalScope",
+    "Performance",
+] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+pollster = "0.4"

@@ -1,0 +1,7 @@
+[application]
+name = "wasm-minimal-demo"
+default_platform = "web"
+out_dir = "dist"
+
+[web.app]
+title = "Bloxide WASM demo"

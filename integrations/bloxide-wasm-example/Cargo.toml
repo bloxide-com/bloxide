@@ -1,0 +1,28 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "bloxide-wasm-example"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "WASM worker example (Layer 5): counter-blox on bloxide-wasm, event-driven inside the worker"
+repository.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+futures-util = { version = "0.3", default-features = false, features = ["alloc", "async-await"] }
+web-sys = { version = "0.3", features = [
+    "console",
+    "DedicatedWorkerGlobalScope",
+    "MessagePort",
+    "WorkerGlobalScope",
+] }
+bloxide-wasm = { workspace = true }
+bloxide-core = { workspace = true, features = ["std"] }
+counter-blox = { workspace = true }
+counter-demo-impl = { workspace = true }
+counter-messages = { workspace = true }

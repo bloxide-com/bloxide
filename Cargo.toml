@@ -16,6 +16,10 @@ members = [
     "crates/bloxide-timer",
     "runtimes/bloxide-embassy",
     "runtimes/bloxide-tokio",
+    "runtimes/bloxide-wasm",
+    "integrations/bloxide-wasm-example",
+    "examples/wasm-minimal-demo",
+    "integrations/bloxide-dioxus",
     "crates/actions/ping-pong-actions",
     "crates/actions/pool-actions",
     "crates/actions/counter-actions",
@@ -52,6 +56,9 @@ bloxide-supervisor = { path = "crates/bloxide-supervisor" }
 bloxide-timer = { path = "crates/bloxide-timer" }
 bloxide-embassy = { path = "runtimes/bloxide-embassy" }
 bloxide-tokio = { path = "runtimes/bloxide-tokio" }
+bloxide-wasm = { path = "runtimes/bloxide-wasm" }
+bloxide-dioxus = { path = "integrations/bloxide-dioxus" }
+bloxide-wasm-example = { path = "integrations/bloxide-wasm-example" }
 ping-pong-actions = { path = "crates/actions/ping-pong-actions" }
 pool-actions = { path = "crates/actions/pool-actions" }
 counter-actions = { path = "crates/actions/counter-actions" }
@@ -66,6 +73,7 @@ counter-blox = { path = "crates/bloxes/counter" }
 embassy-demo-impl = { path = "crates/impl/embassy-demo-impl" }
 counter-demo-impl = { path = "crates/impl/counter-demo-impl" }
 tokio-pool-demo-impl = { path = "crates/impl/tokio-pool-demo-impl" }
+dioxus = { version = "0.7.3", features = ["web"] }
 
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std", "tracing"] }

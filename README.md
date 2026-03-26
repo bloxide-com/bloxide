@@ -26,6 +26,7 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 - Use [skills/building-with-bloxide/SKILL.md](skills/building-with-bloxide/SKILL.md) as the step-by-step build workflow.
 - Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the macro and API reference while you build.
 - For the smallest runnable example, start with `cargo run --example tokio-minimal-demo` (now fully five-layered via `counter-*` crates).
+- For a **browser WASM** demo (Dioxus + counter blox on `bloxide-wasm`), run `dx serve -p wasm-minimal-demo` from the repo root — see [`examples/wasm-minimal-demo/README.md`](examples/wasm-minimal-demo/README.md).
 
 ---
 
@@ -91,6 +92,7 @@ bloxide/
 │   ├── bloxide-embassy/   # Embassy runtime (embedded target)
 │   └── bloxide-tokio/     # Tokio runtime (std target)
 ├── examples/          # top-level runnable example entrypoints
+│   ├── wasm-minimal-demo/ # Dioxus + bloxide-wasm (`dx serve -p wasm-minimal-demo`)
 │   ├── embassy-demo.rs
 │   ├── tokio-minimal-demo.rs
 │   ├── tokio-demo.rs
@@ -121,6 +123,9 @@ RUST_LOG=info cargo run --example tokio-pool-demo
 
 # Embassy (std target, simulates embedded)
 RUST_LOG=trace cargo run --example embassy-demo
+
+# Minimal counter on bloxide-wasm in the browser (Dioxus CLI; install with `cargo install dioxus-cli`)
+dx serve -p wasm-minimal-demo
 ```
 
 ---
