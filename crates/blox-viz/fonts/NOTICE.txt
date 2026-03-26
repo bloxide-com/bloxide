@@ -1,0 +1,2 @@
+DejaVuSans.ttf is from the DejaVu font family (https://dejavu-fonts.github.io/).
+Licensed under a free license; see https://dejavu-fonts.github.io/License.html

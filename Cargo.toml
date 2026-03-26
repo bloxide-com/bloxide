@@ -16,6 +16,7 @@ members = [
     "crates/bloxide-timer",
     "runtimes/bloxide-embassy",
     "runtimes/bloxide-tokio",
+    "crates/blox-viz",
     "crates/actions/ping-pong-actions",
     "crates/actions/pool-actions",
     "crates/actions/counter-actions",
@@ -66,6 +67,8 @@ counter-blox = { path = "crates/bloxes/counter" }
 embassy-demo-impl = { path = "crates/impl/embassy-demo-impl" }
 counter-demo-impl = { path = "crates/impl/counter-demo-impl" }
 tokio-pool-demo-impl = { path = "crates/impl/tokio-pool-demo-impl" }
+blox-viz = { path = "crates/blox-viz" }
+bloxflow-core = { path = "../bloxflow/crates/bloxflow-core" }
 
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std", "tracing"] }

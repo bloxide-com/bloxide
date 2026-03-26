@@ -1,0 +1,31 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "blox-viz"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "Blox diagram metadata and layout for Bloxflow (macros will populate snapshots later)"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxflow-core = { workspace = true }
+clap = { version = "4", optional = true, features = ["derive"] }
+resvg = { version = "0.47", optional = true, default-features = true }
+serde_json = { version = "1", optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]
+png = ["dep:resvg"]
+cli = ["serde", "dep:clap", "dep:serde_json", "png"]
+
+[[bin]]
+name = "blox-diagram"
+path = "src/bin/blox-diagram.rs"
+required-features = ["cli"]
+
+[dependencies.serde]
+version = "1"
+optional = true
+features = ["derive"]

@@ -1,0 +1,13 @@
+stateDiagram-v2
+    %% Ping blox (example snapshot)
+    [*] --> Active : Start
+    state Operating {
+        Active
+        Paused
+    }
+    Done
+    Error
+    Active --> Paused : pause threshold
+    Paused --> Active : Resume
+    Active --> Done : max rounds
+    Active --> Error : fault

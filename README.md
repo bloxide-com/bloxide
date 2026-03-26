@@ -26,6 +26,7 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 - Use [skills/building-with-bloxide/SKILL.md](skills/building-with-bloxide/SKILL.md) as the step-by-step build workflow.
 - Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the macro and API reference while you build.
 - For the smallest runnable example, start with `cargo run --example tokio-minimal-demo` (now fully five-layered via `counter-*` crates).
+- For **blox diagrams** (layout and raster export from Bloxflow snapshots), see [`crates/blox-viz/`](crates/blox-viz/) and [`STATIC_IMAGE_GENERATOR_PLAN.md`](STATIC_IMAGE_GENERATOR_PLAN.md).
 
 ---
 
@@ -83,6 +84,7 @@ bloxide/
 │   ├── bloxide-spawn/     # dynamic actor spawning and peer introduction
 │   ├── bloxide-supervisor/ # reusable OTP-style supervisor
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
+│   ├── blox-viz/          # Bloxflow diagram layout, SVG/dot, optional PNG (cli)
 │   ├── messages/          # shared message crates (ping-pong, pool, counter)
 │   ├── actions/           # action trait crates (ping-pong, pool, counter)
 │   ├── bloxes/            # ping, pong, worker, pool, counter
