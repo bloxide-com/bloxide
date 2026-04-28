@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use crate::model;
 use crate::model::*;
 use std::collections::HashMap;

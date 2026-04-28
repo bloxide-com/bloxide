@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use proc_macro2::{Delimiter, Ident, TokenStream, TokenTree};
 use std::collections::HashMap;
 use syn::visit::Visit;
