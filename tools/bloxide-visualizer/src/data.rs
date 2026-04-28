@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use crate::model::BloxSpec;
 use crate::parser::parse_spec;
 
