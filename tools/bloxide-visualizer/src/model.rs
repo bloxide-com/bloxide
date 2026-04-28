@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

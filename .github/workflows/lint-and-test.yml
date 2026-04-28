@@ -10,6 +10,7 @@ on:
       - "crates/**"
       - "runtimes/**"
       - "examples/**"
+      - "tools/**"
       - "Cargo.toml"
       - "Cargo.lock"
   workflow_dispatch:
@@ -27,7 +28,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check Copyright Compliance
         run: |
-          INCORRECT_COPYRIGHT=$(find . -name '*.rs' -not -path "./target/*" -o -name 'Cargo.toml' -not -path "./target/*" \
+          INCORRECT_COPYRIGHT=$(find . \( -name '*.rs' -o -name 'Cargo.toml' \) -not -path '*/target/*' \
           | xargs grep -LE '(#|//) Copyright 202[0-9] Bloxide, all rights reserved')
           if [ -n "$INCORRECT_COPYRIGHT" ]; then
             echo "Incorrect copyright notice found:"

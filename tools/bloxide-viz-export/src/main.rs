@@ -1,3 +1,4 @@
+// Copyright 2025 Bloxide, all rights reserved
 use bloxide_viz_export::{export_workspace, write_specs_to_json};
 use std::env;
 use std::path::Path;
