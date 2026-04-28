@@ -1,0 +1,21 @@
+[application]
+name = "Bloxide Visualizer"
+default_platform = "web"
+out_dir = "dist"
+asset_dir = "assets"
+
+[web.app]
+title = "Bloxide Visualizer"
+base_path = "/"
+
+[web.watcher]
+watch_path = ["src", "assets"]
+reload_html = true
+
+[web.resource.dev]
+style = []
+script = []
+
+[web.resource.release]
+style = []
+script = []
