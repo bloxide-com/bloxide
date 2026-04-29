@@ -1,0 +1,19 @@
+[actor]
+name = "Pong"
+
+[event]
+name = "PongEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+
+[topology]
+handler_fns = ["READY_FNS", "ERROR_FNS"]
+
+[[topology.states]]
+name = "Ready"
+
+[[topology.states]]
+name = "Error"

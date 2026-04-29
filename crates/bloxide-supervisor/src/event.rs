@@ -3,8 +3,6 @@ use bloxide_core::{
     capability::BloxRuntime, event_tag::LifecycleEvent, lifecycle::LifecycleCommand,
     messaging::Envelope,
 };
-use bloxide_macros::EventTag;
-
 use bloxide_core::lifecycle::ChildLifecycleEvent;
 
 use crate::control::SupervisorControl;
@@ -20,11 +18,26 @@ use crate::control::SupervisorControl;
 /// - Lifecycle(Reset) transitions to Init
 /// - Lifecycle(Stop) transitions to Init and exits
 /// - Lifecycle(Ping) responds with Alive
-#[derive(EventTag, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum SupervisorEvent<R: BloxRuntime> {
     Child(ChildLifecycleEvent),
     Control(SupervisorControl<R>),
     Lifecycle(LifecycleCommand),
+}
+
+impl<R: BloxRuntime> ::bloxide_core::event_tag::EventTag for SupervisorEvent<R> {
+    fn event_tag(&self) -> u8 {
+        match self {
+            SupervisorEvent::Child(..) => 0u8,
+            SupervisorEvent::Control(..) => 1u8,
+            SupervisorEvent::Lifecycle(..) => ::bloxide_core::event_tag::LIFECYCLE_TAG,
+        }
+    }
+}
+
+impl<R: BloxRuntime> SupervisorEvent<R> {
+    pub const CHILD_TAG: u8 = 0u8;
+    pub const CONTROL_TAG: u8 = 1u8;
 }
 
 impl<R: BloxRuntime> LifecycleEvent for SupervisorEvent<R> {

@@ -1,0 +1,47 @@
+[[messages]]
+name = "PoolMsg"
+visibility = "pub"
+
+[[messages.variants]]
+name = "SpawnWorker"
+
+[[messages.variants.fields]]
+name = "task_id"
+ty = "u32"
+
+[[messages.variants]]
+name = "WorkDone"
+
+[[messages.variants.fields]]
+name = "worker_id"
+ty = "usize"
+
+[[messages.variants.fields]]
+name = "task_id"
+ty = "u32"
+
+[[messages.variants.fields]]
+name = "result"
+ty = "u32"
+
+[[messages]]
+name = "WorkerMsg"
+visibility = "pub"
+
+[[messages.variants]]
+name = "DoWork"
+
+[[messages.variants.fields]]
+name = "task_id"
+ty = "u32"
+
+[[messages.variants]]
+name = "PeerResult"
+
+[[messages.variants.fields]]
+name = "from_id"
+ty = "usize"
+
+[[messages.variants.fields]]
+name = "result"
+ty = "u32"

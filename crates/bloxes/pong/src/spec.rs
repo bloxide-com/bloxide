@@ -1,27 +1,15 @@
 // Copyright 2025 Bloxide, all rights reserved
+use crate::pong_state_handler_table;
 use crate::{PongCtx, PongEvent};
 use bloxide_core::{
     capability::BloxRuntime,
     spec::{MachineSpec, StateFns},
     transitions, HasSelfId,
 };
-use bloxide_macros::StateTopology;
 use ping_pong_actions::send_pong;
 use ping_pong_messages::PingPongMsg;
 
-/// State topology:
-/// ```text
-/// [VirtualRoot — engine implicit]
-/// ├── Ready  (leaf)
-/// └── Error  (leaf, error) — entered when send_pong fails (peer channel full)
-/// ```
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(READY_FNS, ERROR_FNS)]
-pub enum PongState {
-    Ready,
-    Error,
-}
+pub use crate::generated::topology::PongState;
 
 pub struct PongSpec<R: BloxRuntime>(core::marker::PhantomData<R>);
 

@@ -1,0 +1,6 @@
+[[messages]]
+name = "CounterMsg"
+visibility = "pub"
+
+[[messages.variants]]
+name = "Tick"

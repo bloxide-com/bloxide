@@ -19,20 +19,23 @@ use pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg};
 ///
 /// `#[derive(BloxCtx)]` uses naming conventions for auto-detection:
 /// - `self_id: ActorId` → `impl HasSelfId` (auto-detected)
+/// - `worker_refs`, `worker_ctrls`, `pending` → constructor parameters (no
+///   matching accessor convention)
 ///
-/// For fields that match a naming pattern but shouldn't generate a trait impl,
-/// use `#[ctor]` to mark them as constructor parameters only:
-/// - `self_ref` would generate `HasSelfRef`, but we don't need that trait
-/// - `worker_factory` would generate `HasWorkerFactory`, which we impl manually
+/// `self_ref` follows the `*_ref` + `ActorRef` convention and would generate
+/// `HasSelfRef`, but that trait is not needed here — use `#[ctor]` to keep it
+/// as a constructor parameter only.
 #[derive(BloxCtx)]
 pub struct PoolCtx<R: BloxRuntime> {
     pub self_id: ActorId,
     /// Pool's own ActorRef — cloned into each worker at spawn time so the
     /// worker can notify the pool when done. Also keeps the pool channel open.
+    // self_ref follows the *_ref convention but we don't want HasSelfRef generated
     #[ctor]
     pub self_ref: ActorRef<PoolMsg, R>,
     /// Factory function injected at construction time; called to create and
     /// spawn a worker without pool-blox knowing the concrete worker type.
+    /// Marked `#[ctor]` so it becomes a constructor parameter (not a state field).
     #[ctor]
     pub worker_factory: WorkerSpawnFn<R>,
     /// Domain ActorRefs for all spawned workers (keeps their channels alive).

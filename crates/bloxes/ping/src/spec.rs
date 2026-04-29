@@ -1,39 +1,18 @@
 // Copyright 2025 Bloxide, all rights reserved
+use crate::ping_state_handler_table;
 use crate::{PingCtx, PingEvent, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
 use bloxide_core::{
     capability::BloxRuntime,
     spec::{MachineSpec, StateFns},
     transitions, HasSelfId,
 };
-use bloxide_macros::StateTopology;
 use ping_pong_actions::{
     cancel_current_timer, increment_round, schedule_resume, send_initial_ping, send_ping,
     CountsRounds, HasCurrentTimer,
 };
 use ping_pong_messages::PingPongMsg;
 
-/// State topology:
-/// ```text
-/// [VirtualRoot — engine implicit]
-/// ├── Operating (composite)
-/// │   ├── Active  (leaf)
-/// │   └── Paused  (leaf)
-/// ├── Done      (leaf, terminal)
-/// └── Error     (leaf, error)
-/// ```
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(OPERATING_FNS, ACTIVE_FNS, PAUSED_FNS, DONE_FNS, ERROR_FNS)]
-pub enum PingState {
-    #[composite]
-    Operating,
-    #[parent(Operating)]
-    Active,
-    #[parent(Operating)]
-    Paused,
-    Done,
-    Error,
-}
+pub use crate::generated::topology::PingState;
 
 pub struct PingSpec<R, B>(core::marker::PhantomData<(R, B)>)
 where

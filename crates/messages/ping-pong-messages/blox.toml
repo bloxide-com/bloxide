@@ -1,0 +1,20 @@
+[[messages]]
+name = "PingPongMsg"
+visibility = "pub"
+
+[[messages.variants]]
+name = "Ping"
+
+[[messages.variants.fields]]
+name = "round"
+ty = "u32"
+
+[[messages.variants]]
+name = "Pong"
+
+[[messages.variants.fields]]
+name = "round"
+ty = "u32"
+
+[[messages.variants]]
+name = "Resume"

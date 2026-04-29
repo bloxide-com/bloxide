@@ -84,23 +84,33 @@ pub trait MachineSpec: Sized + 'static {
     fn is_error(_state: &Self::State) -> bool { false }
 
 
-    // Root-level rules (lifecycle + domain fallback). Empty for supervised actors (lifecycle handled by VirtualRoot defaults). Override to add domain-specific root rules or custom lifecycle behavior.:
+    // Root-level rules for domain events that bubble past all user-declared states.
+    // Empty for most actors — unhandled events are silently dropped.
+    // Lifecycle commands (Start, Reset, Stop, Ping) are intercepted at VirtualRoot
+    // before any user state sees them, not handled here.
     fn root_transitions() -> &'static [StateRule<Self>] { &[] }
 }
 ```
 
 ### `MachineSpec` quick map: `State` -> `StateFns` -> `HANDLER_TABLE`
 
-For most bloxes, the mapping is generated from the state enum declaration order:
+For most bloxes, the state enum and handler table mapping are generated from `bloxide.toml`:
+
+```toml
+[topology]
+handler_fns = ["READY_FNS", "DONE_FNS"]
+
+[[topology.states]]
+name = "Ready"
+
+[[topology.states]]
+name = "Done"
+```
+
+Run `cargo blox generate` to produce `src/generated/topology.rs` with `CounterState` and the `counter_state_handler_table!` macro:
 
 ```rust
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(READY_FNS, DONE_FNS)]
-pub enum CounterState {
-    Ready,
-    Done,
-}
+pub use crate::generated::topology::CounterState;
 
 impl<R: BloxRuntime, B: CountsTicks + 'static> MachineSpec for CounterSpec<R, B> {
     // ...
@@ -339,17 +349,17 @@ Enter all target: NewGroup.on_entry, Active.on_entry
 let machine = StateMachine::new(ctx);
 // Construction is silent: no callbacks fire. Machine is in Init.
 // on_init_entry does NOT fire here.
-// The runtime calls machine.start() when it receives LifecycleCommand::Start.
+// The runtime dispatches LifecycleCommand::Start to exit Init and enter initial_state().
 ```
 
 **Init semantics:**
 - `new(ctx)` — machine enters Init silently. No `on_init_entry` fires.
-- `start()` — exits Init, enters `initial_state()`. Returns `Started(state)`. If already operational, returns `HandledNoTransition` (idempotent).
-- `reset()` — exits all operational states leaf-first, calls `on_init_entry`, sets phase to Init. Returns `Reset`. If already in Init, returns `InitNoOp` (idempotent).
+- `dispatch(LifecycleCommand::Start)` — exits Init, enters `initial_state()`. Returns `Started(state)`. If already operational, returns `HandledNoTransition` (idempotent).
+- `dispatch(LifecycleCommand::Reset)` — exits all operational states leaf-first, calls `on_init_entry`, sets phase to Init. Returns `Reset`.
 
 ## Reset Semantics
 
-Both `machine.reset()` (runtime-initiated) and `Guard::Reset` (returned by any transition guard) invoke the same `enter_init()` engine method. The engine:
+Both `dispatch(LifecycleCommand::Reset)` (runtime-initiated) and `Guard::Reset` (returned by any transition guard) invoke the same `enter_init()` engine method. The engine:
 
 1. Exits the current leaf state (`on_exit` for each action in the slice)
 2. Exits every ancestor up to the virtual root (`on_exit` for each)
@@ -357,11 +367,11 @@ Both `machine.reset()` (runtime-initiated) and `Guard::Reset` (returned by any t
 4. Sets phase to `Init`
 5. Returns `DispatchOutcome::Reset`
 
-**The full LCA exit chain is absolute.** Neither `machine.reset()` nor `Guard::Reset` skips any `on_exit` handler — every state from the current leaf up to the topmost ancestor fires its exit actions before `on_init_entry` runs.
+**The full LCA exit chain is absolute.** Neither `dispatch(LifecycleCommand::Reset)` nor `Guard::Reset` skips any `on_exit` handler — every state from the current leaf up to the topmost ancestor fires its exit actions before `on_init_entry` runs.
 
 **Two paths to Reset, identical behavior:**
 
-- **Runtime-initiated**: the runtime calls `machine.reset()` in response to `LifecycleCommand::Reset`. This is how supervisors reset children.
+- **Runtime-initiated**: the runtime dispatches `LifecycleCommand::Reset` in response to a supervisor command. This is how supervisors reset children.
 - **Self-initiated**: a transition guard at any level (state or root) returns `Guard::Reset`. This is how actors self-terminate in response to domain events (e.g., a supervisor resetting itself after all children have shut down).
 
 **Reset is valid from any operational state.** `on_exit` handlers must be safe to call unconditionally.

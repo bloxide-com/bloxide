@@ -126,9 +126,9 @@ flowchart LR
 | Blox crates | `MachineSpec` impl, `Ctx`, state handlers, `Event` enum | Runtime imports, executor types |
 | `bloxide-core` | `MachineSpec`, `StateMachine`, `ActorRef`, `BloxRuntime`, `StaticChannelCap`, `DynamicChannelCap`, `Mailboxes` | Tokio, Embassy, OS imports |
 | `bloxide-timer` | `TimerCommand`, `TimerId`, `TimerQueue`, `HasTimerRef`, `set_timer`, `cancel_timer`, `TimerService` trait | Runtime imports, executor types |
-| `bloxide-supervisor` | `LifecycleCommand`, `ChildLifecycleEvent`, `ChildGroup`, `ChildPolicy`, `GroupShutdown`, `HasChildren`, action functions, `SupervisedRunLoop` trait | Runtime imports, executor types |
+| `bloxide-supervisor` | `LifecycleCommand`, `ChildLifecycleEvent`, `ChildGroup`, `ChildPolicy`, `GroupShutdown`, `HasChildren`, action functions | Runtime imports, executor types |
 | `bloxide-spawn` | `SpawnCap` trait, `DynamicChannelCap`, `SpawnCap` impl for `TestRuntime` | Runtime imports, executor types |
-| Runtime crates | `BloxRuntime` + `StaticChannelCap` + `TimerService` + `SupervisedRunLoop` impls, `run_root` / `run_supervised_actor` | Domain logic |
+| Runtime crates | `BloxRuntime` + `StaticChannelCap` + `TimerService` impls, actor task functions | Domain logic |
 | Application/Wiring | Channel creation, `ActorRef` injection, task spawning | Business logic |
 
 ## Multi-Mailbox Model
@@ -149,8 +149,8 @@ See [08-supervision.md](08-supervision.md).
 
 | Runtime | Best for | Features |
 |---------|----------|----------|
-| `bloxide-embassy` | Embedded systems, `no_std` targets | `StaticChannelCap`, `TimerService`, `SupervisedRunLoop` |
-| `bloxide-tokio` | Server applications, native targets | `StaticChannelCap`, `DynamicChannelCap`, `TimerService`, `SupervisedRunLoop`, `SpawnCap` |
+| `bloxide-embassy` | Embedded systems, `no_std` targets | `StaticChannelCap`, `TimerService` |
+| `bloxide-tokio` | Server applications, native targets | `StaticChannelCap`, `DynamicChannelCap`, `TimerService`, `SpawnCap` |
 | `TestRuntime` | Unit tests, no executor needed | `DynamicChannelCap`, `SpawnCap` (via `bloxide-spawn/test_impl`) |
 
 ## User-Land Application Layout

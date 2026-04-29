@@ -18,7 +18,7 @@ The Counter actor is the simplest possible bloxide actor, designed for teaching 
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Ready : runtime calls machine.start()
+    [*] --> Ready : dispatch(Start)
     Ready --> Done : CounterMsg::Tick [count >= DONE_AT_COUNT]
 ```
 
@@ -28,7 +28,7 @@ stateDiagram-v2
 
 | State | Kind | Description |
 |-------|------|-------------|
-| `[Init]` | engine-implicit | Waiting for `start()`; `on_init_entry` resets count to 0 |
+| `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` resets count to 0 |
 | `Ready` | leaf | Accepting ticks; count < threshold |
 | `Done` | leaf, terminal | Terminal state; `is_terminal()` returns `true` |
 
@@ -84,17 +84,17 @@ None — Counter is a sink actor.
 
 ## Acceptance Criteria
 
-- [ ] `machine.start()` exits Init and enters `Ready`
+- [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`
 - [ ] `CounterMsg::Tick` in `Ready` with `count < DONE_AT_COUNT` stays in `Ready`
 - [ ] `CounterMsg::Tick` in `Ready` with `count >= DONE_AT_COUNT` transitions to `Done`
 - [ ] `is_terminal(&CounterState::Done)` returns `true`
-- [ ] `machine.reset()` from `Done` exits states, calls `on_init_entry`, count reset to 0
+- [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Reset))` from `Done` exits states, calls `on_init_entry`, count reset to 0
 
 ## Acceptance Criteria → Test Mapping
 
 | Acceptance Criterion | Test Function |
 |---|---|
-| `machine.start()` exits Init → Ready | `test_start_enters_ready()` |
+| `dispatch(LifecycleCommand::Start)` exits Init → Ready | `test_start_enters_ready()` |
 | Tick stays in Ready when count < threshold | `test_tick_in_ready_stays()` |
 | Tick transitions to Done at threshold | `test_tick_reaches_done()` |
 | `is_terminal(Done)` returns true | `test_done_is_terminal()` |

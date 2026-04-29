@@ -22,9 +22,9 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 
 ## Start Here
 
-- Read [START_HERE.md](START_HERE.md) for the three-layer principle, five-layer application structure, and two-tier trait system in one place.
+- Read [AGENTS.md](AGENTS.md) for the three-layer principle, five-layer application structure, and two-tier trait system in one place.
 - Use [skills/building-with-bloxide/SKILL.md](skills/building-with-bloxide/SKILL.md) as the step-by-step build workflow.
-- Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the macro and API reference while you build.
+- Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the API reference while you build (being updated for bloxide-codegen workflow).
 - For the smallest runnable example, start with `cargo run --example tokio-minimal-demo` (now fully five-layered via `counter-*` crates).
 
 ---
@@ -79,14 +79,17 @@ bloxide/
 ├── crates/            # framework + layered application crates
 │   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, std-gated TestRuntime
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
-│   ├── bloxide-macros/    # proc macros: #[derive(StateTopology)], transitions!, event!
+│   ├── bloxide-macros/    # proc macros: #[derive(BloxCtx)], transitions!, root_transitions!, #[delegatable]
 │   ├── bloxide-spawn/     # dynamic actor spawning and peer introduction
 │   ├── bloxide-supervisor/ # reusable OTP-style supervisor
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
 │   ├── messages/          # shared message crates (ping-pong, pool, counter)
 │   ├── actions/           # action trait crates (ping-pong, pool, counter)
 │   ├── bloxes/            # ping, pong, worker, pool, counter
-│   └── impl/              # concrete behavior/factory crates for wiring demos
+│   ├── impl/              # concrete behavior/factory crates for wiring demos
+│   └── tools/             # codegen and CLI tools
+│       ├── bloxide-codegen/ # TOML-driven code generator library
+│       └── cargo-blox/    # CLI: cargo blox generate / new / build / check / test / run
 ├── runtimes/          # runtime implementations
 │   ├── bloxide-embassy/   # Embassy runtime (embedded target)
 │   └── bloxide-tokio/     # Tokio runtime (std target)
@@ -98,6 +101,9 @@ bloxide/
 ├── skills/            # agent skills (workflows for building/evolving)
 │   ├── building-with-bloxide/
 │   └── contributing-to-bloxide/
+├── tools/               # visualization utilities
+│   ├── bloxide-viz-export/  # source-to-JSON exporter for visualizer
+│   └── bloxide-visualizer/  # browser-based state-machine visualizer
 ├── spec/              # architecture docs and per-blox specs
 │   ├── architecture/      # numbered design docs
 │   ├── bloxes/            # per-blox specs (ping, pong, pool, worker, counter)
@@ -125,12 +131,27 @@ RUST_LOG=trace cargo run --example embassy-demo
 
 ---
 
+## Building with `cargo blox`
+
+Bloxide uses `cargo blox` for code generation. After defining schemas in `blox.toml` files:
+
+```bash
+cargo install --path crates/tools/cargo-blox
+cargo blox generate   # regenerate all boilerplate from blox.toml specs
+cargo blox build      # generate + cargo build
+cargo blox check      # generate + cargo check
+```
+
+Message enums, event types, and state topology are declared in `blox.toml` and generated into `src/generated/`. See `skills/building-with-bloxide/SKILL.md` for the full workflow.
+
+---
+
 ## Crates
 
 | Crate | Path | `no_std` | Purpose |
 |---|---|:---:|---|
 | `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, std-gated `TestRuntime` |
-| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(StateTopology)]`, `#[derive(BloxCtx)]`, `transitions!`, `event!`, `blox_messages!` |
+| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(BloxCtx)]`, `transitions!`, `root_transitions!`, `#[delegatable]` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `VirtualClock` |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `ChildGroup`, `ChildPolicy`, `GroupShutdown` |

@@ -7,21 +7,15 @@ use bloxide_core::{
     transition::ActionResult,
     transitions,
 };
-use bloxide_macros::StateTopology;
 use counter_actions::{increment_count, CountsTicks};
 use counter_messages::CounterMsg;
 
 use crate::{CounterCtx, CounterEvent};
 
-const DONE_AT_COUNT: u8 = 2;
+pub use crate::generated::topology::CounterState;
+use crate::counter_state_handler_table;
 
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(READY_FNS, DONE_FNS)]
-pub enum CounterState {
-    Ready,
-    Done,
-}
+const DONE_AT_COUNT: u8 = 2;
 
 pub struct CounterSpec<R, B>(PhantomData<(R, B)>)
 where

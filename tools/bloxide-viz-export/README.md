@@ -23,7 +23,7 @@ Output goes to `./bloxide-viz-output/` by default (or `[output-dir]` if provided
 
 ## How it works
 
-1. **Scans** the workspace for crates containing a `src/spec.rs` with `MachineSpec for` and a `#[derive(StateTopology)]` state enum.
+1. **Scans** the workspace for crates containing a `blox.toml` with `[event]` and `[topology]` sections, along with a `src/spec.rs` implementing `MachineSpec for`.
 2. **Parses** `src/spec.rs` with `syn` to extract:
    - State topology (variants, composite/parent attributes)
    - `StateFns` constants (on_entry, on_exit, transitions)

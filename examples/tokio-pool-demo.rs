@@ -5,7 +5,7 @@
 //   1. Dynamic actor spawning: pool receives SpawnWorker → creates worker tasks at runtime
 //   2. P2P peer introduction: pool wires workers to each other via PeerCtrl channels
 //   3. Supervision: supervisor manages pool and worker lifecycles
-//   4. KillCap: policy-driven cleanup for dynamic actors (workers use Kill policy)
+//   4. KillCap: policy-driven cleanup for dynamic actors
 //
 // Concrete worker construction lives in tokio-pool-demo-impl (Layer 3). This
 // binary remains Layer 5 wiring only. pool-blox and worker-blox are fully
@@ -49,7 +49,8 @@ async fn main() {
     let pool_machine = StateMachine::<PoolSpec<TokioRuntime>>::new(pool_ctx);
 
     // Set up supervision with KillCap support
-    // Pool uses Stop policy (clean shutdown), workers would use Kill policy (immediate cleanup)
+    // Pool uses Stop policy (clean shutdown). KillCap is available for emergency
+    // abort but not exercised in this example.
     let mut group = ChildGroupBuilder::with_kill_cap(GroupShutdown::WhenAnyDone, kill_cap.clone());
     bloxide_tokio::spawn_child!(
         group,

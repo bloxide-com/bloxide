@@ -304,7 +304,7 @@ fn parse_paren_tokens(attr: &syn::Attribute) -> Result<TokenStream> {
         syn::Meta::List(list) => Ok(list.tokens.clone()),
         _ => Err(Error::new_spanned(
             attr,
-            "BloxCtx: expected parenthesized argument, e.g., #[provides(HasPeerRef<R>)]",
+            "BloxCtx: expected parenthesized argument, e.g., #[delegates(TraitName)] or field name following convention (foo_ref: ActorRef<M, R>)",
         )),
     }
 }

@@ -15,24 +15,12 @@ use bloxide_core::{
     spec::{MachineSpec, StateFns},
     transitions, HasSelfId,
 };
-use bloxide_macros::StateTopology;
 use pool_actions::{actions::introduce_new_worker, traits::HasWorkers};
 use pool_messages::{DoWork, PoolMsg, SpawnWorker, WorkerMsg};
 
 use crate::{PoolCtx, PoolEvent};
-
-/// Pool state topology — three flat leaf states.
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(IDLE_FNS, ACTIVE_FNS, ALL_DONE_FNS)]
-pub enum PoolState {
-    /// No workers spawned yet.
-    Idle,
-    /// At least one worker is running.
-    Active,
-    /// All workers have finished.
-    AllDone,
-}
+use crate::pool_state_handler_table;
+pub use crate::generated::topology::PoolState;
 
 pub struct PoolSpec<R>(PhantomData<R>)
 where

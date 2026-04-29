@@ -24,7 +24,7 @@ This blox showcases:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Idle : runtime calls machine.start()
+    [*] --> Idle : dispatch(Start)
     Idle --> Active : PoolMsg::SpawnWorker
     Active --> Active : PoolMsg::SpawnWorker
     Active --> AllDone : PoolMsg::WorkDone [pending == 0]
@@ -36,7 +36,7 @@ stateDiagram-v2
 
 | State | Kind | Description |
 |-------|------|-------------|
-| `[Init]` | engine-implicit | Waiting for `start()`; `on_init_entry` clears worker lists |
+| `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` clears worker lists |
 | `Idle` | leaf, initial | No workers spawned yet |
 | `Active` | leaf | At least one worker running; accepts more spawns and work done |
 | `AllDone` | leaf, terminal | All workers finished; `is_terminal()` returns `true` |
@@ -106,20 +106,20 @@ pub struct PoolCtx<R: BloxRuntime> {
 
 ## Acceptance Criteria
 
-- [ ] `machine.start()` exits Init and enters `Idle`
+- [ ] `dispatch(PoolEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Idle`
 - [ ] `PoolMsg::SpawnWorker` in `Idle` spawns worker, transitions to `Active`
 - [ ] `PoolMsg::SpawnWorker` in `Active` spawns additional worker, stays in `Active`
 - [ ] New worker is introduced to all previously spawned workers
 - [ ] `PoolMsg::WorkDone` in `Active` decrements pending count
 - [ ] `PoolMsg::WorkDone` in `Active` with `pending == 0` transitions to `AllDone`
 - [ ] `is_terminal(&PoolState::AllDone)` returns `true`
-- [ ] `machine.reset()` from `AllDone` clears all worker tracking state
+- [ ] `dispatch(PoolEvent::Lifecycle(LifecycleCommand::Reset))` from `AllDone` clears all worker tracking state
 
 ## Acceptance Criteria → Test Mapping
 
 | Acceptance Criterion | Test Function |
 |---|---|
-| start enters Idle | `test_start_enters_idle()` |
+| `dispatch(LifecycleCommand::Start)` enters Idle | `test_start_enters_idle()` |
 | SpawnWorker in Idle → Active | `test_first_spawn_activates()` |
 | SpawnWorker in Active stays | `test_additional_spawn_stays()` |
 | WorkDone decrements pending | `test_work_done_decrements()` |

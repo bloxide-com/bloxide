@@ -59,7 +59,7 @@ Stop → actor goes to Init (suspended)
 **Actors have zero knowledge of their supervisor.** No `supervisor_ref` in context, no lifecycle messages in event enums, no root rules for Reset/Stop/Ping.
 ## KillCap: Policy-Driven Actor Cleanup
 
-`KillCap` is a **runtime capability** (Tier 2 trait) for terminating actors and freeing their allocated resources. It is primarily used by supervisors managing **dynamic actors** — actors spawned at runtime whose resources (channels, Vec slots, task slots) may need explicit cleanup based on policy.
+`KillCap` is a **runtime capability** for terminating actors and freeing their allocated resources. It is primarily used by supervisors managing **dynamic actors** — actors spawned at runtime whose resources (channels, Vec slots, task slots) may need explicit cleanup based on policy.
 
 ### Static vs. Dynamic Actor Cleanup
 
@@ -136,7 +136,7 @@ When policy dictates immediate cleanup (e.g., `ChildPolicy::KillOnDone`), `Child
 
 - KillCap is a **policy tool** for dynamic actor cleanup, not a replacement for normal lifecycle.
 - Actors have no access to KillCap; only supervisors (and potentially the wiring layer) hold it.
-- KillCap is a Tier 2 capability (runtime-facing), not a Tier 1 trait (blox-facing).
+- KillCap is a runtime-facing capability, not a blox-facing trait.
 - Embassy lacks KillCap — dynamic actors on Embassy use cooperative cleanup strategies.
 - After `kill()`, no `ChildLifecycleEvent::Stopped` is emitted; the supervisor tracks cleanup separately.
 ## Generic Supervisor (`bloxide-supervisor`)
@@ -366,7 +366,7 @@ impl<R: BloxRuntime + 'static> MachineSpec for SupervisorSpec<R> {
 sequenceDiagram
     participant Sup as SupervisorSpec
     participant CG as ChildGroup
-    participant RT as SupervisedRunLoop
+    participant RT as Runtime
     participant M as Child StateMachine
 
     Note over M: Actor runs, processing domain events...
@@ -378,13 +378,13 @@ sequenceDiagram
     Note over CG: policy == Restart, restarts < max
     CG->>RT: LifecycleCommand::Reset
     CG-->>Sup: ChildAction::Continue
-    RT->>M: machine.reset()
+    RT->>M: dispatch(LifecycleCommand::Reset)
     Note over RT: Task stays alive
     RT-->>Sup: ChildLifecycleEvent::Reset
     Sup->>CG: handle_reset(child_id)
     Note over CG: increment restarts, send Start
     CG->>RT: LifecycleCommand::Start
-    RT->>M: machine.start()
+    RT->>M: dispatch(LifecycleCommand::Start)
 ```
 
 ### Shutdown path (GroupShutdown trigger met)
@@ -393,7 +393,7 @@ sequenceDiagram
 sequenceDiagram
     participant Sup as SupervisorSpec
     participant CG as ChildGroup
-    participant RT as SupervisedRunLoop
+    participant RT as Runtime
     participant M as Child StateMachine
 
     Note over M: Actor runs, processing domain events...
@@ -407,7 +407,7 @@ sequenceDiagram
     Note over Sup: Running → ShuttingDown
     Sup->>CG: stop_all(from)
     CG->>RT: LifecycleCommand::Stop (to each child)
-    RT->>M: machine.reset()
+    RT->>M: dispatch(LifecycleCommand::Stop)
     Note over RT: Task exits permanently
     RT-->>Sup: ChildLifecycleEvent::Stopped
     Note over Sup: counts stops, all stopped → Guard::Reset
@@ -462,22 +462,14 @@ pub enum LifecycleCommand {
 |---|---|
 | `Start` | dispatch(VirtualRoot) — exits Init, enters `initial_state()` |
 | `Reset` | dispatch(VirtualRoot) — full LCA exit chain, task stays alive |
-| `Stop` | Calls `machine.reset()` — full LCA exit chain, task exits permanently |
+| `Stop` | Full LCA exit chain → Init, task exits permanently |
 | `Ping` | Child responds with `ChildLifecycleEvent::Alive` |
 
-## `SupervisedRunLoop` Trait
+## Supervised Actor Run Loop
 
-Defined in `bloxide-supervisor`. Each runtime implements this trait to bridge lifecycle commands with domain mailboxes. This is a **Tier 2** trait — never used as a bound on blox crates.
+Each runtime implements a supervised actor run loop that bridges lifecycle commands with domain mailboxes. This is runtime-specific code — never used as a bound on blox crates.
 
-```rust
-pub trait SupervisedRunLoop: BloxRuntime {
-    // Runtime-specific supervised actor execution.
-    // Merges lifecycle commands with domain mailboxes,
-    // dispatches events, and reports ChildLifecycleEvents.
-}
-```
-
-The runtime implementation (`bloxide-embassy`) polls the internal lifecycle channel with priority over domain events. Domain events are only polled when no lifecycle command is pending.
+The runtime polls the internal lifecycle channel with priority over domain events. Domain events are only polled when no lifecycle command is pending. After every dispatch, the runtime inspects `DispatchOutcome` and sends `ChildLifecycleEvent` to the supervisor automatically.
 
 ## `SupervisorEvent` and `SupervisorControl`
 
@@ -539,10 +531,10 @@ let sup_id = bloxide_embassy::next_actor_id!();
 let (children, sup_notify_rx, sup_control_rx) = group.finish();
 
 // Create the generic supervisor — no custom blox needed
-let sup_ctx = SupervisorCtx::new(sup_id, children);
-let mut sup_machine = StateMachine::new(sup_ctx);
-sup_machine.start();
-spawner.must_spawn(supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)));
+    let sup_ctx = SupervisorCtx::new(sup_id, children);
+    let mut sup_machine = StateMachine::new(sup_ctx);
+    sup_machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+    spawner.must_spawn(supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)));
 ```
 
 In this example, `ping` will be restarted once on `Done`/`Failed`, while `pong` is marked permanently done immediately. Because `GroupShutdown::WhenAnyDone` is configured, the supervisor enters `ShuttingDown` as soon as either child is permanently done.
@@ -559,7 +551,7 @@ Root Supervisor
     └── ...
 ```
 
-The root supervisor is bootstrapped with `sup_machine.start()` in the wiring binary.
+The root supervisor is bootstrapped with `sup_machine.dispatch(LifecycleCommand::Start)` in the wiring binary.
 
 ## Key Invariants
 
@@ -572,7 +564,7 @@ Supervision-specific invariants:
 - `on_init_entry` is for domain-state reset only.
 - `Reset` keeps the task alive in Init (restartable); `Stop` exits the task permanently.
 - `is_error` takes precedence over `is_terminal` — a state that is both error and terminal reports only `Failed`.
-- `Guard::Reset` in any transition guard triggers the same `enter_init()` code path as `machine.reset()` — the full LCA exit chain (leaf → root) is guaranteed in both cases.
+- `Guard::Reset` in any transition guard triggers the same `enter_init()` code path as `dispatch(LifecycleCommand::Reset)` — the full LCA exit chain (leaf → root) is guaranteed in both cases.
 - Each child runs in its own Embassy task — precise per-actor wakeup is preserved.
 - `ChildGroup<R>` encapsulates all restart counting, policy evaluation, and shutdown logic.
 - Per-child `ChildPolicy` gives each child its own restart strategy (vs. the old group-wide approach).

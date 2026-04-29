@@ -14,6 +14,7 @@ pub mod actor;
 pub mod capability;
 pub mod engine;
 pub mod event_tag;
+pub mod generated;
 pub mod lifecycle;
 pub mod mailboxes;
 pub mod messaging;

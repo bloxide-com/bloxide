@@ -1,0 +1,31 @@
+[actor]
+name = "Ping"
+
+[event]
+name = "PingEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+
+[topology]
+handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
+
+[[topology.states]]
+name = "Operating"
+composite = true
+
+[[topology.states]]
+name = "Active"
+parent = "Operating"
+
+[[topology.states]]
+name = "Paused"
+parent = "Operating"
+
+[[topology.states]]
+name = "Done"
+
+[[topology.states]]
+name = "Error"

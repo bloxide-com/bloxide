@@ -1,0 +1,11 @@
+[actor]
+name = "Supervisor"
+
+[topology]
+handler_fns = ["RUNNING_FNS", "SHUTTING_DOWN_FNS"]
+
+[[topology.states]]
+name = "Running"
+
+[[topology.states]]
+name = "ShuttingDown"

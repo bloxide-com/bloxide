@@ -7,7 +7,8 @@
 /// domain-specific traits.
 ///
 /// Implementing these traits on a context struct is typically done via the
-/// `#[derive(BloxCtx)]` macro using `#[self_id]` and `#[provides(...)]` annotations.
+/// `#[derive(BloxCtx)]` macro, which auto-detects fields by naming convention
+/// (`self_id: ActorId` → `HasSelfId`, `foo_ref: ActorRef<M, R>` → `HasFooRef<R>`).
 use crate::messaging::ActorId;
 
 /// Provides access to the actor's own `ActorId`.

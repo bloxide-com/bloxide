@@ -6,12 +6,15 @@ extern crate std;
 
 pub mod prelude;
 
-mod ctx;
-mod events;
-mod spec;
+#[macro_use]
+pub mod generated;
 
 #[cfg(all(test, feature = "std"))]
 mod tests;
+
+mod ctx;
+mod events;
+mod spec;
 
 pub use ctx::CounterCtx;
 pub use events::CounterEvent;

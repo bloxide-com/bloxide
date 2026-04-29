@@ -1,0 +1,22 @@
+[actor]
+name = "Pool"
+
+[event]
+name = "PoolEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PoolMsg"
+message_path = "pool_messages::PoolMsg"
+
+[topology]
+handler_fns = ["IDLE_FNS", "ACTIVE_FNS", "ALL_DONE_FNS"]
+
+[[topology.states]]
+name = "Idle"
+
+[[topology.states]]
+name = "Active"
+
+[[topology.states]]
+name = "AllDone"

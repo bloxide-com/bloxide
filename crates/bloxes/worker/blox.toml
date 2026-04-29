@@ -1,0 +1,26 @@
+[actor]
+name = "Worker"
+
+[event]
+name = "WorkerEvent"
+generics = "<R: BloxRuntime>"
+debug = false
+
+[[event.mailboxes]]
+variant = "Ctrl"
+message = "WorkerCtrl"
+message_path = "pool_messages::WorkerCtrl<R>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "WorkerMsg"
+message_path = "pool_messages::WorkerMsg"
+
+[topology]
+handler_fns = ["WAITING_FNS", "DONE_FNS"]
+
+[[topology.states]]
+name = "Waiting"
+
+[[topology.states]]
+name = "Done"

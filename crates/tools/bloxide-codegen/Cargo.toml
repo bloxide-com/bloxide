@@ -1,0 +1,30 @@
+[package]
+name = "bloxide-codegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+description = "Code generation library for Bloxide — converts blox.toml specs into Rust source files"
+
+[lib]
+name = "bloxide_codegen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bloxide-codegen"
+path = "src/main.rs"
+
+[dependencies]
+toml = "0.8"
+serde = { version = "1", features = ["derive"] }
+quote = "1"
+proc-macro2 = "1"
+prettyplease = "0.2"
+syn = { version = "2", default-features = false, features = ["parsing", "full", "printing"] }
+walkdir = "2"
+anyhow = "1"
+
+[dev-dependencies]
+insta = "1"

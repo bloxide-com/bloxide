@@ -4,42 +4,36 @@ Quick reference for macro syntax, common patterns, and generated code.
 
 ## Macros Quick Reference
 
-### `blox_messages!` — Message Enum
+### Messages in `blox.toml`
 
-```rust
-blox_messages! {
-    pub enum PingPongMsg {
-        Ping { round: u32 },
-        Pong { round: u32 },
-        Resume {},
-    }
-}
+```toml
+[[messages]]
+name = "PingPongMsg"
+visibility = "pub"
+
+[[messages.variants]]
+name = "Ping"
+
+[[messages.variants.fields]]
+name = "round"
+ty = "u32"
 ```
 
-Generates:
-- `pub struct Ping { pub round: u32 }`
-- `pub struct Pong { pub round: u32 }`
-- `pub struct Resume {}`
-- `pub enum PingPongMsg { Ping(Ping), Pong(Pong), Resume(Resume) }`
+Run `cargo blox generate` to produce `src/generated/messages_pingpongmsg.rs`.
 
-### `event!` — Event Enum
+### Event Enum in `blox.toml`
 
-```rust
-// Single mailbox
-event!(Ping { Msg: PingPongMsg });
+```toml
+[event]
+name = "PingEvent"
 
-// Multiple mailboxes (index 0 polled first)
-event!(Worker<R> { 
-    Ctrl: WorkerCtrl<R>, 
-    Msg: WorkerMsg 
-});
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
 ```
 
-Generates:
-- `pub enum PingEvent { Msg(Envelope<PingPongMsg>) }`
-- `EventTag` impl with `MSG_TAG` constant
-- `msg_payload(&self) -> Option<&PingPongMsg>` helper
-- `From<Envelope<M>>` for stream conversion
+Run `cargo blox generate` to produce `src/generated/events.rs`, then use `pub use crate::generated::events::*;`.
 
 ### `#[derive(BloxCtx)]` — Context Struct
 
@@ -75,30 +69,22 @@ fn new(
 ) -> Self
 ```
 
-### `#[derive(StateTopology)]` — State Enum
+### State Topology in `blox.toml`
 
-```rust
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(ACTIVE_FNS, PAUSED_FNS, DONE_FNS)]
-pub enum PingState {
-    #[composite]
-    Operating,
-    #[parent(Operating)]
-    Active,
-    #[parent(Operating)]
-    Paused,
-    Done,
-    Error,
-}
+```toml
+[topology]
+handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
+
+[[topology.states]]
+name = "Operating"
+composite = true
+
+[[topology.states]]
+name = "Active"
+parent = "Operating"
 ```
 
-Generates:
-- `parent(&self) -> Option<Self>`
-- `is_leaf(&self) -> bool`
-- `as_index(&self) -> usize`
-- `STATE_COUNT: usize`
-- `ping_state_handler_table!(Self)` macro
+Run `cargo blox generate` to produce `src/generated/topology.rs`, then use `pub use crate::generated::topology::PingState;`.
 
 ### `transitions!` — Transition Rules
 
@@ -378,6 +364,8 @@ pub behavior: B,
 Generates forwarding impls. Import `__delegate_TraitA` from the action crate.
 
 ### `#[ctor]` — Override auto-detection
+
+> **Deprecated** — fields are now auto-detected by naming convention (`foo_factory` for constructor-only fields). The `#[ctor]` attribute is retained for backward compatibility but is no longer needed for new code.
 
 Use `#[ctor]` when a field matches the naming convention but you *don't* want a trait impl generated:
 

@@ -16,8 +16,6 @@ use bloxide_core::{
     transition::ActionResult,
     transitions,
 };
-use bloxide_macros::StateTopology;
-
 use pool_actions::{
     actions::{apply_worker_control, broadcast_to_peers, notify_pool_done},
     traits::{HasCurrentTask, HasWorkerPeers},
@@ -25,17 +23,8 @@ use pool_actions::{
 use pool_messages::{WorkerCtrl, WorkerMsg};
 
 use crate::{WorkerCtx, WorkerEvent};
-
-/// Worker state topology — two flat leaf states.
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(WAITING_FNS, DONE_FNS)]
-pub enum WorkerState {
-    /// Initial operational state: accepts peer introductions and waits for DoWork.
-    Waiting,
-    /// Terminal state: broadcasts result to peers, notifies pool.
-    Done,
-}
+use crate::worker_state_handler_table;
+pub use crate::generated::topology::WorkerState;
 
 pub struct WorkerSpec<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask>(PhantomData<(R, B)>);
 

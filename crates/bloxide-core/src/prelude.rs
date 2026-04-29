@@ -1,8 +1,8 @@
 // Copyright 2025 Bloxide, all rights reserved
-/// Convenience re-exports for blox authors using the macro-based workflow.
+/// Convenience re-exports for blox authors using the bloxide-codegen workflow.
 ///
 /// Covers the types needed to implement a `MachineSpec` with `#[derive(BloxCtx)]`,
-/// `#[derive(StateTopology)]`, `#[blox_event]`, and `transitions!`.
+/// `blox.toml`-generated state topology and events, and `transitions!`.
 /// Import with `use bloxide_core::prelude::*;`.
 pub use crate::{
     // Engine types (StateMachine for tests, DispatchOutcome for assertions)
@@ -24,7 +24,7 @@ pub use crate::{
     // Runtime trait (generic bound on context structs)
     BloxRuntime,
     Envelope,
-    // Event infrastructure (needed by #[blox_event] generated code)
+    // Event infrastructure (needed by bloxide-codegen generated events)
     EventTag,
     HasSelfId,
     WILDCARD_TAG,
