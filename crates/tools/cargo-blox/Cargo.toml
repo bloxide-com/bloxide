@@ -19,4 +19,5 @@ cargo_metadata = "0.18"
 anyhow = "1"
 walkdir = "2"
 notify = "6"
+toml = "0.8"
 bloxide-codegen = { path = "../bloxide-codegen" }

@@ -10,8 +10,10 @@ mod ci;
 mod forward;
 mod generate;
 mod lint;
+mod message_cmd;
 mod new;
 mod run;
+mod state;
 mod test;
 mod watch;
 
@@ -83,6 +85,32 @@ enum BloxSubcommand {
     Lint,
     /// Run full CI feature matrix
     Ci,
+    /// Add a state to a blox topology
+    AddState {
+        blox_name: String,
+        state_name: String,
+        #[arg(long)]
+        parent: Option<String>,
+        #[arg(long)]
+        composite: bool,
+    },
+    /// Remove a state from a blox topology
+    RemoveState {
+        blox_name: String,
+        state_name: String,
+    },
+    /// Add a message variant to a messages crate
+    AddMessage {
+        crate_name: String,
+        variant_name: String,
+        #[arg(trailing_var_arg = true)]
+        fields: Vec<String>,
+    },
+    /// Remove a message variant from a messages crate
+    RemoveMessage {
+        crate_name: String,
+        variant_name: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -98,6 +126,39 @@ fn main() -> anyhow::Result<()> {
             BloxSubcommand::New { name } => new::new_blox(&name),
             BloxSubcommand::Lint => lint::lint(),
             BloxSubcommand::Ci => ci::ci(),
+            BloxSubcommand::AddState {
+                blox_name,
+                state_name,
+                parent,
+                composite,
+            } => state::add_state(&blox_name, &state_name, parent.as_deref(), composite),
+            BloxSubcommand::RemoveState {
+                blox_name,
+                state_name,
+            } => state::remove_state(&blox_name, &state_name),
+            BloxSubcommand::AddMessage {
+                crate_name,
+                variant_name,
+                fields,
+            } => {
+                let parsed_fields: Vec<(String, String)> = fields
+                    .iter()
+                    .filter_map(|s| {
+                        let parts: Vec<&str> = s.splitn(2, ':').collect();
+                        if parts.len() == 2 {
+                            Some((parts[0].to_string(), parts[1].to_string()))
+                        } else {
+                            eprintln!("warning: skipping invalid field spec '{}' (expected name:ty)", s);
+                            None
+                        }
+                    })
+                    .collect();
+                message_cmd::add_message(&crate_name, &variant_name, parsed_fields)
+            }
+            BloxSubcommand::RemoveMessage {
+                crate_name,
+                variant_name,
+            } => message_cmd::remove_message(&crate_name, &variant_name),
         },
     }
 }

@@ -1,0 +1,11 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "bhsm-tst-messages"
+version.workspace = true
+edition.workspace = true
+description = "Domain message types for the bhsm-tst HSM topology demo"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxide-macros = { path = "../../bloxide-macros" }
