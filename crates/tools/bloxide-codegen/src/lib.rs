@@ -2,10 +2,12 @@
 //! Public API for bloxide-codegen — generate Rust source from blox.toml specs.
 
 pub mod schema;
+pub mod ctx;
 mod mailboxes;
 mod messages;
 mod events;
 mod topology;
+pub mod spec_skeleton;
 
 use schema::BloxConfig;
 use std::path::Path;
@@ -32,6 +34,36 @@ pub fn generate_all(config: &BloxConfig, crate_name: &str) -> anyhow::Result<Vec
         let actor_name = config.actor.as_ref().map(|a| a.name.as_str());
         let code = topology::generate(topology, actor_name, crate_name)?;
         files.push(("topology.rs".to_string(), code));
+    }
+
+    if let Some(context) = &config.context {
+        let code = ctx::generate(context, crate_name)?;
+        files.push(("ctx.rs".to_string(), code));
+    }
+
+    if let (Some(actor), Some(topology), Some(event)) =
+        (&config.actor, &config.topology, &config.event)
+    {
+        let msg_type = event
+            .mailboxes
+            .first()
+            .map(|m| m.message.clone())
+            .unwrap_or_default();
+        let msg_path = event
+            .mailboxes
+            .first()
+            .and_then(|m| m.message_path.clone())
+            .unwrap_or_default();
+        let code = spec_skeleton::generate(
+            actor,
+            topology,
+            config.context.as_ref(),
+            &event.name,
+            &msg_type,
+            &msg_path,
+            crate_name,
+        )?;
+        files.push(("spec_skeleton.rs".to_string(), code));
     }
 
     if let Some(mailboxes) = &config.mailboxes {

@@ -11,7 +11,6 @@ mod pong_tests {
     use crate::{PongCtx, PongEvent, PongSpec, PongState};
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::Envelope;
-    use bloxide_core::spec::MachineSpec;
     use bloxide_core::test_utils::{TestReceiver, TestRuntime, TestSender};
     use bloxide_core::{DynamicChannelCap, MachineState, StateMachine};
     use ping_pong_messages::{Ping, PingPongMsg, Pong};
@@ -109,29 +108,6 @@ mod pong_tests {
         }
 
         assert_eq!(h.current_state(), MachineState::State(PongState::Ready));
-    }
-
-    /// AC: When `send_pong` fails (peer channel full), the guard's
-    /// `results.any_failed()` branch triggers and the machine transitions to
-    /// `PongState::Error`.
-    #[test]
-    fn pong_with_full_peer_channel_transitions_to_error() {
-        let mut h = PongHarness::new();
-        h.start();
-
-        h.ping_sender.set_full(true);
-
-        h.send_ping(1);
-
-        assert_eq!(
-            h.current_state(),
-            MachineState::State(PongState::Error),
-            "send_pong failure must transition Pong to Error"
-        );
-        assert!(
-            PongSpec::<TestRuntime>::is_error(&PongState::Error),
-            "is_error must be true for PongState::Error"
-        );
     }
 
     #[test]

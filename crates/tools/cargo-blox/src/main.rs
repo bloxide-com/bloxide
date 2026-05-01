@@ -12,9 +12,14 @@ mod generate;
 mod lint;
 mod message_cmd;
 mod new;
+mod new_actions;
+mod new_all;
+mod new_binary;
+mod new_messages;
 mod run;
 mod state;
 mod test;
+mod utils;
 mod watch;
 
 #[derive(Parser)]
@@ -77,9 +82,37 @@ enum BloxSubcommand {
         #[command(flatten)]
         cargo: clap_cargo::Features,
     },
-    /// Scaffold a new blox
+    /// Scaffold a new blox crate
     New {
         name: String,
+        /// Messages crate dependency name (e.g. foo-messages)
+        #[arg(long)]
+        messages: Option<String>,
+        /// Actions crate dependency name (e.g. foo-actions)
+        #[arg(long)]
+        actions: Option<String>,
+    },
+    /// Scaffold a new actions crate
+    NewActions {
+        name: String,
+    },
+    /// Scaffold a new messages crate
+    NewMessages {
+        name: String,
+    },
+    /// Scaffold a new binary (wiring) crate
+    NewBinary {
+        name: String,
+        /// Runtime to target (tokio or embassy)
+        #[arg(long, default_value = "tokio")]
+        runtime: String,
+    },
+    /// Scaffold all layers (messages, actions, blox, binary)
+    NewAll {
+        name: String,
+        /// Runtime to target (tokio or embassy)
+        #[arg(long, default_value = "tokio")]
+        runtime: String,
     },
     /// Run spec-to-code lint checks
     Lint,
@@ -123,7 +156,15 @@ fn main() -> anyhow::Result<()> {
             BloxSubcommand::Test { cargo, args } => test::test(cargo, args),
             BloxSubcommand::Run { cargo, args } => run::run(cargo, args),
             BloxSubcommand::Watch { cargo } => watch::watch(cargo),
-            BloxSubcommand::New { name } => new::new_blox(&name),
+            BloxSubcommand::New {
+                name,
+                messages,
+                actions,
+            } => new::new_blox(&name, messages.as_deref(), actions.as_deref()),
+            BloxSubcommand::NewActions { name } => new_actions::new_actions(&name),
+            BloxSubcommand::NewMessages { name } => new_messages::new_messages(&name),
+            BloxSubcommand::NewBinary { name, runtime } => new_binary::new_binary(&name, &runtime),
+            BloxSubcommand::NewAll { name, runtime } => new_all::new_all(&name, &runtime),
             BloxSubcommand::Lint => lint::lint(),
             BloxSubcommand::Ci => ci::ci(),
             BloxSubcommand::AddState {
@@ -148,7 +189,10 @@ fn main() -> anyhow::Result<()> {
                         if parts.len() == 2 {
                             Some((parts[0].to_string(), parts[1].to_string()))
                         } else {
-                            eprintln!("warning: skipping invalid field spec '{}' (expected name:ty)", s);
+                            eprintln!(
+                                "warning: skipping invalid field spec '{}' (expected name:ty)",
+                                s
+                            );
                             None
                         }
                     })

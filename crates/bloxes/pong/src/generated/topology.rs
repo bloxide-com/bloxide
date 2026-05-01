@@ -3,37 +3,31 @@
 #[repr(u8)]
 pub enum PongState {
     Ready = 0u8,
-    Error = 1u8,
 }
 impl ::bloxide_core::topology::StateTopology for PongState {
-    const STATE_COUNT: usize = 2usize;
+    const STATE_COUNT: usize = 1usize;
     #[inline]
     fn parent(self) -> ::core::option::Option<Self> {
         match self {
             Self::Ready => ::core::option::Option::None,
-            Self::Error => ::core::option::Option::None,
         }
     }
     #[inline]
     fn is_leaf(self) -> bool {
         match self {
             Self::Ready => true,
-            Self::Error => true,
         }
     }
     fn path(self) -> &'static [Self] {
         static __PATH_READY: [PongState; 1usize] = [PongState::Ready];
-        static __PATH_ERROR: [PongState; 1usize] = [PongState::Error];
         match self {
             Self::Ready => &__PATH_READY,
-            Self::Error => &__PATH_ERROR,
         }
     }
     #[inline]
     fn as_index(self) -> usize {
         match self {
             Self::Ready => 0usize,
-            Self::Error => 1usize,
         }
     }
 }
@@ -41,6 +35,6 @@ impl ::bloxide_core::topology::StateTopology for PongState {
 #[macro_export]
 macro_rules! pong_state_handler_table {
     ($ty:ty) => {
-        & [& < $ty > ::READY_FNS, & < $ty > ::ERROR_FNS]
+        &[&<$ty>::READY_FNS]
     };
 }

@@ -5,19 +5,13 @@
 extern crate std;
 
 pub mod generated;
-
+pub mod actions;
 pub mod prelude;
 
-mod ctx;
-mod events;
-mod spec;
-
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests;
 
-pub use ctx::PingCtx;
-pub use events::PingEvent;
-pub use spec::{PingSpec, PingState};
+pub use generated::*;
 
 pub const MAX_ROUNDS: u8 = 5;
 

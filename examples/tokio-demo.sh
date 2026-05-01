@@ -1,16 +1,64 @@
-// Copyright 2025 Bloxide, all rights reserved
-// Tokio runtime demo — fully event-driven.
-//
-// Mirrors the embassy-demo but wired with TokioRuntime instead of EmbassyRuntime.
-// No Spawner, no #[embassy_executor::task], no static_cell — just tokio::spawn
-// and #[tokio::main].
-//
-// This demo also shows:
-// - supervisor control-plane health ticks (SupervisorControl::HealthCheckTick)
-// - dynamic supervised child registration (SupervisorControl::RegisterChild)
-//
-// Run with: RUST_LOG=trace cargo run --example tokio-demo
+#!/bin/bash
+set -e
 
+DEMO="demo/tokio-demo"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+rm -rf "$REPO_ROOT/$DEMO"
+mkdir -p "$REPO_ROOT/$DEMO"
+
+cd "$REPO_ROOT/$DEMO"
+
+cat > Cargo.toml <<'WORKSPACE'
+[workspace]
+members = ["apps/tokio-demo"]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.3"
+edition = "2021"
+
+[workspace.dependencies]
+bloxide-core         = { path = "../../../crates/bloxide-core" }
+bloxide-tokio        = { path = "../../../runtimes/bloxide-tokio" }
+bloxide-macros       = { path = "../../../crates/bloxide-macros" }
+bloxide-log          = { path = "../../../crates/bloxide-log", features = ["log"] }
+bloxide-timer        = { path = "../../../crates/bloxide-timer" }
+ping-pong-messages   = { path = "../../../crates/messages/ping-pong-messages" }
+ping-pong-actions    = { path = "../../../crates/actions/ping-pong-actions" }
+ping-blox            = { path = "../../../crates/bloxes/ping" }
+pong-blox            = { path = "../../../crates/bloxes/pong" }
+embassy-demo-impl    = { path = "../../../crates/impl/embassy-demo-impl" }
+
+[profile.dev]
+panic = "abort"
+WORKSPACE
+
+# ── Binary app crate ────────────────────────────────────────────────────────
+mkdir -p apps/tokio-demo/src
+
+cat > apps/tokio-demo/Cargo.toml <<'CRATE'
+[package]
+name = "tokio-demo"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+bloxide-core       = { workspace = true, features = ["std"] }
+bloxide-tokio      = { workspace = true }
+bloxide-log        = { workspace = true }
+bloxide-timer      = { workspace = true, features = ["std"] }
+ping-blox          = { workspace = true }
+pong-blox          = { workspace = true }
+ping-pong-messages = { workspace = true }
+embassy-demo-impl  = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = "0.2"
+CRATE
+
+cat > apps/tokio-demo/src/main.rs <<'MAIN'
 use bloxide_tokio::prelude::*;
 use embassy_demo_impl::PingBehavior;
 use ping_blox::prelude::*;
@@ -26,8 +74,6 @@ bloxide_tokio::root_task!(supervisor_task, SupervisorSpec<TokioRuntime>);
 
 #[tokio::main]
 async fn main() {
-    // LogTracer bridges `log`-crate records into the tracing pipeline.
-    // `.ok()` tolerates a second init if another crate already registered a log backend.
     tracing_log::LogTracer::init().ok();
 
     tracing_subscriber::fmt()
@@ -86,10 +132,8 @@ async fn main() {
     let mut sup_machine = StateMachine::<SupervisorSpec<TokioRuntime>>::new(sup_ctx);
     sup_machine.dispatch(SupervisorEvent::<TokioRuntime>::Lifecycle(
         LifecycleCommand::Start,
-    )); // root drives its own start; children get Start via LifecycleCommand
+    ));
 
-    // Keep health checks external to the core supervisor: this task ticks the
-    // supervisor control-plane channel periodically.
     let health_ref = sup_control_ref.clone();
     let _health_task = tokio::spawn(async move {
         let mut ticker = tokio::time::interval(Duration::from_millis(500));
@@ -104,8 +148,6 @@ async fn main() {
         }
     });
 
-    // Demonstrate dynamic supervised registration by adding one extra child
-    // after the static group is already running.
     let ((pong2_ref,), pong2_mbox) = bloxide_tokio::channels! {
         PingPongMsg(16),
     };
@@ -123,3 +165,6 @@ async fn main() {
 
     supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
 }
+MAIN
+
+cargo run -p tokio-demo

@@ -1,18 +1,65 @@
-// Copyright 2025 Bloxide, all rights reserved
-// Tokio worker pool demo — dynamic actor creation with supervision and KillCap.
-//
-// Demonstrates:
-//   1. Dynamic actor spawning: pool receives SpawnWorker → creates worker tasks at runtime
-//   2. P2P peer introduction: pool wires workers to each other via PeerCtrl channels
-//   3. Supervision: supervisor manages pool and worker lifecycles
-//   4. KillCap: policy-driven cleanup for dynamic actors
-//
-// Concrete worker construction lives in tokio-pool-demo-impl (Layer 3). This
-// binary remains Layer 5 wiring only. pool-blox and worker-blox are fully
-// independent; they are coupled only through pool-actions and pool-messages.
-//
-// Run with: RUST_LOG=info cargo run --example tokio-pool-demo
+#!/bin/bash
+set -e
 
+DEMO="demo/tokio-pool"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+rm -rf "$REPO_ROOT/$DEMO"
+mkdir -p "$REPO_ROOT/$DEMO"
+
+cd "$REPO_ROOT/$DEMO"
+
+cat > Cargo.toml <<'WORKSPACE'
+[workspace]
+members = ["apps/tokio-pool"]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.3"
+edition = "2021"
+
+[workspace.dependencies]
+bloxide-core           = { path = "../../../crates/bloxide-core" }
+bloxide-tokio          = { path = "../../../runtimes/bloxide-tokio" }
+bloxide-macros         = { path = "../../../crates/bloxide-macros" }
+bloxide-log            = { path = "../../../crates/bloxide-log", features = ["log"] }
+bloxide-spawn          = { path = "../../../crates/bloxide-spawn" }
+bloxide-supervisor     = { path = "../../../crates/bloxide-supervisor" }
+pool-messages          = { path = "../../../crates/messages/pool-messages" }
+pool-actions           = { path = "../../../crates/actions/pool-actions" }
+worker-blox            = { path = "../../../crates/bloxes/worker" }
+pool-blox              = { path = "../../../crates/bloxes/pool" }
+tokio-pool-demo-impl   = { path = "../../../crates/impl/tokio-pool-demo-impl" }
+
+[profile.dev]
+panic = "abort"
+WORKSPACE
+
+# ── Binary app crate ────────────────────────────────────────────────────────
+mkdir -p apps/tokio-pool/src
+
+cat > apps/tokio-pool/Cargo.toml <<'CRATE'
+[package]
+name = "tokio-pool"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+bloxide-core       = { workspace = true, features = ["std"] }
+bloxide-tokio      = { workspace = true }
+bloxide-log        = { workspace = true }
+bloxide-spawn      = { workspace = true, features = ["std"] }
+bloxide-supervisor = { workspace = true, features = ["std"] }
+pool-blox          = { workspace = true, features = ["std"] }
+pool-messages      = { workspace = true }
+tokio-pool-demo-impl = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = "0.2"
+CRATE
+
+cat > apps/tokio-pool/src/main.rs <<'MAIN'
 use bloxide_core::lifecycle::LifecycleCommand;
 use bloxide_tokio::prelude::*;
 use pool_blox::{PoolCtx, PoolSpec};
@@ -35,22 +82,16 @@ async fn main() {
         .try_init()
         .ok();
 
-    // Create KillCap for dynamic actor cleanup
     let kill_cap = Arc::new(bloxide_tokio::TokioKillCap::new());
 
-    // Create the pool's mailbox
     let ((pool_ref,), pool_mbox) = bloxide_tokio::channels! { PoolMsg(32) };
     let pool_id = pool_ref.id();
 
     tracing::info!(pool_id, "pool created");
 
-    // Build the pool machine
     let pool_ctx = PoolCtx::new(pool_id, pool_ref.clone(), spawn_worker_tokio);
     let pool_machine = StateMachine::<PoolSpec<TokioRuntime>>::new(pool_ctx);
 
-    // Set up supervision with KillCap support
-    // Pool uses Stop policy (clean shutdown). KillCap is available for emergency
-    // abort but not exercised in this example.
     let mut group = ChildGroupBuilder::with_kill_cap(GroupShutdown::WhenAnyDone, kill_cap.clone());
     bloxide_tokio::spawn_child!(
         group,
@@ -64,14 +105,12 @@ async fn main() {
 
     tracing::info!(sup_id, pool_id, "supervisor setup complete");
 
-    // Build and start the supervisor
     let sup_ctx = SupervisorCtx::new(sup_id, children);
     let mut sup_machine = StateMachine::<SupervisorSpec<TokioRuntime>>::new(sup_ctx);
     sup_machine.dispatch(SupervisorEvent::<TokioRuntime>::Lifecycle(
         LifecycleCommand::Start,
     ));
 
-    // Pre-load SpawnWorker messages — pool will process them when it starts
     let worker_count = 3u32;
     for task_id in 0..worker_count {
         pool_ref
@@ -80,8 +119,10 @@ async fn main() {
     }
     tracing::info!(worker_count, "SpawnWorker messages queued");
 
-    // Run the supervisor until shutdown
     supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
 
     tracing::info!("pool demo complete");
 }
+MAIN
+
+cargo run -p tokio-pool

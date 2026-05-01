@@ -12,15 +12,10 @@ extern crate alloc;
 extern crate std;
 
 pub mod generated;
-
-mod ctx;
-mod events;
+pub mod actions;
 pub mod prelude;
-mod spec;
 
 #[cfg(test)]
 mod tests;
 
-pub use ctx::PoolCtx;
-pub use events::PoolEvent;
-pub use spec::{PoolSpec, PoolState};
+pub use generated::{PoolCtx, PoolEvent, PoolSpec, PoolState};

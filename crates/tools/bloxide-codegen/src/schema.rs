@@ -7,6 +7,7 @@ pub struct BloxConfig {
     pub messages: Option<Vec<MessageEnumConfig>>,
     pub event: Option<EventConfig>,
     pub topology: Option<TopologyConfig>,
+    pub context: Option<ContextConfig>,
     pub wiring: Option<WiringConfig>,
     pub mailboxes: Option<MailboxesConfig>,
 }
@@ -63,6 +64,25 @@ pub struct StateConfig {
     pub name: String,
     pub composite: Option<bool>,
     pub parent: Option<String>,
+    pub initial: Option<bool>,
+    pub terminal: Option<bool>,
+    pub error: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ContextConfig {
+    pub name: String,
+    pub generics: Option<String>,
+    pub actions_crate: Option<String>,
+    #[serde(default)]
+    pub fields: Vec<ContextFieldConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ContextFieldConfig {
+    pub name: String,
+    pub ty: String,
+    pub delegates: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -5,29 +5,35 @@ use std::fs;
 use std::path::Path;
 use anyhow::Result;
 
-/// Create all scaffolding for a new blox actor.
-pub fn new_blox(name: &str) -> Result<()> {
+use crate::utils::{
+    generate_spec_md, to_camel_case, update_workspace_cargo_toml, WorkspaceAddition,
+};
+
+pub fn new_blox(name: &str, messages: Option<&str>, actions: Option<&str>) -> Result<()> {
     let name_snake = name.to_lowercase().replace("-", "_");
     let name_camel = to_camel_case(name);
 
-    // 1. Create spec markdown
     let spec_dir = Path::new("spec/bloxes");
     fs::create_dir_all(spec_dir)?;
     let spec_path = spec_dir.join(format!("{}.md", name_snake));
     fs::write(&spec_path, generate_spec_md(&name_snake, &name_camel))?;
     println!("Created: {}", spec_path.display());
 
-    // 2. Create messages crate
-    create_messages_crate(&name_snake, &name_camel)?;
+    create_blox_crate(&name_snake, &name_camel, messages, actions)?;
 
-    // 3. Create actions crate
-    create_actions_crate(&name_snake, &name_camel)?;
-
-    // 4. Create blox crate
-    create_blox_crate(&name_snake, &name_camel)?;
-
-    // 5. Update root Cargo.toml
-    update_workspace_manifest(&name_snake)?;
+    let member_path = format!("crates/bloxes/{}", name_snake);
+    let dep_name = format!("{}-blox", name_snake);
+    let dep_toml_line = format!(
+        r#"{} = {{ path = "crates/bloxes/{}" }}"#,
+        dep_name, name_snake
+    );
+    update_workspace_cargo_toml(&[
+        WorkspaceAddition::Member(member_path),
+        WorkspaceAddition::Dependency {
+            name: dep_name,
+            toml_line: dep_toml_line,
+        },
+    ])?;
 
     println!("\nScaffolded new blox '{}'", name);
     println!("Next steps:");
@@ -36,226 +42,37 @@ pub fn new_blox(name: &str) -> Result<()> {
         name_snake
     );
     println!(
-        "  2. Edit crates/actions/{}-actions/src/lib.rs to define behavior traits",
+        "  2. Edit crates/bloxes/{}/src/actions.rs to define action functions",
         name_snake
     );
-    println!(
-        "  3. Edit crates/bloxes/{}/src/spec.rs to implement MachineSpec",
-        name_snake
-    );
-    println!("  4. Run `cargo blox generate` to generate boilerplate");
+    println!("  3. Run `cargo blox generate` to generate boilerplate");
 
     Ok(())
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
-
-fn to_camel_case(name: &str) -> String {
-    name.split(|c: char| c == '-' || c == '_')
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect()
-}
-
-fn generate_spec_md(name_snake: &str, name_camel: &str) -> String {
-    let template_path = Path::new("spec/templates/blox-spec.md");
-    let template = if template_path.exists() {
-        fs::read_to_string(template_path).unwrap_or_else(|_| default_spec_template().into())
-    } else {
-        default_spec_template().into()
-    };
-
-    template
-        .replace("<BloxName>", name_camel)
-        .replace("<blox-name>", name_snake)
-}
-
-fn default_spec_template() -> &'static str {
-    r#"# Blox Spec: `<BloxName>`
-
-## Purpose
-
-One paragraph. What does this actor do?
-
-## Crate Location
-
-- Blox crate: `crates/bloxes/<blox-name>/`
-- Messages crate: `crates/messages/<blox-name>-messages/`
-- Actions crate: `crates/actions/<blox-name>-actions/`
-
-## State Hierarchy
-
-```mermaid
-stateDiagram-v2
-    [*] --> Ready
-    Ready --> Done
-```
-
-## States
-
-| State | Kind | Description |
-|-------|------|-------------|
-| `Ready` | leaf | Initial operational state |
-| `Done`  | leaf | Terminal state |
-
-## Events
-
-| Event | Handled by | Rule pattern | Guard outcome | Side effects |
-|-------|-----------|--------------|--------------|--------------|
-| any unhandled | root | — | dropped | none |
-
-## Context
-
-```rust
-#[derive(BloxCtx)]
-pub struct <BloxName>Ctx<R: BloxRuntime> {
-    pub self_id: ActorId,
-}
-```
-
-## Message Contracts
-
-### Receives (`<BloxName>Msg`)
-
-| Variant | Payload | Sent by |
-|---------|---------|---------|
-
-### Sends
-
-| Target | Message | When |
-|--------|---------|------|
-
-## Acceptance Criteria
-
-- [ ] `machine.start()` enters `Ready`
-- [ ] `is_terminal(&State::Done)` returns `true`
-"#
-}
-
-fn create_messages_crate(name_snake: &str, name_camel: &str) -> Result<()> {
-    let crate_dir = Path::new("crates/messages").join(format!("{}-messages", name_snake));
-    let src_dir = crate_dir.join("src");
-    fs::create_dir_all(&src_dir)?;
-
-    // Cargo.toml
-    let cargo_toml = format!(
-        r#"# Copyright 2025 Bloxide, all rights reserved
-[package]
-name = "{name_snake}-messages"
-version.workspace = true
-edition.workspace = true
-description = "Domain message types for {name_camel}"
-repository.workspace = true
-license.workspace = true
-
-[dependencies]
-bloxide-macros = {{ workspace = true }}
-"#,
-        name_snake = name_snake,
-        name_camel = name_camel,
-    );
-    fs::write(crate_dir.join("Cargo.toml"), cargo_toml)?;
-
-    // src/lib.rs
-    let lib_rs = format!(
-        r#"// Copyright 2025 Bloxide, all rights reserved
-#![no_std]
-
-pub mod prelude {{
-    pub use crate::*;
-}}
-
-pub mod generated;
-pub use generated::*;
-"#,
-    );
-    fs::write(src_dir.join("lib.rs"), lib_rs)?;
-
-    // Placeholder generated/mod.rs so `pub mod generated;` compiles
-    let gen_dir = src_dir.join("generated");
-    fs::create_dir_all(&gen_dir)?;
-    fs::write(
-        gen_dir.join("mod.rs"),
-        "// Auto-generated module.\n// Files in this directory are generated by bloxide-codegen.\n",
-    )?;
-
-    // blox.toml
-    let blox_toml = format!(
-        r#"[[messages]]
-name = "{name_camel}Msg"
-visibility = "pub"
-"#,
-        name_camel = name_camel,
-    );
-    fs::write(crate_dir.join("blox.toml"), blox_toml)?;
-
-    println!("Created: {}", crate_dir.display());
-    Ok(())
-}
-
-fn create_actions_crate(name_snake: &str, name_camel: &str) -> Result<()> {
-    let crate_dir = Path::new("crates/actions").join(format!("{}-actions", name_snake));
-    let src_dir = crate_dir.join("src");
-    fs::create_dir_all(&src_dir)?;
-
-    // Cargo.toml
-    let cargo_toml = format!(
-        r#"# Copyright 2025 Bloxide, all rights reserved
-[package]
-name = "{name_snake}-actions"
-version.workspace = true
-edition.workspace = true
-description = "Action traits and generic functions for {name_camel}"
-repository.workspace = true
-license.workspace = true
-
-[dependencies]
-bloxide-macros = {{ workspace = true }}
-"#,
-        name_snake = name_snake,
-        name_camel = name_camel,
-    );
-    fs::write(crate_dir.join("Cargo.toml"), cargo_toml)?;
-
-    // src/lib.rs
-    let lib_rs = format!(
-        r#"// Copyright 2025 Bloxide, all rights reserved
-//! Action traits and generic functions for {name_camel}.
-#![no_std]
-
-use bloxide_macros::delegatable;
-
-pub mod prelude {{
-    pub use crate::{{CountsTicks, __delegate_CountsTicks}};
-}}
-
-/// Behavior trait for contexts that track a count.
-#[delegatable]
-pub trait CountsTicks {{
-    type Count: Copy + PartialOrd + core::ops::Add<Output = Self::Count> + From<u8>;
-    fn count(&self) -> Self::Count;
-    fn set_count(&mut self, count: Self::Count);
-}}
-"#,
-        name_camel = name_camel,
-    );
-    fs::write(src_dir.join("lib.rs"), lib_rs)?;
-
-    println!("Created: {}", crate_dir.display());
-    Ok(())
-}
-
-fn create_blox_crate(name_snake: &str, name_camel: &str) -> Result<()> {
+pub fn create_blox_crate(
+    name_snake: &str,
+    name_camel: &str,
+    messages: Option<&str>,
+    actions: Option<&str>,
+) -> Result<()> {
     let crate_dir = Path::new("crates/bloxes").join(name_snake);
     let src_dir = crate_dir.join("src");
-    fs::create_dir_all(&src_dir)?;
+    let gen_dir = src_dir.join("generated");
+    fs::create_dir_all(&gen_dir)?;
 
-    // Cargo.toml
+    let mut deps = String::from(
+        r#"bloxide-core = { workspace = true, features = ["alloc"] }
+bloxide-macros = { workspace = true }
+"#,
+    );
+    if let Some(msg) = messages {
+        deps.push_str(&format!("{} = {{ workspace = true }}\n", msg));
+    }
+    if let Some(act) = actions {
+        deps.push_str(&format!("{} = {{ workspace = true }}\n", act));
+    }
+
     let cargo_toml = format!(
         r#"# Copyright 2025 Bloxide, all rights reserved
 [package]
@@ -269,20 +86,12 @@ license.workspace = true
 [features]
 default = ["std"]
 std = ["bloxide-core/std"]
-codegen = []
 
 [dependencies]
-bloxide-core = {{ workspace = true, features = ["alloc"] }}
-bloxide-macros = {{ workspace = true }}
-{name_snake}-actions = {{ workspace = true }}
-{name_snake}-messages = {{ workspace = true }}
-"#,
-        name_snake = name_snake,
-        name_camel = name_camel,
+{deps}"#
     );
     fs::write(crate_dir.join("Cargo.toml"), cargo_toml)?;
 
-    // blox.toml
     let blox_toml = format!(
         r#"[actor]
 name = "{name_camel}"
@@ -290,325 +99,67 @@ name = "{name_camel}"
 [event]
 name = "{name_camel}Event"
 
-[[event.mailboxes]]
-variant = "Msg"
-message = "{name_camel}Msg"
-message_path = "{name_snake}_messages::{name_camel}Msg"
-
 [topology]
-handler_fns = ["READY_FNS", "DONE_FNS"]
-
-[[topology.states]]
-name = "Ready"
-
-[[topology.states]]
-name = "Done"
-"#,
-        name_snake = name_snake,
-        name_camel = name_camel,
+handler_fns = []
+"#
     );
     fs::write(crate_dir.join("blox.toml"), blox_toml)?;
 
-    // src/lib.rs
-    let lib_rs = format!(
-        r#"// Copyright 2025 Bloxide, all rights reserved
+    let lib_rs = r#"// Copyright 2025 Bloxide, all rights reserved
 #![no_std]
 
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod generated;
+pub mod actions;
 pub mod prelude;
-
-mod ctx;
-mod events;
-mod spec;
 
 #[cfg(all(test, feature = "std"))]
 mod tests;
 
-pub use ctx::{name_camel}Ctx;
-pub use events::{name_camel}Event;
-pub use spec::{{ {name_camel}Spec, {name_camel}State }};
-"#,
-        name_camel = name_camel,
-    );
+pub use generated::*;
+"#;
     fs::write(src_dir.join("lib.rs"), lib_rs)?;
 
-    // src/prelude.rs
+    let actions_rs = format!(
+        r#"// Copyright 2025 Bloxide, all rights reserved
+//! Action functions and transition rules for {name_camel}.
+//! This file is NOT regenerated by `cargo blox generate`.
+//! Add your action functions and StateFns constants here.
+
+// use crate::prelude::*;
+// TODO: Add imports for your action crate traits and message types
+
+// impl<R: BloxRuntime> {name_camel}Spec<R> {{
+//     // Add action functions here
+// }}
+
+// impl<R: BloxRuntime> {name_camel}Spec<R> {{
+//     // Add StateFns constants here
+// }}
+"#
+    );
+    fs::write(src_dir.join("actions.rs"), actions_rs)?;
+
     let prelude_rs = format!(
         r#"// Copyright 2025 Bloxide, all rights reserved
 pub use crate::{{{name_camel}Ctx, {name_camel}Event, {name_camel}Spec, {name_camel}State}};
-"#,
-        name_camel = name_camel,
+"#
     );
     fs::write(src_dir.join("prelude.rs"), prelude_rs)?;
 
-    // src/ctx.rs
-    let ctx_rs = format!(
-        r#"// Copyright 2025 Bloxide, all rights reserved
-use bloxide_core::ActorId;
-use bloxide_macros::BloxCtx;
-use {name_snake}_actions::{{CountsTicks, __delegate_CountsTicks}};
-
-/// Context for the {name_snake} blox.
-#[derive(BloxCtx)]
-pub struct {name_camel}Ctx<B: CountsTicks> {{
-    pub self_id: ActorId,
-
-    #[delegates(CountsTicks)]
-    pub behavior: B,
-}}
-"#,
-        name_snake = name_snake,
-        name_camel = name_camel,
-    );
-    fs::write(src_dir.join("ctx.rs"), ctx_rs)?;
-
-    // src/events.rs
-    let events_rs = format!(
-        r#"// Copyright 2025 Bloxide, all rights reserved
-//! Unified event type for the {name_snake} blox.
-pub use crate::generated::events::*;
-"#,
-        name_snake = name_snake,
-    );
-    fs::write(src_dir.join("events.rs"), events_rs)?;
-
-    // src/spec.rs
-    let spec_rs = format!(
-        r#"// Copyright 2025 Bloxide, all rights reserved
-use core::marker::PhantomData;
-
-use bloxide_core::{{
-    capability::BloxRuntime,
-    spec::{{MachineSpec, StateFns}},
-    transition::ActionResult,
-    transitions,
-}};
-use {name_snake}_actions::{{increment_count, CountsTicks}};
-use {name_snake}_messages::{name_camel}Msg;
-
-use crate::{{{name_camel}Ctx, {name_camel}Event}};
-
-pub use crate::generated::topology::{name_camel}State;
-use crate::generated::topology::{name_snake}_state_handler_table;
-
-pub struct {name_camel}Spec<R, B>(PhantomData<(R, B)>)
-where
-    R: BloxRuntime,
-    B: CountsTicks + 'static;
-
-impl<R, B> {name_camel}Spec<R, B>
-where
-    R: BloxRuntime,
-    B: CountsTicks + 'static,
-{{
-    fn count_tick(ctx: &mut {name_camel}Ctx<B>, _ev: &{name_camel}Event) -> ActionResult {{
-        increment_count(ctx);
-        ActionResult::Ok
-    }}
-
-    const READY_FNS: StateFns<Self> = StateFns {{
-        on_entry: &[],
-        on_exit: &[],
-        transitions: transitions![
-            {name_camel}Msg::Tick(_tick) => {{
-                actions [Self::count_tick]
-                guard(_ctx, _results) {{
-                    _ => stay,
-                }}
-            }},
-        ],
-    }};
-
-    const DONE_FNS: StateFns<Self> = StateFns {{
-        on_entry: &[],
-        on_exit: &[],
-        transitions: &[],
-    }};
-}}
-
-impl<R, B> MachineSpec for {name_camel}Spec<R, B>
-where
-    R: BloxRuntime,
-    B: CountsTicks + 'static,
-{{
-    type State = {name_camel}State;
-    type Event = {name_camel}Event;
-    type Ctx = {name_camel}Ctx<B>;
-    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<{name_camel}Msg>,);
-
-    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = {name_snake}_state_handler_table!(Self);
-
-    fn initial_state() -> {name_camel}State {{
-        {name_camel}State::Ready
-    }}
-
-    fn is_terminal(state: &{name_camel}State) -> bool {{
-        matches!(state, {name_camel}State::Done)
-    }}
-
-    fn on_init_entry(ctx: &mut {name_camel}Ctx<B>) {{
-        ctx.set_count(B::Count::from(0));
-    }}
-}}
-"#,
-        name_snake = name_snake,
-        name_camel = name_camel,
-    );
-    fs::write(src_dir.join("spec.rs"), spec_rs)?;
-
-    // src/tests.rs
     let tests_rs = format!(
         r#"// Copyright 2025 Bloxide, all rights reserved
-//! Unit tests for the {name_camel} blox.
-
-#[cfg(all(test, feature = "std"))]
-mod {name_snake}_tests {{
-    use bloxide_core::lifecycle::LifecycleCommand;
-    use bloxide_core::test_utils::TestRuntime;
-    use bloxide_core::{{spec::MachineSpec, MachineState, StateMachine}};
-    use {name_snake}_actions::CountsTicks;
-    use {name_snake}_messages::{{{name_camel}Msg, Tick}};
-
-    use crate::{{{name_camel}Ctx, {name_camel}Event, {name_camel}Spec, {name_camel}State}};
-
-    #[derive(Default)]
-    struct TestBehavior {{
-        count: u8,
-    }}
-
-    impl CountsTicks for TestBehavior {{
-        type Count = u8;
-        fn count(&self) -> u8 {{ self.count }}
-        fn set_count(&mut self, count: u8) {{ self.count = count; }}
-    }}
-
-    fn make_machine() -> StateMachine<{name_camel}Spec<TestRuntime, TestBehavior>> {{
-        let ctx = {name_camel}Ctx::new(bloxide_core::next_actor_id!(), TestBehavior::default());
-        StateMachine::new(ctx)
-    }}
-
-    #[test]
-    fn test_start_enters_ready() {{
-        let mut machine = make_machine();
-        assert!(matches!(machine.current_state(), MachineState::Init));
-        machine.dispatch({name_camel}Event::Lifecycle(LifecycleCommand::Start));
-        assert!(matches!(
-            machine.current_state(),
-            MachineState::State({name_camel}State::Ready)
-        ));
-    }}
-
-    #[test]
-    fn test_done_is_terminal() {{
-        assert!({name_camel}Spec::<TestRuntime, TestBehavior>::is_terminal(
-            &{name_camel}State::Done
-        ));
-        assert!(!{name_camel}Spec::<TestRuntime, TestBehavior>::is_terminal(
-            &{name_camel}State::Ready
-        ));
-    }}
-}}
-"#,
-        name_snake = name_snake,
-        name_camel = name_camel,
+//! Unit tests for the {name_snake} blox.
+"#
     );
     fs::write(src_dir.join("tests.rs"), tests_rs)?;
 
+    let gen_mod_rs =
+        "// Auto-generated module.\n// Files in this directory are generated by bloxide-codegen.\n";
+    fs::write(gen_dir.join("mod.rs"), gen_mod_rs)?;
+
     println!("Created: {}", crate_dir.display());
-    Ok(())
-}
-
-fn update_workspace_manifest(name_snake: &str) -> Result<()> {
-    let root_cargo = Path::new("Cargo.toml");
-    let mut content = fs::read_to_string(root_cargo)?;
-
-    // Insert members
-    if !content.contains(&format!("{}-messages", name_snake)) {
-        // Insert after the last messages entry or at the end of members
-        content = content.replacen(
-            r#"    "crates/messages/counter-messages",
-"#,
-            &format!(
-                r#"    "crates/messages/counter-messages",
-    "crates/messages/{}-messages",
-"#,
-                name_snake
-            ),
-            1,
-        );
-    }
-
-    if !content.contains(&format!("{}-actions", name_snake)) {
-        content = content.replacen(
-            r#"    "crates/actions/counter-actions",
-"#,
-            &format!(
-                r#"    "crates/actions/counter-actions",
-    "crates/actions/{}-actions",
-"#,
-                name_snake
-            ),
-            1,
-        );
-    }
-
-    if !content.contains(&format!("crates/bloxes/{}", name_snake)) {
-        content = content.replacen(
-            r#"    "crates/bloxes/counter",
-"#,
-            &format!(
-                r#"    "crates/bloxes/counter",
-    "crates/bloxes/{}",
-"#,
-                name_snake
-            ),
-            1,
-        );
-    }
-
-    // Insert workspace.dependencies
-    if !content.contains(&format!(r#"{}-messages = {{ path = ""#, name_snake)) {
-        content = content.replacen(
-            r#"counter-messages = { path = "crates/messages/counter-messages" }
-"#,
-            &format!(
-                r#"counter-messages = {{ path = "crates/messages/counter-messages" }}
-{name_snake}-messages = {{ path = "crates/messages/{name_snake}-messages" }}
-"#,
-            ),
-            1,
-        );
-    }
-
-    if !content.contains(&format!(r#"{}-actions = {{ path = ""#, name_snake)) {
-        content = content.replacen(
-            r#"counter-actions = { path = "crates/actions/counter-actions" }
-"#,
-            &format!(
-                r#"counter-actions = {{ path = "crates/actions/counter-actions" }}
-{name_snake}-actions = {{ path = "crates/actions/{name_snake}-actions" }}
-"#,
-            ),
-            1,
-        );
-    }
-
-    if !content.contains(&format!(r#"{}-blox = {{ path = ""#, name_snake)) {
-        content = content.replacen(
-            r#"counter-blox = { path = "crates/bloxes/counter" }
-"#,
-            &format!(
-                r#"counter-blox = {{ path = "crates/bloxes/counter" }}
-{name_snake}-blox = {{ path = "crates/bloxes/{name_snake}" }}
-"#,
-            ),
-            1,
-        );
-    }
-
-    fs::write(root_cargo, content)?;
-    println!("Updated: {}", root_cargo.display());
     Ok(())
 }

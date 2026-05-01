@@ -1,11 +1,61 @@
-// Copyright 2025 Bloxide, all rights reserved
-// Interactive Tokio demo for the BhsmTst HSM topology actor.
-//
-// Reads single-character commands from stdin and dispatches them as
-// BhsmTstMsg variants or LifecycleCommands to a supervised BhsmTst actor.
-//
-// Run with: RUST_LOG=info cargo run --example bhsm-tst-demo
+#!/bin/bash
+set -e
 
+echo "=== BhsmTst Interactive Demo Setup ==="
+
+DEMO="demo/bhsm-tst"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+rm -rf "$REPO_ROOT/$DEMO"
+mkdir -p "$REPO_ROOT/$DEMO"
+
+cd "$REPO_ROOT/$DEMO"
+
+# ── Workspace manifest ──────────────────────────────────────────────────────
+cat > Cargo.toml <<'WORKSPACE'
+[workspace]
+members = ["apps/bhsm-tst-demo"]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.3"
+edition = "2021"
+
+[workspace.dependencies]
+bloxide-core        = { path = "../../../crates/bloxide-core" }
+bloxide-tokio       = { path = "../../../runtimes/bloxide-tokio" }
+bloxide-macros      = { path = "../../../crates/bloxide-macros" }
+bloxide-log         = { path = "../../../crates/bloxide-log", features = ["log"] }
+bhsm-tst-messages   = { path = "../../../crates/messages/bhsm-tst-messages" }
+bhsm-tst-actions    = { path = "../../../crates/actions/bhsm-tst-actions" }
+bhsm-tst-blox       = { path = "../../../crates/bloxes/bhsm-tst" }
+
+[profile.dev]
+panic = "abort"
+WORKSPACE
+
+# ── Binary app crate ────────────────────────────────────────────────────────
+mkdir -p apps/bhsm-tst-demo/src
+
+cat > apps/bhsm-tst-demo/Cargo.toml <<'CRATE'
+[package]
+name = "bhsm-tst-demo"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+bloxide-core      = { workspace = true, features = ["std"] }
+bloxide-tokio     = { workspace = true }
+bloxide-log       = { workspace = true }
+bhsm-tst-blox     = { workspace = true }
+bhsm-tst-messages = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = "0.2"
+CRATE
+
+cat > apps/bhsm-tst-demo/src/main.rs <<'MAIN'
 use bloxide_core::lifecycle::LifecycleCommand;
 use bloxide_tokio::prelude::*;
 use bhsm_tst_blox::prelude::*;
@@ -112,3 +162,7 @@ async fn main() {
     print_usage();
     supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
 }
+MAIN
+
+echo "=== Setup complete. Running demo... ==="
+cargo run -p bhsm-tst-demo

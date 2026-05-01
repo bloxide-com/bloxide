@@ -9,8 +9,7 @@
 
 #[cfg(all(test, feature = "std"))]
 mod ping_tests {
-    use crate::PingEvent;
-    use crate::{PingCtx, PingSpec, PingState, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
+    use crate::{PingCtx, PingEvent, PingSpec, PingState, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::ActorId;
     use bloxide_core::test_utils::{TestReceiver, TestRuntime, TestSender};
@@ -21,8 +20,6 @@ mod ping_tests {
     use ping_pong_actions::{CountsRounds, HasCurrentTimer};
     use ping_pong_messages::{Ping, PingPongMsg, Pong};
     use std::vec::Vec;
-
-    // ── Local behavior implementation for tests ──────────────────────────────
 
     #[derive(Default, Clone)]
     struct TestBehavior {
@@ -48,8 +45,6 @@ mod ping_tests {
             self.current_timer = timer;
         }
     }
-
-    // ── Test harness ─────────────────────────────────────────────────────────
 
     struct PingHarness {
         machine: StateMachine<PingSpec<TestRuntime, TestBehavior>>,
@@ -106,7 +101,6 @@ mod ping_tests {
                 .dispatch(PingEvent::Lifecycle(LifecycleCommand::Reset));
         }
 
-        /// Advance simulated time and fire any ready timer callbacks.
         fn advance_time(&mut self, ms: u64) {
             self.clock.advance(ms);
         }
@@ -143,15 +137,11 @@ mod ping_tests {
             h.send_pong();
             h.drain_to_pong_rx();
         }
-        // Send pong at pause round → transitions to Paused
         h.send_pong();
-        // Fire the resume timer → transitions back to Active
         h.advance_time(PAUSE_DURATION_MS);
         h.dispatch_pending_self_msgs();
         h.drain_to_pong_rx();
     }
-
-    // ── Tests ────────────────────────────────────────────────────────────────
 
     #[test]
     fn start_enters_active_and_sends_first_ping() {
@@ -316,16 +306,12 @@ mod ping_tests {
         );
     }
 
-    /// AC: A stray `Pong` received while in `Paused` is absorbed by
-    /// `Operating::transitions` (which has `PingPongMsg::Pong(_) => stay`), so
-    /// the machine stays in `Paused` and no message is sent to the peer.
     #[test]
     fn stray_pong_in_paused_is_absorbed_by_operating() {
         let mut h = PingHarness::new();
         h.start();
         h.drain_to_pong_rx();
 
-        // Drive to Paused
         for _ in 1..PAUSE_AT_ROUND {
             h.send_pong();
             h.drain_to_pong_rx();
@@ -334,7 +320,6 @@ mod ping_tests {
         assert_eq!(h.current_state(), MachineState::State(PingState::Paused));
         h.drain_to_pong_rx();
 
-        // Dispatch a stray Pong while in Paused
         h.machine
             .dispatch(Envelope(0, PingPongMsg::Pong(Pong { round: 99 })).into());
 

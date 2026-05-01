@@ -1,9 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
-use crate::ping_state_handler_table;
-use crate::{PingCtx, PingEvent, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
+use crate::{PingCtx, PingEvent, PingSpec, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
 use bloxide_core::{
     capability::BloxRuntime,
-    spec::{MachineSpec, StateFns},
+    spec::StateFns,
+    transition::ActionResult,
     transitions, HasSelfId,
 };
 use ping_pong_actions::{
@@ -12,12 +12,7 @@ use ping_pong_actions::{
 };
 use ping_pong_messages::PingPongMsg;
 
-pub use crate::generated::topology::PingState;
-
-pub struct PingSpec<R, B>(core::marker::PhantomData<(R, B)>)
-where
-    R: BloxRuntime,
-    B: HasCurrentTimer + CountsRounds + 'static;
+use crate::PingState;
 
 impl<R, B> PingSpec<R, B>
 where
@@ -25,20 +20,14 @@ where
     B: HasCurrentTimer + CountsRounds + Default + 'static,
     B::Round: Into<u32>,
 {
-    fn log_pong_received(
-        ctx: &mut PingCtx<R, B>,
-        ev: &PingEvent,
-    ) -> bloxide_core::transition::ActionResult {
+    fn log_pong_received(ctx: &mut PingCtx<R, B>, ev: &PingEvent) -> ActionResult {
         if let Some(PingPongMsg::Pong(pong)) = ev.msg_payload() {
             bloxide_log::blox_log_debug!(ctx.self_id(), "Pong({}) received", pong.round);
         }
-        bloxide_core::transition::ActionResult::Ok
+        ActionResult::Ok
     }
 
-    fn forward_ping(
-        ctx: &mut PingCtx<R, B>,
-        _ev: &PingEvent,
-    ) -> bloxide_core::transition::ActionResult {
+    fn forward_ping(ctx: &mut PingCtx<R, B>, _ev: &PingEvent) -> ActionResult {
         send_ping::<R, _>(ctx)
     }
 
@@ -63,32 +52,35 @@ where
         bloxide_log::blox_log_info!(ctx.self_id(), "done after {} rounds", ctx.round());
     }
 
-    const OPERATING_FNS: StateFns<Self> = StateFns {
+    fn log_error(ctx: &mut PingCtx<R, B>) {
+        bloxide_log::blox_log_info!(ctx.self_id(), "entered error state");
+    }
+
+    pub(crate) const OPERATING_FNS: StateFns<Self> = StateFns {
         on_entry: &[],
         on_exit: &[],
         transitions: transitions![
-            // Sink Pong at composite so it doesn't bubble to root — irrelevant while Paused
             PingPongMsg::Pong(_) => stay,
         ],
     };
 
-    const ACTIVE_FNS: StateFns<Self> = StateFns {
+    pub(crate) const ACTIVE_FNS: StateFns<Self> = StateFns {
         on_entry: &[increment_round, Self::log_round, send_initial_ping],
         on_exit: &[],
         transitions: transitions![
             PingPongMsg::Pong(_) => {
                 actions [Self::log_pong_received, Self::forward_ping]
                 guard(ctx, results) {
-                    results.any_failed()                        => PingState::Error,
-                    ctx.round() >= B::Round::from(MAX_ROUNDS)   => PingState::Done,
+                    results.any_failed()                          => PingState::Error,
+                    ctx.round() >= B::Round::from(MAX_ROUNDS)     => PingState::Done,
                     ctx.round() == B::Round::from(PAUSE_AT_ROUND) => PingState::Paused,
-                    _                                           => PingState::Active,
+                    _                                             => PingState::Active,
                 }
             },
         ],
     };
 
-    const PAUSED_FNS: StateFns<Self> = StateFns {
+    pub(crate) const PAUSED_FNS: StateFns<Self> = StateFns {
         on_entry: &[Self::schedule_pause_timer],
         on_exit: &[Self::cancel_pause_timer],
         transitions: transitions![
@@ -99,50 +91,15 @@ where
         ],
     };
 
-    const DONE_FNS: StateFns<Self> = StateFns {
+    pub(crate) const DONE_FNS: StateFns<Self> = StateFns {
         on_entry: &[Self::log_done],
         on_exit: &[],
         transitions: &[],
     };
 
-    fn log_error(ctx: &mut PingCtx<R, B>) {
-        bloxide_log::blox_log_info!(ctx.self_id(), "entered error state");
-    }
-
-    const ERROR_FNS: StateFns<Self> = StateFns {
+    pub(crate) const ERROR_FNS: StateFns<Self> = StateFns {
         on_entry: &[Self::log_error],
         on_exit: &[],
         transitions: &[],
     };
-}
-
-impl<R, B> MachineSpec for PingSpec<R, B>
-where
-    R: BloxRuntime,
-    B: HasCurrentTimer + CountsRounds + Default + 'static,
-    B::Round: Into<u32>,
-{
-    type State = PingState;
-    type Event = PingEvent;
-    type Ctx = PingCtx<R, B>;
-    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<PingPongMsg>,);
-
-    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = ping_state_handler_table!(Self);
-
-    fn initial_state() -> PingState {
-        PingState::Active
-    }
-
-    fn is_terminal(state: &PingState) -> bool {
-        matches!(state, PingState::Done)
-    }
-
-    fn is_error(state: &PingState) -> bool {
-        matches!(state, PingState::Error)
-    }
-
-    fn on_init_entry(ctx: &mut PingCtx<R, B>) {
-        ctx.behavior = B::default();
-        bloxide_log::blox_log_info!(ctx.self_id(), "reset — behavior cleared");
-    }
 }

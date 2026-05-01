@@ -375,3 +375,283 @@ name = "B"
     let err = result.unwrap_err().to_string();
     assert!(err.contains("handler_fns must list exactly"));
 }
+
+#[test]
+fn test_generate_counter_ctx() {
+    let toml = r#"
+[actor]
+name = "Counter"
+
+[context]
+name = "CounterCtx"
+generics = "<B: CountsTicks>"
+actions_crate = "counter_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["CountsTicks"]
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "counter-blox").expect("generate failed");
+
+    let ctx_file = files
+        .iter()
+        .find(|(n, _)| n == "ctx.rs")
+        .expect("ctx.rs missing");
+    let content = &ctx_file.1;
+
+    assert!(content.contains("#[derive(BloxCtx)]"));
+    assert!(content.contains("pub struct CounterCtx"));
+    assert!(content.contains("pub self_id: ActorId"));
+    assert!(content.contains("#[delegates(CountsTicks)]"));
+    assert!(content.contains("pub behavior: B"));
+    assert!(content.contains("use counter_actions::{CountsTicks, __delegate_CountsTicks}"));
+    assert!(content.contains("use ::bloxide_core::ActorId"));
+    assert!(content.contains("use ::bloxide_macros::BloxCtx"));
+}
+
+#[test]
+fn test_generate_ping_ctx() {
+    let toml = r#"
+[actor]
+name = "Ping"
+
+[context]
+name = "PingCtx"
+generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
+actions_crate = "ping_pong_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[context.fields]]
+name = "self_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[context.fields]]
+name = "timer_ref"
+ty = "ActorRef<TimerCommand, R>"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["HasCurrentTimer", "CountsRounds"]
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "ping-blox").expect("generate failed");
+
+    let ctx_file = files
+        .iter()
+        .find(|(n, _)| n == "ctx.rs")
+        .expect("ctx.rs missing");
+    let content = &ctx_file.1;
+
+    assert!(content.contains("#[derive(BloxCtx)]"));
+    assert!(content.contains("pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"));
+    assert!(content.contains("ping_pong_actions"));
+    assert!(content.contains("HasCurrentTimer"));
+    assert!(content.contains("CountsRounds"));
+    assert!(content.contains("__delegate_HasCurrentTimer"));
+    assert!(content.contains("__delegate_CountsRounds"));
+    assert!(content.contains("use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef}"));
+    assert!(content.contains("#[delegates(HasCurrentTimer, CountsRounds)]"));
+    assert!(content.contains("pub behavior: B"));
+}
+
+#[test]
+fn test_generate_ctx_actions_crate_inference() {
+    let toml = r#"
+[actor]
+name = "Counter"
+
+[context]
+name = "CounterCtx"
+generics = "<B: CountsTicks>"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["CountsTicks"]
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "counter-blox").expect("generate failed");
+
+    let ctx_file = files
+        .iter()
+        .find(|(n, _)| n == "ctx.rs")
+        .expect("ctx.rs missing");
+    let content = &ctx_file.1;
+
+    assert!(content.contains("use counter_actions::{CountsTicks, __delegate_CountsTicks}"));
+}
+
+#[test]
+fn test_generate_spec_skeleton_counter() {
+    let toml = r#"
+[actor]
+name = "Counter"
+
+[event]
+name = "CounterEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "CounterMsg"
+message_path = "counter_messages::CounterMsg"
+
+[topology]
+handler_fns = ["READY_FNS", "DONE_FNS"]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.states]]
+name = "Done"
+terminal = true
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "counter-blox").expect("generate failed");
+
+    let spec_file = files
+        .iter()
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &spec_file.1;
+
+    assert!(content.contains("pub struct CounterSpec"));
+    assert!(content.contains("MachineSpec for CounterSpec"));
+    assert!(content.contains("type State = CounterState"));
+    assert!(content.contains("type Event = CounterEvent"));
+    assert!(content.contains("counter_messages::CounterMsg"));
+    assert!(content.contains("counter_state_handler_table"));
+    assert!(content.contains("CounterState::Ready"));
+    assert!(content.contains("fn is_terminal"));
+    assert!(content.contains("CounterState::Done"));
+    assert!(content.contains("fn on_init_entry"));
+}
+
+#[test]
+fn test_generate_spec_skeleton_ping() {
+    let toml = r#"
+[actor]
+name = "Ping"
+
+[event]
+name = "PingEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+
+[topology]
+handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
+
+[[topology.states]]
+name = "Operating"
+composite = true
+
+[[topology.states]]
+name = "Active"
+parent = "Operating"
+initial = true
+
+[[topology.states]]
+name = "Paused"
+parent = "Operating"
+
+[[topology.states]]
+name = "Done"
+terminal = true
+
+[[topology.states]]
+name = "Error"
+error = true
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "ping-blox").expect("generate failed");
+
+    let spec_file = files
+        .iter()
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &spec_file.1;
+
+    assert!(content.contains("pub struct PingSpec"));
+    assert!(content.contains("MachineSpec for PingSpec"));
+    assert!(content.contains("type State = PingState"));
+    assert!(content.contains("PingState::Active"));
+    assert!(content.contains("fn is_terminal"));
+    assert!(content.contains("PingState::Done"));
+    assert!(content.contains("fn is_error"));
+    assert!(content.contains("PingState::Error"));
+    assert!(content.contains("ping_state_handler_table"));
+}
+
+#[test]
+fn test_state_flags_in_topology() {
+    let toml = r#"
+[actor]
+name = "Test"
+
+[topology]
+handler_fns = ["READY_FNS", "DONE_FNS", "ERROR_FNS"]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.states]]
+name = "Done"
+terminal = true
+
+[[topology.states]]
+name = "Error"
+error = true
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let topo = config.topology.unwrap();
+    assert_eq!(topo.states[0].initial, Some(true));
+    assert_eq!(topo.states[1].terminal, Some(true));
+}
+
+#[test]
+fn test_no_context_no_spec_skeleton() {
+    let toml = r#"
+[actor]
+name = "Minimal"
+
+[topology]
+handler_fns = ["IDLE_FNS"]
+
+[[topology.states]]
+name = "Idle"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "minimal-blox").expect("generate failed");
+
+    assert!(files.iter().all(|(n, _)| n != "ctx.rs"));
+    assert!(files.iter().all(|(n, _)| n != "spec_skeleton.rs"));
+}

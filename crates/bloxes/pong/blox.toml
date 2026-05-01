@@ -1,6 +1,19 @@
 [actor]
 name = "Pong"
 
+[context]
+name = "PongCtx"
+generics = "<R: BloxRuntime>"
+actions_crate = "ping_pong_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
 [event]
 name = "PongEvent"
 
@@ -10,10 +23,7 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 
 [topology]
-handler_fns = ["READY_FNS", "ERROR_FNS"]
 
 [[topology.states]]
 name = "Ready"
-
-[[topology.states]]
-name = "Error"
+initial = true

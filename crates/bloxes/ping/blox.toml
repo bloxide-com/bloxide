@@ -1,6 +1,32 @@
 [actor]
 name = "Ping"
 
+[context]
+name = "PingCtx"
+generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
+actions_crate = "ping_pong_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[context.fields]]
+name = "self_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[context.fields]]
+name = "timer_ref"
+ty = "ActorRef<TimerCommand, R>"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["HasCurrentTimer", "CountsRounds"]
+
 [event]
 name = "PingEvent"
 
@@ -10,7 +36,6 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 
 [topology]
-handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
 
 [[topology.states]]
 name = "Operating"
@@ -19,6 +44,7 @@ composite = true
 [[topology.states]]
 name = "Active"
 parent = "Operating"
+initial = true
 
 [[topology.states]]
 name = "Paused"
@@ -26,6 +52,8 @@ parent = "Operating"
 
 [[topology.states]]
 name = "Done"
+terminal = true
 
 [[topology.states]]
 name = "Error"
+error = true
