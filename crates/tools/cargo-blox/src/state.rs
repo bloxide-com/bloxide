@@ -82,6 +82,8 @@ pub fn add_state(
     state_name: &str,
     parent: Option<&str>,
     composite: bool,
+    terminal: bool,
+    error: bool,
 ) -> anyhow::Result<()> {
     let path = blox_toml_path(blox_name);
     let mut doc = load_toml(&path)?;
@@ -106,6 +108,12 @@ pub fn add_state(
     }
     if let Some(p) = parent {
         t.insert("parent".into(), toml::Value::String(p.into()));
+    }
+    if terminal {
+        t.insert("terminal".into(), toml::Value::Boolean(true));
+    }
+    if error {
+        t.insert("error".into(), toml::Value::Boolean(true));
     }
     states.push(state_table);
 
