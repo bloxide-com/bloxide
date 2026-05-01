@@ -23,6 +23,11 @@ fn to_snake_case(s: &str) -> String {
     out
 }
 
+fn derive_actions_crate(crate_name: &str) -> String {
+    let base = crate_name.trim_end_matches("-blox");
+    base.replace("-", "_") + "_actions"
+}
+
 pub fn generate(
     actor: &ActorConfig,
     topology: &TopologyConfig,
@@ -30,7 +35,7 @@ pub fn generate(
     event_name: &str,
     _message_type: &str,
     message_path: &str,
-    _crate_name: &str,
+    crate_name: &str,
 ) -> anyhow::Result<String> {
     let actor_name = &actor.name;
 
@@ -50,6 +55,22 @@ pub fn generate(
         format_ident!("{}Ctx", actor_name)
     };
 
+    let delegate_traits: Vec<String> = if let Some(ctx) = context {
+        let mut traits = Vec::new();
+        for field in &ctx.fields {
+            if let Some(ref d) = field.delegates {
+                for tr in d {
+                    if !traits.contains(tr) {
+                        traits.push(tr.clone());
+                    }
+                }
+            }
+        }
+        traits
+    } else {
+        Vec::new()
+    };
+
     let has_runtime_generic = context
         .map(|c| {
             c.generics
@@ -65,22 +86,36 @@ pub fn generate(
         quote! { B }
     };
 
+    let b_bounds = if delegate_traits.is_empty() {
+        quote! { 'static }
+    } else {
+        let trait_idents: Vec<_> =
+            delegate_traits.iter().map(|t| format_ident!("{}", t)).collect();
+        quote! { #(#trait_idents)+* + 'static }
+    };
+
     let (spec_generics, spec_where, ty_generics) = if has_runtime_generic {
         (
             quote! { <R, B> },
-            quote! { where R: ::bloxide_core::capability::BloxRuntime, B: 'static },
+            quote! { where R: ::bloxide_core::capability::BloxRuntime, B: #b_bounds },
             quote! { <R, B> },
         )
     } else {
         (
             quote! { <B> },
-            quote! { where B: 'static },
+            quote! { where B: #b_bounds },
             quote! { <B> },
         )
     };
 
     let msg_path = syn::parse_str::<syn::Path>(message_path)
         .map_err(|e| anyhow::anyhow!("invalid message_path '{}': {}", message_path, e))?;
+
+    let msg_short_ident = msg_path
+        .segments
+        .last()
+        .map(|seg| seg.ident.clone())
+        .unwrap_or_else(|| format_ident!("Msg"));
 
     let initial_state = topology
         .states
@@ -147,10 +182,52 @@ pub fn generate(
         use ::bloxide_core::spec::{MachineSpec, StateFns};
     });
 
+    if context.is_some() {
+        use_stmts.push(quote! {
+            use crate::{#ctx_ident, #event_ident};
+        });
+    } else {
+        use_stmts.push(quote! {
+            use crate::#event_ident;
+        });
+    }
+
+    use_stmts.push(quote! {
+        pub use crate::generated::topology::#state_ident;
+    });
+
+    use_stmts.push(quote! {
+        use crate::#handler_macro_ident;
+    });
+
+    if !delegate_traits.is_empty() {
+        let actions_crate = context
+            .and_then(|c| c.actions_crate.clone())
+            .unwrap_or_else(|| derive_actions_crate(crate_name));
+        let actions_crate_ident = format_ident!("{}", actions_crate);
+        let trait_idents: Vec<_> =
+            delegate_traits.iter().map(|t| format_ident!("{}", t)).collect();
+        use_stmts.push(quote! {
+            use #actions_crate_ident::{#(#trait_idents),*};
+        });
+    }
+
+    if msg_path.segments.len() > 1 {
+        use_stmts.push(quote! {
+            use #msg_path;
+        });
+    }
+
     let struct_def = quote! {
         pub struct #spec_ident #spec_generics #spec_where {
             _phantom: PhantomData<#phantom_types>,
         }
+    };
+
+    let mailboxes_ty = if msg_path.segments.len() > 1 {
+        quote! { (Rt::Stream<#msg_short_ident>,) }
+    } else {
+        quote! { (Rt::Stream<#msg_path>,) }
     };
 
     let impl_block = quote! {
@@ -158,7 +235,7 @@ pub fn generate(
             type State = #state_ident;
             type Event = #event_ident;
             type Ctx = #ctx_ty;
-            type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> = (Rt::Stream<#msg_path>,);
+            type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> = #mailboxes_ty;
 
             const HANDLER_TABLE: &'static [&'static StateFns<Self>] = #handler_macro_ident!(Self);
 

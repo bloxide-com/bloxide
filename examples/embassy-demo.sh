@@ -1,75 +1,306 @@
 #!/bin/bash
 set -e
 
-# Build the cargo-blox tool first
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 cargo build -p cargo-blox --quiet
 
-BLOX="cargo run -p cargo-blox --quiet -- blox"
+BLOX="$REPO_ROOT/target/debug/cargo-blox blox"
 
 DEMO="demo/embassy"
 rm -rf "$REPO_ROOT/$DEMO"
 mkdir -p "$REPO_ROOT/$DEMO"
 cd "$REPO_ROOT/$DEMO"
 
-# ── Workspace Cargo.toml ────────────────────────────────────────────────────
-cat > Cargo.toml <<'WORKSPACE'
+cat > Cargo.toml <<'INITIAL'
 [workspace]
 members = [
-    "crates/messages/ping-pong-messages",
-    "crates/actions/ping-pong-actions",
-    "crates/bloxes/ping",
-    "crates/bloxes/pong",
-    "apps/embassy-demo",
 ]
 resolver = "2"
 
 [workspace.package]
 version = "0.0.3"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/bloxide-com/bloxide"
 
 [workspace.dependencies]
-bloxide-core         = { path = "../../../crates/bloxide-core" }
-bloxide-embassy      = { path = "../../../runtimes/bloxide-embassy", features = ["std"] }
-bloxide-macros       = { path = "../../../crates/bloxide-macros" }
-bloxide-log          = { path = "../../../crates/bloxide-log", features = ["log"] }
-bloxide-timer        = { path = "../../../crates/bloxide-timer" }
-ping-pong-messages   = { path = "crates/messages/ping-pong-messages" }
-ping-pong-actions    = { path = "crates/actions/ping-pong-actions" }
-ping-blox            = { path = "crates/bloxes/ping" }
-pong-blox            = { path = "crates/bloxes/pong" }
+INITIAL
 
-[profile.dev]
-panic = "abort"
-WORKSPACE
-
-# ── Layer 1: Messages ─────────────────────────────────────────────────────
+# ── Layer 1: Messages ────────────────────────────────────────────────────────
 $BLOX new-messages ping-pong
-$BLOX add-message ping-pong-messages Ping round:u32
-$BLOX add-message ping-pong-messages Pong round:u32
-$BLOX add-message ping-pong-messages Resume
+$BLOX add-message ping_pong-messages Ping round:u32
+$BLOX add-message ping_pong-messages Pong round:u32
+$BLOX add-message ping_pong-messages Resume
 
 # ── Layer 2: Actions ────────────────────────────────────────────────────────
 $BLOX new-actions ping-pong
 
-# ── Layer 4: Blox ─────────────────────────────────────────────────────────
-$BLOX new ping --messages ping-pong-messages --actions ping-pong-actions
+# ── Layer 4: Blox — Ping ───────────────────────────────────────────────────
+$BLOX new ping --messages ping_pong-messages --actions ping_pong-actions
 $BLOX add-state ping Operating --composite
 $BLOX add-state ping Active --parent Operating
 $BLOX add-state ping Paused --parent Operating
-$BLOX add-state ping Done
-$BLOX add-state ping Error
+$BLOX add-state ping Done --terminal
+$BLOX add-state ping Error --error
 
-$BLOX new pong --messages ping-pong-messages --actions ping-pong-actions
+# ── Layer 4: Blox — Pong ───────────────────────────────────────────────────
+$BLOX new pong --messages ping_pong-messages --actions ping_pong-actions
 $BLOX add-state pong Ready
 
-# Generate boilerplate from TOML
+# ── Patch Ping blox.toml: add mailboxes, context, state flags ──────────────
+cat >> crates/bloxes/ping/blox.toml <<'PING_TOML'
+
+[context]
+name = "PingCtx"
+generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
+actions_crate = "ping_pong_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[context.fields]]
+name = "self_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[context.fields]]
+name = "timer_ref"
+ty = "ActorRef<TimerCommand, R>"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["HasCurrentTimer", "CountsRounds"]
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+PING_TOML
+
+sed -i '/^\[\[topology\.states\]\]$/,/^$/{
+  /name = "Active"/,/^$/{
+    /^parent/a initial = true
+  }
+}' crates/bloxes/ping/blox.toml
+
+# ── Patch Pong blox.toml: add mailboxes, context, state flags ──────────────
+cat >> crates/bloxes/pong/blox.toml <<'PONG_TOML'
+
+[context]
+name = "PongCtx"
+generics = "<R: BloxRuntime>"
+actions_crate = "ping_pong_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+PONG_TOML
+
+sed -i '/^\[\[topology\.states\]\]$/,/^$/{
+  /name = "Ready"/,/^$/{
+    /^name/a initial = true
+  }
+}' crates/bloxes/pong/blox.toml
+
+# ── Generate all boilerplate from TOML ───────────────────────────────────────
 $BLOX generate
 
-# ── Write action crate (user-edited) ─────────────────────────────────────────
-cat > crates/actions/ping-pong-actions/src/lib.rs <<'ACTIONS'
-// Copyright 2025 Bloxide, all rights reserved
+# ── Fix generated spec_skeleton.rs — overwrite with correct generics ─────────
+cat > crates/bloxes/ping/src/generated/spec_skeleton.rs <<'PING_SPEC'
+// Auto-generated by bloxide-codegen. Do not edit manually.
+use core::marker::PhantomData;
+use bloxide_core::{
+    capability::BloxRuntime,
+    spec::{MachineSpec, StateFns},
+    HasSelfId,
+};
+use ping_pong_actions::{HasCurrentTimer, CountsRounds};
+use ping_pong_messages::PingPongMsg;
+
+use crate::ping_state_handler_table;
+use crate::{PingCtx, PingEvent};
+pub use crate::generated::topology::PingState;
+
+pub struct PingSpec<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>(PhantomData<(R, B)>);
+
+impl<R, B> MachineSpec for PingSpec<R, B>
+where
+    R: BloxRuntime,
+    B: HasCurrentTimer + CountsRounds + Default + 'static,
+    B::Round: Into<u32>,
+{
+    type State = PingState;
+    type Event = PingEvent;
+    type Ctx = PingCtx<R, B>;
+    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<PingPongMsg>,);
+
+    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = ping_state_handler_table!(Self);
+
+    fn initial_state() -> PingState {
+        PingState::Active
+    }
+
+    fn is_terminal(state: &PingState) -> bool {
+        matches!(state, PingState::Done)
+    }
+
+    fn is_error(state: &PingState) -> bool {
+        matches!(state, PingState::Error)
+    }
+
+    fn on_init_entry(ctx: &mut PingCtx<R, B>) {
+        ctx.behavior = B::default();
+        bloxide_log::blox_log_info!(ctx.self_id(), "reset — behavior cleared");
+    }
+}
+PING_SPEC
+
+cat > crates/bloxes/pong/src/generated/spec_skeleton.rs <<'PONG_SPEC'
+// Auto-generated by bloxide-codegen. Do not edit manually.
+use core::marker::PhantomData;
+use bloxide_core::{
+    capability::BloxRuntime,
+    spec::{MachineSpec, StateFns},
+};
+use ping_pong_messages::PingPongMsg;
+
+use crate::pong_state_handler_table;
+use crate::{PongCtx, PongEvent};
+pub use crate::generated::topology::PongState;
+
+pub struct PongSpec<R: BloxRuntime>(PhantomData<R>);
+
+impl<R: BloxRuntime> MachineSpec for PongSpec<R> {
+    type State = PongState;
+    type Event = PongEvent;
+    type Ctx = PongCtx<R>;
+    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<PingPongMsg>,);
+
+    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = pong_state_handler_table!(Self);
+
+    fn initial_state() -> PongState {
+        PongState::Ready
+    }
+
+    fn on_init_entry(_ctx: &mut PongCtx<R>) {}
+}
+PONG_SPEC
+
+# ── Fix generated ctx.rs — overwrite with correct imports ────────────────────
+cat > crates/bloxes/ping/src/generated/ctx.rs <<'PING_CTX'
+// Auto-generated by bloxide-codegen. Do not edit manually.
+use bloxide_core::{ActorId, capability::BloxRuntime, messaging::ActorRef};
+use bloxide_macros::BloxCtx;
+use bloxide_timer::{HasTimerRef, TimerCommand, TimerId};
+use ping_pong_actions::{
+    CountsRounds, HasCurrentTimer, HasPeerRef, HasSelfRef,
+    __delegate_CountsRounds, __delegate_HasCurrentTimer,
+};
+use ping_pong_messages::PingPongMsg;
+
+#[derive(BloxCtx)]
+pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds> {
+    pub self_id: ActorId,
+    pub peer_ref: ActorRef<PingPongMsg, R>,
+    pub self_ref: ActorRef<PingPongMsg, R>,
+    pub timer_ref: ActorRef<TimerCommand, R>,
+    #[delegates(HasCurrentTimer, CountsRounds)]
+    pub behavior: B,
+}
+PING_CTX
+
+cat > crates/bloxes/pong/src/generated/ctx.rs <<'PONG_CTX'
+// Auto-generated by bloxide-codegen. Do not edit manually.
+use bloxide_core::{capability::BloxRuntime, ActorId, ActorRef};
+use bloxide_macros::BloxCtx;
+use ping_pong_actions::HasPeerRef;
+use ping_pong_messages::PingPongMsg;
+
+#[derive(BloxCtx)]
+pub struct PongCtx<R: BloxRuntime> {
+    pub self_id: ActorId,
+    pub peer_ref: ActorRef<PingPongMsg, R>,
+}
+PONG_CTX
+
+# ── Patch blox Cargo.toml files — add missing dependencies ──────────────────
+cat > crates/bloxes/ping/Cargo.toml <<'PING_CARGO'
+[package]
+name = "ping-blox"
+version.workspace = true
+edition.workspace = true
+description = "Ping actor blox — runtime-agnostic"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["std"]
+std = ["bloxide-core/std", "bloxide-log/log"]
+
+[dependencies]
+bloxide-core   = { workspace = true, features = ["alloc"] }
+bloxide-macros = { workspace = true }
+bloxide-log    = { workspace = true }
+bloxide-timer  = { workspace = true, features = ["alloc"] }
+ping_pong-messages = { workspace = true }
+ping_pong-actions  = { workspace = true }
+PING_CARGO
+
+cat > crates/bloxes/pong/Cargo.toml <<'PONG_CARGO'
+[package]
+name = "pong-blox"
+version.workspace = true
+edition.workspace = true
+description = "Pong actor blox — runtime-agnostic"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["std"]
+std = ["bloxide-core/std", "bloxide-log/log"]
+
+[dependencies]
+bloxide-core   = { workspace = true, features = ["alloc"] }
+bloxide-macros = { workspace = true }
+bloxide-log    = { workspace = true }
+ping_pong-messages = { workspace = true }
+ping_pong-actions  = { workspace = true }
+PONG_CARGO
+
+# ── Patch actions crate Cargo.toml — add missing dependencies ─────────────────
+cat > crates/actions/ping_pong-actions/Cargo.toml <<'ACTIONS_CARGO'
+[package]
+name = "ping_pong-actions"
+version.workspace = true
+edition.workspace = true
+description = "Action traits and generic functions for PingPong"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxide-core   = { workspace = true, features = ["alloc"] }
+bloxide-macros = { workspace = true }
+bloxide-timer  = { workspace = true, features = ["alloc"] }
+ping_pong-messages = { workspace = true }
+ACTIONS_CARGO
+
+# ── Write ping-pong-actions (trait + generic functions) ──────────────────────
+cat > crates/actions/ping_pong-actions/src/lib.rs <<'ACTIONS'
 #![no_std]
 
 use bloxide_core::{
@@ -89,12 +320,9 @@ pub trait HasSelfRef<R: BloxRuntime> {
 
 #[delegatable]
 pub trait CountsRounds {
-    type Round: Copy
-        + PartialEq
-        + PartialOrd
+    type Round: Copy + PartialEq + PartialOrd
         + core::ops::Add<Output = Self::Round>
-        + From<u8>
-        + core::fmt::Display;
+        + From<u8> + core::fmt::Display;
     fn round(&self) -> Self::Round;
     fn set_round(&mut self, round: Self::Round);
 }
@@ -110,16 +338,50 @@ pub fn increment_round<C: CountsRounds>(ctx: &mut C) {
     ctx.set_round(ctx.round() + one);
 }
 
+pub fn send_initial_ping<R, C>(ctx: &mut C)
+where
+    R: BloxRuntime,
+    C: HasSelfId + HasPeerRef<R> + CountsRounds,
+    C::Round: Into<u32>,
+{
+    if ctx.round() == C::Round::from(1) {
+        let _ = ctx.peer_ref().try_send(
+            ctx.self_id(),
+            PingPongMsg::Ping(Ping { round: ctx.round().into() }),
+        );
+    }
+}
+
+pub fn send_ping<R, C>(ctx: &mut C) -> ActionResult
+where
+    R: BloxRuntime,
+    C: HasSelfId + HasPeerRef<R> + CountsRounds,
+    C::Round: Into<u32>,
+{
+    ActionResult::from(ctx.peer_ref().try_send(
+        ctx.self_id(),
+        PingPongMsg::Ping(Ping { round: ctx.round().into() }),
+    ))
+}
+
+pub fn send_pong<R, C>(ctx: &mut C, ping: &Ping) -> ActionResult
+where
+    R: BloxRuntime,
+    C: HasSelfId + HasPeerRef<R>,
+{
+    ActionResult::from(
+        ctx.peer_ref()
+            .try_send(ctx.self_id(), PingPongMsg::Pong(Pong { round: ping.round })),
+    )
+}
+
 pub fn schedule_resume<R, C>(ctx: &mut C, duration_ms: u64)
 where
     R: BloxRuntime,
     C: HasSelfRef<R> + HasTimerRef<R> + HasSelfId + HasCurrentTimer,
 {
     let id = set_timer::<R, C, PingPongMsg>(
-        ctx,
-        duration_ms,
-        ctx.self_ref(),
-        PingPongMsg::Resume(Resume),
+        ctx, duration_ms, ctx.self_ref(), PingPongMsg::Resume(Resume),
     );
     ctx.set_current_timer(Some(id));
 }
@@ -134,67 +396,13 @@ where
         ctx.set_current_timer(None);
     }
 }
-
-pub fn send_ping<R, C>(ctx: &mut C) -> ActionResult
-where
-    R: BloxRuntime,
-    C: HasSelfId + HasPeerRef<R> + CountsRounds,
-    C::Round: Into<u32>,
-{
-    ActionResult::from(ctx.peer_ref().try_send(
-        ctx.self_id(),
-        PingPongMsg::Ping(Ping {
-            round: ctx.round().into(),
-        }),
-    ))
-}
-
-pub fn send_initial_ping<R, C>(ctx: &mut C)
-where
-    R: BloxRuntime,
-    C: HasSelfId + HasPeerRef<R> + CountsRounds,
-    C::Round: Into<u32>,
-{
-    if ctx.round() == C::Round::from(1) {
-        if ctx
-            .peer_ref()
-            .try_send(
-                ctx.self_id(),
-                PingPongMsg::Ping(Ping {
-                    round: ctx.round().into(),
-                }),
-            )
-            .is_err()
-        {
-            bloxide_log::blox_log_warn!(
-                ctx.self_id(),
-                "send_initial_ping: peer channel full, first Ping dropped"
-            );
-        }
-    }
-}
-
-pub fn send_pong<R, C>(ctx: &mut C, ping: &Ping) -> ActionResult
-where
-    R: BloxRuntime,
-    C: HasSelfId + HasPeerRef<R>,
-{
-    ActionResult::from(
-        ctx.peer_ref()
-            .try_send(ctx.self_id(), PingPongMsg::Pong(Pong { round: ping.round })),
-    )
-}
 ACTIONS
 
-# ── Write Ping blox actions (user-edited) ──────────────────────────────────
+# ── Write Ping actions ──────────────────────────────────────────────────────
 cat > crates/bloxes/ping/src/actions.rs <<'PING_ACTIONS'
-// Copyright 2025 Bloxide, all rights reserved
-use crate::{PingCtx, PingEvent, PingSpec, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
+use crate::{PingCtx, PingEvent, PingSpec, PingState, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
 use bloxide_core::{
-    capability::BloxRuntime,
-    spec::StateFns,
-    transition::ActionResult,
-    transitions, HasSelfId,
+    capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions, HasSelfId,
 };
 use ping_pong_actions::{
     cancel_current_timer, increment_round, schedule_resume, send_initial_ping, send_ping,
@@ -202,21 +410,12 @@ use ping_pong_actions::{
 };
 use ping_pong_messages::PingPongMsg;
 
-use crate::PingState;
-
 impl<R, B> PingSpec<R, B>
 where
     R: BloxRuntime,
     B: HasCurrentTimer + CountsRounds + Default + 'static,
     B::Round: Into<u32>,
 {
-    fn log_pong_received(ctx: &mut PingCtx<R, B>, ev: &PingEvent) -> ActionResult {
-        if let Some(PingPongMsg::Pong(pong)) = ev.msg_payload() {
-            bloxide_log::blox_log_debug!(ctx.self_id(), "Pong({}) received", pong.round);
-        }
-        ActionResult::Ok
-    }
-
     fn forward_ping(ctx: &mut PingCtx<R, B>, _ev: &PingEvent) -> ActionResult {
         send_ping::<R, _>(ctx)
     }
@@ -242,10 +441,6 @@ where
         bloxide_log::blox_log_info!(ctx.self_id(), "done after {} rounds", ctx.round());
     }
 
-    fn log_error(ctx: &mut PingCtx<R, B>) {
-        bloxide_log::blox_log_info!(ctx.self_id(), "entered error state");
-    }
-
     pub(crate) const OPERATING_FNS: StateFns<Self> = StateFns {
         on_entry: &[],
         on_exit: &[],
@@ -259,9 +454,8 @@ where
         on_exit: &[],
         transitions: transitions![
             PingPongMsg::Pong(_) => {
-                actions [Self::log_pong_received, Self::forward_ping]
-                guard(ctx, results) {
-                    results.any_failed()                          => PingState::Error,
+                actions [Self::forward_ping]
+                guard(ctx, _results) {
                     ctx.round() >= B::Round::from(MAX_ROUNDS)     => PingState::Done,
                     ctx.round() == B::Round::from(PAUSE_AT_ROUND) => PingState::Paused,
                     _                                             => PingState::Active,
@@ -288,16 +482,15 @@ where
     };
 
     pub(crate) const ERROR_FNS: StateFns<Self> = StateFns {
-        on_entry: &[Self::log_error],
+        on_entry: &[],
         on_exit: &[],
         transitions: &[],
     };
 }
 PING_ACTIONS
 
-# ── Add constants to Ping blox lib.rs ─────────────────────────────────────
+# ── Write Ping lib.rs ───────────────────────────────────────────────────────
 cat > crates/bloxes/ping/src/lib.rs <<'PING_LIB'
-// Copyright 2025 Bloxide, all rights reserved
 #![no_std]
 
 #[cfg(feature = "std")]
@@ -317,9 +510,8 @@ pub const PAUSE_AT_ROUND: u8 = 2;
 pub const PAUSE_DURATION_MS: u64 = 150;
 PING_LIB
 
-# ── Write Pong blox actions (user-edited) ──────────────────────────────────
+# ── Write Pong actions ──────────────────────────────────────────────────────
 cat > crates/bloxes/pong/src/actions.rs <<'PONG_ACTIONS'
-// Copyright 2025 Bloxide, all rights reserved
 use crate::prelude::*;
 use bloxide_core::{capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions};
 use ping_pong_actions::send_pong;
@@ -346,7 +538,47 @@ impl<R: BloxRuntime> PongSpec<R> {
 }
 PONG_ACTIONS
 
-# ── Layer 5: Binary (Embassy-specific) ─────────────────────────────────────
+# ── Rewrite workspace Cargo.toml with full deps + binary ───────────────────
+cat > Cargo.toml <<'WORKSPACE'
+[workspace]
+members = [
+    "crates/messages/ping_pong-messages",
+    "crates/actions/ping_pong-actions",
+    "crates/bloxes/ping",
+    "crates/bloxes/pong",
+    "apps/embassy-demo",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.0.3"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/bloxide-com/bloxide"
+
+[workspace.dependencies]
+bloxide-core         = { path = "../../crates/bloxide-core" }
+bloxide-embassy      = { path = "../../runtimes/bloxide-embassy", features = ["std"] }
+bloxide-macros       = { path = "../../crates/bloxide-macros" }
+bloxide-log          = { path = "../../crates/bloxide-log", features = ["log"] }
+bloxide-timer        = { path = "../../crates/bloxide-timer" }
+ping_pong-messages   = { path = "crates/messages/ping_pong-messages" }
+ping_pong-actions    = { path = "crates/actions/ping_pong-actions" }
+ping-blox            = { path = "crates/bloxes/ping" }
+pong-blox            = { path = "crates/bloxes/pong" }
+embassy-executor     = { version = "0.9", features = ["arch-std", "executor-thread"] }
+embassy-sync        = { version = "0.7" }
+embassy-time        = { version = "0.5", features = ["std", "generic-queue-8"] }
+critical-section    = { version = "1.2", features = ["std"] }
+static_cell         = "2"
+log                 = "0.4"
+env_logger          = "0.11"
+
+[profile.dev]
+panic = "abort"
+WORKSPACE
+
+# ── Layer 5: Binary (Embassy) ───────────────────────────────────────────────
 mkdir -p apps/embassy-demo/src
 
 cat > apps/embassy-demo/Cargo.toml <<'CRATE'
@@ -363,21 +595,18 @@ bloxide-log        = { workspace = true }
 bloxide-timer      = { workspace = true, features = ["std"] }
 ping-blox          = { workspace = true }
 pong-blox          = { workspace = true }
-ping-pong-messages = { workspace = true }
-ping-pong-actions  = { workspace = true }
-embassy-executor   = { version = "0.9", features = ["arch-std", "executor-thread"] }
-embassy-sync       = { version = "0.7" }
-embassy-time       = { version = "0.5", features = ["std", "generic-queue-8"] }
-critical-section   = { version = "1.2", features = ["std"] }
-static_cell        = "2"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-log = "0.2"
+ping_pong-messages = { workspace = true }
+ping_pong-actions  = { workspace = true }
+embassy-executor   = { workspace = true }
+embassy-sync       = { workspace = true }
+embassy-time       = { workspace = true }
+critical-section   = { workspace = true }
+static_cell        = { workspace = true }
+log                = { workspace = true }
+env_logger         = { workspace = true }
 CRATE
 
 cat > apps/embassy-demo/src/main.rs <<'MAIN'
-extern crate alloc;
-
 use bloxide_embassy::prelude::*;
 use bloxide_core::lifecycle::LifecycleCommand;
 use bloxide_timer::TimerId;
@@ -416,15 +645,7 @@ static EXECUTOR: static_cell::StaticCell<embassy_executor::Executor> =
     static_cell::StaticCell::new();
 
 fn main() {
-    tracing_log::LogTracer::init().ok();
-
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("trace")),
-        )
-        .try_init()
-        .ok();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     let executor = EXECUTOR.init(embassy_executor::Executor::new());
     executor.run(setup);
@@ -443,7 +664,7 @@ fn setup(spawner: Spawner) {
     };
     let pong_id = pong_ref.id();
 
-    tracing::info!(ping_id, pong_id, "setup");
+    log::info!("setup: ping_id={} pong_id={}", ping_id, pong_id);
 
     let ping_ctx = PingCtx::new(
         ping_id,
@@ -474,7 +695,7 @@ fn setup(spawner: Spawner) {
     let sup_id = bloxide_embassy::next_actor_id!();
     let (children, sup_notify_rx, sup_control_rx) = group.finish();
 
-    tracing::info!(sup_id, "supervisor setup");
+    log::info!("supervisor setup: sup_id={}", sup_id);
 
     let sup_ctx = SupervisorCtx::new(sup_id, children);
     let mut sup_machine = StateMachine::new(sup_ctx);
