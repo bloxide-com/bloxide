@@ -1,9 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Shared utilities for cargo-blox subcommands.
 
+use anyhow::Result;
 use std::fs;
 use std::path::Path;
-use anyhow::Result;
 
 pub fn to_camel_case(name: &str) -> String {
     name.split(['-', '_'])

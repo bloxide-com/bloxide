@@ -37,7 +37,7 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
             }
         };
         for (filename, content) in &files {
-            let path = generated_dir.join(&filename);
+            let path = generated_dir.join(filename);
 
             // Only write if changed (preserves mtime for caching)
             let needs_write = if path.exists() {
@@ -79,7 +79,10 @@ fn find_workspace_root(start: &Path) -> Option<PathBuf> {
     }
 }
 
-fn ensure_generated_mod(src_dir: &Path, generated_files: &[(String, String)]) -> anyhow::Result<()> {
+fn ensure_generated_mod(
+    src_dir: &Path,
+    generated_files: &[(String, String)],
+) -> anyhow::Result<()> {
     let lib_rs = src_dir.join("lib.rs");
     let mod_line = "pub mod generated;\n";
 

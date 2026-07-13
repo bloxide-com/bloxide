@@ -1,10 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 use crate::{PingCtx, PingEvent, PingSpec, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
 use bloxide_core::{
-    capability::BloxRuntime,
-    spec::StateFns,
-    transition::ActionResult,
-    transitions, HasSelfId,
+    capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions, HasSelfId,
 };
 use ping_pong_actions::{
     cancel_current_timer, increment_round, schedule_resume, send_initial_ping, send_ping,

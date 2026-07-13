@@ -1,6 +1,8 @@
 // Copyright 2025 Bloxide, all rights reserved
 use crate::prelude::*;
-use bloxide_core::{capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions};
+use bloxide_core::{
+    capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions,
+};
 use ping_pong_actions::send_pong;
 use ping_pong_messages::PingPongMsg;
 

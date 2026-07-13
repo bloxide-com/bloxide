@@ -4,8 +4,8 @@
 #[cfg(feature = "std")]
 extern crate std;
 
-pub mod generated;
 pub mod actions;
+pub mod generated;
 pub mod prelude;
 
 #[cfg(all(test, feature = "std"))]

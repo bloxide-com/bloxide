@@ -42,7 +42,7 @@ pub struct EventConfig {
     pub name: String,
     pub generics: Option<String>, // e.g. "<R: BloxRuntime>"
     #[serde(default)]
-    pub debug: Option<bool>,      // default true
+    pub debug: Option<bool>, // default true
     pub mailboxes: Vec<MailboxConfig>,
 }
 

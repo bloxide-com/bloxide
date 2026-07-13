@@ -1,16 +1,13 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Pool action functions and state handler tables.
 use bloxide_core::{
-    capability::BloxRuntime,
-    spec::StateFns,
-    transition::ActionResult,
-    transitions, HasSelfId,
+    capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions, HasSelfId,
 };
 use pool_actions::{actions::introduce_new_worker, traits::HasWorkers};
 use pool_messages::{DoWork, PoolMsg, SpawnWorker, WorkerMsg};
 
-use crate::{PoolCtx, PoolEvent, PoolSpec};
 pub use crate::generated::topology::PoolState;
+use crate::{PoolCtx, PoolEvent, PoolSpec};
 
 pub fn spawn_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, task_id: u32) {
     let self_id = ctx.self_id();
@@ -22,10 +19,7 @@ pub fn spawn_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, task_id: u32) {
     let _ = domain_ref.try_send(self_id, WorkerMsg::DoWork(DoWork { task_id }));
 }
 
-pub fn handle_spawn_worker<R: BloxRuntime>(
-    ctx: &mut PoolCtx<R>,
-    ev: &PoolEvent,
-) -> ActionResult {
+pub fn handle_spawn_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEvent) -> ActionResult {
     if let Some(PoolMsg::SpawnWorker(SpawnWorker { task_id })) = ev.msg_payload() {
         bloxide_log::blox_log_info!(ctx.self_id(), "spawning worker for task_id={}", task_id);
         spawn_worker(ctx, *task_id);
@@ -33,10 +27,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
     ActionResult::Ok
 }
 
-pub fn handle_work_done<R: BloxRuntime>(
-    ctx: &mut PoolCtx<R>,
-    ev: &PoolEvent,
-) -> ActionResult {
+pub fn handle_work_done<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEvent) -> ActionResult {
     if let Some(PoolMsg::WorkDone(done)) = ev.msg_payload() {
         bloxide_log::blox_log_info!(
             ctx.self_id(),

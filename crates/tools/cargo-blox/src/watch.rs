@@ -27,7 +27,7 @@ pub fn watch(_cargo: Features) -> anyhow::Result<()> {
             Ok(Ok(event)) => {
                 if event.paths.iter().any(|p| {
                     p.file_name()
-                        .map_or(false, |n| n == std::ffi::OsStr::new("blox.toml"))
+                        .is_some_and(|n| n == std::ffi::OsStr::new("blox.toml"))
                 }) {
                     let now = Instant::now();
                     if now.duration_since(last_regen) >= Duration::from_millis(500) {
@@ -38,8 +38,7 @@ pub fn watch(_cargo: Features) -> anyhow::Result<()> {
                         if let Err(e) = crate::generate::generate(Some(root.clone())) {
                             eprintln!("bloxide: generate failed: {}", e);
                         }
-                        let cargo =
-                            std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+                        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
                         let status = std::process::Command::new(&cargo)
                             .args(["check"])
                             .status()?;

@@ -93,13 +93,9 @@ enum BloxSubcommand {
         actions: Option<String>,
     },
     /// Scaffold a new actions crate
-    NewActions {
-        name: String,
-    },
+    NewActions { name: String },
     /// Scaffold a new messages crate
-    NewMessages {
-        name: String,
-    },
+    NewMessages { name: String },
     /// Scaffold a new binary (wiring) crate
     NewBinary {
         name: String,
@@ -178,7 +174,14 @@ fn main() -> anyhow::Result<()> {
                 composite,
                 terminal,
                 error,
-            } => state::add_state(&blox_name, &state_name, parent.as_deref(), composite, terminal, error),
+            } => state::add_state(
+                &blox_name,
+                &state_name,
+                parent.as_deref(),
+                composite,
+                terminal,
+                error,
+            ),
             BloxSubcommand::RemoveState {
                 blox_name,
                 state_name,

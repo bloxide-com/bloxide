@@ -3,10 +3,10 @@
 
 use anyhow::Result;
 
+use crate::new::new_blox;
+use crate::new_actions::new_actions;
 use crate::new_binary::new_binary;
 use crate::new_messages::new_messages;
-use crate::new_actions::new_actions;
-use crate::new::new_blox;
 
 pub fn new_all(name: &str, runtime: &str) -> Result<()> {
     let name_snake = name.to_lowercase().replace("-", "_");

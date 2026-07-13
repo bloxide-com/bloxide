@@ -1,13 +1,13 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Public API for bloxide-codegen — generate Rust source from blox.toml specs.
 
-pub mod schema;
 pub mod ctx;
+mod events;
 mod mailboxes;
 mod messages;
-mod events;
-mod topology;
+pub mod schema;
 pub mod spec_skeleton;
+mod topology;
 
 use schema::BloxConfig;
 use std::path::Path;
@@ -15,7 +15,10 @@ use std::path::Path;
 /// Generate all artifacts from a parsed `BloxConfig`.
 ///
 /// Returns a vector of `(filename, content)` pairs.
-pub fn generate_all(config: &BloxConfig, crate_name: &str) -> anyhow::Result<Vec<(String, String)>> {
+pub fn generate_all(
+    config: &BloxConfig,
+    crate_name: &str,
+) -> anyhow::Result<Vec<(String, String)>> {
     let mut files = Vec::new();
 
     if let Some(messages) = &config.messages {
@@ -119,7 +122,11 @@ pub fn generate_from_toml(input_path: &Path) -> anyhow::Result<Vec<(String, Stri
 ///
 /// Files are written only if their content has changed, preserving mtime for
 /// caching.
-pub fn generate_to_dir(config: &BloxConfig, crate_name: &str, output_dir: &Path) -> anyhow::Result<Vec<String>> {
+pub fn generate_to_dir(
+    config: &BloxConfig,
+    crate_name: &str,
+    output_dir: &Path,
+) -> anyhow::Result<Vec<String>> {
     std::fs::create_dir_all(output_dir)?;
 
     let files = generate_all(config, crate_name)?;

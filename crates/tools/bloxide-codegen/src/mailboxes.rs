@@ -37,7 +37,10 @@ pub fn generate(config: &MailboxesConfig) -> anyhow::Result<String> {
             .zip(indices.iter())
             .enumerate()
             .map(|(i, (_tp, idx))| {
-                let msg = format!("mailbox stream {} closed — self-sender invariant violated", i);
+                let msg = format!(
+                    "mailbox stream {} closed — self-sender invariant violated",
+                    i
+                );
                 quote! {
                     match ::core::pin::Pin::new(&mut self.#idx).poll_next(cx) {
                         ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {

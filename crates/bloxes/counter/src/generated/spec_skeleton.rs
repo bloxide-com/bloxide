@@ -8,9 +8,9 @@ use bloxide_core::{
 use counter_actions::CountsTicks;
 use counter_messages::CounterMsg;
 
-use crate::{CounterCtx, CounterEvent};
-pub use crate::generated::topology::CounterState;
 use crate::counter_state_handler_table;
+pub use crate::generated::topology::CounterState;
+use crate::{CounterCtx, CounterEvent};
 
 pub struct CounterSpec<R, B>(PhantomData<(R, B)>)
 where

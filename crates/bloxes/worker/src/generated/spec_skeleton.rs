@@ -8,8 +8,8 @@ use pool_actions::traits::{HasCurrentTask, HasWorkerPeers};
 use pool_messages::{WorkerCtrl, WorkerMsg};
 
 use crate::generated::ctx::WorkerCtx;
-use crate::generated::topology::WorkerState;
 use crate::generated::events::WorkerEvent;
+use crate::generated::topology::WorkerState;
 use crate::worker_state_handler_table;
 
 pub struct WorkerSpec<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask>(PhantomData<(R, B)>);

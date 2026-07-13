@@ -192,7 +192,8 @@ impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
         Rt::Stream<SupervisorControl<R>>,
     );
 
-    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = crate::supervisor_state_handler_table!(Self);
+    const HANDLER_TABLE: &'static [&'static StateFns<Self>] =
+        crate::supervisor_state_handler_table!(Self);
 
     fn initial_state() -> SupervisorState {
         SupervisorState::Running

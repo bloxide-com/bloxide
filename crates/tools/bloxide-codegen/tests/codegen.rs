@@ -38,7 +38,10 @@ name = "Tick"
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "counter-messages").expect("generate failed");
 
-    let msg_file = files.iter().find(|(n, _)| n == "messages_countermsg.rs").expect("messages file missing");
+    let msg_file = files
+        .iter()
+        .find(|(n, _)| n == "messages_countermsg.rs")
+        .expect("messages file missing");
     let (_name, content) = msg_file;
 
     // Header
@@ -85,7 +88,10 @@ name = "Resume"
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "ping-pong-messages").expect("generate failed");
 
-    let msg_file = files.iter().find(|(n, _)| n == "messages_pingpongmsg.rs").expect("messages file missing");
+    let msg_file = files
+        .iter()
+        .find(|(n, _)| n == "messages_pingpongmsg.rs")
+        .expect("messages file missing");
     let (_name, content) = msg_file;
 
     // Named field structs
@@ -124,7 +130,10 @@ message_path = "counter_messages::CounterMsg"
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "counter-blox").expect("generate failed");
 
-    let events_file = files.iter().find(|(n, _)| n == "events.rs").expect("events.rs missing");
+    let events_file = files
+        .iter()
+        .find(|(n, _)| n == "events.rs")
+        .expect("events.rs missing");
     let content = &events_file.1;
 
     // Imports
@@ -136,8 +145,12 @@ message_path = "counter_messages::CounterMsg"
     assert!(content.contains("Msg(Envelope<counter_messages::CounterMsg>),"));
 
     // From impls
-    assert!(content.contains("impl ::core::convert::From<Envelope<counter_messages::CounterMsg>> for CounterEvent"));
-    assert!(content.contains("impl ::core::convert::From<::bloxide_core::lifecycle::LifecycleCommand>"));
+    assert!(content.contains(
+        "impl ::core::convert::From<Envelope<counter_messages::CounterMsg>> for CounterEvent"
+    ));
+    assert!(
+        content.contains("impl ::core::convert::From<::bloxide_core::lifecycle::LifecycleCommand>")
+    );
 
     // EventTag
     assert!(content.contains("impl ::bloxide_core::event_tag::EventTag for CounterEvent"));
@@ -459,7 +472,9 @@ delegates = ["HasCurrentTimer", "CountsRounds"]
     let content = &ctx_file.1;
 
     assert!(content.contains("#[derive(BloxCtx)]"));
-    assert!(content.contains("pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"));
+    assert!(
+        content.contains("pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>")
+    );
     assert!(content.contains("ping_pong_actions"));
     assert!(content.contains("HasCurrentTimer"));
     assert!(content.contains("CountsRounds"));

@@ -3,10 +3,7 @@
 //!
 //! Moved from `spec.rs` during migration to TOML-driven structure.
 use bloxide_core::{
-    accessor::HasSelfId,
-    capability::BloxRuntime,
-    spec::StateFns,
-    transition::ActionResult,
+    accessor::HasSelfId, capability::BloxRuntime, spec::StateFns, transition::ActionResult,
     transitions,
 };
 use pool_actions::{

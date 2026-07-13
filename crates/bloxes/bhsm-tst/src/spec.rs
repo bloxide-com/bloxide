@@ -1,13 +1,13 @@
 // Copyright 2025 Bloxide, all rights reserved
 use core::marker::PhantomData;
 
+use bhsm_tst_messages::BhsmTstMsg;
 use bloxide_core::{
     capability::BloxRuntime,
     spec::{MachineSpec, StateFns},
     transition::ActionResult,
     transitions,
 };
-use bhsm_tst_messages::BhsmTstMsg;
 
 use crate::bhsm_tst_state_handler_table;
 use crate::{BhsmTstCtx, BhsmTstEvent};
@@ -26,22 +26,54 @@ macro_rules! trace {
 pub struct BhsmTstSpec<R: BloxRuntime>(PhantomData<R>);
 
 impl<R: BloxRuntime> BhsmTstSpec<R> {
-    fn s_entry(_ctx: &mut BhsmTstCtx) { trace!("s-ENTRY;"); }
-    fn s_exit(_ctx: &mut BhsmTstCtx) { trace!("s-EXIT;"); }
-    fn s1_entry(_ctx: &mut BhsmTstCtx) { trace!("s1-ENTRY;"); }
-    fn s1_exit(_ctx: &mut BhsmTstCtx) { trace!("s1-EXIT;"); }
-    fn s11_entry(_ctx: &mut BhsmTstCtx) { trace!("s11-ENTRY;"); }
-    fn s11_exit(_ctx: &mut BhsmTstCtx) { trace!("s11-EXIT;"); }
-    fn s2_entry(_ctx: &mut BhsmTstCtx) { trace!("s2-ENTRY;"); }
-    fn s2_exit(_ctx: &mut BhsmTstCtx) { trace!("s2-EXIT;"); }
-    fn s21_entry(_ctx: &mut BhsmTstCtx) { trace!("s21-ENTRY;"); }
-    fn s21_exit(_ctx: &mut BhsmTstCtx) { trace!("s21-EXIT;"); }
-    fn s211_entry(_ctx: &mut BhsmTstCtx) { trace!("s211-ENTRY;"); }
-    fn s211_exit(_ctx: &mut BhsmTstCtx) { trace!("s211-EXIT;"); }
-    fn error_entry(_ctx: &mut BhsmTstCtx) { trace!("error-ENTRY;"); }
-    fn error_exit(_ctx: &mut BhsmTstCtx) { trace!("error-EXIT;"); }
-    fn done_entry(_ctx: &mut BhsmTstCtx) { trace!("done-ENTRY;"); }
-    fn done_exit(_ctx: &mut BhsmTstCtx) { trace!("done-EXIT;"); }
+    fn s_entry(_ctx: &mut BhsmTstCtx) {
+        trace!("s-ENTRY;");
+    }
+    fn s_exit(_ctx: &mut BhsmTstCtx) {
+        trace!("s-EXIT;");
+    }
+    fn s1_entry(_ctx: &mut BhsmTstCtx) {
+        trace!("s1-ENTRY;");
+    }
+    fn s1_exit(_ctx: &mut BhsmTstCtx) {
+        trace!("s1-EXIT;");
+    }
+    fn s11_entry(_ctx: &mut BhsmTstCtx) {
+        trace!("s11-ENTRY;");
+    }
+    fn s11_exit(_ctx: &mut BhsmTstCtx) {
+        trace!("s11-EXIT;");
+    }
+    fn s2_entry(_ctx: &mut BhsmTstCtx) {
+        trace!("s2-ENTRY;");
+    }
+    fn s2_exit(_ctx: &mut BhsmTstCtx) {
+        trace!("s2-EXIT;");
+    }
+    fn s21_entry(_ctx: &mut BhsmTstCtx) {
+        trace!("s21-ENTRY;");
+    }
+    fn s21_exit(_ctx: &mut BhsmTstCtx) {
+        trace!("s21-EXIT;");
+    }
+    fn s211_entry(_ctx: &mut BhsmTstCtx) {
+        trace!("s211-ENTRY;");
+    }
+    fn s211_exit(_ctx: &mut BhsmTstCtx) {
+        trace!("s211-EXIT;");
+    }
+    fn error_entry(_ctx: &mut BhsmTstCtx) {
+        trace!("error-ENTRY;");
+    }
+    fn error_exit(_ctx: &mut BhsmTstCtx) {
+        trace!("error-EXIT;");
+    }
+    fn done_entry(_ctx: &mut BhsmTstCtx) {
+        trace!("done-ENTRY;");
+    }
+    fn done_exit(_ctx: &mut BhsmTstCtx) {
+        trace!("done-EXIT;");
+    }
 
     fn s_i(_ctx: &mut BhsmTstCtx, _ev: &BhsmTstEvent) -> ActionResult {
         trace!("s-I;");

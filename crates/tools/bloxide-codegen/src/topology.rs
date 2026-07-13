@@ -141,8 +141,8 @@ pub fn generate(
             let mut chain = Vec::new();
             chain.push(i);
             let mut cursor = s.parent.as_ref();
-            while let Some(ref cur_name) = cursor {
-                let parent_idx = name_to_index[*cur_name];
+            while let Some(cur_name) = cursor {
+                let parent_idx = name_to_index[cur_name];
                 chain.push(parent_idx);
                 cursor = config.states[parent_idx].parent.as_ref();
             }
@@ -157,10 +157,7 @@ pub fn generate(
 
     for (state, path) in config.states.iter().zip(paths.iter()) {
         let vname = format_ident!("{}", state.name);
-        let const_name = format_ident!(
-            "__PATH_{}",
-            state.name.to_ascii_uppercase()
-        );
+        let const_name = format_ident!("__PATH_{}", state.name.to_ascii_uppercase());
         let path_idents: Vec<_> = path
             .iter()
             .map(|&idx| {
@@ -235,10 +232,7 @@ pub fn generate(
         let macro_name_str = format!("{}_handler_table", to_snake_case(&enum_name_str));
         let macro_name = format_ident!("{}", macro_name_str);
 
-        let fn_idents: Vec<_> = fns
-            .iter()
-            .map(|f| format_ident!("{}", f))
-            .collect();
+        let fn_idents: Vec<_> = fns.iter().map(|f| format_ident!("{}", f)).collect();
 
         quote! {
             #[doc(hidden)]

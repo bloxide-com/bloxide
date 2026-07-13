@@ -29,18 +29,17 @@ fn handler_fn_name(state_name: &str) -> String {
 }
 
 fn load_toml(path: &Path) -> anyhow::Result<toml::Value> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("failed to read {}", path.display()))?;
-    let value: toml::Value = toml::from_str(&content)
-        .with_context(|| format!("failed to parse {}", path.display()))?;
+    let content =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let value: toml::Value =
+        toml::from_str(&content).with_context(|| format!("failed to parse {}", path.display()))?;
     Ok(value)
 }
 
 fn save_toml(path: &Path, value: &toml::Value) -> anyhow::Result<()> {
     let content = toml::to_string_pretty(value)
         .with_context(|| format!("failed to serialize {}", path.display()))?;
-    fs::write(path, content)
-        .with_context(|| format!("failed to write {}", path.display()))?;
+    fs::write(path, content).with_context(|| format!("failed to write {}", path.display()))?;
     Ok(())
 }
 
@@ -95,7 +94,7 @@ pub fn add_state(
         s.as_table()
             .and_then(|t| t.get("name"))
             .and_then(|v| v.as_str())
-            .map_or(false, |n| n == state_name)
+            == Some(state_name)
     }) {
         bail!("state '{}' already exists in {}", state_name, blox_name);
     }
@@ -141,7 +140,7 @@ pub fn remove_state(blox_name: &str, state_name: &str) -> anyhow::Result<()> {
         s.as_table()
             .and_then(|t| t.get("name"))
             .and_then(|v| v.as_str())
-            .map_or(false, |n| n == state_name)
+            == Some(state_name)
     });
     if !exists {
         bail!("state '{}' not found in {}", state_name, blox_name);
@@ -171,7 +170,7 @@ pub fn remove_state(blox_name: &str, state_name: &str) -> anyhow::Result<()> {
         s.as_table()
             .and_then(|t| t.get("name"))
             .and_then(|v| v.as_str())
-            .map_or(true, |n| n != state_name)
+            != Some(state_name)
     });
 
     let topology = topology_table_mut(&mut doc)?;

@@ -32,17 +32,11 @@ pub fn add_message(
         .ok_or_else(|| anyhow::anyhow!("messages entry is not a table"))?;
 
     if has_variant(msg_table, variant_name) {
-        bail!(
-            "variant '{}' already exists in messages",
-            variant_name
-        );
+        bail!("variant '{}' already exists in messages", variant_name);
     }
 
     let mut variant = toml::map::Map::new();
-    variant.insert(
-        "name".into(),
-        toml::Value::String(variant_name.into()),
-    );
+    variant.insert("name".into(), toml::Value::String(variant_name.into()));
 
     if !fields.is_empty() {
         let mut fields_arr = Vec::new();
@@ -95,9 +89,8 @@ pub fn remove_message(crate_name: &str, variant_name: &str) -> anyhow::Result<()
             if let Some(variants) = table.get_mut("variants") {
                 if let Some(variants_arr) = variants.as_array_mut() {
                     let before = variants_arr.len();
-                    variants_arr.retain(|v| {
-                        v.get("name").and_then(|n| n.as_str()) != Some(variant_name)
-                    });
+                    variants_arr
+                        .retain(|v| v.get("name").and_then(|n| n.as_str()) != Some(variant_name));
                     if variants_arr.len() < before {
                         found = true;
                     }
@@ -107,10 +100,7 @@ pub fn remove_message(crate_name: &str, variant_name: &str) -> anyhow::Result<()
     }
 
     if !found {
-        bail!(
-            "variant '{}' not found in any messages table",
-            variant_name
-        );
+        bail!("variant '{}' not found in any messages table", variant_name);
     }
 
     let output = toml::to_string_pretty(&doc)?;
@@ -125,14 +115,14 @@ pub fn remove_message(crate_name: &str, variant_name: &str) -> anyhow::Result<()
 }
 
 fn blox_toml_path(crate_name: &str) -> PathBuf {
-    Path::new("crates/messages").join(crate_name).join("blox.toml")
+    Path::new("crates/messages")
+        .join(crate_name)
+        .join("blox.toml")
 }
 
 fn crate_name_to_msg_name(crate_name: &str) -> String {
-    let base = crate_name
-        .strip_suffix("-messages")
-        .unwrap_or(crate_name);
-    base.split(|c: char| c == '-' || c == '_')
+    let base = crate_name.strip_suffix("-messages").unwrap_or(crate_name);
+    base.split(['-', '_'])
         .map(|part| {
             let mut chars = part.chars();
             match chars.next() {
@@ -155,7 +145,10 @@ fn ensure_messages_table(doc: &mut toml::Value, crate_name: &str) -> anyhow::Res
         table.insert("visibility".into(), toml::Value::String("pub".into()));
         doc.as_table_mut()
             .ok_or_else(|| anyhow::anyhow!("document root is not a table"))?
-            .insert("messages".into(), toml::Value::Array(vec![toml::Value::Table(table)]));
+            .insert(
+                "messages".into(),
+                toml::Value::Array(vec![toml::Value::Table(table)]),
+            );
     }
     Ok(())
 }
@@ -165,9 +158,8 @@ fn has_variant(msg_table: &toml::map::Map<String, toml::Value>, name: &str) -> b
         .get("variants")
         .and_then(|v| v.as_array())
         .map(|arr| {
-            arr.iter().any(|v| {
-                v.get("name").and_then(|n| n.as_str()) == Some(name)
-            })
+            arr.iter()
+                .any(|v| v.get("name").and_then(|n| n.as_str()) == Some(name))
         })
         .unwrap_or(false)
 }

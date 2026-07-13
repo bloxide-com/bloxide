@@ -37,7 +37,8 @@ $BLOX add-message ping_pong-messages Resume
 $BLOX new-actions ping-pong
 
 # ── Layer 4: Blox — Ping ───────────────────────────────────────────────────
-$BLOX new ping --messages ping_pong-messages --actions ping_pong-actions
+# Don't use --actions here; we manually define the full [context] section below
+$BLOX new ping --messages ping_pong-messages
 $BLOX add-state ping Operating --composite
 $BLOX add-state ping Active --parent Operating
 $BLOX add-state ping Paused --parent Operating
@@ -45,10 +46,22 @@ $BLOX add-state ping Done --terminal
 $BLOX add-state ping Error --error
 
 # ── Layer 4: Blox — Pong ───────────────────────────────────────────────────
-$BLOX new pong --messages ping_pong-messages --actions ping_pong-actions
+$BLOX new pong --messages ping_pong-messages
 $BLOX add-state pong Ready
 
 # ── Patch Ping blox.toml: add mailboxes, context, state flags ──────────────
+# Remove default [context] and [[event.mailboxes]] added by `cargo blox new` so we can replace them
+python3 -c "
+import re
+with open('crates/bloxes/ping/blox.toml') as f:
+    txt = f.read()
+# Remove default [context] section
+txt = re.sub(r'\[context\]\n[^\[]+', '', txt, count=1)
+# Remove default [[event.mailboxes]]
+txt = re.sub(r'\[\[event\.mailboxes\]\]\n[^\[]+', '', txt, count=1)
+with open('crates/bloxes/ping/blox.toml', 'w') as f:
+    f.write(txt)
+"
 cat >> crates/bloxes/ping/blox.toml <<'PING_TOML'
 
 [context]
@@ -83,13 +96,30 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 PING_TOML
 
-sed -i '/^\[\[topology\.states\]\]$/,/^$/{
-  /name = "Active"/,/^$/{
-    /^parent/a initial = true
-  }
-}' crates/bloxes/ping/blox.toml
+python3 -c "
+import re
+with open('crates/bloxes/ping/blox.toml') as f:
+    txt = f.read()
+# Add initial = true after 'parent = \"Operating\"' in the Active state block
+txt = re.sub(
+    r'(\[\[topology\.states\]\]\nname = \"Active\"\nparent = \"Operating\")',
+    r'\1\ninitial = true',
+    txt
+)
+with open('crates/bloxes/ping/blox.toml', 'w') as f:
+    f.write(txt)
+"
 
 # ── Patch Pong blox.toml: add mailboxes, context, state flags ──────────────
+python3 -c "
+import re
+with open('crates/bloxes/pong/blox.toml') as f:
+    txt = f.read()
+txt = re.sub(r'\[context\]\n[^\[]+', '', txt, count=1)
+txt = re.sub(r'\[\[event\.mailboxes\]\]\n[^\[]+', '', txt, count=1)
+with open('crates/bloxes/pong/blox.toml', 'w') as f:
+    f.write(txt)
+"
 cat >> crates/bloxes/pong/blox.toml <<'PONG_TOML'
 
 [context]
@@ -111,11 +141,19 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 PONG_TOML
 
-sed -i '/^\[\[topology\.states\]\]$/,/^$/{
-  /name = "Ready"/,/^$/{
-    /^name/a initial = true
-  }
-}' crates/bloxes/pong/blox.toml
+python3 -c "
+import re
+with open('crates/bloxes/pong/blox.toml') as f:
+    txt = f.read()
+# Add initial = true after 'name = \"Ready\"' in the Ready state block
+txt = re.sub(
+    r'(\[\[topology\.states\]\]\nname = \"Ready\")',
+    r'\1\ninitial = true',
+    txt
+)
+with open('crates/bloxes/pong/blox.toml', 'w') as f:
+    f.write(txt)
+"
 
 # ── Generate all boilerplate from TOML ───────────────────────────────────────
 $BLOX generate
@@ -132,7 +170,6 @@ use bloxide_core::{
 use ping_pong_actions::{HasCurrentTimer, CountsRounds};
 use ping_pong_messages::PingPongMsg;
 
-use crate::ping_state_handler_table;
 use crate::{PingCtx, PingEvent};
 pub use crate::generated::topology::PingState;
 
@@ -179,7 +216,6 @@ use bloxide_core::{
 };
 use ping_pong_messages::PingPongMsg;
 
-use crate::pong_state_handler_table;
 use crate::{PongCtx, PongEvent};
 pub use crate::generated::topology::PongState;
 
@@ -520,7 +556,7 @@ use ping_pong_messages::PingPongMsg;
 impl<R: BloxRuntime> PongSpec<R> {
     fn reply_pong_action(ctx: &mut PongCtx<R>, ev: &PongEvent) -> ActionResult {
         if let Some(PingPongMsg::Ping(ping)) = ev.msg_payload() {
-            return send_pong::<R, _>(ctx, ping);
+            return send_pong::<R, _>(ctx, &ping);
         }
         ActionResult::Ok
     }

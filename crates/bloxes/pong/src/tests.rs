@@ -11,7 +11,7 @@ mod pong_tests {
     use crate::{PongCtx, PongEvent, PongSpec, PongState};
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::Envelope;
-    use bloxide_core::test_utils::{TestReceiver, TestRuntime, TestSender};
+    use bloxide_core::test_utils::{TestReceiver, TestRuntime};
     use bloxide_core::{DynamicChannelCap, MachineState, StateMachine};
     use ping_pong_messages::{Ping, PingPongMsg, Pong};
     use std::vec::Vec;
@@ -19,7 +19,6 @@ mod pong_tests {
     struct PongHarness {
         machine: StateMachine<PongSpec<TestRuntime>>,
         to_ping_rx: TestReceiver<PingPongMsg>,
-        ping_sender: TestSender<PingPongMsg>,
     }
 
     impl PongHarness {
@@ -28,7 +27,6 @@ mod pong_tests {
             let ping_id = TestRuntime::alloc_actor_id();
             let (ping_ref, to_ping_rx) =
                 <TestRuntime as DynamicChannelCap>::channel::<PingPongMsg>(ping_id, 16);
-            let ping_sender = ping_ref.sender();
 
             let ctx = PongCtx::new(pong_id, ping_ref);
             let machine = StateMachine::<PongSpec<TestRuntime>>::new(ctx);
@@ -36,7 +34,6 @@ mod pong_tests {
             PongHarness {
                 machine,
                 to_ping_rx,
-                ping_sender,
             }
         }
 

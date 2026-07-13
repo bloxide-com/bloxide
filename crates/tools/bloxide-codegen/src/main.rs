@@ -3,8 +3,8 @@
 //!
 //! Usage: `bloxide-codegen <input-toml> <output-dir>`
 
-use std::path::Path;
 use bloxide_codegen::generate_from_toml;
+use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();

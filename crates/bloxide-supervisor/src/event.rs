@@ -1,9 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
+use bloxide_core::lifecycle::ChildLifecycleEvent;
 use bloxide_core::{
     capability::BloxRuntime, event_tag::LifecycleEvent, lifecycle::LifecycleCommand,
     messaging::Envelope,
 };
-use bloxide_core::lifecycle::ChildLifecycleEvent;
 
 use crate::control::SupervisorControl;
 

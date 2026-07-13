@@ -89,8 +89,10 @@ pub fn generate(
     let b_bounds = if delegate_traits.is_empty() {
         quote! { 'static }
     } else {
-        let trait_idents: Vec<_> =
-            delegate_traits.iter().map(|t| format_ident!("{}", t)).collect();
+        let trait_idents: Vec<_> = delegate_traits
+            .iter()
+            .map(|t| format_ident!("{}", t))
+            .collect();
         quote! { #(#trait_idents)+* + 'static }
     };
 
@@ -150,20 +152,26 @@ pub fn generate(
         .map(|s| format_ident!("{}", s.name))
         .collect();
 
-    let is_terminal_body = if terminal_states.is_empty() {
-        quote! { false }
+    let (is_terminal_param, is_terminal_body) = if terminal_states.is_empty() {
+        (quote! { _state }, quote! { false })
     } else {
-        quote! {
-            ::core::matches!(state, #state_ident::#(#terminal_states)|*)
-        }
+        (
+            quote! { state },
+            quote! {
+                ::core::matches!(state, #state_ident::#(#terminal_states)|*)
+            },
+        )
     };
 
-    let is_error_body = if error_states.is_empty() {
-        quote! { false }
+    let (is_error_param, is_error_body) = if error_states.is_empty() {
+        (quote! { _state }, quote! { false })
     } else {
-        quote! {
-            ::core::matches!(state, #state_ident::#(#error_states)|*)
-        }
+        (
+            quote! { state },
+            quote! {
+                ::core::matches!(state, #state_ident::#(#error_states)|*)
+            },
+        )
     };
 
     let ctx_ty = quote! { #ctx_ident<B> };
@@ -196,17 +204,18 @@ pub fn generate(
         pub use crate::generated::topology::#state_ident;
     });
 
-    use_stmts.push(quote! {
-        use crate::#handler_macro_ident;
-    });
+    // Macro is already in scope via #[macro_use] on topology module in generated/mod.rs
+    // use crate::#handler_macro_ident;
 
     if !delegate_traits.is_empty() {
         let actions_crate = context
             .and_then(|c| c.actions_crate.clone())
             .unwrap_or_else(|| derive_actions_crate(crate_name));
         let actions_crate_ident = format_ident!("{}", actions_crate);
-        let trait_idents: Vec<_> =
-            delegate_traits.iter().map(|t| format_ident!("{}", t)).collect();
+        let trait_idents: Vec<_> = delegate_traits
+            .iter()
+            .map(|t| format_ident!("{}", t))
+            .collect();
         use_stmts.push(quote! {
             use #actions_crate_ident::{#(#trait_idents),*};
         });
@@ -243,11 +252,11 @@ pub fn generate(
                 #state_ident::#initial_state_ident
             }
 
-            fn is_terminal(state: &#state_ident) -> bool {
+            fn is_terminal(#is_terminal_param: &#state_ident) -> bool {
                 #is_terminal_body
             }
 
-            fn is_error(state: &#state_ident) -> bool {
+            fn is_error(#is_error_param: &#state_ident) -> bool {
                 #is_error_body
             }
 

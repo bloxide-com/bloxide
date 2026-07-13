@@ -9,7 +9,9 @@
 
 #[cfg(all(test, feature = "std"))]
 mod ping_tests {
-    use crate::{PingCtx, PingEvent, PingSpec, PingState, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
+    use crate::{
+        PingCtx, PingEvent, PingSpec, PingState, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS,
+    };
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::ActorId;
     use bloxide_core::test_utils::{TestReceiver, TestRuntime, TestSender};

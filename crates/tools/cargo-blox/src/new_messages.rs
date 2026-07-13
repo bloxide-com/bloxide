@@ -1,9 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Scaffold a new messages crate.
 
+use anyhow::Result;
 use std::fs;
 use std::path::Path;
-use anyhow::Result;
 
 use crate::utils::{to_camel_case, update_workspace_cargo_toml, WorkspaceAddition};
 

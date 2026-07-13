@@ -11,8 +11,7 @@ impl ::core::convert::From<Envelope<bhsm_tst_messages::BhsmTstMsg>> for BhsmTstE
         BhsmTstEvent::Msg(envelope)
     }
 }
-impl ::core::convert::From<::bloxide_core::lifecycle::LifecycleCommand>
-for BhsmTstEvent {
+impl ::core::convert::From<::bloxide_core::lifecycle::LifecycleCommand> for BhsmTstEvent {
     fn from(cmd: ::bloxide_core::lifecycle::LifecycleCommand) -> Self {
         BhsmTstEvent::Lifecycle(cmd)
     }
@@ -40,9 +39,7 @@ impl BhsmTstEvent {
     /// Event tag for this variant, used for fast dispatch filtering.
     pub const MSG_TAG: u8 = 0u8;
     /// Returns the envelope if this event matches this variant.
-    pub fn msg_envelope(
-        &self,
-    ) -> ::core::option::Option<&Envelope<bhsm_tst_messages::BhsmTstMsg>> {
+    pub fn msg_envelope(&self) -> ::core::option::Option<&Envelope<bhsm_tst_messages::BhsmTstMsg>> {
         match self {
             BhsmTstEvent::Msg(ref e) => ::core::option::Option::Some(e),
             _ => ::core::option::Option::None,

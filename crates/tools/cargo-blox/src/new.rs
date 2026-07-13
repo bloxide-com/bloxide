@@ -1,9 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Scaffold a new blox following the five-layer pattern.
 
+use anyhow::Result;
 use std::fs;
 use std::path::Path;
-use anyhow::Result;
 
 use crate::utils::{
     generate_spec_md, to_camel_case, update_workspace_cargo_toml, WorkspaceAddition,
@@ -92,17 +92,77 @@ std = ["bloxide-core/std"]
     );
     fs::write(crate_dir.join("Cargo.toml"), cargo_toml)?;
 
-    let blox_toml = format!(
+    let mut blox_toml = format!(
         r#"[actor]
 name = "{name_camel}"
 
 [event]
 name = "{name_camel}Event"
-
-[topology]
-handler_fns = []
 "#
     );
+
+    // If messages crate provided, auto-add a mailbox
+    if let Some(msg_crate) = messages {
+        let msg_type = to_camel_case(msg_crate.trim_end_matches("-messages")) + "Msg";
+        let msg_module = msg_crate.replace("-", "_");
+        blox_toml.push_str(&format!(
+            r#"
+[[event.mailboxes]]
+variant = "Msg"
+message = "{msg_type}"
+message_path = "{msg_module}::{msg_type}"
+"#
+        ));
+    }
+
+    // Auto-generate a minimal [context] section
+    let mut context_toml = format!(
+        r#"
+[context]
+name = "{name_camel}Ctx"
+"#
+    );
+
+    // If actions crate provided, add a behavior field with placeholder delegate
+    if let Some(_act_crate) = actions {
+        context_toml.push_str(
+            r#"generics = "<B: CountsTicks>"
+"#,
+        );
+        context_toml.push_str(
+            r#"
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+"#,
+        );
+        context_toml.push_str(
+            r#"
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["CountsTicks"]
+"#,
+        );
+    } else {
+        context_toml.push_str(
+            r#"
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+"#,
+        );
+    }
+
+    blox_toml.push_str(&context_toml);
+
+    blox_toml.push_str(
+        r#"
+[topology]
+handler_fns = []
+"#,
+    );
+
     fs::write(crate_dir.join("blox.toml"), blox_toml)?;
 
     let lib_rs = r#"// Copyright 2025 Bloxide, all rights reserved
