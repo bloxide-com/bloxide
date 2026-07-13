@@ -1,19 +1,20 @@
-#!/bin/bash
-set -e
+// Copyright 2025 Bloxide, all rights reserved
+//! Embassy ping-pong demo — uses `cargo-blox` CLI to scaffold, writes
+//! user-edited files, patches generated output, and runs an Embassy-based
+//! ping/pong actor system.
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO_ROOT"
-cargo build -p cargo-blox --quiet
+mod common;
 
-BLOX="$REPO_ROOT/target/debug/cargo-blox blox"
+use common::*;
+use std::fs;
 
-DEMO="demo/embassy"
-rm -rf "$REPO_ROOT/$DEMO"
-mkdir -p "$REPO_ROOT/$DEMO"
-cd "$REPO_ROOT/$DEMO"
+fn main() {
+    let root = repo_root();
+    let blox_bin = ensure_cargo_blox(&root);
+    let demo = create_demo_dir(&root, "embassy");
 
-cat > Cargo.toml <<'INITIAL'
-[workspace]
+    // ── Initial workspace ─────────────────────────────────────────────────────
+    write_file(&demo, "Cargo.toml", r#"[workspace]
 members = [
 ]
 resolver = "2"
@@ -25,258 +26,42 @@ license = "MIT"
 repository = "https://github.com/bloxide-com/bloxide"
 
 [workspace.dependencies]
-INITIAL
+"#);
 
-# ── Layer 1: Messages ────────────────────────────────────────────────────────
-$BLOX new-messages ping-pong
-$BLOX add-message ping_pong-messages Ping round:u32
-$BLOX add-message ping_pong-messages Pong round:u32
-$BLOX add-message ping_pong-messages Resume
+    // ── Layer 1: Messages ─────────────────────────────────────────────────────
+    blox(&blox_bin, &demo, &["new-messages", "ping-pong"]);
+    blox(&blox_bin, &demo, &["add-message", "ping_pong-messages", "Ping", "round:u32"]);
+    blox(&blox_bin, &demo, &["add-message", "ping_pong-messages", "Pong", "round:u32"]);
+    blox(&blox_bin, &demo, &["add-message", "ping_pong-messages", "Resume"]);
 
-# ── Layer 2: Actions ────────────────────────────────────────────────────────
-$BLOX new-actions ping-pong
+    // ── Layer 2: Actions ──────────────────────────────────────────────────────
+    blox(&blox_bin, &demo, &["new-actions", "ping-pong"]);
 
-# ── Layer 4: Blox — Ping ───────────────────────────────────────────────────
-# Don't use --actions here; we manually define the full [context] section below
-$BLOX new ping --messages ping_pong-messages
-$BLOX add-state ping Operating --composite
-$BLOX add-state ping Active --parent Operating
-$BLOX add-state ping Paused --parent Operating
-$BLOX add-state ping Done --terminal
-$BLOX add-state ping Error --error
+    // ── Layer 4: Blox — Ping ──────────────────────────────────────────────────
+    blox(&blox_bin, &demo, &["new", "ping", "--messages", "ping_pong-messages"]);
+    blox(&blox_bin, &demo, &["add-state", "ping", "Operating", "--composite"]);
+    blox(&blox_bin, &demo, &["add-state", "ping", "Active", "--parent", "Operating"]);
+    blox(&blox_bin, &demo, &["add-state", "ping", "Paused", "--parent", "Operating"]);
+    blox(&blox_bin, &demo, &["add-state", "ping", "Done", "--terminal"]);
+    blox(&blox_bin, &demo, &["add-state", "ping", "Error", "--error"]);
 
-# ── Layer 4: Blox — Pong ───────────────────────────────────────────────────
-$BLOX new pong --messages ping_pong-messages
-$BLOX add-state pong Ready
+    // ── Layer 4: Blox — Pong ──────────────────────────────────────────────────
+    blox(&blox_bin, &demo, &["new", "pong", "--messages", "ping_pong-messages"]);
+    blox(&blox_bin, &demo, &["add-state", "pong", "Ready"]);
 
-# ── Patch Ping blox.toml: add mailboxes, context, state flags ──────────────
-# Remove default [context] and [[event.mailboxes]] added by `cargo blox new` so we can replace them
-python3 -c "
-import re
-with open('crates/bloxes/ping/blox.toml') as f:
-    txt = f.read()
-# Remove default [context] section
-txt = re.sub(r'\[context\]\n[^\[]+', '', txt, count=1)
-# Remove default [[event.mailboxes]]
-txt = re.sub(r'\[\[event\.mailboxes\]\]\n[^\[]+', '', txt, count=1)
-with open('crates/bloxes/ping/blox.toml', 'w') as f:
-    f.write(txt)
-"
-cat >> crates/bloxes/ping/blox.toml <<'PING_TOML'
+    // ── Patch Ping blox.toml: add context and mailboxes ───────────────────────
+    patch_ping_blox_toml(&demo);
+    patch_pong_blox_toml(&demo);
 
-[context]
-name = "PingCtx"
-generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
-actions_crate = "ping_pong_actions"
+    // ── Generate all boilerplate from TOML ────────────────────────────────────
+    blox(&blox_bin, &demo, &["generate"]);
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
+    // ── Patch generated spec_skeleton.rs and ctx.rs ───────────────────────────
+    patch_generated_ping(&demo);
+    patch_generated_pong(&demo);
 
-[[context.fields]]
-name = "peer_ref"
-ty = "ActorRef<PingPongMsg, R>"
-
-[[context.fields]]
-name = "self_ref"
-ty = "ActorRef<PingPongMsg, R>"
-
-[[context.fields]]
-name = "timer_ref"
-ty = "ActorRef<TimerCommand, R>"
-
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["HasCurrentTimer", "CountsRounds"]
-
-[[event.mailboxes]]
-variant = "Msg"
-message = "PingPongMsg"
-message_path = "ping_pong_messages::PingPongMsg"
-PING_TOML
-
-python3 -c "
-import re
-with open('crates/bloxes/ping/blox.toml') as f:
-    txt = f.read()
-# Add initial = true after 'parent = \"Operating\"' in the Active state block
-txt = re.sub(
-    r'(\[\[topology\.states\]\]\nname = \"Active\"\nparent = \"Operating\")',
-    r'\1\ninitial = true',
-    txt
-)
-with open('crates/bloxes/ping/blox.toml', 'w') as f:
-    f.write(txt)
-"
-
-# ── Patch Pong blox.toml: add mailboxes, context, state flags ──────────────
-python3 -c "
-import re
-with open('crates/bloxes/pong/blox.toml') as f:
-    txt = f.read()
-txt = re.sub(r'\[context\]\n[^\[]+', '', txt, count=1)
-txt = re.sub(r'\[\[event\.mailboxes\]\]\n[^\[]+', '', txt, count=1)
-with open('crates/bloxes/pong/blox.toml', 'w') as f:
-    f.write(txt)
-"
-cat >> crates/bloxes/pong/blox.toml <<'PONG_TOML'
-
-[context]
-name = "PongCtx"
-generics = "<R: BloxRuntime>"
-actions_crate = "ping_pong_actions"
-
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
-[[context.fields]]
-name = "peer_ref"
-ty = "ActorRef<PingPongMsg, R>"
-
-[[event.mailboxes]]
-variant = "Msg"
-message = "PingPongMsg"
-message_path = "ping_pong_messages::PingPongMsg"
-PONG_TOML
-
-python3 -c "
-import re
-with open('crates/bloxes/pong/blox.toml') as f:
-    txt = f.read()
-# Add initial = true after 'name = \"Ready\"' in the Ready state block
-txt = re.sub(
-    r'(\[\[topology\.states\]\]\nname = \"Ready\")',
-    r'\1\ninitial = true',
-    txt
-)
-with open('crates/bloxes/pong/blox.toml', 'w') as f:
-    f.write(txt)
-"
-
-# ── Generate all boilerplate from TOML ───────────────────────────────────────
-$BLOX generate
-
-# ── Fix generated spec_skeleton.rs — overwrite with correct generics ─────────
-cat > crates/bloxes/ping/src/generated/spec_skeleton.rs <<'PING_SPEC'
-// Auto-generated by bloxide-codegen. Do not edit manually.
-use core::marker::PhantomData;
-use bloxide_core::{
-    capability::BloxRuntime,
-    spec::{MachineSpec, StateFns},
-    HasSelfId,
-};
-use ping_pong_actions::{HasCurrentTimer, CountsRounds};
-use ping_pong_messages::PingPongMsg;
-
-use crate::{PingCtx, PingEvent};
-pub use crate::generated::topology::PingState;
-
-pub struct PingSpec<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>(PhantomData<(R, B)>);
-
-impl<R, B> MachineSpec for PingSpec<R, B>
-where
-    R: BloxRuntime,
-    B: HasCurrentTimer + CountsRounds + Default + 'static,
-    B::Round: Into<u32>,
-{
-    type State = PingState;
-    type Event = PingEvent;
-    type Ctx = PingCtx<R, B>;
-    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<PingPongMsg>,);
-
-    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = ping_state_handler_table!(Self);
-
-    fn initial_state() -> PingState {
-        PingState::Active
-    }
-
-    fn is_terminal(state: &PingState) -> bool {
-        matches!(state, PingState::Done)
-    }
-
-    fn is_error(state: &PingState) -> bool {
-        matches!(state, PingState::Error)
-    }
-
-    fn on_init_entry(ctx: &mut PingCtx<R, B>) {
-        ctx.behavior = B::default();
-        bloxide_log::blox_log_info!(ctx.self_id(), "reset — behavior cleared");
-    }
-}
-PING_SPEC
-
-cat > crates/bloxes/pong/src/generated/spec_skeleton.rs <<'PONG_SPEC'
-// Auto-generated by bloxide-codegen. Do not edit manually.
-use core::marker::PhantomData;
-use bloxide_core::{
-    capability::BloxRuntime,
-    spec::{MachineSpec, StateFns},
-};
-use ping_pong_messages::PingPongMsg;
-
-use crate::{PongCtx, PongEvent};
-pub use crate::generated::topology::PongState;
-
-pub struct PongSpec<R: BloxRuntime>(PhantomData<R>);
-
-impl<R: BloxRuntime> MachineSpec for PongSpec<R> {
-    type State = PongState;
-    type Event = PongEvent;
-    type Ctx = PongCtx<R>;
-    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<PingPongMsg>,);
-
-    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = pong_state_handler_table!(Self);
-
-    fn initial_state() -> PongState {
-        PongState::Ready
-    }
-
-    fn on_init_entry(_ctx: &mut PongCtx<R>) {}
-}
-PONG_SPEC
-
-# ── Fix generated ctx.rs — overwrite with correct imports ────────────────────
-cat > crates/bloxes/ping/src/generated/ctx.rs <<'PING_CTX'
-// Auto-generated by bloxide-codegen. Do not edit manually.
-use bloxide_core::{ActorId, capability::BloxRuntime, messaging::ActorRef};
-use bloxide_macros::BloxCtx;
-use bloxide_timer::{HasTimerRef, TimerCommand, TimerId};
-use ping_pong_actions::{
-    CountsRounds, HasCurrentTimer, HasPeerRef, HasSelfRef,
-    __delegate_CountsRounds, __delegate_HasCurrentTimer,
-};
-use ping_pong_messages::PingPongMsg;
-
-#[derive(BloxCtx)]
-pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds> {
-    pub self_id: ActorId,
-    pub peer_ref: ActorRef<PingPongMsg, R>,
-    pub self_ref: ActorRef<PingPongMsg, R>,
-    pub timer_ref: ActorRef<TimerCommand, R>,
-    #[delegates(HasCurrentTimer, CountsRounds)]
-    pub behavior: B,
-}
-PING_CTX
-
-cat > crates/bloxes/pong/src/generated/ctx.rs <<'PONG_CTX'
-// Auto-generated by bloxide-codegen. Do not edit manually.
-use bloxide_core::{capability::BloxRuntime, ActorId, ActorRef};
-use bloxide_macros::BloxCtx;
-use ping_pong_actions::HasPeerRef;
-use ping_pong_messages::PingPongMsg;
-
-#[derive(BloxCtx)]
-pub struct PongCtx<R: BloxRuntime> {
-    pub self_id: ActorId,
-    pub peer_ref: ActorRef<PingPongMsg, R>,
-}
-PONG_CTX
-
-# ── Patch blox Cargo.toml files — add missing dependencies ──────────────────
-cat > crates/bloxes/ping/Cargo.toml <<'PING_CARGO'
-[package]
+    // ── Patch blox Cargo.toml files ───────────────────────────────────────────
+    write_file(&demo, "crates/bloxes/ping/Cargo.toml", r#"[package]
 name = "ping-blox"
 version.workspace = true
 edition.workspace = true
@@ -295,10 +80,9 @@ bloxide-log    = { workspace = true }
 bloxide-timer  = { workspace = true, features = ["alloc"] }
 ping_pong-messages = { workspace = true }
 ping_pong-actions  = { workspace = true }
-PING_CARGO
+"#);
 
-cat > crates/bloxes/pong/Cargo.toml <<'PONG_CARGO'
-[package]
+    write_file(&demo, "crates/bloxes/pong/Cargo.toml", r#"[package]
 name = "pong-blox"
 version.workspace = true
 edition.workspace = true
@@ -316,11 +100,10 @@ bloxide-macros = { workspace = true }
 bloxide-log    = { workspace = true }
 ping_pong-messages = { workspace = true }
 ping_pong-actions  = { workspace = true }
-PONG_CARGO
+"#);
 
-# ── Patch actions crate Cargo.toml — add missing dependencies ─────────────────
-cat > crates/actions/ping_pong-actions/Cargo.toml <<'ACTIONS_CARGO'
-[package]
+    // ── Patch actions crate Cargo.toml ────────────────────────────────────────
+    write_file(&demo, "crates/actions/ping_pong-actions/Cargo.toml", r#"[package]
 name = "ping_pong-actions"
 version.workspace = true
 edition.workspace = true
@@ -333,11 +116,10 @@ bloxide-core   = { workspace = true, features = ["alloc"] }
 bloxide-macros = { workspace = true }
 bloxide-timer  = { workspace = true, features = ["alloc"] }
 ping_pong-messages = { workspace = true }
-ACTIONS_CARGO
+"#);
 
-# ── Write ping-pong-actions (trait + generic functions) ──────────────────────
-cat > crates/actions/ping_pong-actions/src/lib.rs <<'ACTIONS'
-#![no_std]
+    // ── Write ping-pong-actions (trait + generic functions) ───────────────────
+    write_file(&demo, "crates/actions/ping_pong-actions/src/lib.rs", r#"#![no_std]
 
 use bloxide_core::{
     accessor::HasSelfId, capability::BloxRuntime, messaging::ActorRef, transition::ActionResult,
@@ -432,11 +214,10 @@ where
         ctx.set_current_timer(None);
     }
 }
-ACTIONS
+"#);
 
-# ── Write Ping actions ──────────────────────────────────────────────────────
-cat > crates/bloxes/ping/src/actions.rs <<'PING_ACTIONS'
-use crate::{PingCtx, PingEvent, PingSpec, PingState, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
+    // ── Write Ping actions ────────────────────────────────────────────────────
+    write_file(&demo, "crates/bloxes/ping/src/actions.rs", r#"use crate::{PingCtx, PingEvent, PingSpec, PingState, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS};
 use bloxide_core::{
     capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions, HasSelfId,
 };
@@ -523,11 +304,10 @@ where
         transitions: &[],
     };
 }
-PING_ACTIONS
+"#);
 
-# ── Write Ping lib.rs ───────────────────────────────────────────────────────
-cat > crates/bloxes/ping/src/lib.rs <<'PING_LIB'
-#![no_std]
+    // ── Write Ping lib.rs ─────────────────────────────────────────────────────
+    write_file(&demo, "crates/bloxes/ping/src/lib.rs", r#"#![no_std]
 
 #[cfg(feature = "std")]
 extern crate std;
@@ -544,11 +324,10 @@ pub use generated::*;
 pub const MAX_ROUNDS: u8 = 5;
 pub const PAUSE_AT_ROUND: u8 = 2;
 pub const PAUSE_DURATION_MS: u64 = 150;
-PING_LIB
+"#);
 
-# ── Write Pong actions ──────────────────────────────────────────────────────
-cat > crates/bloxes/pong/src/actions.rs <<'PONG_ACTIONS'
-use crate::prelude::*;
+    // ── Write Pong actions ────────────────────────────────────────────────────
+    write_file(&demo, "crates/bloxes/pong/src/actions.rs", r#"use crate::prelude::*;
 use bloxide_core::{capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions};
 use ping_pong_actions::send_pong;
 use ping_pong_messages::PingPongMsg;
@@ -572,11 +351,10 @@ impl<R: BloxRuntime> PongSpec<R> {
         ],
     };
 }
-PONG_ACTIONS
+"#);
 
-# ── Rewrite workspace Cargo.toml with full deps + binary ───────────────────
-cat > Cargo.toml <<'WORKSPACE'
-[workspace]
+    // ── Rewrite workspace Cargo.toml with full deps + binary ──────────────────
+    write_file(&demo, "Cargo.toml", r#"[workspace]
 members = [
     "crates/messages/ping_pong-messages",
     "crates/actions/ping_pong-actions",
@@ -612,13 +390,10 @@ env_logger          = "0.11"
 
 [profile.dev]
 panic = "abort"
-WORKSPACE
+"#);
 
-# ── Layer 5: Binary (Embassy) ───────────────────────────────────────────────
-mkdir -p apps/embassy-demo/src
-
-cat > apps/embassy-demo/Cargo.toml <<'CRATE'
-[package]
+    // ── Layer 5: Binary (Embassy) ─────────────────────────────────────────────
+    write_file(&demo, "apps/embassy-demo/Cargo.toml", r#"[package]
 name = "embassy-demo"
 version.workspace = true
 edition.workspace = true
@@ -640,10 +415,9 @@ critical-section   = { workspace = true }
 static_cell        = { workspace = true }
 log                = { workspace = true }
 env_logger         = { workspace = true }
-CRATE
+"#);
 
-cat > apps/embassy-demo/src/main.rs <<'MAIN'
-use bloxide_embassy::prelude::*;
+    write_file(&demo, "apps/embassy-demo/src/main.rs", r#"use bloxide_embassy::prelude::*;
 use bloxide_core::lifecycle::LifecycleCommand;
 use bloxide_timer::TimerId;
 use ping_blox::prelude::*;
@@ -744,6 +518,219 @@ fn setup(spawner: Spawner) {
         (sup_notify_rx, sup_control_rx),
     ));
 }
-MAIN
+"#);
 
-cargo run -p embassy-demo
+    println!("=== Setup complete. Running demo... ===");
+    cargo_run(&demo, "embassy-demo");
+}
+
+// ── Helpers for patching blox.toml ────────────────────────────────────────────
+
+fn patch_ping_blox_toml(demo: &std::path::Path) {
+    let path = demo.join("crates/bloxes/ping/blox.toml");
+    let mut txt = fs::read_to_string(&path).expect("read ping blox.toml");
+    // Remove default [context] section
+    if let Some(pos) = txt.find("[context]") {
+        let end = txt[pos..].find("\n[").map(|e| pos + e).unwrap_or(txt.len());
+        txt.replace_range(pos..end, "");
+    }
+    // Remove default [[event.mailboxes]]
+    if let Some(pos) = txt.find("[[event.mailboxes]]") {
+        let end = txt[pos..].find("\n[").map(|e| pos + e).unwrap_or(txt.len());
+        txt.replace_range(pos..end, "");
+    }
+    // Add initial = true to Active state
+    txt = txt.replace(
+        "[[topology.states]]\nname = \"Active\"\nparent = \"Operating\"",
+        "[[topology.states]]\nname = \"Active\"\nparent = \"Operating\"\ninitial = true",
+    );
+
+    txt.push_str(r#"
+[context]
+name = "PingCtx"
+generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
+actions_crate = "ping_pong_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[context.fields]]
+name = "self_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[context.fields]]
+name = "timer_ref"
+ty = "ActorRef<TimerCommand, R>"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["HasCurrentTimer", "CountsRounds"]
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+"#);
+    fs::write(&path, txt).expect("write ping blox.toml");
+}
+
+fn patch_pong_blox_toml(demo: &std::path::Path) {
+    let path = demo.join("crates/bloxes/pong/blox.toml");
+    let mut txt = fs::read_to_string(&path).expect("read pong blox.toml");
+    // Remove default [context] section
+    if let Some(pos) = txt.find("[context]") {
+        let end = txt[pos..].find("\n[").map(|e| pos + e).unwrap_or(txt.len());
+        txt.replace_range(pos..end, "");
+    }
+    // Remove default [[event.mailboxes]]
+    if let Some(pos) = txt.find("[[event.mailboxes]]") {
+        let end = txt[pos..].find("\n[").map(|e| pos + e).unwrap_or(txt.len());
+        txt.replace_range(pos..end, "");
+    }
+    // Add initial = true to Ready state
+    txt = txt.replace(
+        "[[topology.states]]\nname = \"Ready\"",
+        "[[topology.states]]\nname = \"Ready\"\ninitial = true",
+    );
+
+    txt.push_str(r#"
+[context]
+name = "PongCtx"
+generics = "<R: BloxRuntime>"
+actions_crate = "ping_pong_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+"#);
+    fs::write(&path, txt).expect("write pong blox.toml");
+}
+
+fn patch_generated_ping(demo: &std::path::Path) {
+    write_file(demo, "crates/bloxes/ping/src/generated/spec_skeleton.rs", r#"// Auto-generated by bloxide-codegen. Do not edit manually.
+use core::marker::PhantomData;
+use bloxide_core::{
+    capability::BloxRuntime,
+    spec::{MachineSpec, StateFns},
+    HasSelfId,
+};
+use ping_pong_actions::{HasCurrentTimer, CountsRounds};
+use ping_pong_messages::PingPongMsg;
+
+use crate::{PingCtx, PingEvent};
+pub use crate::generated::topology::PingState;
+
+pub struct PingSpec<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>(PhantomData<(R, B)>);
+
+impl<R, B> MachineSpec for PingSpec<R, B>
+where
+    R: BloxRuntime,
+    B: HasCurrentTimer + CountsRounds + Default + 'static,
+    B::Round: Into<u32>,
+{
+    type State = PingState;
+    type Event = PingEvent;
+    type Ctx = PingCtx<R, B>;
+    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<PingPongMsg>,);
+
+    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = ping_state_handler_table!(Self);
+
+    fn initial_state() -> PingState {
+        PingState::Active
+    }
+
+    fn is_terminal(state: &PingState) -> bool {
+        matches!(state, PingState::Done)
+    }
+
+    fn is_error(state: &PingState) -> bool {
+        matches!(state, PingState::Error)
+    }
+
+    fn on_init_entry(ctx: &mut PingCtx<R, B>) {
+        ctx.behavior = B::default();
+        bloxide_log::blox_log_info!(ctx.self_id(), "reset — behavior cleared");
+    }
+}
+"#);
+
+    write_file(demo, "crates/bloxes/ping/src/generated/ctx.rs", r#"// Auto-generated by bloxide-codegen. Do not edit manually.
+use bloxide_core::{ActorId, capability::BloxRuntime, messaging::ActorRef};
+use bloxide_macros::BloxCtx;
+use bloxide_timer::{HasTimerRef, TimerCommand, TimerId};
+use ping_pong_actions::{
+    CountsRounds, HasCurrentTimer, HasPeerRef, HasSelfRef,
+    __delegate_CountsRounds, __delegate_HasCurrentTimer,
+};
+use ping_pong_messages::PingPongMsg;
+
+#[derive(BloxCtx)]
+pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds> {
+    pub self_id: ActorId,
+    pub peer_ref: ActorRef<PingPongMsg, R>,
+    pub self_ref: ActorRef<PingPongMsg, R>,
+    pub timer_ref: ActorRef<TimerCommand, R>,
+    #[delegates(HasCurrentTimer, CountsRounds)]
+    pub behavior: B,
+}
+"#);
+}
+
+fn patch_generated_pong(demo: &std::path::Path) {
+    write_file(demo, "crates/bloxes/pong/src/generated/spec_skeleton.rs", r#"// Auto-generated by bloxide-codegen. Do not edit manually.
+use core::marker::PhantomData;
+use bloxide_core::{
+    capability::BloxRuntime,
+    spec::{MachineSpec, StateFns},
+};
+use ping_pong_messages::PingPongMsg;
+
+use crate::{PongCtx, PongEvent};
+pub use crate::generated::topology::PongState;
+
+pub struct PongSpec<R: BloxRuntime>(PhantomData<R>);
+
+impl<R: BloxRuntime> MachineSpec for PongSpec<R> {
+    type State = PongState;
+    type Event = PongEvent;
+    type Ctx = PongCtx<R>;
+    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<PingPongMsg>,);
+
+    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = pong_state_handler_table!(Self);
+
+    fn initial_state() -> PongState {
+        PongState::Ready
+    }
+
+    fn on_init_entry(_ctx: &mut PongCtx<R>) {}
+}
+"#);
+
+    write_file(demo, "crates/bloxes/pong/src/generated/ctx.rs", r#"// Auto-generated by bloxide-codegen. Do not edit manually.
+use bloxide_core::{capability::BloxRuntime, ActorId, ActorRef};
+use bloxide_macros::BloxCtx;
+use ping_pong_actions::HasPeerRef;
+use ping_pong_messages::PingPongMsg;
+
+#[derive(BloxCtx)]
+pub struct PongCtx<R: BloxRuntime> {
+    pub self_id: ActorId,
+    pub peer_ref: ActorRef<PingPongMsg, R>,
+}
+"#);
+}

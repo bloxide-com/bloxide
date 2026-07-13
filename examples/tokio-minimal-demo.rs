@@ -1,20 +1,19 @@
-#!/bin/bash
-set -e
+// Copyright 2025 Bloxide, all rights reserved
+//! Minimal Tokio demo — scaffolds a counter actor via `cargo-blox`, writes
+//! the user-edited action functions, generates boilerplate, and runs the
+//! resulting binary.
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO_ROOT"
-cargo build -p cargo-blox --quiet
+mod common;
 
-BLOX="$REPO_ROOT/target/debug/cargo-blox blox"
+use common::*;
 
-DEMO="demo/tokio-minimal"
-rm -rf "$REPO_ROOT/$DEMO"
-mkdir -p "$REPO_ROOT/$DEMO"
-cd "$REPO_ROOT/$DEMO"
+fn main() {
+    let root = repo_root();
+    let blox_bin = ensure_cargo_blox(&root);
+    let demo = create_demo_dir(&root, "tokio-minimal");
 
-# ── Minimal workspace (cargo-blox will add members) ──────────────────────────
-cat > Cargo.toml <<'EOF'
-[workspace]
+    // ── Minimal workspace ─────────────────────────────────────────────────────
+    write_file(&demo, "Cargo.toml", r#"[workspace]
 members = []
 resolver = "2"
 
@@ -23,18 +22,16 @@ version = "0.0.3"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/bloxide-com/bloxide"
-EOF
+"#);
 
-# ── Layer 1: Messages ────────────────────────────────────────────────────────
-$BLOX new-messages counter
-$BLOX add-message counter-messages Tick
+    // ── Layer 1: Messages ─────────────────────────────────────────────────────
+    blox(&blox_bin, &demo, &["new-messages", "counter"]);
+    blox(&blox_bin, &demo, &["add-message", "counter-messages", "Tick"]);
 
-# ── Layer 2: Actions ──────────────────────────────────────────────────────────
-$BLOX new-actions counter
+    // ── Layer 2: Actions ──────────────────────────────────────────────────────
+    blox(&blox_bin, &demo, &["new-actions", "counter"]);
 
-# Write the action function (user-edited file in actions crate)
-cat > crates/actions/counter-actions/src/lib.rs <<'ACTIONS_LIB'
-// Copyright 2025 Bloxide, all rights reserved
+    write_file(&demo, "crates/actions/counter-actions/src/lib.rs", r#"// Copyright 2025 Bloxide, all rights reserved
 //! Action traits and generic functions for Counter.
 #![no_std]
 
@@ -55,19 +52,18 @@ pub fn increment_count<T: CountsTicks>(ctx: &mut T) {
     let new_count = ctx.count() + 1.into();
     ctx.set_count(new_count);
 }
-ACTIONS_LIB
+"#);
 
-# ── Layer 4: Blox ───────────────────────────────────────────────────────────
-$BLOX new counter --messages counter-messages --actions counter-actions
-$BLOX add-state counter Ready
-$BLOX add-state counter Done --terminal
+    // ── Layer 4: Blox ─────────────────────────────────────────────────────────
+    blox(&blox_bin, &demo, &["new", "counter", "--messages", "counter-messages", "--actions", "counter-actions"]);
+    blox(&blox_bin, &demo, &["add-state", "counter", "Ready"]);
+    blox(&blox_bin, &demo, &["add-state", "counter", "Done", "--terminal"]);
 
-# ── Generate boilerplate ────────────────────────────────────────────────────
-$BLOX generate
+    // ── Generate boilerplate ──────────────────────────────────────────────────
+    blox(&blox_bin, &demo, &["generate"]);
 
-# ── Write action functions (only user-edited file) ───────────────────────────
-cat > crates/bloxes/counter/src/actions.rs <<'ACTIONS'
-// Copyright 2025 Bloxide, all rights reserved
+    // ── Write action functions (user-edited file) ─────────────────────────────
+    write_file(&demo, "crates/bloxes/counter/src/actions.rs", r#"// Copyright 2025 Bloxide, all rights reserved
 use bloxide_core::{spec::StateFns, transition::ActionResult, transitions};
 use counter_actions::{increment_count, CountsTicks};
 use counter_messages::CounterMsg;
@@ -100,13 +96,10 @@ impl<B: CountsTicks + 'static> CounterSpec<B> {
         transitions: &[],
     };
 }
-ACTIONS
+"#);
 
-# ── Layer 5: Binary ─────────────────────────────────────────────────────────
-mkdir -p apps/tokio-minimal/src
-
-cat > apps/tokio-minimal/Cargo.toml <<'CRATE'
-[package]
+    // ── Layer 5: Binary ───────────────────────────────────────────────────────
+    write_file(&demo, "apps/tokio-minimal/Cargo.toml", r#"[package]
 name = "tokio-minimal"
 version.workspace = true
 edition.workspace = true
@@ -121,10 +114,9 @@ counter-messages  = { workspace = true }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-CRATE
+"#);
 
-cat > apps/tokio-minimal/src/main.rs <<'MAIN'
-use bloxide_core::lifecycle::LifecycleCommand;
+    write_file(&demo, "apps/tokio-minimal/src/main.rs", r#"use bloxide_core::lifecycle::LifecycleCommand;
 use bloxide_tokio::prelude::*;
 use counter_blox::prelude::*;
 use counter_messages::prelude::*;
@@ -182,11 +174,10 @@ async fn main() {
     supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
     println!("tokio-minimal-demo complete");
 }
-MAIN
+"#);
 
-# ── Write final workspace Cargo.toml ────────────────────────────────────────
-cat > Cargo.toml <<'EOF'
-[workspace]
+    // ── Final workspace Cargo.toml ────────────────────────────────────────────
+    write_file(&demo, "Cargo.toml", r#"[workspace]
 members = [
     "crates/messages/counter-messages",
     "crates/actions/counter-actions",
@@ -214,6 +205,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [profile.dev]
 panic = "abort"
-EOF
+"#);
 
-cargo run -p tokio-minimal
+    println!("=== Setup complete. Running demo... ===");
+    cargo_run(&demo, "tokio-minimal");
+}

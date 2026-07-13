@@ -1,21 +1,19 @@
-#!/bin/bash
-set -e
+// Copyright 2025 Bloxide, all rights reserved
+//! BhsmTst interactive HSM demo — scaffolds a deep 3-level hierarchical state
+//! machine (Miro Samek's classic test) via `cargo-blox`, writes user-edited
+//! files, generates boilerplate, and runs an interactive Tokio binary.
 
-# Build the cargo-blox tool first
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$REPO_ROOT"
-cargo build -p cargo-blox --quiet
+mod common;
 
-BLOX="$REPO_ROOT/target/debug/cargo-blox blox"
+use common::*;
 
-DEMO="demo/bhsm-tst"
-rm -rf "$REPO_ROOT/$DEMO"
-mkdir -p "$REPO_ROOT/$DEMO"
-cd "$REPO_ROOT/$DEMO"
+fn main() {
+    let root = repo_root();
+    let blox_bin = ensure_cargo_blox(&root);
+    let demo = create_demo_dir(&root, "bhsm-tst");
 
-# ── Minimal workspace Cargo.toml (members added incrementally by cargo-blox) ─
-cat > Cargo.toml <<'WORKSPACE'
-[workspace]
+    // ── Minimal workspace ─────────────────────────────────────────────────────
+    write_file(&demo, "Cargo.toml", r#"[workspace]
 members = []
 resolver = "2"
 
@@ -33,64 +31,58 @@ bloxide-log       = { path = "../../crates/bloxide-log", features = ["log"] }
 tokio             = { version = "1", features = ["full"] }
 tracing           = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-log       = { version = "0.2" }
+tracing-log       = { "version" = "0.2" }
 
 [profile.dev]
 panic = "abort"
-WORKSPACE
+"#);
 
-# ── Layer 1: Messages (11 unit variants: A, B, C, D, E, F, G, H, I, K, X) ─
-# NOTE: cargo-blox converts hyphens to underscores in directory names,
-#       so "bhsm_tst" → crate dir "bhsm_tst-messages", use same for add-message.
-$BLOX new-messages bhsm_tst
-for ev in A B C D E F G H I K X; do
-    $BLOX add-message bhsm_tst-messages "$ev"
-done
+    // ── Layer 1: Messages (11 unit variants) ──────────────────────────────────
+    blox(&blox_bin, &demo, &["new-messages", "bhsm_tst"]);
+    for ev in &["A", "B", "C", "D", "E", "F", "G", "H", "I", "K", "X"] {
+        blox(&blox_bin, &demo, &["add-message", "bhsm_tst-messages", ev]);
+    }
 
-# ── Layer 2: Actions (minimal — no mutable state needed) ─────────────────────
-$BLOX new-actions bhsm_tst
+    // ── Layer 2: Actions ──────────────────────────────────────────────────────
+    blox(&blox_bin, &demo, &["new-actions", "bhsm_tst"]);
 
-# ── Layer 4: Blox (deep 3-level hierarchy) ─────────────────────────────────
-$BLOX new bhsm_tst --messages bhsm_tst-messages --actions bhsm_tst-actions
-$BLOX add-state bhsm_tst S --composite
-$BLOX add-state bhsm_tst S1 --parent S --composite
-$BLOX add-state bhsm_tst S11 --parent S1
-$BLOX add-state bhsm_tst S2 --parent S --composite
-$BLOX add-state bhsm_tst S21 --parent S2 --composite
-$BLOX add-state bhsm_tst S211 --parent S21
-$BLOX add-state bhsm_tst Error
-$BLOX add-state bhsm_tst Done
+    // ── Layer 4: Blox (deep 3-level hierarchy) ────────────────────────────────
+    blox(&blox_bin, &demo, &["new", "bhsm_tst", "--messages", "bhsm_tst-messages", "--actions", "bhsm_tst-actions"]);
+    blox(&blox_bin, &demo, &["add-state", "bhsm_tst", "S", "--composite"]);
+    blox(&blox_bin, &demo, &["add-state", "bhsm_tst", "S1", "--parent", "S", "--composite"]);
+    blox(&blox_bin, &demo, &["add-state", "bhsm_tst", "S11", "--parent", "S1"]);
+    blox(&blox_bin, &demo, &["add-state", "bhsm_tst", "S2", "--parent", "S", "--composite"]);
+    blox(&blox_bin, &demo, &["add-state", "bhsm_tst", "S21", "--parent", "S2", "--composite"]);
+    blox(&blox_bin, &demo, &["add-state", "bhsm_tst", "S211", "--parent", "S21"]);
+    blox(&blox_bin, &demo, &["add-state", "bhsm_tst", "Error"]);
+    blox(&blox_bin, &demo, &["add-state", "bhsm_tst", "Done"]);
 
-# Add event mailboxes to blox.toml (needed for correct events.rs generation)
-cat >> crates/bloxes/bhsm_tst/blox.toml <<'BLOXFIX'
-
+    // Add event mailboxes to blox.toml
+    append_file(&demo, "crates/bloxes/bhsm_tst/blox.toml", r#"
 [[event.mailboxes]]
 variant = "Msg"
 message = "BhsmTstMsg"
 message_path = "bhsm_tst_messages::BhsmTstMsg"
-BLOXFIX
+"#);
 
-# Generate boilerplate from TOML
-$BLOX generate
+    // Generate boilerplate from TOML
+    blox(&blox_bin, &demo, &["generate"]);
 
-# Remove generated spec_skeleton.rs — we provide our own spec in actions.rs
-# (codegen always adds a B generic, but BhsmTstSpec only has R: BloxRuntime)
-rm -f crates/bloxes/bhsm_tst/src/generated/spec_skeleton.rs
+    // Remove generated spec_skeleton.rs — we provide our own spec in actions.rs
+    remove_file(&demo, "crates/bloxes/bhsm_tst/src/generated/spec_skeleton.rs");
 
-# Overwrite generated/mod.rs — only events and topology (not spec_skeleton)
-cat > crates/bloxes/bhsm_tst/src/generated/mod.rs <<'GENMOD'
-// Auto-generated module.
+    // Overwrite generated/mod.rs — only events and topology (not spec_skeleton)
+    write_file(&demo, "crates/bloxes/bhsm_tst/src/generated/mod.rs", r#"// Auto-generated module.
 // Files in this directory are generated by bloxide-codegen.
 #[macro_use]
 pub mod topology;
 #[allow(unused_imports)] pub use topology::*;
 pub mod events;
 #[allow(unused_imports)] pub use events::*;
-GENMOD
+"#);
 
-# ── Write action functions (the only user-edited file) ──────────────────────
-cat > crates/bloxes/bhsm_tst/src/actions.rs <<'ACTIONS'
-use core::marker::PhantomData;
+    // ── Write action functions (the only user-edited file) ────────────────────
+    write_file(&demo, "crates/bloxes/bhsm_tst/src/actions.rs", r#"use core::marker::PhantomData;
 
 use bloxide_core::{
     capability::BloxRuntime,
@@ -262,27 +254,24 @@ impl<R: BloxRuntime> bloxide_core::spec::MachineSpec for BhsmTstSpec<R> {
 
     fn on_init_entry(_ctx: &mut BhsmTstCtx) {}
 }
-ACTIONS
+"#);
 
-# ── Write events.rs (re-export generated events) ────────────────────────────
-cat > crates/bloxes/bhsm_tst/src/events.rs <<'EVENTS'
-pub use crate::generated::events::*;
-EVENTS
+    // ── Write events.rs ───────────────────────────────────────────────────────
+    write_file(&demo, "crates/bloxes/bhsm_tst/src/events.rs",
+        "pub use crate::generated::events::*;\n");
 
-# ── Overwrite ctx.rs — no behavior field for pure topology demo ─────────────
-cat > crates/bloxes/bhsm_tst/src/ctx.rs <<'CTX'
-use bloxide_core::ActorId;
+    // ── Overwrite ctx.rs ──────────────────────────────────────────────────────
+    write_file(&demo, "crates/bloxes/bhsm_tst/src/ctx.rs", r#"use bloxide_core::ActorId;
 use bloxide_macros::BloxCtx;
 
 #[derive(BloxCtx)]
 pub struct BhsmTstCtx {
     pub self_id: ActorId,
 }
-CTX
+"#);
 
-# ── Overwrite lib.rs — export spec from actions module ──────────────────────
-cat > crates/bloxes/bhsm_tst/src/lib.rs <<'LIB'
-#![no_std]
+    // ── Overwrite lib.rs ──────────────────────────────────────────────────────
+    write_file(&demo, "crates/bloxes/bhsm_tst/src/lib.rs", r#"#![no_std]
 
 #[cfg(feature = "std")]
 extern crate std;
@@ -299,16 +288,14 @@ mod actions;
 pub use ctx::BhsmTstCtx;
 pub use events::BhsmTstEvent;
 pub use actions::{BhsmTstSpec, BhsmTstState};
-LIB
+"#);
 
-# ── Overwrite prelude.rs ────────────────────────────────────────────────────
-cat > crates/bloxes/bhsm_tst/src/prelude.rs <<'PRELUDE'
-pub use crate::{BhsmTstCtx, BhsmTstEvent, BhsmTstSpec, BhsmTstState};
-PRELUDE
+    // ── Overwrite prelude.rs ──────────────────────────────────────────────────
+    write_file(&demo, "crates/bloxes/bhsm_tst/src/prelude.rs",
+        "pub use crate::{BhsmTstCtx, BhsmTstEvent, BhsmTstSpec, BhsmTstState};\n");
 
-# ── Overwrite actions crate with minimal content ───────────────────────────
-cat > crates/actions/bhsm_tst-actions/src/lib.rs <<'ACTIONS_LIB'
-#![no_std]
+    // ── Overwrite actions crate ───────────────────────────────────────────────
+    write_file(&demo, "crates/actions/bhsm_tst-actions/src/lib.rs", r#"#![no_std]
 
 use bloxide_macros::delegatable;
 
@@ -321,11 +308,10 @@ pub trait HasPrintPrefix {
     fn prefix(&self) -> &'static str;
     fn set_prefix(&mut self, prefix: &'static str);
 }
-ACTIONS_LIB
+"#);
 
-# ── Overwrite workspace Cargo.toml with final content ──────────────────────
-cat > Cargo.toml <<'WORKSPACE'
-[workspace]
+    // ── Final workspace Cargo.toml ────────────────────────────────────────────
+    write_file(&demo, "Cargo.toml", r#"[workspace]
 members = [
     "crates/messages/bhsm_tst-messages",
     "crates/actions/bhsm_tst-actions",
@@ -349,19 +335,16 @@ bhsm_tst-messages = { path = "crates/messages/bhsm_tst-messages" }
 bhsm_tst-actions  = { path = "crates/actions/bhsm_tst-actions" }
 bhsm_tst-blox     = { path = "crates/bloxes/bhsm_tst" }
 tokio             = { version = "1", features = ["full"] }
-tracing           = { version = "0.1" }
+tracing           = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-log       = { version = "0.2" }
+tracing-log       = "0.2"
 
 [profile.dev]
 panic = "abort"
-WORKSPACE
+"#);
 
-# ── Layer 5: Binary ─────────────────────────────────────────────────────────
-mkdir -p apps/bhsm-tst-demo/src
-
-cat > apps/bhsm-tst-demo/Cargo.toml <<'CRATE'
-[package]
+    // ── Layer 5: Binary ───────────────────────────────────────────────────────
+    write_file(&demo, "apps/bhsm-tst-demo/Cargo.toml", r#"[package]
 name = "bhsm-tst-demo"
 version.workspace = true
 edition.workspace = true
@@ -377,10 +360,9 @@ tokio             = { workspace = true }
 tracing           = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-log       = { workspace = true }
-CRATE
+"#);
 
-cat > apps/bhsm-tst-demo/src/main.rs <<'MAIN'
-use bloxide_core::lifecycle::LifecycleCommand;
+    write_file(&demo, "apps/bhsm-tst-demo/src/main.rs", r#"use bloxide_core::lifecycle::LifecycleCommand;
 use bloxide_tokio::prelude::*;
 use bhsm_tst_blox::prelude::*;
 use bhsm_tst_messages::prelude::*;
@@ -486,7 +468,8 @@ async fn main() {
     print_usage();
     supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
 }
-MAIN
+"#);
 
-echo "=== Setup complete. Running demo... ==="
-cargo run -p bhsm-tst-demo
+    println!("=== Setup complete. Running demo... ===");
+    cargo_run(&demo, "bhsm-tst-demo");
+}
