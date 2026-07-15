@@ -353,6 +353,16 @@ fn generate_rule(
                     }
                 });
             }
+            if kw == "fail" {
+                return Ok(quote! {
+                    #rule_type {
+                        event_tag: #event_tag_expr,
+                        matches: #matches_expr,
+                        actions: &[],
+                        guard: |_, _, _| ::bloxide_core::transition::Guard::Fail,
+                    }
+                });
+            }
             // Single-token body that isn't a keyword: treat as a state expression.
             // e.g. `PingEvent::Foo => SomeState::Bar` (no braces, no keyword).
             if !is_root {
