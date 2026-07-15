@@ -209,6 +209,19 @@ fn split_arms(input: TokenStream2) -> Result<Vec<(TokenStream2, TokenStream2)>, 
 fn extract_event_tag(pat: &TokenStream2) -> TokenStream2 {
     let tokens: Vec<TokenTree> = pat.clone().into_iter().collect();
 
+    // Or-patterns (e.g. `Event::Foo | Event::Bar`) match multiple variants.
+    // We can only assign a single tag per rule, so use WILDCARD_TAG to let
+    // the `matches` predicate do the full filtering.  Only scan for `|` at
+    // the *top level* — pipes inside groups (e.g. nested patterns in
+    // parentheses) are not or-pattern separators.
+    for tt in &tokens {
+        if let TokenTree::Punct(p) = tt {
+            if p.as_char() == '|' {
+                return quote! { ::bloxide_core::event_tag::WILDCARD_TAG };
+            }
+        }
+    }
+
     // Try to find a path `A :: B` or `A :: B :: C` at the top level
     // The last `::` segment before `(` or end is the variant name.
     // E.g. `PingEvent::Msg(Envelope { ... })` -> enum=PingEvent, variant=Msg

@@ -89,7 +89,12 @@ fn report_outcome<S: MachineSpec>(
     notify: &EmbassySender<ChildLifecycleEvent>,
 ) {
     let send = |event| {
-        let _ = <EmbassyRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event));
+        if <EmbassyRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)).is_err() {
+            bloxide_log::blox_log_warn!(
+                actor_id,
+                "failed to send lifecycle event to supervisor (channel full or closed)"
+            );
+        }
     };
 
     match outcome {
@@ -142,7 +147,7 @@ impl ChildGroupBuilder {
     pub fn new(shutdown: GroupShutdown) -> Self {
         let (notify_ref, notify_rx) = <EmbassyRuntime as StaticChannelCap>::channel::<
             ChildLifecycleEvent,
-            16,
+            32,
         >(bloxide_macros::next_actor_id!());
         let (control_ref, control_rx) = <EmbassyRuntime as StaticChannelCap>::channel::<
             SupervisorControl<EmbassyRuntime>,

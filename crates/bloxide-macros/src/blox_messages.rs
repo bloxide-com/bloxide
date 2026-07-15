@@ -5,7 +5,16 @@
 //! - A named struct for each message variant payload
 //! - The message enum that wraps each payload struct
 //! - `Debug` and `Clone` derives for all generated types
-//! - Optional `Copy` derive when all fields implement Copy
+//! - `Copy` derive only when explicitly requested
+//!
+//! # Copy opt-in
+//!
+//! By default the macro derives `Debug, Clone` only. To also derive `Copy`,
+//! prefix the enum with `copy,`:
+//!
+//! ```ignore
+//! blox_messages!(copy, pub enum PingPongMsg { ... })
+//! ```
 //!
 //! # Example
 //!
@@ -30,6 +39,7 @@ use quote::quote;
 
 /// Parsed input for the blox_messages! macro.
 pub(crate) struct BloxMessagesInput {
+    copy: bool,
     vis: syn::Visibility,
     enum_ident: syn::Ident,
     variants: Vec<MessageVariant>,
@@ -43,6 +53,18 @@ struct MessageVariant {
 
 impl syn::parse::Parse for BloxMessagesInput {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        // Optional leading `copy,` to opt-in to Copy derivation.
+        let mut copy = false;
+        let lookahead = input.lookahead1();
+        if lookahead.peek(syn::Ident)
+            && input.peek2(syn::Token![,])
+            && input.cursor().ident().map(|(ident, _)| ident == "copy").unwrap_or(false)
+        {
+            let _copy_kw: syn::Ident = input.parse()?;
+            let _comma: syn::Token![,] = input.parse()?;
+            copy = true;
+        }
+
         let vis = input.parse()?;
         let _enum_token: syn::Token![enum] = input.parse()?;
         let enum_ident: syn::Ident = input.parse()?;
@@ -193,7 +215,27 @@ mod tests {
         // Verify enum is generated
         assert!(output_str.contains("enum PingPongMsg"));
 
-        // Verify derives are present (including Copy)
+        // Verify base derives are present (Debug, Clone) but NOT Copy (opt-in)
+        assert!(output_str.contains("Debug"));
+        assert!(output_str.contains("Clone"));
+        assert!(!output_str.contains("Copy"));
+    }
+
+    #[test]
+    fn test_blox_messages_copy_opt_in() {
+        let input: BloxMessagesInput = syn::parse2(quote! {
+            copy, pub enum PingPongMsg {
+                Ping { round: u32 },
+                Pong { round: u32 },
+                Resume {},
+            }
+        })
+        .unwrap();
+
+        let output = blox_messages_inner(&input).unwrap();
+        let output_str = output.to_string();
+
+        // Copy should be derived when opted in
         assert!(output_str.contains("Debug"));
         assert!(output_str.contains("Clone"));
         assert!(output_str.contains("Copy"));
@@ -215,5 +257,8 @@ mod tests {
         assert!(output_str.contains("pub task_id"));
         assert!(output_str.contains("payload"));
         assert!(output_str.contains("result"));
+
+        // Non-Copy message types should compile fine — Copy must not be derived
+        assert!(!output_str.contains("Copy"));
     }
 }

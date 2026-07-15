@@ -16,5 +16,8 @@ bloxide-timer = { workspace = true, features = ["std"] }
 bloxide-log = { workspace = true, features = ["log"] }
 futures-core = { version = "0.3", default-features = false }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+<<<<<<< Updated upstream
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+=======
+>>>>>>> Stashed changes
 tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }

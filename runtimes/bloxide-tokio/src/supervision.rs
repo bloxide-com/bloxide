@@ -91,7 +91,12 @@ fn report_outcome<S: MachineSpec>(
     notify: &TokioSender<ChildLifecycleEvent>,
 ) {
     let send = |event| {
-        let _ = <TokioRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event));
+        if <TokioRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)).is_err() {
+            bloxide_log::blox_log_warn!(
+                actor_id,
+                "failed to send lifecycle event to supervisor (channel full or closed)"
+            );
+        }
     };
 
     match outcome {
@@ -146,7 +151,7 @@ impl ChildGroupBuilder {
     pub fn new(shutdown: GroupShutdown) -> Self {
         let notify_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
         let (notify_ref, notify_rx) =
-            <TokioRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(notify_id, 16);
+            <TokioRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(notify_id, 32);
         let control_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
         let (control_ref, control_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
             SupervisorControl<TokioRuntime>,
@@ -169,7 +174,7 @@ impl ChildGroupBuilder {
     ) -> Self {
         let notify_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
         let (notify_ref, notify_rx) =
-            <TokioRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(notify_id, 16);
+            <TokioRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(notify_id, 32);
         let control_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
         let (control_ref, control_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
             SupervisorControl<TokioRuntime>,
@@ -260,9 +265,142 @@ where
 mod tests {
     use super::*;
     use bloxide_core::KillCap;
+    use bloxide_core::{
+        event_tag::{EventTag, LifecycleEvent},
+        mailboxes::NoMailboxes,
+        spec::{MachineSpec, StateFns},
+        topology::StateTopology,
+    };
     use bloxide_supervisor::registry::GroupShutdown;
     use std::time::Duration;
     use tokio::time::sleep;
+
+    // ── Minimal test MachineSpec for report_outcome tests ─────────────────────
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum TestState {
+        Running,
+        Done,
+    }
+
+    impl StateTopology for TestState {
+        const STATE_COUNT: usize = 2;
+
+        fn parent(self) -> Option<Self> {
+            None
+        }
+
+        fn is_leaf(self) -> bool {
+            true
+        }
+
+        fn path(self) -> &'static [Self] {
+            match self {
+                TestState::Running => &[TestState::Running],
+                TestState::Done => &[TestState::Done],
+            }
+        }
+
+        fn as_index(self) -> usize {
+            match self {
+                TestState::Running => 0,
+                TestState::Done => 1,
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct TestEvent;
+    impl EventTag for TestEvent {
+        fn event_tag(&self) -> u8 {
+            0
+        }
+    }
+    impl LifecycleEvent for TestEvent {
+        fn as_lifecycle_command(&self) -> Option<LifecycleCommand> {
+            None
+        }
+    }
+
+    struct TestSpec;
+
+    const RUNNING_FNS: StateFns<TestSpec> = StateFns {
+        on_entry: &[],
+        on_exit: &[],
+        transitions: &[],
+    };
+    const DONE_FNS: StateFns<TestSpec> = StateFns {
+        on_entry: &[],
+        on_exit: &[],
+        transitions: &[],
+    };
+
+    impl MachineSpec for TestSpec {
+        type State = TestState;
+        type Event = TestEvent;
+        type Ctx = ();
+        type Mailboxes<R: BloxRuntime> = NoMailboxes;
+
+        const HANDLER_TABLE: &'static [&'static StateFns<Self>] = &[&RUNNING_FNS, &DONE_FNS];
+
+        fn initial_state() -> Self::State {
+            TestState::Running
+        }
+
+        fn is_terminal(state: &Self::State) -> bool {
+            matches!(state, TestState::Done)
+        }
+    }
+
+    /// Fill a notify channel to capacity, call `report_outcome` with a `Failed`
+    /// event, and verify the event is silently dropped (not delivered) without
+    /// panicking. The warning log is emitted via `blox_log_warn!` which is a
+    /// no-op when no logging subscriber is active, so we assert no panic and
+    /// that the receiver still has exactly `capacity` items (the dropped event
+    /// is not among them).
+    #[tokio::test]
+    async fn report_outcome_logs_warning_when_channel_full() {
+        let capacity: usize = 2;
+        let id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
+        let (notify_ref, mut notify_rx) =
+            <TokioRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(id, capacity);
+        let notify = notify_ref.sender();
+        let actor_id: ActorId = 42;
+
+        // Fill the channel to capacity.
+        for _ in 0..capacity {
+            notify_ref
+                .try_send(actor_id, ChildLifecycleEvent::Alive { child_id: actor_id })
+                .expect("fill channel");
+        }
+
+        // Now call report_outcome with a Failed event — this should fail to send
+        // (channel full) and log a warning instead of panicking.
+        report_outcome::<TestSpec>(&DispatchOutcome::Failed, actor_id, &notify);
+
+        // Drain the channel — we should see exactly `capacity` Alive events,
+        // not the Failed event that was dropped.
+        let mut count = 0;
+        let mut saw_failed = false;
+        while let Ok(envelope) = notify_rx.inner.try_recv() {
+            count += 1;
+            if matches!(
+                envelope.1,
+                ChildLifecycleEvent::Failed { child_id: 42 }
+            ) {
+                saw_failed = true;
+            }
+        }
+
+        assert_eq!(
+            count, capacity,
+            "should have exactly capacity events in the channel"
+        );
+        assert!(
+            !saw_failed,
+            "Failed event should have been dropped (channel was full)"
+        );
+    }
 
     /// Spawn a dynamic child, call `kill_cap.kill(child_id)`, and verify the
     /// underlying task is aborted — the entry is removed from the KillCap.
