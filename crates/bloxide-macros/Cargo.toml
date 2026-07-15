@@ -16,4 +16,4 @@ quote = "1"
 proc-macro2 = "1"
 
 [dev-dependencies]
-bloxide-core = { workspace = true }
+bloxide-core = { workspace = true, features = ["std"] }
