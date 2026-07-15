@@ -94,6 +94,7 @@ pub fn parse_spec(name: &str, markdown: &str) -> BloxSpec {
         handlers,
         entry_exit,
         message_sets,
+        wiring: None,
     }
 }
 
