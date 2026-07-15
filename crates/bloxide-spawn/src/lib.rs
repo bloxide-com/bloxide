@@ -6,9 +6,18 @@ extern crate alloc;
 extern crate std;
 
 pub mod capability;
+pub mod factory;
+pub mod output;
+pub mod peer;
 pub mod prelude;
-
-pub use capability::SpawnCap;
 
 #[cfg(feature = "std")]
 pub mod test_impl;
+
+pub use capability::SpawnCap;
+pub use factory::{ErasedSpawnFactory, FactoryWrapper, SpawnCapability, SpawnFactoryFor};
+pub use output::{SpawnOutput, SpawnPolicy};
+pub use peer::{introduce_peers, AddPeer, HasPeers, PeerCtrl, RemovePeer};
+
+#[cfg(all(test, feature = "std"))]
+mod tests;

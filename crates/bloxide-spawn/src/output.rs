@@ -4,42 +4,35 @@
 use core::fmt;
 
 use bloxide_core::{
-    lifecycle::LifecycleCommand,
     capability::BloxRuntime,
+    lifecycle::LifecycleCommand,
     messaging::{ActorId, ActorRef},
 };
-use bloxide_supervisor::registry::ChildPolicy;
+
+/// Supervision policy for a dynamically spawned child.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum SpawnPolicy {
+    /// Restart the child up to `max` times.
+    Restart { max: usize },
+    /// Stop the child permanently on failure.
+    Stop,
+    /// Kill the child immediately on failure.
+    Kill,
+}
 
 /// Output from a successful spawn operation.
 ///
-/// Returned by `SpawnFactory::spawn()` to give the spawn service
+/// Returned by `SpawnFactoryFor::spawn()` to give the spawn service
 /// the information needed to register the child with the supervisor.
-///
-/// # Fields
-///
-/// - `child_id`: The allocated actor ID for the new child.
-/// - `lifecycle_ref`: Channel for sending lifecycle commands (Start, Stop, Reset).
-///   The supervisor holds this to control the child's lifecycle.
-/// - `policy`: Optional supervision policy for this child.
-///   If `None`, the supervisor uses its default policy for new children.
-///
-/// # Notes
-///
-/// - The `reply_to` handling is the factory's responsibility.
-///   Factory sends the typed reply (if provided) before returning.
-/// - Domain refs are sent via the typed reply, not included here.
-///   This keeps `SpawnOutput` focused on supervision concerns.
 pub struct SpawnOutput<R: BloxRuntime> {
-    /// The ID of the spawned child actor.
+    /// The allocated actor ID for the new child.
     pub child_id: ActorId,
 
-    /// Channel for lifecycle commands (Start, Stop, Reset).
-    /// The supervisor uses this to control the child.
+    /// Channel for sending lifecycle commands (Start, Stop, Reset).
     pub lifecycle_ref: ActorRef<LifecycleCommand, R>,
 
     /// Optional supervision policy for this child.
-    /// If `None`, supervisor uses its default.
-    pub policy: Option<ChildPolicy>,
+    pub policy: Option<SpawnPolicy>,
 }
 
 impl<R: BloxRuntime> Clone for SpawnOutput<R> {
@@ -58,15 +51,5 @@ impl<R: BloxRuntime> fmt::Debug for SpawnOutput<R> {
             .field("child_id", &self.child_id)
             .field("policy", &self.policy)
             .finish()
-    }
-}
-
-impl<R: BloxRuntime> fmt::Display for SpawnOutput<R> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "SpawnOutput {{ child_id: {}, policy: {:?} }}",
-            self.child_id, self.policy
-        )
     }
 }

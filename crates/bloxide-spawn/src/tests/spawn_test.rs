@@ -1,156 +1,183 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Tests for SpawnCap implementation with TestRuntime.
+//! Tests for dynamic spawning and peer introduction.
 
-use alloc::sync::Arc;
+extern crate alloc;
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 
-use bloxide_core::messaging::{ActorId, ActorRef};
+use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
+use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
+use bloxide_core::messaging::ActorRef;
 use bloxide_core::test_utils::TestRuntime;
-use bloxide_core::DynamicActorSupport;
-use bloxide_supervisor::control::{ChildType, SpawnParams, SpawnReplyTo};
-use bloxide_core::lifecycle::ChildLifecycleEvent;
-use bloxide_supervisor::registry::ChildPolicy;
 
-use crate::output::SpawnOutput;
-use crate::SpawnFactory;
+use crate::factory::{ErasedSpawnFactory, FactoryWrapper, SpawnCapability, SpawnFactoryFor};
+use crate::output::{SpawnOutput, SpawnPolicy};
+use crate::peer::{AddPeer, HasPeers, PeerCtrl, RemovePeer, introduce_peers};
 
-/// Mock factory for testing spawn behavior.
-#[derive(Clone)]
-struct MockWorkerFactory {
-    spawned_count: Arc<core::sync::atomic::AtomicUsize>,
+// ── Domain message implementing SpawnCapability ────────────────────────────
+
+#[derive(Clone, Debug)]
+struct WorkerMsg;
+
+impl SpawnCapability for WorkerMsg {
+    type Params = WorkerParams;
 }
 
-impl MockWorkerFactory {
-    fn new() -> Self {
-        Self {
-            spawned_count: Arc::new(core::sync::atomic::AtomicUsize::new(0)),
-        }
-    }
-
-    fn spawn_count(&self) -> usize {
-        self.spawned_count.load(core::sync::atomic::Ordering::SeqCst)
-    }
+#[derive(Clone, Debug)]
+struct WorkerParams {
+    task_id: u32,
 }
 
-impl SpawnFactory<TestRuntime> for MockWorkerFactory {
+struct WorkerFactory;
+
+impl SpawnFactoryFor<WorkerMsg, TestRuntime> for WorkerFactory {
     fn spawn(
         &self,
-        supervisor_id: ActorId,
         _supervisor_notify: ActorRef<ChildLifecycleEvent, TestRuntime>,
-        params: SpawnParams,
-        _reply_to: Option<SpawnReplyTo<TestRuntime>>,
+        params: WorkerParams,
     ) -> Option<SpawnOutput<TestRuntime>> {
-        let SpawnParams::Worker { task_id } = params else {
-            return None;
-        };
-
-        // Increment spawn counter
-        self.spawned_count.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
-
-        // Allocate ID and create lifecycle channel
         let child_id = TestRuntime::alloc_actor_id();
-        let (lifecycle_ref, _lifecycle_rx) = TestRuntime::channel(child_id, 16);
-
+        let (lifecycle_ref, _rx) =
+            TestRuntime::channel::<LifecycleCommand>(child_id, 16);
+        let _ = params.task_id;
         Some(SpawnOutput {
             child_id,
             lifecycle_ref,
-            policy: Some(ChildPolicy::Restart { max: 3 }),
+            policy: Some(SpawnPolicy::Restart { max: 3 }),
         })
     }
 }
 
+// ── Tests ──────────────────────────────────────────────────────────────────
+
 #[test]
-fn spawn_factory_creates_child() {
-    let factory = MockWorkerFactory::new();
-    let (sup_notify_ref, _sup_notify_rx) = TestRuntime::channel(0, 16);
+fn spawn_factory_creates_child_with_output() {
+    let factory = WorkerFactory;
+    let (supervisor_notify, _rx) = TestRuntime::channel::<ChildLifecycleEvent>(0, 16);
 
-    let output = factory.spawn(
-        1,
-        sup_notify_ref,
-        SpawnParams::Worker { task_id: 42 },
-        None,
-    );
-
+    let output = factory.spawn(supervisor_notify, WorkerParams { task_id: 42 });
     assert!(output.is_some());
+
     let output = output.unwrap();
-    assert_eq!(factory.spawn_count(), 1);
-    assert!(output.policy.is_some());
+    assert_eq!(output.child_id, output.lifecycle_ref.id());
+    assert!(matches!(
+        output.policy,
+        Some(SpawnPolicy::Restart { max: 3 })
+    ));
 }
 
 #[test]
-fn spawn_factory_rejects_unknown_params() {
-    let factory = MockWorkerFactory::new();
-    let (sup_notify_ref, _sup_notify_rx) = TestRuntime::channel(0, 16);
+fn erased_spawn_factory_type_erasure_works() {
+    #[derive(Clone, Debug)]
+    struct OtherMsg;
 
-    // This test assumes there might be other SpawnParams variants in the future
-    // For now, Worker variant should succeed
-    let output = factory.spawn(
-        1,
-        sup_notify_ref,
-        SpawnParams::Worker { task_id: 1 },
-        None,
+    impl SpawnCapability for OtherMsg {
+        type Params = OtherParams;
+    }
+
+    #[derive(Clone, Debug)]
+    struct OtherParams {
+        _0: u8,
+    }
+
+    struct OtherFactory;
+
+    impl SpawnFactoryFor<OtherMsg, TestRuntime> for OtherFactory {
+        fn spawn(
+            &self,
+            _supervisor_notify: ActorRef<ChildLifecycleEvent, TestRuntime>,
+            _params: OtherParams,
+        ) -> Option<SpawnOutput<TestRuntime>> {
+            None
+        }
+    }
+
+    let erased: Box<dyn ErasedSpawnFactory<TestRuntime>> =
+        Box::new(FactoryWrapper::new(OtherFactory));
+    let (supervisor_notify, _rx) = TestRuntime::channel::<ChildLifecycleEvent>(0, 16);
+
+    // Passing WorkerParams to an OtherMsg factory should fail to downcast.
+    let result = erased.spawn_erased(
+        supervisor_notify,
+        Box::new(WorkerParams { task_id: 1 }),
+    );
+    assert!(result.is_none());
+}
+
+// Simple peer-list container implementing HasPeers.
+struct PeerList<M: Send + 'static, R: BloxRuntime> {
+    peers: Vec<ActorRef<M, R>>,
+}
+
+impl<M: Send + 'static, R: BloxRuntime> HasPeers<M, R> for PeerList<M, R> {
+    fn peers(&self) -> &[ActorRef<M, R>] {
+        &self.peers
+    }
+
+    fn peers_mut(&mut self) -> &mut Vec<ActorRef<M, R>> {
+        &mut self.peers
+    }
+}
+
+#[test]
+fn peer_ctrl_adds_and_removes_peers() {
+    let id1 = TestRuntime::alloc_actor_id();
+    let id2 = TestRuntime::alloc_actor_id();
+    let (ref1, _rx1) = TestRuntime::channel::<WorkerMsg>(id1, 16);
+    let (ref2, _rx2) = TestRuntime::channel::<WorkerMsg>(id2, 16);
+
+    let mut list: PeerList<WorkerMsg, TestRuntime> = PeerList { peers: Vec::new() };
+    list.peers_mut().push(ref1.clone());
+    assert_eq!(list.peers().len(), 1);
+
+    let add: PeerCtrl<WorkerMsg, TestRuntime> = PeerCtrl::AddPeer(AddPeer {
+        peer_id: id2,
+        peer_ref: ref2.clone(),
+    });
+    match add {
+        PeerCtrl::AddPeer(add) => list.peers_mut().push(add.peer_ref),
+        _ => panic!("expected AddPeer"),
+    }
+    assert_eq!(list.peers().len(), 2);
+
+    let remove: PeerCtrl<WorkerMsg, TestRuntime> =
+        PeerCtrl::RemovePeer(RemovePeer { peer_id: id1 });
+    match remove {
+        PeerCtrl::RemovePeer(remove) => list.peers_mut().retain(|r| r.id() != remove.peer_id),
+        _ => panic!("expected RemovePeer"),
+    }
+    assert_eq!(list.peers().len(), 1);
+    assert_eq!(list.peers()[0].id(), id2);
+}
+
+#[test]
+fn introduce_peers_sends_add_peer_to_both() {
+    let a_id = TestRuntime::alloc_actor_id();
+    let b_id = TestRuntime::alloc_actor_id();
+
+    let (a_ref, _a_rx) = TestRuntime::channel::<WorkerMsg>(a_id, 16);
+    let (b_ref, _b_rx) = TestRuntime::channel::<WorkerMsg>(b_id, 16);
+    let (a_ctrl, mut a_ctrl_rx) =
+        TestRuntime::channel::<PeerCtrl<WorkerMsg, TestRuntime>>(a_id, 16);
+    let (b_ctrl, mut b_ctrl_rx) =
+        TestRuntime::channel::<PeerCtrl<WorkerMsg, TestRuntime>>(b_id, 16);
+
+    let from = TestRuntime::alloc_actor_id();
+    introduce_peers(
+        from, a_id, a_ref, a_ctrl, b_id, b_ref, b_ctrl,
     );
 
-    assert!(output.is_some());
-    assert_eq!(factory.spawn_count(), 1);
-}
+    let a_msgs = a_ctrl_rx.drain_payloads();
+    assert_eq!(a_msgs.len(), 1);
+    match &a_msgs[0] {
+        PeerCtrl::AddPeer(add) => assert_eq!(add.peer_id, b_id),
+        _ => panic!("expected AddPeer on a_ctrl"),
+    }
 
-#[test]
-fn register_and_process_spawn() {
-    use crate::test_impl::{clear_spawn_factories, process_pending_spawns, queue_spawn_request, register_test_spawn_factory};
-
-    // Setup
-    clear_spawn_factories();
-    let factory = MockWorkerFactory::new();
-    let factory_clone = factory.clone();
-    
-    register_test_spawn_factory(ChildType::Worker, factory);
-
-    // Queue a spawn request
-    let (sup_notify_ref, _sup_notify_rx) = TestRuntime::channel(0, 16);
-    queue_spawn_request(
-        ChildType::Worker,
-        SpawnParams::Worker { task_id: 1 },
-        None,
-    );
-
-    // Process the pending spawn
-    let results = process_pending_spawns(1, sup_notify_ref);
-
-    // Verify spawn happened
-    assert_eq!(results.len(), 1);
-    assert_eq!(factory_clone.spawn_count(), 1);
-
-    // Cleanup
-    clear_spawn_factories();
-}
-
-#[test]
-fn multiple_spawns_processed_in_order() {
-    use crate::test_impl::{clear_spawn_factories, clear_pending_spawns, process_pending_spawns, queue_spawn_request, register_test_spawn_factory};
-
-    // Setup
-    clear_spawn_factories();
-    clear_pending_spawns();
-    let factory = MockWorkerFactory::new();
-    let factory_clone = factory.clone();
-    
-    register_test_spawn_factory(ChildType::Worker, factory);
-
-    // Queue multiple spawn requests
-    let (sup_notify_ref, _sup_notify_rx) = TestRuntime::channel(0, 16);
-    queue_spawn_request(ChildType::Worker, SpawnParams::Worker { task_id: 1 }, None);
-    queue_spawn_request(ChildType::Worker, SpawnParams::Worker { task_id: 2 }, None);
-    queue_spawn_request(ChildType::Worker, SpawnParams::Worker { task_id: 3 }, None);
-
-    // Process all pending spawns
-    let results = process_pending_spawns(1, sup_notify_ref);
-
-    // Verify all spawns happened
-    assert_eq!(results.len(), 3);
-    assert_eq!(factory_clone.spawn_count(), 3);
-
-    // Cleanup
-    clear_spawn_factories();
-    clear_pending_spawns();
+    let b_msgs = b_ctrl_rx.drain_payloads();
+    assert_eq!(b_msgs.len(), 1);
+    match &b_msgs[0] {
+        PeerCtrl::AddPeer(add) => assert_eq!(add.peer_id, a_id),
+        _ => panic!("expected AddPeer on b_ctrl"),
+    }
 }

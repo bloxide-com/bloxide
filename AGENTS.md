@@ -25,7 +25,7 @@ bloxide/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
     bloxide-macros/            ← proc macros: #[derive(BloxCtx)], transitions!, #[delegatable], etc.
-    bloxide-spawn/             ← dynamic actor support: SpawnCap, PeerCtrl, HasPeers, introduce_peers (no_std)
+    bloxide-spawn/             ← dynamic actor support: SpawnCap, SpawnCapability, SpawnFactoryFor, ErasedSpawnFactory, SpawnOutput, SpawnPolicy, PeerCtrl, HasPeers, introduce_peers (no_std)
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
     messages/
