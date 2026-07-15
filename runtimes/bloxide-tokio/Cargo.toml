@@ -13,5 +13,8 @@ bloxide-macros = { workspace = true }
 bloxide-spawn = { workspace = true, features = ["std"] }
 bloxide-supervisor = { workspace = true, features = ["std"] }
 bloxide-timer = { workspace = true, features = ["std"] }
+bloxide-log = { workspace = true, features = ["log"] }
 futures-core = { version = "0.3", default-features = false }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
