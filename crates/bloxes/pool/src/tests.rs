@@ -188,4 +188,60 @@ mod pool_tests {
             "pool should store refs for all spawned workers"
         );
     }
+
+    // ── Mock factory that creates a worker with a full domain channel ────────
+    //
+    // Returns the domain ref's TestSender so the test can set it full before
+    // spawn_worker fires the DoWork send. This simulates a worker whose mailbox
+    // is at capacity.
+
+    fn mock_spawn_worker_full_channel(
+        _pool_id: bloxide_core::messaging::ActorId,
+        _pool_ref: &ActorRef<PoolMsg, TestRuntime>,
+    ) -> (
+        ActorRef<WorkerMsg, TestRuntime>,
+        ActorRef<WorkerCtrl<TestRuntime>, TestRuntime>,
+    ) {
+        let wid = TestRuntime::alloc_actor_id();
+        let (domain_ref, _domain_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(wid, 16);
+        let (ctrl_ref, _ctrl_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TestRuntime>>(wid, 16);
+        TestRuntime::spawn(async {});
+
+        // Mark the domain channel as full so try_send(DoWork) will fail
+        domain_ref.sender().set_full(true);
+
+        (domain_ref, ctrl_ref)
+    }
+
+    #[test]
+    fn spawn_worker_with_full_channel_decrements_pending() {
+        drain_spawned();
+        let pool_id = TestRuntime::alloc_actor_id();
+        let (pool_ref, _pool_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
+        let ctx = PoolCtx::new(pool_id, pool_ref.clone(), mock_spawn_worker_full_channel);
+        let mut machine = StateMachine::<PoolSpec<TestRuntime>>::new(ctx);
+        machine.dispatch(PoolEvent::Lifecycle(LifecycleCommand::Start));
+
+        // SpawnWorker increments pending to 1, but try_send(DoWork) fails,
+        // so pending should be decremented back to 0.
+        machine.dispatch(PoolEvent::Msg(Envelope(
+            0,
+            PoolMsg::SpawnWorker(SpawnWorker { task_id: 42 }),
+        )));
+
+        assert_eq!(
+            machine.ctx().pending,
+            0,
+            "pending should be decremented back to 0 when DoWork send fails"
+        );
+        assert_eq!(
+            machine.ctx().worker_refs.len(),
+            1,
+            "worker ref should still be stored even though DoWork was dropped"
+        );
+        drain_spawned();
+    }
 }

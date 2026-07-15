@@ -16,7 +16,15 @@ pub fn spawn_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, task_id: u32) {
     ctx.worker_ctrls_mut().push(ctrl_ref);
     ctx.set_pending(ctx.pending() + 1);
     introduce_new_worker(ctx);
-    let _ = domain_ref.try_send(self_id, WorkerMsg::DoWork(DoWork { task_id }));
+    if domain_ref
+        .try_send(self_id, WorkerMsg::DoWork(DoWork { task_id }))
+        .is_err()
+    {
+        bloxide_log::blox_log_warn!(self_id, "worker channel full, dropping task_id={}", task_id);
+        if ctx.pending() > 0 {
+            ctx.set_pending(ctx.pending() - 1);
+        }
+    }
 }
 
 pub fn handle_spawn_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEvent) -> ActionResult {
