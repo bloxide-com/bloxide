@@ -79,6 +79,7 @@ fn config_to_spec(name: &str, crate_path: &str, config: &BloxConfig) -> BloxSpec
         handlers: Vec::new(),
         entry_exit: HashMap::new(),
         message_sets: Vec::new(),
+        wiring: None,
         messages: Vec::new(),
         actions: Vec::new(),
         context: None,
@@ -344,37 +345,51 @@ fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
 }
 
 fn extract_wiring(spec: &mut BloxSpec, wiring: &WiringConfig) {
-    // The wiring section adds connection-level information.
-    // We store wiring actors as "actions" entries (they represent system-level
-    // wiring) and connections as handlers on a synthetic "Wiring" state.
-    //
-    // This is a lightweight mapping — the visualizer can use the JSON to show
-    // actor connections alongside state-machine views.
-    for conn in &wiring.connections {
-        let event_name = format!("{}::{}", conn.message, conn.from);
-        // Add as a handler on a synthetic "Wiring" state
-        if !spec
-            .handlers
-            .iter()
-            .any(|h| h.state == "Wiring" && h.event == event_name)
-        {
-            spec.handlers.push(model::Handler {
-                state: "Wiring".to_string(),
-                event: event_name.clone(),
-                label: format!("{} → {}", conn.from, conn.to),
-                actions: Vec::new(),
-                guard: model::Guard {
-                    description: format!("{} → {}", conn.from, conn.to),
-                    raw: String::new(),
-                    branches: Vec::new(),
-                },
-                target: model::Target::Transition(conn.to.clone()),
-                source: model::HandlerSource::Explicit,
-                on_entry: Vec::new(),
-                on_exit: Vec::new(),
-            });
-        }
-    }
+    let actors: Vec<model::WiringActor> = wiring
+        .actors
+        .iter()
+        .map(|a| model::WiringActor {
+            blox: a.blox.clone(),
+            name: a.name.clone(),
+            behavior: a.behavior.clone(),
+            behavior_traits: a.behavior_traits.clone(),
+        })
+        .collect();
+
+    let connections: Vec<model::WiringConnection> = wiring
+        .connections
+        .iter()
+        .map(|c| model::WiringConnection {
+            from: c.from.clone(),
+            to: c.to.clone(),
+            message: c.message.clone(),
+            channel_capacity: c.channel_capacity,
+        })
+        .collect();
+
+    let supervisors: Vec<model::WiringSupervisor> = wiring
+        .supervisors
+        .iter()
+        .map(|s| model::WiringSupervisor {
+            name: s.name.clone(),
+            strategy: s.strategy.clone(),
+            children: s
+                .children
+                .iter()
+                .map(|c| model::WiringSupervisorChild {
+                    actor: c.actor.clone(),
+                    restart_max: c.restart_max,
+                })
+                .collect(),
+        })
+        .collect();
+
+    spec.wiring = Some(model::WiringGraph {
+        runtime: wiring.runtime.clone(),
+        actors,
+        connections,
+        supervisors,
+    });
 }
 
 fn parse_event_pattern(pattern: &str) -> (String, String) {

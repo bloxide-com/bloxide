@@ -12,6 +12,7 @@ pub struct BloxSpec {
     pub entry_exit: HashMap<String, EntryExit>,
     pub message_sets: Vec<MessageSet>,
     pub messages: Vec<MessageDef>,
+    pub wiring: Option<WiringGraph>,
     pub actions: Vec<ActionDef>,
     pub context: Option<ContextDef>,
 }
@@ -144,6 +145,43 @@ pub struct ActionDef {
 pub struct ContextDef {
     pub struct_name: String,
     pub fields: Vec<ContextField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringGraph {
+    pub runtime: String,
+    pub actors: Vec<WiringActor>,
+    pub connections: Vec<WiringConnection>,
+    pub supervisors: Vec<WiringSupervisor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringActor {
+    pub blox: String,
+    pub name: String,
+    pub behavior: Option<String>,
+    pub behavior_traits: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringConnection {
+    pub from: String,
+    pub to: String,
+    pub message: String,
+    pub channel_capacity: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringSupervisor {
+    pub name: String,
+    pub strategy: String,
+    pub children: Vec<WiringSupervisorChild>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringSupervisorChild {
+    pub actor: String,
+    pub restart_max: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
