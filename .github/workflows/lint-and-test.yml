@@ -128,3 +128,19 @@ jobs:
       - name: Create Documentation for bloxide
         working-directory: ${{github.workspace}}
         run: RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps
+
+  round-trip-verify:
+    name: Round-trip Verification (blox.toml → codegen → viz-export → JSON)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Run round-trip integration tests
+        run: |
+          cargo test -p bloxide-viz-export --test round_trip
+
+      - name: Run cargo blox verify
+        run: |
+          cargo run -p cargo-blox -- blox verify

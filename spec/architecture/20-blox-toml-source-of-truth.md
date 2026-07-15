@@ -437,6 +437,38 @@ Never edit generated files by hand
 - Hand-written Rust (actions, behaviors, tests) is allowed, but it is never placed inside `src/generated/`.
 - Legacy `handler_fns` takes precedence over declarative `transitions` so existing bloxes keep compiling during migration.
 
+#### Round-trip verification
+
+The round-trip contract is enforced by two automated mechanisms:
+
+1. **Integration tests** (`tools/bloxide-viz-export/tests/round_trip.rs`) — 10 tests that verify every `blox.toml` in the repository can:
+   - Be parsed as a `BloxConfig`
+   - Produce codegen output without error
+   - Be exported by viz-export into a `BloxSpec`
+   - Serialize to JSON and deserialize back without data loss
+   - Have all states, transitions, context, and wiring present in the exported model
+   - Round-trip back to the original `BloxConfig` fields with no data loss
+   - Produce deterministic codegen output (same input → same output)
+
+2. **`cargo blox verify` CLI command** — a standalone verification command that runs the full pipeline (blox.toml → codegen → viz-export → JSON → compare) and reports any data loss or missing fields. This can be run locally before pushing and is also run in CI.
+
+   ```
+   cargo blox verify
+   cargo blox verify --workspace /path/to/workspace
+   ```
+
+   The command checks:
+   - Every `blox.toml` parses successfully
+   - Codegen produces output for every actor blox
+   - viz-export produces a `BloxSpec` for every actor
+   - JSON serialization round-trips with no data loss
+   - All states from the TOML are present in the exported spec
+   - All declarative transitions are present as explicit handlers
+   - Context struct name and fields match
+   - Wiring runtime, actors, and connections match
+
+Both mechanisms run in CI via the `round-trip-verify` job in `.github/workflows/lint-and-test.yml`.
+
 ### UI contract
 
 The visualizer is moving from the old model to the new model:
@@ -498,11 +530,12 @@ The key is that every extension is opt-in and schema-driven. The codegen does no
 - Generated files carry the "Do not edit manually" header.
 - `cargo blox generate` and `cargo blox watch` regenerate files from TOML.
 - Legacy `handler_fns` takes precedence over declarative `transitions` for backward compatibility.
+- `bloxide-viz-export` parses `blox.toml` directly (not Rust source) to produce the visualizer model.
+- Round-trip verification is enforced by 10 integration tests and the `cargo blox verify` CLI command, both running in CI.
 - Wiring validation checks actor references, connection endpoints, context field references, and supervisor children.
 
 ### What is planned
 
-- The visualizer (`bloxide-viz-export`) currently parses Rust source (`src/spec.rs` or generated files) with `syn`. It must be rewritten to parse `blox.toml` directly.
 - The separate `system.toml` wiring manifest (see `spec/architecture/19-declarative-wiring.md`) will replace the in-spec `[wiring]` section for real applications.
 - Declarative `transitions` will become the default; `handler_fns` will be deprecated and removed.
 - The UI will edit `blox.toml` and `system.toml`, then trigger regeneration, rather than editing Rust.
@@ -510,12 +543,13 @@ The key is that every extension is opt-in and schema-driven. The codegen does no
 
 ## Migration path
 
-1. **Visualize TOML, not Rust** — rewrite `bloxide-viz-export` to deserialize `BloxConfig` and `SystemConfig` from TOML.
+1. ~~**Visualize TOML, not Rust** — rewrite `bloxide-viz-export` to deserialize `BloxConfig` and `SystemConfig` from TOML.~~ **Done.**
 2. **Remove `src/spec.rs` usage** — ensure no tool reads generated or hand-written Rust as authoritative.
 3. **Complete declarative transitions** — migrate existing bloxes from `handler_fns` to `topology.transitions`.
 4. **Adopt `system.toml`** — move wiring out of `blox.toml` and into per-system `system.toml` manifests.
 5. **Strengthen validation** — add pre-generation checks for state/event references, context type consistency, and wiring message types.
 6. **Document the contract** — this document is the first step; update it as the schema evolves.
+7. **Enforce round-trip in CI** — integration tests and `cargo blox verify` run automatically on every push and PR. **Done.**
 
 ## What this eliminates
 

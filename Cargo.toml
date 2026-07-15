@@ -43,6 +43,7 @@ members = [
     "crates/impl/tokio-pool-demo-impl",
     "crates/tools/bloxide-codegen",
     "crates/tools/cargo-blox",
+    "tools/bloxide-viz-export",
 ]
 resolver = "2"
 

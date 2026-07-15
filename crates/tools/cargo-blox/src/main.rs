@@ -20,6 +20,7 @@ mod run;
 mod state;
 mod test;
 mod utils;
+mod verify;
 mod watch;
 
 #[derive(Parser)]
@@ -114,6 +115,11 @@ enum BloxSubcommand {
     Lint,
     /// Run full CI feature matrix
     Ci,
+    /// Verify round-trip: blox.toml → codegen → viz-export → JSON → compare
+    Verify {
+        #[arg(long)]
+        workspace: Option<PathBuf>,
+    },
     /// Add a state to a blox topology
     AddState {
         blox_name: String,
@@ -167,6 +173,7 @@ fn main() -> anyhow::Result<()> {
             BloxSubcommand::NewAll { name, runtime } => new_all::new_all(&name, &runtime),
             BloxSubcommand::Lint => lint::lint(),
             BloxSubcommand::Ci => ci::ci(),
+            BloxSubcommand::Verify { workspace } => verify::verify(workspace),
             BloxSubcommand::AddState {
                 blox_name,
                 state_name,
