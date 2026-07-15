@@ -6,7 +6,6 @@
 #[cfg(all(test, feature = "std"))]
 mod counter_tests {
     use bloxide_core::lifecycle::LifecycleCommand;
-    use bloxide_core::test_utils::TestRuntime;
     use bloxide_core::{spec::MachineSpec, Envelope, MachineState, StateMachine};
     use counter_actions::CountsTicks;
     use counter_messages::{CounterMsg, Tick};
@@ -35,7 +34,7 @@ mod counter_tests {
 
     // ── Test helpers ─────────────────────────────────────────────────────────
 
-    fn make_machine() -> StateMachine<CounterSpec<TestRuntime, TestBehavior>> {
+    fn make_machine() -> StateMachine<CounterSpec<TestBehavior>> {
         let ctx = CounterCtx::new(bloxide_core::next_actor_id!(), TestBehavior::default());
         StateMachine::new(ctx)
     }
@@ -90,10 +89,10 @@ mod counter_tests {
 
     #[test]
     fn test_done_is_terminal() {
-        assert!(CounterSpec::<TestRuntime, TestBehavior>::is_terminal(
+        assert!(CounterSpec::<TestBehavior>::is_terminal(
             &CounterState::Done
         ));
-        assert!(!CounterSpec::<TestRuntime, TestBehavior>::is_terminal(
+        assert!(!CounterSpec::<TestBehavior>::is_terminal(
             &CounterState::Ready
         ));
     }

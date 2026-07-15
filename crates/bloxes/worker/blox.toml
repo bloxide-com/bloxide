@@ -1,3 +1,4 @@
+# Copyright 2025 Bloxide, all rights reserved
 [actor]
 name = "Worker"
 
@@ -17,6 +18,7 @@ message = "WorkerMsg"
 message_path = "pool_messages::WorkerMsg"
 
 [topology]
+# Legacy: hand-written StateFns constants in actions.rs
 handler_fns = ["WAITING_FNS", "DONE_FNS"]
 
 [[topology.states]]
@@ -31,6 +33,12 @@ terminal = true
 name = "WorkerCtx"
 generics = "<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask>"
 actions_crate = "pool_actions"
+on_init = "ctx.set_task_id(0); ctx.set_result(0); ctx.peers_mut().clear();"
+imports = [
+    "pool_actions::traits::HasPoolRef",
+    "pool_messages::{PoolMsg, WorkerMsg}",
+    "alloc::vec::Vec",
+]
 
 [[context.fields]]
 name = "self_id"
@@ -43,4 +51,33 @@ ty = "ActorRef<PoolMsg, R>"
 [[context.fields]]
 name = "behavior"
 ty = "B"
-delegates = ["HasWorkerPeers<R>", "HasCurrentTask"]
+delegates = ["traits::HasWorkerPeers<R>", "traits::HasCurrentTask"]
+
+# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+
+# Waiting: entry logs; handles ctrl (AddPeer/RemovePeer), DoWork → Done, PeerResult stays
+[[topology.entry]]
+state = "Waiting"
+actions = ["Self::log_waiting"]
+
+[[topology.transitions]]
+state = "Waiting"
+event = "WorkerCtrl::AddPeer(_) | WorkerCtrl::RemovePeer(_)"
+target = "stay"
+actions = ["Self::handle_ctrl"]
+
+[[topology.transitions]]
+state = "Waiting"
+event = "WorkerMsg::DoWork(_)"
+target = "Done"
+actions = ["Self::process_work"]
+
+[[topology.transitions]]
+state = "Waiting"
+event = "WorkerMsg::PeerResult(_)"
+target = "stay"
+
+# Done: entry logs, broadcasts to peers, notifies pool
+[[topology.entry]]
+state = "Done"
+actions = ["Self::log_done", "Self::do_broadcast", "Self::do_notify_pool"]

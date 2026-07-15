@@ -39,7 +39,9 @@ impl PoolEvent {
     /// Event tag for this variant, used for fast dispatch filtering.
     pub const MSG_TAG: u8 = 0u8;
     /// Returns the envelope if this event matches this variant.
-    pub fn msg_envelope(&self) -> ::core::option::Option<&Envelope<pool_messages::PoolMsg>> {
+    pub fn msg_envelope(
+        &self,
+    ) -> ::core::option::Option<&Envelope<pool_messages::PoolMsg>> {
         match self {
             PoolEvent::Msg(ref e) => ::core::option::Option::Some(e),
             _ => ::core::option::Option::None,

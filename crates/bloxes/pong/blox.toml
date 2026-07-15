@@ -1,3 +1,4 @@
+# Copyright 2025 Bloxide, all rights reserved
 [actor]
 name = "Pong"
 
@@ -5,6 +6,10 @@ name = "Pong"
 name = "PongCtx"
 generics = "<R: BloxRuntime>"
 actions_crate = "ping_pong_actions"
+imports = [
+    "ping_pong_actions::HasPeerRef",
+    "ping_pong_messages::PingPongMsg",
+]
 
 [[context.fields]]
 name = "self_id"
@@ -23,7 +28,16 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 
 [topology]
+# Legacy: hand-written StateFns constants in actions.rs
+handler_fns = ["READY_FNS"]
 
 [[topology.states]]
 name = "Ready"
 initial = true
+
+# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+[[topology.transitions]]
+state = "Ready"
+event = "PingPongMsg::Ping(_)"
+target = "stay"
+actions = ["Self::reply_pong_action"]

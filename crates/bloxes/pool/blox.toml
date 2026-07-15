@@ -1,3 +1,4 @@
+# Copyright 2025 Bloxide, all rights reserved
 [actor]
 name = "Pool"
 
@@ -13,6 +14,12 @@ message_path = "pool_messages::PoolMsg"
 name = "PoolCtx"
 generics = "<R: BloxRuntime>"
 actions_crate = "pool_actions"
+on_init = "ctx.worker_refs_mut().clear(); ctx.worker_ctrls_mut().clear(); ctx.set_pending(0);"
+imports = [
+    "pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg}",
+    "pool_actions::traits::{HasSelfRef, HasWorkers, WorkerSpawnFn}",
+    "alloc::vec::Vec",
+]
 
 [[context.fields]]
 name = "self_id"
@@ -39,6 +46,7 @@ name = "pending"
 ty = "u32"
 
 [topology]
+# Legacy: hand-written StateFns constants in actions.rs
 handler_fns = ["IDLE_FNS", "ACTIVE_FNS", "ALL_DONE_FNS"]
 
 [[topology.states]]
@@ -51,3 +59,34 @@ name = "Active"
 [[topology.states]]
 name = "AllDone"
 terminal = true
+
+# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+
+# Idle: SpawnWorker → Active
+[[topology.transitions]]
+state = "Idle"
+event = "PoolMsg::SpawnWorker(_)"
+target = "Active"
+actions = ["handle_spawn_worker"]
+
+# Active: SpawnWorker stays, WorkDone with guard
+[[topology.transitions]]
+state = "Active"
+event = "PoolMsg::SpawnWorker(_)"
+target = "stay"
+actions = ["handle_spawn_worker"]
+
+[[topology.transitions]]
+state = "Active"
+event = "PoolMsg::WorkDone(_)"
+target = "stay"
+actions = ["handle_work_done"]
+
+[[topology.transitions.guards]]
+condition = "ctx.pending() == 0"
+target = "AllDone"
+
+# AllDone: entry logs completion
+[[topology.entry]]
+state = "AllDone"
+actions = ["log_all_done"]

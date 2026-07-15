@@ -1,3 +1,4 @@
+# Copyright 2025 Bloxide, all rights reserved
 [actor]
 name = "Ping"
 
@@ -5,6 +6,13 @@ name = "Ping"
 name = "PingCtx"
 generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
 actions_crate = "ping_pong_actions"
+extra_where = ["B: Default", "B::Round: Into<u32>"]
+on_init = "ctx.behavior = B::default();"
+imports = [
+    "ping_pong_actions::{HasPeerRef, HasSelfRef}",
+    "ping_pong_messages::PingPongMsg",
+    "bloxide_timer::{HasTimerRef, TimerCommand, TimerId}",
+]
 
 [[context.fields]]
 name = "self_id"
@@ -36,6 +44,8 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 
 [topology]
+# Legacy: hand-written StateFns constants in actions.rs
+handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
 
 [[topology.states]]
 name = "Operating"
@@ -57,3 +67,59 @@ terminal = true
 [[topology.states]]
 name = "Error"
 error = true
+
+# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+
+# Operating: composite state, catches Pong to prevent bubbling
+[[topology.transitions]]
+state = "Operating"
+event = "PingPongMsg::Pong(_)"
+target = "stay"
+
+# Active: entry increments round, logs, sends ping; handles Pong with guards
+[[topology.entry]]
+state = "Active"
+actions = ["increment_round", "Self::log_round", "send_initial_ping"]
+
+[[topology.transitions]]
+state = "Active"
+event = "PingPongMsg::Pong(_)"
+target = "stay"
+actions = ["Self::log_pong_received", "Self::forward_ping"]
+
+[[topology.transitions.guards]]
+condition = "results.any_failed()"
+target = "Error"
+
+[[topology.transitions.guards]]
+condition = "ctx.round() >= B::Round::from(MAX_ROUNDS)"
+target = "Done"
+
+[[topology.transitions.guards]]
+condition = "ctx.round() == B::Round::from(PAUSE_AT_ROUND)"
+target = "Paused"
+
+# Paused: entry schedules timer, exit cancels it; Resume → Active
+[[topology.entry]]
+state = "Paused"
+actions = ["Self::schedule_pause_timer"]
+
+[[topology.exit]]
+state = "Paused"
+actions = ["Self::cancel_pause_timer"]
+
+[[topology.transitions]]
+state = "Paused"
+event = "PingPongMsg::Resume(_)"
+target = "Active"
+actions = ["Self::forward_ping"]
+
+# Done: entry logs completion
+[[topology.entry]]
+state = "Done"
+actions = ["Self::log_done"]
+
+# Error: entry logs error
+[[topology.entry]]
+state = "Error"
+actions = ["Self::log_error"]

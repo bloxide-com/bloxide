@@ -1,10 +1,19 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Pool action functions and state handler tables.
 use bloxide_core::{
-    capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions, HasSelfId,
+    capability::BloxRuntime,
+    messaging::ActorRef,
+    spec::StateFns,
+    transition::ActionResult,
+    transitions,
+    HasSelfId,
 };
-use pool_actions::{actions::introduce_new_worker, traits::HasWorkers};
-use pool_messages::{DoWork, PoolMsg, SpawnWorker, WorkerMsg};
+use alloc::vec::Vec;
+use pool_actions::{
+    actions::introduce_new_worker,
+    traits::{HasWorkerFactory, HasWorkers, WorkerSpawnFn},
+};
+use pool_messages::{DoWork, PoolMsg, SpawnWorker, WorkerCtrl, WorkerMsg};
 
 pub use crate::generated::topology::PoolState;
 use crate::{PoolCtx, PoolEvent, PoolSpec};
@@ -57,6 +66,33 @@ pub fn log_all_done<R: BloxRuntime>(ctx: &mut PoolCtx<R>) {
         "all {} workers done",
         ctx.worker_refs().len()
     );
+}
+
+impl<R: BloxRuntime> HasWorkerFactory<R> for PoolCtx<R> {
+    fn worker_factory(&self) -> WorkerSpawnFn<R> {
+        self.worker_factory
+    }
+}
+
+impl<R: BloxRuntime> HasWorkers<R> for PoolCtx<R> {
+    fn worker_refs(&self) -> &[ActorRef<WorkerMsg, R>] {
+        &self.worker_refs
+    }
+    fn worker_refs_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, R>> {
+        &mut self.worker_refs
+    }
+    fn worker_ctrls(&self) -> &[ActorRef<WorkerCtrl<R>, R>] {
+        &self.worker_ctrls
+    }
+    fn worker_ctrls_mut(&mut self) -> &mut Vec<ActorRef<WorkerCtrl<R>, R>> {
+        &mut self.worker_ctrls
+    }
+    fn pending(&self) -> u32 {
+        self.pending
+    }
+    fn set_pending(&mut self, n: u32) {
+        self.pending = n;
+    }
 }
 
 impl<R> PoolSpec<R>

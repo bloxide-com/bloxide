@@ -23,7 +23,9 @@ impl ::bloxide_core::topology::StateTopology for SupervisorState {
     }
     fn path(self) -> &'static [Self] {
         static __PATH_RUNNING: [SupervisorState; 1usize] = [SupervisorState::Running];
-        static __PATH_SHUTTINGDOWN: [SupervisorState; 1usize] = [SupervisorState::ShuttingDown];
+        static __PATH_SHUTTINGDOWN: [SupervisorState; 1usize] = [
+            SupervisorState::ShuttingDown,
+        ];
         match self {
             Self::Running => &__PATH_RUNNING,
             Self::ShuttingDown => &__PATH_SHUTTINGDOWN,
@@ -41,6 +43,6 @@ impl ::bloxide_core::topology::StateTopology for SupervisorState {
 #[macro_export]
 macro_rules! supervisor_state_handler_table {
     ($ty:ty) => {
-        &[&<$ty>::RUNNING_FNS, &<$ty>::SHUTTING_DOWN_FNS]
+        & [& < $ty > ::RUNNING_FNS, & < $ty > ::SHUTTING_DOWN_FNS]
     };
 }

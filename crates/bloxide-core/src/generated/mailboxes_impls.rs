@@ -8,15 +8,17 @@ where
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S1::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -26,21 +28,24 @@ where
 }
 impl<E, S1, S2> Mailboxes<E> for (S1, S2)
 where
-    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>,
+    E: Send + 'static + ::core::convert::From<S1::Item>
+        + ::core::convert::From<S2::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
     S1::Item: Send + 'static,
     S2::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -51,8 +56,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -62,10 +66,7 @@ where
 }
 impl<E, S1, S2, S3> Mailboxes<E> for (S1, S2, S3)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
         + ::core::convert::From<S3::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
@@ -74,15 +75,17 @@ where
     S2::Item: Send + 'static,
     S3::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -93,8 +96,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -105,8 +107,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -116,12 +117,8 @@ where
 }
 impl<E, S1, S2, S3, S4> Mailboxes<E> for (S1, S2, S3, S4)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>,
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
     S3: ::futures_core::Stream + Unpin + Send + 'static,
@@ -131,15 +128,17 @@ where
     S3::Item: Send + 'static,
     S4::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -150,8 +149,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -162,8 +160,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -174,8 +171,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -185,12 +181,8 @@ where
 }
 impl<E, S1, S2, S3, S4, S5> Mailboxes<E> for (S1, S2, S3, S4, S5)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
         + ::core::convert::From<S5::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
@@ -203,15 +195,17 @@ where
     S4::Item: Send + 'static,
     S5::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -222,8 +216,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -234,8 +227,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -246,8 +238,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -258,8 +249,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -269,14 +259,9 @@ where
 }
 impl<E, S1, S2, S3, S4, S5, S6> Mailboxes<E> for (S1, S2, S3, S4, S5, S6)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>,
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
     S3: ::futures_core::Stream + Unpin + Send + 'static,
@@ -290,15 +275,17 @@ where
     S5::Item: Send + 'static,
     S6::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -309,8 +296,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -321,8 +307,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -333,8 +318,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -345,8 +329,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -357,8 +340,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -368,14 +350,9 @@ where
 }
 impl<E, S1, S2, S3, S4, S5, S6, S7> Mailboxes<E> for (S1, S2, S3, S4, S5, S6, S7)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
         + ::core::convert::From<S7::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
@@ -392,15 +369,17 @@ where
     S6::Item: Send + 'static,
     S7::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -411,8 +390,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -423,8 +401,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -435,8 +412,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -447,8 +423,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -459,8 +434,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -471,8 +445,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -482,16 +455,10 @@ where
 }
 impl<E, S1, S2, S3, S4, S5, S6, S7, S8> Mailboxes<E> for (S1, S2, S3, S4, S5, S6, S7, S8)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
-        + ::core::convert::From<S7::Item>
-        + ::core::convert::From<S8::Item>,
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
+        + ::core::convert::From<S7::Item> + ::core::convert::From<S8::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
     S3: ::futures_core::Stream + Unpin + Send + 'static,
@@ -509,15 +476,17 @@ where
     S7::Item: Send + 'static,
     S8::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -528,8 +497,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -540,8 +508,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -552,8 +519,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -564,8 +530,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -576,8 +541,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -588,8 +552,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -600,8 +563,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 7 closed — self-sender invariant violated"
+                    false, "mailbox stream 7 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -609,18 +571,13 @@ where
         ::core::task::Poll::Pending
     }
 }
-impl<E, S1, S2, S3, S4, S5, S6, S7, S8, S9> Mailboxes<E> for (S1, S2, S3, S4, S5, S6, S7, S8, S9)
+impl<E, S1, S2, S3, S4, S5, S6, S7, S8, S9> Mailboxes<E>
+for (S1, S2, S3, S4, S5, S6, S7, S8, S9)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
-        + ::core::convert::From<S7::Item>
-        + ::core::convert::From<S8::Item>
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
+        + ::core::convert::From<S7::Item> + ::core::convert::From<S8::Item>
         + ::core::convert::From<S9::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
@@ -641,15 +598,17 @@ where
     S8::Item: Send + 'static,
     S9::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -660,8 +619,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -672,8 +630,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -684,8 +641,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -696,8 +652,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -708,8 +663,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -720,8 +674,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -732,8 +685,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 7 closed — self-sender invariant violated"
+                    false, "mailbox stream 7 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -744,8 +696,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 8 closed — self-sender invariant violated"
+                    false, "mailbox stream 8 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -754,20 +705,13 @@ where
     }
 }
 impl<E, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10> Mailboxes<E>
-    for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10)
+for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
-        + ::core::convert::From<S7::Item>
-        + ::core::convert::From<S8::Item>
-        + ::core::convert::From<S9::Item>
-        + ::core::convert::From<S10::Item>,
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
+        + ::core::convert::From<S7::Item> + ::core::convert::From<S8::Item>
+        + ::core::convert::From<S9::Item> + ::core::convert::From<S10::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
     S3: ::futures_core::Stream + Unpin + Send + 'static,
@@ -789,15 +733,17 @@ where
     S9::Item: Send + 'static,
     S10::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -808,8 +754,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -820,8 +765,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -832,8 +776,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -844,8 +787,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -856,8 +798,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -868,8 +809,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -880,8 +820,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 7 closed — self-sender invariant violated"
+                    false, "mailbox stream 7 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -892,8 +831,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 8 closed — self-sender invariant violated"
+                    false, "mailbox stream 8 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -904,8 +842,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 9 closed — self-sender invariant violated"
+                    false, "mailbox stream 9 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -914,20 +851,13 @@ where
     }
 }
 impl<E, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11> Mailboxes<E>
-    for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11)
+for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
-        + ::core::convert::From<S7::Item>
-        + ::core::convert::From<S8::Item>
-        + ::core::convert::From<S9::Item>
-        + ::core::convert::From<S10::Item>
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
+        + ::core::convert::From<S7::Item> + ::core::convert::From<S8::Item>
+        + ::core::convert::From<S9::Item> + ::core::convert::From<S10::Item>
         + ::core::convert::From<S11::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
@@ -952,15 +882,17 @@ where
     S10::Item: Send + 'static,
     S11::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -971,8 +903,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -983,8 +914,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -995,8 +925,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1007,8 +936,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1019,8 +947,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1031,8 +958,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1043,8 +969,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 7 closed — self-sender invariant violated"
+                    false, "mailbox stream 7 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1055,8 +980,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 8 closed — self-sender invariant violated"
+                    false, "mailbox stream 8 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1067,8 +991,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 9 closed — self-sender invariant violated"
+                    false, "mailbox stream 9 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1079,8 +1002,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 10 closed — self-sender invariant violated"
+                    false, "mailbox stream 10 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1089,22 +1011,14 @@ where
     }
 }
 impl<E, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12> Mailboxes<E>
-    for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12)
+for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
-        + ::core::convert::From<S7::Item>
-        + ::core::convert::From<S8::Item>
-        + ::core::convert::From<S9::Item>
-        + ::core::convert::From<S10::Item>
-        + ::core::convert::From<S11::Item>
-        + ::core::convert::From<S12::Item>,
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
+        + ::core::convert::From<S7::Item> + ::core::convert::From<S8::Item>
+        + ::core::convert::From<S9::Item> + ::core::convert::From<S10::Item>
+        + ::core::convert::From<S11::Item> + ::core::convert::From<S12::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
     S3: ::futures_core::Stream + Unpin + Send + 'static,
@@ -1130,15 +1044,17 @@ where
     S11::Item: Send + 'static,
     S12::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1149,8 +1065,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1161,8 +1076,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1173,8 +1087,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1185,8 +1098,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1197,8 +1109,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1209,8 +1120,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1221,8 +1131,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 7 closed — self-sender invariant violated"
+                    false, "mailbox stream 7 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1233,8 +1142,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 8 closed — self-sender invariant violated"
+                    false, "mailbox stream 8 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1245,8 +1153,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 9 closed — self-sender invariant violated"
+                    false, "mailbox stream 9 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1257,8 +1164,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 10 closed — self-sender invariant violated"
+                    false, "mailbox stream 10 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1269,8 +1175,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 11 closed — self-sender invariant violated"
+                    false, "mailbox stream 11 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1279,22 +1184,14 @@ where
     }
 }
 impl<E, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13> Mailboxes<E>
-    for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13)
+for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
-        + ::core::convert::From<S7::Item>
-        + ::core::convert::From<S8::Item>
-        + ::core::convert::From<S9::Item>
-        + ::core::convert::From<S10::Item>
-        + ::core::convert::From<S11::Item>
-        + ::core::convert::From<S12::Item>
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
+        + ::core::convert::From<S7::Item> + ::core::convert::From<S8::Item>
+        + ::core::convert::From<S9::Item> + ::core::convert::From<S10::Item>
+        + ::core::convert::From<S11::Item> + ::core::convert::From<S12::Item>
         + ::core::convert::From<S13::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
@@ -1323,15 +1220,17 @@ where
     S12::Item: Send + 'static,
     S13::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1342,8 +1241,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1354,8 +1252,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1366,8 +1263,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1378,8 +1274,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1390,8 +1285,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1402,8 +1296,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1414,8 +1307,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 7 closed — self-sender invariant violated"
+                    false, "mailbox stream 7 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1426,8 +1318,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 8 closed — self-sender invariant violated"
+                    false, "mailbox stream 8 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1438,8 +1329,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 9 closed — self-sender invariant violated"
+                    false, "mailbox stream 9 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1450,8 +1340,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 10 closed — self-sender invariant violated"
+                    false, "mailbox stream 10 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1462,8 +1351,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 11 closed — self-sender invariant violated"
+                    false, "mailbox stream 11 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1474,8 +1362,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 12 closed — self-sender invariant violated"
+                    false, "mailbox stream 12 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1484,24 +1371,15 @@ where
     }
 }
 impl<E, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14> Mailboxes<E>
-    for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14)
+for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
-        + ::core::convert::From<S7::Item>
-        + ::core::convert::From<S8::Item>
-        + ::core::convert::From<S9::Item>
-        + ::core::convert::From<S10::Item>
-        + ::core::convert::From<S11::Item>
-        + ::core::convert::From<S12::Item>
-        + ::core::convert::From<S13::Item>
-        + ::core::convert::From<S14::Item>,
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
+        + ::core::convert::From<S7::Item> + ::core::convert::From<S8::Item>
+        + ::core::convert::From<S9::Item> + ::core::convert::From<S10::Item>
+        + ::core::convert::From<S11::Item> + ::core::convert::From<S12::Item>
+        + ::core::convert::From<S13::Item> + ::core::convert::From<S14::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
     S3: ::futures_core::Stream + Unpin + Send + 'static,
@@ -1531,15 +1409,17 @@ where
     S13::Item: Send + 'static,
     S14::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1550,8 +1430,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1562,8 +1441,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1574,8 +1452,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1586,8 +1463,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1598,8 +1474,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1610,8 +1485,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1622,8 +1496,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 7 closed — self-sender invariant violated"
+                    false, "mailbox stream 7 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1634,8 +1507,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 8 closed — self-sender invariant violated"
+                    false, "mailbox stream 8 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1646,8 +1518,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 9 closed — self-sender invariant violated"
+                    false, "mailbox stream 9 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1658,8 +1529,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 10 closed — self-sender invariant violated"
+                    false, "mailbox stream 10 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1670,8 +1540,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 11 closed — self-sender invariant violated"
+                    false, "mailbox stream 11 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1682,8 +1551,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 12 closed — self-sender invariant violated"
+                    false, "mailbox stream 12 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1694,8 +1562,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 13 closed — self-sender invariant violated"
+                    false, "mailbox stream 13 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1704,40 +1571,15 @@ where
     }
 }
 impl<E, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15> Mailboxes<E>
-    for (
-        S1,
-        S2,
-        S3,
-        S4,
-        S5,
-        S6,
-        S7,
-        S8,
-        S9,
-        S10,
-        S11,
-        S12,
-        S13,
-        S14,
-        S15,
-    )
+for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
-        + ::core::convert::From<S7::Item>
-        + ::core::convert::From<S8::Item>
-        + ::core::convert::From<S9::Item>
-        + ::core::convert::From<S10::Item>
-        + ::core::convert::From<S11::Item>
-        + ::core::convert::From<S12::Item>
-        + ::core::convert::From<S13::Item>
-        + ::core::convert::From<S14::Item>
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
+        + ::core::convert::From<S7::Item> + ::core::convert::From<S8::Item>
+        + ::core::convert::From<S9::Item> + ::core::convert::From<S10::Item>
+        + ::core::convert::From<S11::Item> + ::core::convert::From<S12::Item>
+        + ::core::convert::From<S13::Item> + ::core::convert::From<S14::Item>
         + ::core::convert::From<S15::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
@@ -1770,15 +1612,17 @@ where
     S14::Item: Send + 'static,
     S15::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1789,8 +1633,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1801,8 +1644,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1813,8 +1655,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1825,8 +1666,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1837,8 +1677,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1849,8 +1688,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1861,8 +1699,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 7 closed — self-sender invariant violated"
+                    false, "mailbox stream 7 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1873,8 +1710,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 8 closed — self-sender invariant violated"
+                    false, "mailbox stream 8 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1885,8 +1721,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 9 closed — self-sender invariant violated"
+                    false, "mailbox stream 9 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1897,8 +1732,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 10 closed — self-sender invariant violated"
+                    false, "mailbox stream 10 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1909,8 +1743,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 11 closed — self-sender invariant violated"
+                    false, "mailbox stream 11 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1921,8 +1754,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 12 closed — self-sender invariant violated"
+                    false, "mailbox stream 12 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1933,8 +1765,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 13 closed — self-sender invariant violated"
+                    false, "mailbox stream 13 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1945,8 +1776,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 14 closed — self-sender invariant violated"
+                    false, "mailbox stream 14 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -1954,44 +1784,35 @@ where
         ::core::task::Poll::Pending
     }
 }
-impl<E, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S16> Mailboxes<E>
-    for (
-        S1,
-        S2,
-        S3,
-        S4,
-        S5,
-        S6,
-        S7,
-        S8,
-        S9,
-        S10,
-        S11,
-        S12,
-        S13,
-        S14,
-        S15,
-        S16,
-    )
+impl<
+    E,
+    S1,
+    S2,
+    S3,
+    S4,
+    S5,
+    S6,
+    S7,
+    S8,
+    S9,
+    S10,
+    S11,
+    S12,
+    S13,
+    S14,
+    S15,
+    S16,
+> Mailboxes<E>
+for (S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S16)
 where
-    E: Send
-        + 'static
-        + ::core::convert::From<S1::Item>
-        + ::core::convert::From<S2::Item>
-        + ::core::convert::From<S3::Item>
-        + ::core::convert::From<S4::Item>
-        + ::core::convert::From<S5::Item>
-        + ::core::convert::From<S6::Item>
-        + ::core::convert::From<S7::Item>
-        + ::core::convert::From<S8::Item>
-        + ::core::convert::From<S9::Item>
-        + ::core::convert::From<S10::Item>
-        + ::core::convert::From<S11::Item>
-        + ::core::convert::From<S12::Item>
-        + ::core::convert::From<S13::Item>
-        + ::core::convert::From<S14::Item>
-        + ::core::convert::From<S15::Item>
-        + ::core::convert::From<S16::Item>,
+    E: Send + 'static + ::core::convert::From<S1::Item> + ::core::convert::From<S2::Item>
+        + ::core::convert::From<S3::Item> + ::core::convert::From<S4::Item>
+        + ::core::convert::From<S5::Item> + ::core::convert::From<S6::Item>
+        + ::core::convert::From<S7::Item> + ::core::convert::From<S8::Item>
+        + ::core::convert::From<S9::Item> + ::core::convert::From<S10::Item>
+        + ::core::convert::From<S11::Item> + ::core::convert::From<S12::Item>
+        + ::core::convert::From<S13::Item> + ::core::convert::From<S14::Item>
+        + ::core::convert::From<S15::Item> + ::core::convert::From<S16::Item>,
     S1: ::futures_core::Stream + Unpin + Send + 'static,
     S2: ::futures_core::Stream + Unpin + Send + 'static,
     S3: ::futures_core::Stream + Unpin + Send + 'static,
@@ -2025,15 +1846,17 @@ where
     S15::Item: Send + 'static,
     S16::Item: Send + 'static,
 {
-    fn poll_next(&mut self, cx: &mut ::core::task::Context<'_>) -> ::core::task::Poll<E> {
+    fn poll_next(
+        &mut self,
+        cx: &mut ::core::task::Context<'_>,
+    ) -> ::core::task::Poll<E> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
                 return ::core::task::Poll::Ready(E::from(item));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 0 closed — self-sender invariant violated"
+                    false, "mailbox stream 0 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2044,8 +1867,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 1 closed — self-sender invariant violated"
+                    false, "mailbox stream 1 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2056,8 +1878,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 2 closed — self-sender invariant violated"
+                    false, "mailbox stream 2 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2068,8 +1889,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 3 closed — self-sender invariant violated"
+                    false, "mailbox stream 3 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2080,8 +1900,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 4 closed — self-sender invariant violated"
+                    false, "mailbox stream 4 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2092,8 +1911,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 5 closed — self-sender invariant violated"
+                    false, "mailbox stream 5 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2104,8 +1922,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 6 closed — self-sender invariant violated"
+                    false, "mailbox stream 6 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2116,8 +1933,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 7 closed — self-sender invariant violated"
+                    false, "mailbox stream 7 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2128,8 +1944,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 8 closed — self-sender invariant violated"
+                    false, "mailbox stream 8 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2140,8 +1955,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 9 closed — self-sender invariant violated"
+                    false, "mailbox stream 9 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2152,8 +1966,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 10 closed — self-sender invariant violated"
+                    false, "mailbox stream 10 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2164,8 +1977,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 11 closed — self-sender invariant violated"
+                    false, "mailbox stream 11 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2176,8 +1988,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 12 closed — self-sender invariant violated"
+                    false, "mailbox stream 12 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2188,8 +1999,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 13 closed — self-sender invariant violated"
+                    false, "mailbox stream 13 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2200,8 +2010,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 14 closed — self-sender invariant violated"
+                    false, "mailbox stream 14 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}
@@ -2212,8 +2021,7 @@ where
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
                 debug_assert!(
-                    false,
-                    "mailbox stream 15 closed — self-sender invariant violated"
+                    false, "mailbox stream 15 closed — self-sender invariant violated"
                 );
             }
             ::core::task::Poll::Pending => {}

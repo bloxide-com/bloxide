@@ -8,14 +8,14 @@ use counter_messages::CounterMsg;
 
 const DONE_AT_COUNT: u8 = 2;
 
-impl<R: BloxRuntime, B: CountsTicks + 'static> CounterSpec<R, B> {
+impl<B: CountsTicks + 'static> CounterSpec<B> {
     fn count_tick(ctx: &mut CounterCtx<B>, _ev: &CounterEvent) -> ActionResult {
         increment_count(ctx);
         ActionResult::Ok
     }
 }
 
-impl<R: BloxRuntime, B: CountsTicks + 'static> CounterSpec<R, B> {
+impl<B: CountsTicks + 'static> CounterSpec<B> {
     pub const READY_FNS: StateFns<Self> = StateFns {
         on_entry: &[],
         on_exit: &[],

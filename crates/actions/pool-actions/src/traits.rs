@@ -20,6 +20,14 @@ use pool_messages::{PoolMsg, WorkerMsg};
 pub type WorkerSpawnFn<R> =
     fn(ActorId, &ActorRef<PoolMsg, R>) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>);
 
+/// Accessor for contexts that hold a reference to themselves.
+///
+/// Implemented by `PoolCtx` so generic logic can retrieve the actor's own
+/// `ActorRef` without knowing the concrete context type.
+pub trait HasSelfRef<R: BloxRuntime> {
+    fn self_ref(&self) -> &ActorRef<PoolMsg, R>;
+}
+
 /// Accessor for contexts that hold a worker spawn factory.
 ///
 /// Implemented by `PoolCtx`. Allows generic pool logic to create workers

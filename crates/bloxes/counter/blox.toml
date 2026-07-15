@@ -1,5 +1,21 @@
+# Copyright 2025 Bloxide, all rights reserved
 [actor]
 name = "Counter"
+
+[context]
+name = "CounterCtx"
+generics = "<B: CountsTicks>"
+actions_crate = "counter_actions"
+on_init = "ctx.set_count(B::Count::from(0));"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["CountsTicks"]
 
 [event]
 name = "CounterEvent"
@@ -10,10 +26,28 @@ message = "CounterMsg"
 message_path = "counter_messages::CounterMsg"
 
 [topology]
+# Legacy: hand-written StateFns constants in actions.rs
 handler_fns = ["READY_FNS", "DONE_FNS"]
 
 [[topology.states]]
 name = "Ready"
+initial = true
 
 [[topology.states]]
 name = "Done"
+terminal = true
+
+# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+[[topology.transitions]]
+state = "Ready"
+event = "CounterMsg::Tick(_)"
+target = "stay"
+actions = ["Self::count_tick"]
+
+[[topology.transitions.guards]]
+condition = "ctx.count() >= B::Count::from(2)"
+target = "Done"
+
+[[topology.transitions.guards]]
+condition = "_"
+target = "stay"

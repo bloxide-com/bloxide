@@ -1,3 +1,4 @@
+# Copyright 2025 Bloxide, all rights reserved
 [actor]
 name = "BhsmTst"
 
@@ -10,6 +11,7 @@ message = "BhsmTstMsg"
 message_path = "bhsm_tst_messages::BhsmTstMsg"
 
 [topology]
+# Legacy: hand-written StateFns constants in spec.rs
 handler_fns = ["S_FNS", "S1_FNS", "S11_FNS", "S2_FNS", "S21_FNS", "S211_FNS", "ERROR_FNS", "DONE_FNS"]
 
 [[topology.states]]
@@ -44,3 +46,135 @@ name = "Error"
 
 [[topology.states]]
 name = "Done"
+
+# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+
+# S: entry/exit trace, H→S11, I→stay, K→Error, X→Done
+[[topology.entry]]
+state = "S"
+actions = ["Self::s_entry"]
+
+[[topology.exit]]
+state = "S"
+actions = ["Self::s_exit"]
+
+[[topology.transitions]]
+state = "S"
+event = "BhsmTstMsg::H(_)"
+target = "S11"
+
+[[topology.transitions]]
+state = "S"
+event = "BhsmTstMsg::I(_)"
+target = "stay"
+actions = ["Self::s_i"]
+
+[[topology.transitions]]
+state = "S"
+event = "BhsmTstMsg::K(_)"
+target = "Error"
+
+[[topology.transitions]]
+state = "S"
+event = "BhsmTstMsg::X(_)"
+target = "Done"
+
+# S1: entry/exit trace, C→S211
+[[topology.entry]]
+state = "S1"
+actions = ["Self::s1_entry"]
+
+[[topology.exit]]
+state = "S1"
+actions = ["Self::s1_exit"]
+
+[[topology.transitions]]
+state = "S1"
+event = "BhsmTstMsg::C(_)"
+target = "S211"
+
+# S11: entry/exit trace, A→S11, B→S11, D→S211
+[[topology.entry]]
+state = "S11"
+actions = ["Self::s11_entry"]
+
+[[topology.exit]]
+state = "S11"
+actions = ["Self::s11_exit"]
+
+[[topology.transitions]]
+state = "S11"
+event = "BhsmTstMsg::A(_)"
+target = "S11"
+actions = ["Self::s11_a"]
+
+[[topology.transitions]]
+state = "S11"
+event = "BhsmTstMsg::B(_)"
+target = "S11"
+actions = ["Self::s11_b"]
+
+[[topology.transitions]]
+state = "S11"
+event = "BhsmTstMsg::D(_)"
+target = "S211"
+
+# S2: entry/exit trace, no transitions (bubbles to S)
+[[topology.entry]]
+state = "S2"
+actions = ["Self::s2_entry"]
+
+[[topology.exit]]
+state = "S2"
+actions = ["Self::s2_exit"]
+
+# S21: entry/exit trace, E→S211, G→S11
+[[topology.entry]]
+state = "S21"
+actions = ["Self::s21_entry"]
+
+[[topology.exit]]
+state = "S21"
+actions = ["Self::s21_exit"]
+
+[[topology.transitions]]
+state = "S21"
+event = "BhsmTstMsg::E(_)"
+target = "S211"
+
+[[topology.transitions]]
+state = "S21"
+event = "BhsmTstMsg::G(_)"
+target = "S11"
+
+# S211: entry/exit trace, F→S11
+[[topology.entry]]
+state = "S211"
+actions = ["Self::s211_entry"]
+
+[[topology.exit]]
+state = "S211"
+actions = ["Self::s211_exit"]
+
+[[topology.transitions]]
+state = "S211"
+event = "BhsmTstMsg::F(_)"
+target = "S11"
+
+# Error: entry/exit trace, no transitions
+[[topology.entry]]
+state = "Error"
+actions = ["Self::error_entry"]
+
+[[topology.exit]]
+state = "Error"
+actions = ["Self::error_exit"]
+
+# Done: entry/exit trace, no transitions
+[[topology.entry]]
+state = "Done"
+actions = ["Self::done_entry"]
+
+[[topology.exit]]
+state = "Done"
+actions = ["Self::done_exit"]

@@ -44,28 +44,10 @@ pub fn generate_all(
         files.push(("ctx.rs".to_string(), code));
     }
 
-    if let (Some(actor), Some(topology), Some(event)) =
-        (&config.actor, &config.topology, &config.event)
+    if let (Some(actor), Some(topology), Some(event), Some(context)) =
+        (&config.actor, &config.topology, &config.event, &config.context)
     {
-        let msg_type = event
-            .mailboxes
-            .first()
-            .map(|m| m.message.clone())
-            .unwrap_or_default();
-        let msg_path = event
-            .mailboxes
-            .first()
-            .and_then(|m| m.message_path.clone())
-            .unwrap_or_default();
-        let code = spec_skeleton::generate(
-            actor,
-            topology,
-            config.context.as_ref(),
-            &event.name,
-            &msg_type,
-            &msg_path,
-            crate_name,
-        )?;
+        let code = spec_skeleton::generate(actor, topology, context, event, crate_name)?;
         files.push(("spec_skeleton.rs".to_string(), code));
     }
 

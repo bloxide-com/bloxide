@@ -1,7 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Integration tests for bloxide-codegen.
 
-use bloxide_codegen::schema::BloxConfig;
+use bloxide_codegen::schema::{BloxConfig, SystemConfig};
 use bloxide_codegen::{generate_all, generate_from_toml};
 
 #[test]
@@ -559,6 +559,20 @@ variant = "Msg"
 message = "CounterMsg"
 message_path = "counter_messages::CounterMsg"
 
+[context]
+name = "CounterCtx"
+generics = "<B: CountsTicks>"
+actions_crate = "counter_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["CountsTicks"]
+
 [topology]
 handler_fns = ["READY_FNS", "DONE_FNS"]
 
@@ -581,7 +595,8 @@ terminal = true
     let content = &spec_file.1;
 
     assert!(content.contains("pub struct CounterSpec"));
-    assert!(content.contains("MachineSpec for CounterSpec"));
+    assert!(content.contains("MachineSpec"));
+    assert!(content.contains("for CounterSpec"));
     assert!(content.contains("type State = CounterState"));
     assert!(content.contains("type Event = CounterEvent"));
     assert!(content.contains("counter_messages::CounterMsg"));
@@ -605,6 +620,24 @@ name = "PingEvent"
 variant = "Msg"
 message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
+
+[context]
+name = "PingCtx"
+generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
+actions_crate = "ping_pong_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["HasCurrentTimer", "CountsRounds"]
 
 [topology]
 handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
@@ -641,7 +674,8 @@ error = true
     let content = &spec_file.1;
 
     assert!(content.contains("pub struct PingSpec"));
-    assert!(content.contains("MachineSpec for PingSpec"));
+    assert!(content.contains("MachineSpec"));
+    assert!(content.contains("for PingSpec"));
     assert!(content.contains("type State = PingState"));
     assert!(content.contains("PingState::Active"));
     assert!(content.contains("fn is_terminal"));
@@ -697,4 +731,810 @@ name = "Idle"
 
     assert!(files.iter().all(|(n, _)| n != "ctx.rs"));
     assert!(files.iter().all(|(n, _)| n != "spec_skeleton.rs"));
+}
+
+#[test]
+fn test_declarative_transitions_simple_stay() {
+    let toml = r#"
+[actor]
+name = "Pong"
+
+[topology]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.transitions]]
+state = "Ready"
+event = "PingPongMsg::Ping(_)"
+target = "stay"
+actions = ["reply_pong_action"]
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "pong-blox").expect("generate failed");
+
+    let topo_file = files
+        .iter()
+        .find(|(n, _)| n == "topology.rs")
+        .expect("topology.rs missing");
+    let content = &topo_file.1;
+
+    // StateFns constant generated
+    assert!(content.contains("READY_FNS"));
+    assert!(content.contains("StateFns"));
+    // transitions! macro invocation
+    assert!(content.contains("transitions!"));
+    // Event pattern
+    assert!(content.contains("PingPongMsg::Ping(_)"));
+    // stay keyword
+    assert!(content.contains("stay"));
+    // Action function
+    assert!(content.contains("reply_pong_action"));
+    // Handler table array
+    assert!(content.contains("HANDLER_TABLE"));
+}
+
+#[test]
+fn test_declarative_transitions_with_guard() {
+    let toml = r#"
+[actor]
+name = "Counter"
+
+[topology]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.states]]
+name = "Done"
+terminal = true
+
+[[topology.transitions]]
+state = "Ready"
+event = "CounterMsg::Tick(_)"
+target = "stay"
+actions = ["count_tick"]
+
+[[topology.transitions]]
+state = "Ready"
+event = "CounterMsg::Tick(_)"
+target = "Done"
+actions = ["count_tick"]
+
+[[topology.transitions.guards]]
+condition = "ctx.count() >= 2"
+target = "Done"
+
+[[topology.transitions.guards]]
+condition = "ctx.count() < 2"
+target = "stay"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "counter-blox").expect("generate failed");
+
+    let topo_file = files
+        .iter()
+        .find(|(n, _)| n == "topology.rs")
+        .expect("topology.rs missing");
+    let content = &topo_file.1;
+
+    // Guard chain generated
+    assert!(content.contains("guard(ctx, results)"));
+    assert!(content.contains("ctx.count() >= 2"));
+    assert!(content.contains("ctx.count() < 2"));
+    // State targets
+    assert!(content.contains("CounterState::Done"));
+    assert!(content.contains("stay"));
+    // transitions! macro
+    assert!(content.contains("transitions!"));
+}
+
+#[test]
+fn test_declarative_entry_exit() {
+    let toml = r#"
+[actor]
+name = "Worker"
+
+[topology]
+
+[[topology.states]]
+name = "Waiting"
+initial = true
+
+[[topology.states]]
+name = "Done"
+terminal = true
+
+[[topology.entry]]
+state = "Waiting"
+actions = ["log_waiting"]
+
+[[topology.exit]]
+state = "Waiting"
+actions = ["cleanup"]
+
+[[topology.transitions]]
+state = "Waiting"
+event = "WorkerMsg::DoWork(_)"
+target = "Done"
+actions = ["process_work"]
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "worker-blox").expect("generate failed");
+
+    let topo_file = files
+        .iter()
+        .find(|(n, _)| n == "topology.rs")
+        .expect("topology.rs missing");
+    let content = &topo_file.1;
+
+    // Entry/exit actions in StateFns
+    assert!(content.contains("log_waiting"));
+    assert!(content.contains("cleanup"));
+    assert!(content.contains("on_entry"));
+    assert!(content.contains("on_exit"));
+}
+
+#[test]
+fn test_declarative_transition_with_transition_target() {
+    let toml = r#"
+[actor]
+name = "Pool"
+
+[topology]
+
+[[topology.states]]
+name = "Idle"
+initial = true
+
+[[topology.states]]
+name = "Active"
+
+[[topology.states]]
+name = "AllDone"
+terminal = true
+
+[[topology.transitions]]
+state = "Idle"
+event = "PoolMsg::SpawnWorker(_)"
+target = "Active"
+actions = ["handle_spawn_worker"]
+
+[[topology.transitions]]
+state = "Active"
+event = "PoolMsg::WorkDone(_)"
+target = "stay"
+actions = ["handle_work_done"]
+
+[[topology.transitions.guards]]
+condition = "ctx.pending() == 0"
+target = "AllDone"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "pool-blox").expect("generate failed");
+
+    let topo_file = files
+        .iter()
+        .find(|(n, _)| n == "topology.rs")
+        .expect("topology.rs missing");
+    let content = &topo_file.1;
+
+    // transition targets (not stay/reset/fail)
+    // prettyplease may insert newlines between tokens, so check for both parts
+    assert!(content.contains("transition"));
+    assert!(content.contains("PoolState::Active"));
+    assert!(content.contains("PoolState::AllDone"));
+}
+
+#[test]
+fn test_declarative_transition_unknown_state() {
+    let toml = r#"
+[actor]
+name = "Test"
+
+[topology]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.transitions]]
+state = "Ready"
+event = "Msg::A(_)"
+target = "NonExistentState"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let result = generate_all(&config, "test-blox");
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("unknown target state"));
+}
+
+#[test]
+fn test_declarative_transition_unknown_handling_state() {
+    let toml = r#"
+[actor]
+name = "Test"
+
+[topology]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.transitions]]
+state = "NonExistent"
+event = "Msg::A(_)"
+target = "stay"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let result = generate_all(&config, "test-blox");
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("unknown state"));
+}
+
+#[test]
+fn test_declarative_transitions_empty_for_state() {
+    let toml = r#"
+[actor]
+name = "Test"
+
+[topology]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.states]]
+name = "Done"
+terminal = true
+
+[[topology.transitions]]
+state = "Ready"
+event = "Msg::Go(_)"
+target = "Done"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "test-blox").expect("generate failed");
+
+    let topo_file = files
+        .iter()
+        .find(|(n, _)| n == "topology.rs")
+        .expect("topology.rs missing");
+    let content = &topo_file.1;
+
+    // Done state should have empty transitions: &[]
+    assert!(content.contains("DONE_FNS"));
+    // The Done StateFns should have empty transitions
+    // (both states get StateFns, but Done has no transition entries)
+    assert!(content.contains("transitions: &[]"));
+}
+
+#[test]
+fn test_parse_context_uses_single_field_accessor() {
+    let toml = r#"
+[actor]
+name = "Ping"
+
+[context]
+name = "PingCtx"
+generics = "<R: BloxRuntime>"
+
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasPeerRef<R, PingPongMsg>"
+field = "peer_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "ctor"
+
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasSelfRef<R, PingPongMsg>"
+field = "self_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "ctor"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let ctx = config.context.expect("context section missing");
+    assert_eq!(ctx.uses.len(), 2);
+
+    let u0 = &ctx.uses[0];
+    assert_eq!(u0.crate_name, "bloxide_messaging");
+    assert_eq!(u0.trait_.as_deref(), Some("HasPeerRef<R, PingPongMsg>"));
+    assert!(u0.traits.is_empty());
+    assert_eq!(u0.field.as_deref(), Some("peer_ref"));
+    assert_eq!(u0.field_type.as_deref(), Some("ActorRef<PingPongMsg, R>"));
+    assert_eq!(u0.role.as_deref(), Some("ctor"));
+    assert!(!u0.delegatable);
+    assert!(u0.impl_macro.is_none());
+    assert!(u0.fields.is_empty());
+
+    let u1 = &ctx.uses[1];
+    assert_eq!(u1.trait_.as_deref(), Some("HasSelfRef<R, PingPongMsg>"));
+    assert_eq!(u1.field.as_deref(), Some("self_ref"));
+}
+
+#[test]
+fn test_parse_context_uses_delegatable() {
+    let toml = r#"
+[actor]
+name = "Ping"
+
+[context]
+name = "PingCtx"
+generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
+
+[[context.uses]]
+crate = "blox_ctx_rounds"
+trait = "CountsRounds"
+delegatable = true
+
+[[context.uses]]
+crate = "blox_ctx_current_timer"
+trait = "HasCurrentTimer"
+delegatable = true
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+role = "delegate"
+delegates = ["HasCurrentTimer", "CountsRounds"]
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let ctx = config.context.expect("context section missing");
+    assert_eq!(ctx.uses.len(), 2);
+
+    let u0 = &ctx.uses[0];
+    assert_eq!(u0.crate_name, "blox_ctx_rounds");
+    assert_eq!(u0.trait_.as_deref(), Some("CountsRounds"));
+    assert!(u0.delegatable);
+    assert!(u0.field.is_none());
+    assert!(u0.field_type.is_none());
+    assert!(u0.impl_macro.is_none());
+    assert!(u0.fields.is_empty());
+
+    let u1 = &ctx.uses[1];
+    assert_eq!(u1.trait_.as_deref(), Some("HasCurrentTimer"));
+    assert!(u1.delegatable);
+
+    // role on context.fields
+    let f0 = &ctx.fields[0];
+    assert_eq!(f0.role.as_deref(), Some("delegate"));
+    let delegates = f0.delegates.as_ref().expect("delegates missing");
+    assert_eq!(delegates, &["HasCurrentTimer", "CountsRounds"]);
+}
+
+#[test]
+fn test_parse_context_uses_multi_field_with_impl_macro() {
+    let toml = r#"
+[actor]
+name = "Pool"
+
+[context]
+name = "PoolCtx"
+generics = "<R: BloxRuntime>"
+
+[[context.uses]]
+crate = "blox_ctx_workers"
+traits = ["HasWorkers<R>", "HasWorkerFactory<R>"]
+impl_macro = "impl_has_workers"
+
+  [[context.uses.fields]]
+  name = "worker_refs"
+  ty = "Vec<ActorRef<WorkerMsg, R>>"
+  role = "state"
+
+  [[context.uses.fields]]
+  name = "worker_ctrls"
+  ty = "Vec<ActorRef<WorkerCtrl<R>, R>>"
+  role = "state"
+
+  [[context.uses.fields]]
+  name = "pending"
+  ty = "u32"
+  role = "state"
+
+  [[context.uses.fields]]
+  name = "worker_factory"
+  ty = "WorkerSpawnFn<R>"
+  role = "ctor"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let ctx = config.context.expect("context section missing");
+    assert_eq!(ctx.uses.len(), 1);
+
+    let u0 = &ctx.uses[0];
+    assert_eq!(u0.crate_name, "blox_ctx_workers");
+    assert!(u0.trait_.is_none());
+    assert_eq!(u0.traits.len(), 2);
+    assert_eq!(u0.traits[0], "HasWorkers<R>");
+    assert_eq!(u0.traits[1], "HasWorkerFactory<R>");
+    assert_eq!(u0.impl_macro.as_deref(), Some("impl_has_workers"));
+    assert!(u0.field.is_none());
+    assert!(u0.field_type.is_none());
+    assert!(!u0.delegatable);
+
+    // Sub-fields
+    assert_eq!(u0.fields.len(), 4);
+    assert_eq!(u0.fields[0].name, "worker_refs");
+    assert_eq!(u0.fields[0].ty, "Vec<ActorRef<WorkerMsg, R>>");
+    assert_eq!(u0.fields[0].role.as_deref(), Some("state"));
+
+    assert_eq!(u0.fields[3].name, "worker_factory");
+    assert_eq!(u0.fields[3].ty, "WorkerSpawnFn<R>");
+    assert_eq!(u0.fields[3].role.as_deref(), Some("ctor"));
+}
+
+#[test]
+fn test_parse_context_uses_empty_default() {
+    // When [[context.uses]] is absent, uses should default to empty vec.
+    let toml = r#"
+[actor]
+name = "Counter"
+
+[context]
+name = "CounterCtx"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let ctx = config.context.expect("context section missing");
+    assert!(ctx.uses.is_empty());
+}
+
+#[test]
+fn test_parse_context_field_role() {
+    // Verify the `role` field on [[context.fields]] parses correctly.
+    let toml = r#"
+[actor]
+name = "Test"
+
+[context]
+name = "TestCtx"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+role = "self_id"
+
+[[context.fields]]
+name = "worker_refs"
+ty = "Vec<ActorRef<WorkerMsg, R>>"
+role = "state"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let ctx = config.context.expect("context section missing");
+    assert_eq!(ctx.fields.len(), 2);
+    assert_eq!(ctx.fields[0].role.as_deref(), Some("self_id"));
+    assert_eq!(ctx.fields[1].role.as_deref(), Some("state"));
+}
+
+#[test]
+fn test_declarative_reset_fail_targets() {
+    let toml = r#"
+[actor]
+name = "Test"
+
+[topology]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.states]]
+name = "Error"
+error = true
+
+[[topology.transitions]]
+state = "Ready"
+event = "Msg::Reset(_)"
+target = "reset"
+
+[[topology.transitions]]
+state = "Ready"
+event = "Msg::Fail(_)"
+target = "fail"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "test-blox").expect("generate failed");
+
+    let topo_file = files
+        .iter()
+        .find(|(n, _)| n == "topology.rs")
+        .expect("topology.rs missing");
+    let content = &topo_file.1;
+
+    assert!(content.contains("reset"));
+    assert!(content.contains("fail"));
+}
+
+// ---------------------------------------------------------------------------
+// system.toml — wiring manifest schema tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_parse_system_toml_minimal() {
+    // Minimal system.toml — just [system] with a runtime, no actors or supervision.
+    let toml = r#"
+[system]
+runtime = "tokio"
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    assert_eq!(config.system.runtime, "tokio");
+    assert!(config.actors.is_empty());
+    assert!(config.supervision.is_empty());
+}
+
+#[test]
+fn test_parse_system_toml_ping_pong() {
+    // Full ping-pong wiring manifest matching spec 19.
+    let toml = r#"
+[system]
+runtime = "tokio"
+
+[[actors]]
+name = "timer"
+blox = "bloxide-timer"
+
+[[actors]]
+name = "ping"
+blox = "ping-blox"
+behavior = "DemoBehavior"
+behavior_traits = ["CountsRounds", "HasCurrentTimer"]
+
+  [actors.inject]
+  self_ref = { source = "self" }
+  peer_ref = { source = "actor", actor = "pong" }
+  timer_ref = { source = "actor", actor = "timer" }
+
+[[actors]]
+name = "pong"
+blox = "pong-blox"
+
+  [actors.inject]
+  self_ref = { source = "self" }
+  peer_ref = { source = "actor", actor = "ping" }
+
+[[supervision]]
+supervisor = "bloxide-supervisor"
+strategy = "one_for_one"
+children = ["ping", "pong"]
+
+  [supervision.policies]
+  ping = { restart = { max = 1 } }
+  pong = { stop = true }
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    assert_eq!(config.system.runtime, "tokio");
+    assert_eq!(config.actors.len(), 3);
+    assert_eq!(config.supervision.len(), 1);
+
+    // Timer actor — no inject, no behavior
+    let timer = &config.actors[0];
+    assert_eq!(timer.name, "timer");
+    assert_eq!(timer.blox, "bloxide-timer");
+    assert!(timer.behavior.is_none());
+    assert!(timer.inject.is_empty());
+    assert!(timer.spawn_factory.is_none());
+
+    // Ping actor — has behavior, traits, and 3 inject entries
+    let ping = &config.actors[1];
+    assert_eq!(ping.name, "ping");
+    assert_eq!(ping.blox, "ping-blox");
+    assert_eq!(ping.behavior.as_deref(), Some("DemoBehavior"));
+    assert_eq!(ping.behavior_traits, vec!["CountsRounds", "HasCurrentTimer"]);
+    assert_eq!(ping.inject.len(), 3);
+
+    let self_ref = ping.inject.get("self_ref").expect("self_ref missing");
+    assert_eq!(self_ref.source, "self");
+    assert!(self_ref.actor.is_none());
+    assert!(self_ref.mailbox.is_none());
+
+    let peer_ref = ping.inject.get("peer_ref").expect("peer_ref missing");
+    assert_eq!(peer_ref.source, "actor");
+    assert_eq!(peer_ref.actor.as_deref(), Some("pong"));
+
+    let timer_ref = ping.inject.get("timer_ref").expect("timer_ref missing");
+    assert_eq!(timer_ref.source, "actor");
+    assert_eq!(timer_ref.actor.as_deref(), Some("timer"));
+
+    // Pong actor — 2 inject entries
+    let pong = &config.actors[2];
+    assert_eq!(pong.name, "pong");
+    assert_eq!(pong.inject.len(), 2);
+    let pong_peer = pong.inject.get("peer_ref").expect("pong peer_ref missing");
+    assert_eq!(pong_peer.actor.as_deref(), Some("ping"));
+
+    // Supervision
+    let sup = &config.supervision[0];
+    assert_eq!(sup.supervisor, "bloxide-supervisor");
+    assert_eq!(sup.strategy, "one_for_one");
+    assert_eq!(sup.children, vec!["ping", "pong"]);
+    assert_eq!(sup.policies.len(), 2);
+
+    let ping_policy = sup.policies.get("ping").expect("ping policy missing");
+    let restart = ping_policy.restart.as_ref().expect("restart missing");
+    assert_eq!(restart.max, 1);
+    assert!(ping_policy.stop.is_none());
+
+    let pong_policy = sup.policies.get("pong").expect("pong policy missing");
+    assert_eq!(pong_policy.stop, Some(true));
+    assert!(pong_policy.restart.is_none());
+
+    // No health check configured
+    assert!(sup.health_check_interval_ms.is_none());
+}
+
+#[test]
+fn test_parse_system_toml_multi_mailbox_actor() {
+    // Worker actor with mailbox index in inject.
+    let toml = r#"
+[system]
+runtime = "tokio"
+
+[[actors]]
+name = "worker-1"
+blox = "worker-blox"
+behavior = "WorkerBehavior"
+behavior_traits = ["HasCurrentTask", "HasWorkerPeers"]
+
+  [actors.inject]
+  self_ref = { source = "self", mailbox = 0 }
+  pool_ref = { source = "actor", actor = "pool" }
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    let worker = &config.actors[0];
+    assert_eq!(worker.name, "worker-1");
+
+    let self_ref = worker.inject.get("self_ref").expect("self_ref missing");
+    assert_eq!(self_ref.source, "self");
+    assert_eq!(self_ref.mailbox, Some(0));
+
+    let pool_ref = worker.inject.get("pool_ref").expect("pool_ref missing");
+    assert_eq!(pool_ref.source, "actor");
+    assert_eq!(pool_ref.actor.as_deref(), Some("pool"));
+}
+
+#[test]
+fn test_parse_system_toml_spawn_factory() {
+    // Pool actor with spawn factory for dynamic worker spawning.
+    let toml = r#"
+[system]
+runtime = "tokio"
+
+[[actors]]
+name = "pool"
+blox = "pool-blox"
+
+  [actors.spawn_factory]
+  crate = "tokio_pool_demo_impl"
+  function = "spawn_worker_tokio"
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    let pool = &config.actors[0];
+    assert_eq!(pool.name, "pool");
+
+    let factory = pool.spawn_factory.as_ref().expect("spawn_factory missing");
+    assert_eq!(factory.crate_name, "tokio_pool_demo_impl");
+    assert_eq!(factory.function, "spawn_worker_tokio");
+}
+
+#[test]
+fn test_parse_system_toml_embassy_runtime() {
+    // Runtime selection: embassy.
+    let toml = r#"
+[system]
+runtime = "embassy"
+
+[[actors]]
+name = "ping"
+blox = "ping-blox"
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    assert_eq!(config.system.runtime, "embassy");
+    assert_eq!(config.actors.len(), 1);
+}
+
+#[test]
+fn test_parse_system_toml_test_runtime() {
+    // Runtime selection: test.
+    let toml = r#"
+[system]
+runtime = "test"
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    assert_eq!(config.system.runtime, "test");
+}
+
+#[test]
+fn test_parse_system_toml_health_check_interval() {
+    // Supervisor with health check interval.
+    let toml = r#"
+[system]
+runtime = "tokio"
+
+[[supervision]]
+supervisor = "bloxide-supervisor"
+strategy = "one_for_all"
+children = ["worker-1", "worker-2"]
+health_check_interval_ms = 5000
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    let sup = &config.supervision[0];
+    assert_eq!(sup.strategy, "one_for_all");
+    assert_eq!(sup.children, vec!["worker-1", "worker-2"]);
+    assert_eq!(sup.health_check_interval_ms, Some(5000));
+    assert!(sup.policies.is_empty());
+}
+
+#[test]
+fn test_parse_system_toml_actor_no_behavior() {
+    // Actors without a behavior field (e.g. timer service, or bloxes with
+    // no generic B parameter).
+    let toml = r#"
+[system]
+runtime = "tokio"
+
+[[actors]]
+name = "timer"
+blox = "bloxide-timer"
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    let timer = &config.actors[0];
+    assert!(timer.behavior.is_none());
+    assert!(timer.behavior_traits.is_empty());
+    assert!(timer.inject.is_empty());
+    assert!(timer.spawn_factory.is_none());
+}
+
+#[test]
+fn test_parse_system_toml_missing_system_fails() {
+    // [system] table is required — parsing must fail without it.
+    let toml = r#"
+[[actors]]
+name = "ping"
+blox = "ping-blox"
+"#;
+
+    let result: Result<SystemConfig, _> = toml::from_str(toml);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_system_toml_empty_actors_and_supervision() {
+    // actors and supervision default to empty vecs when absent.
+    let toml = r#"
+[system]
+runtime = "tokio"
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    assert!(config.actors.is_empty());
+    assert!(config.supervision.is_empty());
 }

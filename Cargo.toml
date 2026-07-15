@@ -14,12 +14,20 @@ members = [
     "crates/bloxide-spawn",
     "crates/bloxide-supervisor",
     "crates/bloxide-timer",
+    "crates/bloxide-messaging",
     "runtimes/bloxide-embassy",
     "runtimes/bloxide-tokio",
     "crates/actions/ping-pong-actions",
     "crates/actions/pool-actions",
     "crates/actions/counter-actions",
     "crates/actions/bhsm-tst-actions",
+    "crates/context/blox-ctx-workers",
+    "crates/context/blox-ctx-pool-ref",
+    "crates/context/blox-ctx-rounds",
+    "crates/context/blox-ctx-current-timer",
+    "crates/context/blox-ctx-current-task",
+    "crates/context/blox-ctx-worker-peers",
+    "crates/context/blox-ctx-ticks",
     "crates/messages/ping-pong-messages",
     "crates/messages/pool-messages",
     "crates/messages/counter-messages",
@@ -55,12 +63,20 @@ bloxide-macros = { path = "crates/bloxide-macros" }
 bloxide-spawn = { path = "crates/bloxide-spawn" }
 bloxide-supervisor = { path = "crates/bloxide-supervisor" }
 bloxide-timer = { path = "crates/bloxide-timer" }
+bloxide-messaging = { path = "crates/bloxide-messaging" }
 bloxide-embassy = { path = "runtimes/bloxide-embassy" }
 bloxide-tokio = { path = "runtimes/bloxide-tokio" }
 ping-pong-actions = { path = "crates/actions/ping-pong-actions" }
 pool-actions = { path = "crates/actions/pool-actions" }
 counter-actions = { path = "crates/actions/counter-actions" }
 bhsm-tst-actions = { path = "crates/actions/bhsm-tst-actions" }
+blox-ctx-workers = { path = "crates/context/blox-ctx-workers" }
+blox-ctx-pool-ref = { path = "crates/context/blox-ctx-pool-ref" }
+blox-ctx-rounds = { path = "crates/context/blox-ctx-rounds" }
+blox-ctx-current-timer = { path = "crates/context/blox-ctx-current-timer" }
+blox-ctx-current-task = { path = "crates/context/blox-ctx-current-task" }
+blox-ctx-worker-peers = { path = "crates/context/blox-ctx-worker-peers" }
+blox-ctx-ticks = { path = "crates/context/blox-ctx-ticks" }
 ping-pong-messages = { path = "crates/messages/ping-pong-messages" }
 pool-messages = { path = "crates/messages/pool-messages" }
 counter-messages = { path = "crates/messages/counter-messages" }

@@ -45,48 +45,110 @@ stateDiagram-v2
 
 ## blox.toml
 
-> The blox.toml file drives code generation via `cargo blox generate`. It declares the event type and state topology that the codegen tool turns into Rust source files.
+> The blox.toml file drives code generation via `cargo blox generate`. It declares the event type, state topology, and optionally declarative transitions that the codegen tool turns into Rust source files.
+>
+> There are two codegen modes for transitions:
+> - **Legacy mode** (`handler_fns` present): references hand-written `StateFns` constants in `actions.rs`. Use during migration.
+> - **Declarative mode** (no `handler_fns`, `[[topology.transitions]]` present): generates `StateFns` constants directly from TOML. The single source of truth for transitions.
 
 ```toml
+[actor]
+name = "<BloxName>"
+
 [event]
 name = "<BloxName>Event"
-type = "enum"
-generics = ["R: BloxRuntime"]
 
-[[event.variants]]
-name = "Domain"
-type = "DomainMsg"
+[[event.mailboxes]]
+variant = "Msg"
+message = "DomainMsg"
+message_path = "domain_messages::DomainMsg"
 
-[[event.variants]]
-name = "Lifecycle"
-type = "LifecycleCommand"
+[context]
+name = "<BloxName>Ctx"
+generics = "<R: BloxRuntime>"
+actions_crate = "<blox>_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<DomainMsg, R>"
 
 [topology]
-name = "<BloxName>State"
-generics = ["R: BloxRuntime"]
 
 [[topology.states]]
 name = "Operational"
-kind = "composite"
+composite = true
 
 [[topology.states]]
 name = "Idle"
 parent = "Operational"
-kind = "leaf"
 initial = true
 
 [[topology.states]]
 name = "Working"
 parent = "Operational"
-kind = "leaf"
 
 [[topology.states]]
 name = "Done"
-kind = "leaf"
 terminal = true
+
+# --- Declarative transitions (omit handler_fns to activate this mode) ---
+
+# Idle: Begin event → transition to Working
+[[topology.transitions]]
+state = "Idle"
+event = "DomainMsg::Begin(_)"
+target = "Working"
+
+# Working: Complete event → action then guard
+[[topology.transitions]]
+state = "Working"
+event = "DomainMsg::Complete(_)"
+target = "stay"
+actions = ["send_done_to_peer"]
+
+[[topology.transitions.guards]]
+condition = "ctx.is_finished()"
+target = "Done"
+
+[[topology.transitions.guards]]
+condition = "_"
+target = "Idle"
+
+# Working: Finish event → transition to Done
+[[topology.transitions]]
+state = "Working"
+event = "DomainMsg::Finish(_)"
+target = "Done"
+
+# Entry/exit handlers
+[[topology.entry]]
+state = "Working"
+actions = ["increment_counter"]
+
+[[topology.exit]]
+state = "Working"
+actions = ["log_work_complete"]
 ```
 
-> The `[event]` section declares the event enum with its variants (domain messages + lifecycle commands). The `[topology]` section declares all states, their parent relationships, and which are initial/terminal. Codegen produces `events.rs`, `state.rs`, and `mailboxes_impls.rs` from this definition.
+> **State declarations** (`[[topology.states]]`): name, parent (optional), composite/initial/terminal/error flags.
+>
+> **Transition declarations** (`[[topology.transitions]]`):
+> - `state` — which state handles this transition (must match a declared state)
+> - `event` — match pattern, e.g. `DomainMsg::Begin(_)` or `DomainMsg::A(_) | DomainMsg::B(_)` for or-patterns
+> - `target` — `stay` (self-transition), `reset`, `fail`, or a state name (leaf states only)
+> - `actions` — list of action function references (e.g. `["Self::log_round", "send_initial_ping"]`)
+> - `[[topology.transitions.guards]]` — ordered guard branches; each has `condition` (Rust expression or `_` for catch-all) and `target`
+>
+> **Entry/exit** (`[[topology.entry]]` / `[[topology.exit]]`):
+> - `state` — which state this handler belongs to
+> - `actions` — list of `fn(&mut Ctx)` function references
+>
+> **Mode selection**: if `handler_fns` is present in `[topology]`, it takes precedence and declarative transitions serve as documentation only. To switch to fully generated code, remove `handler_fns` and ensure all action functions are free functions (not `Self::` methods on the spec impl).
+>
 > See `spec/architecture/12-action-crate-pattern.md` for the full blox.toml schema.
 
 ## States
