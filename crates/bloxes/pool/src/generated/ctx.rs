@@ -19,6 +19,7 @@ use pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg};
 ///
 /// `#[derive(BloxCtx)]` uses naming conventions for auto-detection:
 /// - `self_id: ActorId` → `impl HasSelfId` (auto-detected)
+/// - `worker_factory: WorkerSpawnFn<R>` → constructor parameter (auto-detected)
 /// - `worker_refs`, `worker_ctrls`, `pending` → state fields (zero-initialized)
 ///
 /// `self_ref` follows the `*_ref` + `ActorRef` convention and would generate
@@ -29,7 +30,6 @@ pub struct PoolCtx<R: BloxRuntime> {
     pub self_id: ActorId,
     #[ctor]
     pub self_ref: ActorRef<PoolMsg, R>,
-    #[ctor]
     pub worker_factory: WorkerSpawnFn<R>,
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
     pub worker_ctrls: Vec<ActorRef<WorkerCtrl<R>, R>>,

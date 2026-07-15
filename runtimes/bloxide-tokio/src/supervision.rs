@@ -222,10 +222,14 @@ impl ChildGroupBuilder {
     }
 }
 
+/// Spawn a dynamic supervised child actor and register its `JoinHandle` with `kill_cap`.
+///
+/// Registration is required so that `kill_cap.kill(child_id)` can abort the task.
 pub fn spawn_dynamic_supervised_child<F, Fut>(
     from: ActorId,
     control_ref: &ActorRef<SupervisorControl<TokioRuntime>, TokioRuntime>,
     notify_sender: &TokioSender<ChildLifecycleEvent>,
+    kill_cap: &crate::TokioKillCap,
     child_id: ActorId,
     policy: ChildPolicy,
     task_builder: F,
@@ -247,6 +251,83 @@ where
     )?;
 
     let notify = notify_sender.clone();
-    tokio::spawn(task_builder(lifecycle_rx, notify, child_id));
+    let handle = tokio::spawn(task_builder(lifecycle_rx, notify, child_id));
+    kill_cap.register(child_id, handle);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bloxide_core::KillCap;
+    use bloxide_supervisor::registry::GroupShutdown;
+    use std::time::Duration;
+    use tokio::time::sleep;
+
+    /// Spawn a dynamic child, call `kill_cap.kill(child_id)`, and verify the
+    /// underlying task is aborted — the entry is removed from the KillCap.
+    #[tokio::test]
+    async fn spawn_dynamic_child_then_kill_aborts_task() {
+        let group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+        let control_ref = group.control_ref();
+        let notify = group.notify_sender();
+        let kill_cap = group.kill_cap().clone();
+        let child_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
+
+        let (children, _notify_rx, _control_rx) = group.finish();
+        // Hold children so the control channel stays alive.
+        let _children = children;
+
+        spawn_dynamic_supervised_child(
+            child_id,
+            &control_ref,
+            &notify,
+            &kill_cap,
+            child_id,
+            ChildPolicy::Kill,
+            |_lc_rx, _sup_notify, _actor_id| async move {
+                loop {
+                    sleep(Duration::from_secs(100)).await;
+                }
+            },
+        )
+        .expect("register dynamic child");
+
+        assert!(kill_cap.contains(child_id));
+        kill_cap.kill(child_id);
+        sleep(Duration::from_millis(50)).await;
+        assert!(!kill_cap.contains(child_id));
+    }
+
+    /// Spawn a dynamic child and verify it is registered with the KillCap
+    /// (the child ID appears in the KillCap's internal task map).
+    #[tokio::test]
+    async fn spawn_dynamic_child_registers_with_kill_cap() {
+        let group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+        let control_ref = group.control_ref();
+        let notify = group.notify_sender();
+        let kill_cap = group.kill_cap().clone();
+        let child_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
+
+        let (children, _notify_rx, _control_rx) = group.finish();
+        let _children = children;
+
+        spawn_dynamic_supervised_child(
+            child_id,
+            &control_ref,
+            &notify,
+            &kill_cap,
+            child_id,
+            ChildPolicy::Kill,
+            |_lc_rx, _sup_notify, _actor_id| async move {
+                loop {
+                    sleep(Duration::from_secs(100)).await;
+                }
+            },
+        )
+        .expect("register dynamic child");
+
+        assert!(kill_cap.contains(child_id));
+        kill_cap.kill(child_id);
+    }
 }

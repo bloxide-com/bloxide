@@ -217,17 +217,22 @@ fn infer_role_from_convention(name: &Ident, ty: &Type) -> Result<FieldRole> {
 
     // Rule 3: `foo_factory: fn(...) -> ...` → Accessor for HasFooFactory
     // Pattern: field name ends with `_factory` and type is fn pointer
-    if name_str.ends_with("_factory") && is_fn_type(ty) {
-        let trait_name = format!("Has{}", to_pascal_case(&name_str));
-        let trait_ident = syn::Ident::new(&trait_name, name.span());
-        // Factory traits typically don't have runtime generics, but check
-        let runtime_generic = extract_runtime_generic(ty);
-        let trait_tokens = if let Some(rg) = runtime_generic {
-            quote!( #trait_ident<#rg> )
+    if name_str.ends_with("_factory") {
+        if is_fn_type(ty) {
+            let trait_name = format!("Has{}", to_pascal_case(&name_str));
+            let trait_ident = syn::Ident::new(&trait_name, name.span());
+            // Factory traits typically don't have runtime generics, but check
+            let runtime_generic = extract_runtime_generic(ty);
+            let trait_tokens = if let Some(rg) = runtime_generic {
+                quote!( #trait_ident<#rg> )
+            } else {
+                quote!( #trait_ident )
+            };
+            return Ok(FieldRole::Accessor(trait_tokens));
         } else {
-            quote!( #trait_ident )
-        };
-        return Ok(FieldRole::Accessor(trait_tokens));
+            // Type alias like WorkerSpawnFn<R> — treat as constructor parameter
+            return Ok(FieldRole::Ctor);
+        }
     }
 
     // Rule 4: Any other field type → treat as state (deprecated)
@@ -258,9 +263,15 @@ fn is_actor_ref_type(ty: &Type) -> bool {
 
 /// Check if type is a function pointer `fn(...) -> ...`.
 fn is_fn_type(ty: &Type) -> bool {
-    matches!(ty, Type::Path(TypePath { path, .. }) if path.segments.iter().any(|s| {
-        matches!(s.ident.to_string().as_str(), "fn" | "Fn" | "FnMut" | "FnOnce")
-    }))
+    match ty {
+        Type::BareFn(_) => true,
+        Type::Path(TypePath { path, .. }) => {
+            path.segments.iter().any(|s| {
+                matches!(s.ident.to_string().as_str(), "fn" | "Fn" | "FnMut" | "FnOnce")
+            })
+        }
+        _ => false,
+    }
 }
 
 /// Extract the runtime generic parameter R from a type like `ActorRef<M, R>`.

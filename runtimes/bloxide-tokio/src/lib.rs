@@ -170,11 +170,12 @@ macro_rules! spawn_child {
 /// call style for ergonomic dynamic supervision wiring.
 #[macro_export]
 macro_rules! spawn_child_dynamic {
-    ($from:expr, $control_ref:expr, $notify_sender:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
+    ($from:expr, $control_ref:expr, $notify_sender:expr, $kill_cap:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
         $crate::spawn_dynamic_supervised_child(
             $from,
             &$control_ref,
             &$notify_sender,
+            &$kill_cap,
             $id,
             $policy,
             move |lc_rx, sup_notify, actor_id| {

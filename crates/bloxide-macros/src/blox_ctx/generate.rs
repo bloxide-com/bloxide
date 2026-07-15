@@ -155,12 +155,26 @@ fn generate_accessor_impl(
     field_type: &syn::Type,
     trait_tokens: &TokenStream,
 ) -> TokenStream {
-    quote! {
-        impl #impl_generics #trait_tokens
-            for #struct_name #ty_generics #where_clause
-        {
-            fn #field_name(&self) -> &#field_type {
-                &self.#field_name
+    // Fn pointers (Type::BareFn) are Copy — return by value instead of by reference.
+    let returns_by_value = matches!(field_type, syn::Type::BareFn(_));
+    if returns_by_value {
+        quote! {
+            impl #impl_generics #trait_tokens
+                for #struct_name #ty_generics #where_clause
+            {
+                fn #field_name(&self) -> #field_type {
+                    self.#field_name
+                }
+            }
+        }
+    } else {
+        quote! {
+            impl #impl_generics #trait_tokens
+                for #struct_name #ty_generics #where_clause
+            {
+                fn #field_name(&self) -> &#field_type {
+                    &self.#field_name
+                }
             }
         }
     }

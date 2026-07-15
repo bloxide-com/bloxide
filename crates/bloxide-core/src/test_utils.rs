@@ -16,6 +16,7 @@ use futures_core::Stream;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::task::Waker;
 use std::task::{Context, Poll};
 use std::vec::Vec;
 
@@ -30,10 +31,17 @@ fn alloc_test_id() -> ActorId {
 // ── Shared in-memory queue ───────────────────────────────────────────────
 
 type Queue<M> = Arc<Mutex<VecDeque<Envelope<M>>>>;
+type SharedWaker = Arc<Mutex<Option<Waker>>>;
 
 pub struct TestSender<M: Send + 'static> {
     queue: Queue<M>,
     full: Arc<std::sync::atomic::AtomicBool>,
+    waker: SharedWaker,
+}
+
+pub struct TestReceiver<M: Send + 'static> {
+    queue: Queue<M>,
+    waker: SharedWaker,
 }
 
 impl<M: Send + 'static> TestSender<M> {
@@ -48,16 +56,13 @@ impl<M: Send + 'static> Clone for TestSender<M> {
         Self {
             queue: Arc::clone(&self.queue),
             full: Arc::clone(&self.full),
+            waker: Arc::clone(&self.waker),
         }
     }
 }
 
 unsafe impl<M: Send + 'static> Send for TestSender<M> {}
 unsafe impl<M: Send + 'static> Sync for TestSender<M> {}
-
-pub struct TestReceiver<M: Send + 'static> {
-    queue: Queue<M>,
-}
 
 impl<M: Send + 'static> TestReceiver<M> {
     pub fn drain_payloads(&mut self) -> Vec<M> {
@@ -74,11 +79,15 @@ impl<M: Send + 'static> TestReceiver<M> {
 impl<M: Send + 'static> Stream for TestReceiver<M> {
     type Item = Envelope<M>;
 
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut lock = self.queue.lock().unwrap();
         match lock.pop_front() {
             Some(env) => Poll::Ready(Some(env)),
-            None => Poll::Pending,
+            None => {
+                // Register the waker so future sends can wake this task.
+                *self.waker.lock().unwrap() = Some(cx.waker().clone());
+                Poll::Pending
+            }
         }
     }
 }
@@ -144,6 +153,10 @@ impl BloxRuntime for TestRuntime {
         envelope: Envelope<M>,
     ) -> Result<(), Self::SendError> {
         sender.queue.lock().unwrap().push_back(envelope);
+        // Wake any task that was polling the receiver.
+        if let Some(waker) = sender.waker.lock().unwrap().take() {
+            waker.wake();
+        }
         Ok(())
     }
 
@@ -155,6 +168,10 @@ impl BloxRuntime for TestRuntime {
             return Err(TestTrySendError);
         }
         sender.queue.lock().unwrap().push_back(envelope);
+        // Wake any task that was polling the receiver.
+        if let Some(waker) = sender.waker.lock().unwrap().take() {
+            waker.wake();
+        }
         Ok(())
     }
 }
@@ -169,11 +186,16 @@ impl crate::capability::DynamicChannelCap for TestRuntime {
         _capacity: usize,
     ) -> (ActorRef<M, Self>, Self::Receiver<M>) {
         let queue: Queue<M> = Arc::new(Mutex::new(VecDeque::new()));
+        let waker: SharedWaker = Arc::new(Mutex::new(None));
         let sender = TestSender {
             queue: Arc::clone(&queue),
             full: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            waker: Arc::clone(&waker),
         };
-        let receiver = TestReceiver { queue };
+        let receiver = TestReceiver {
+            queue: Arc::clone(&queue),
+            waker,
+        };
         (ActorRef::new(id, sender), receiver)
     }
 }

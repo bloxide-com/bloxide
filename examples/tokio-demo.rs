@@ -719,6 +719,7 @@ async fn main() {
     );
     let sup_control_ref = group.control_ref();
     let sup_notify = group.notify_sender();
+    let sup_kill_cap = group.kill_cap().clone();
     let sup_id = bloxide_tokio::next_actor_id!();
     let (children, sup_notify_rx, sup_control_rx) = group.finish();
 
@@ -752,6 +753,7 @@ async fn main() {
         sup_id,
         sup_control_ref,
         sup_notify,
+        sup_kill_cap,
         pong_task(pong2_machine, pong2_mbox, pong2_id),
         ChildPolicy::Stop
     )

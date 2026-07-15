@@ -31,6 +31,11 @@ impl TokioKillCap {
     pub fn unregister(&self, actor_id: ActorId) {
         self.tasks.lock().unwrap().remove(&actor_id);
     }
+
+    /// Returns true if the given actor is currently tracked by this KillCap.
+    pub fn contains(&self, actor_id: ActorId) -> bool {
+        self.tasks.lock().unwrap().contains_key(&actor_id)
+    }
 }
 
 impl Default for TokioKillCap {
