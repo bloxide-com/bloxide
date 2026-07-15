@@ -1,6 +1,7 @@
 [[messages]]
 name = "CounterMsg"
 visibility = "pub"
+copy = true
 
 [[messages.variants]]
 name = "Tick"

@@ -30,6 +30,7 @@ fn test_generate_counter_messages() {
 [[messages]]
 name = "CounterMsg"
 visibility = "pub"
+copy = true
 
 [[messages.variants]]
 name = "Tick"
@@ -54,7 +55,7 @@ name = "Tick"
     assert!(content.contains("pub enum CounterMsg {"));
     assert!(content.contains("Tick(Tick),"));
 
-    // Derives
+    // Derives — Copy is present because copy = true
     assert!(content.contains("#[derive(Debug, Clone, Copy)]"));
 
     // message_name method
@@ -63,11 +64,38 @@ name = "Tick"
 }
 
 #[test]
+fn test_generate_messages_no_copy_by_default() {
+    let toml = r#"
+[[messages]]
+name = "CounterMsg"
+visibility = "pub"
+
+[[messages.variants]]
+name = "Tick"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "counter-messages").expect("generate failed");
+
+    let msg_file = files
+        .iter()
+        .find(|(n, _)| n == "messages_countermsg.rs")
+        .expect("messages file missing");
+    let (_name, content) = msg_file;
+
+    // Default: Debug + Clone, but NOT Copy
+    assert!(content.contains("Debug"));
+    assert!(content.contains("Clone"));
+    assert!(!content.contains("Copy"));
+}
+
+#[test]
 fn test_generate_ping_pong_messages() {
     let toml = r#"
 [[messages]]
 name = "PingPongMsg"
 visibility = "pub"
+copy = true
 
 [[messages.variants]]
 name = "Ping"

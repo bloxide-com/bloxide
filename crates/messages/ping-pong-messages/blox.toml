@@ -1,6 +1,7 @@
 [[messages]]
 name = "PingPongMsg"
 visibility = "pub"
+copy = true
 
 [[messages.variants]]
 name = "Ping"

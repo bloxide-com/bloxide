@@ -419,16 +419,22 @@ pub fn delegatable(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Generate message structs and enum from a declarative specification.
 ///
-/// # Syntax
+/// By default derives `Debug, Clone`. Prefix with `copy,` to also derive `Copy`:
 ///
 /// ```ignore
+/// // Without Copy (default — supports non-Copy field types like Vec, String)
 /// blox_messages! {
-///     pub enum PingPongMsg {
-///         Ping { round: u32 },
-///         Pong { round: u32 },
-///         Resume {},
+///     pub enum WorkerMsg {
+///         DoWork { payload: Vec<u8> },
 ///     }
 /// }
+///
+/// // With Copy
+/// blox_messages!(copy, pub enum PingPongMsg {
+///     Ping { round: u32 },
+///     Pong { round: u32 },
+///     Resume {},
+/// })
 /// ```
 #[proc_macro]
 pub fn blox_messages(input: TokenStream) -> TokenStream {

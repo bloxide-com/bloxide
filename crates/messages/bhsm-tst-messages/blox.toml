@@ -1,6 +1,7 @@
 [[messages]]
 name = "BhsmTstMsg"
 visibility = "pub"
+copy = true
 
 [[messages.variants]]
 name = "A"

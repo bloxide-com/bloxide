@@ -107,6 +107,7 @@ impl syn::parse::Parse for BloxMessagesInput {
         }
 
         Ok(BloxMessagesInput {
+            copy,
             vis,
             enum_ident,
             variants,
@@ -117,6 +118,14 @@ impl syn::parse::Parse for BloxMessagesInput {
 pub(crate) fn blox_messages_inner(input: &BloxMessagesInput) -> syn::Result<TokenStream2> {
     let vis = &input.vis;
     let enum_ident = &input.enum_ident;
+    let copy = input.copy;
+
+    // Build the derive attribute: always Debug + Clone; add Copy only when opted in.
+    let derives = if copy {
+        quote! { #[derive(Debug, Clone, Copy)] }
+    } else {
+        quote! { #[derive(Debug, Clone)] }
+    };
 
     // Generate struct definitions and enum variants
     let mut struct_defs = Vec::new();
@@ -128,21 +137,19 @@ pub(crate) fn blox_messages_inner(input: &BloxMessagesInput) -> syn::Result<Toke
         // Use variant name as struct name (matches existing bloxide convention)
         let struct_ident = variant_ident.clone();
 
-        // Generate struct definition with Copy if all fields are Copy
-        // For simplicity, derive Copy for all generated structs - user can remove if needed
         if variant.fields.is_empty() {
-            // Unit struct for empty variants - always Copy
+            // Unit struct for empty variants
             struct_defs.push(quote! {
-                #[derive(Debug, Clone, Copy)]
+                #derives
                 #vis struct #struct_ident;
             });
         } else {
-            // Struct with named fields - derive Copy for primitive types
+            // Struct with named fields
             let field_idents: Vec<_> = variant.fields.iter().map(|(id, _)| id).collect();
             let field_types: Vec<_> = variant.fields.iter().map(|(_, ty)| ty).collect();
 
             struct_defs.push(quote! {
-                #[derive(Debug, Clone, Copy)]
+                #derives
                 #vis struct #struct_ident {
                     #(pub #field_idents: #field_types),*
                 }
@@ -161,9 +168,9 @@ pub(crate) fn blox_messages_inner(input: &BloxMessagesInput) -> syn::Result<Toke
         });
     }
 
-    // Generate the enum with Copy if possible (all variants are Copy)
+    // Generate the enum with the same derives
     let enum_def = quote! {
-        #[derive(Debug, Clone, Copy)]
+        #derives
         #vis enum #enum_ident {
             #(#enum_variants),*
         }

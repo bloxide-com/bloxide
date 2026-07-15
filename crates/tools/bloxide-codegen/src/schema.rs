@@ -21,6 +21,10 @@ pub struct ActorConfig {
 pub struct MessageEnumConfig {
     pub name: String,
     pub visibility: Option<String>,
+    /// When true, generated structs/enum also derive `Copy`.
+    /// Defaults to `false` — only `Debug` and `Clone` are derived.
+    #[serde(default)]
+    pub copy: bool,
     pub variants: Vec<MessageVariantConfig>,
 }
 

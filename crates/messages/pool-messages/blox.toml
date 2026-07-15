@@ -1,6 +1,7 @@
 [[messages]]
 name = "PoolMsg"
 visibility = "pub"
+copy = true
 
 [[messages.variants]]
 name = "SpawnWorker"
@@ -27,6 +28,7 @@ ty = "u32"
 [[messages]]
 name = "WorkerMsg"
 visibility = "pub"
+copy = true
 
 [[messages.variants]]
 name = "DoWork"

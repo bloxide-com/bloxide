@@ -20,6 +20,13 @@ pub fn generate(config: &MessageEnumConfig) -> anyhow::Result<String> {
 
     let enum_ident = format_ident!("{}", config.name);
 
+    // Build the derive attribute: always Debug + Clone; add Copy only when opted in.
+    let derives = if config.copy {
+        quote! { #[derive(Debug, Clone, Copy)] }
+    } else {
+        quote! { #[derive(Debug, Clone)] }
+    };
+
     let mut struct_defs = Vec::new();
     let mut enum_variants = Vec::new();
     let mut match_arms = Vec::new();
@@ -31,7 +38,7 @@ pub fn generate(config: &MessageEnumConfig) -> anyhow::Result<String> {
         if variant.fields.is_empty() {
             // Unit struct for empty variants
             struct_defs.push(quote! {
-                #[derive(Debug, Clone, Copy)]
+                #derives
                 #vis struct #struct_ident;
             });
         } else {
@@ -50,7 +57,7 @@ pub fn generate(config: &MessageEnumConfig) -> anyhow::Result<String> {
                 .collect::<Result<Vec<_>, _>>()?;
 
             struct_defs.push(quote! {
-                #[derive(Debug, Clone, Copy)]
+                #derives
                 #vis struct #struct_ident {
                     #(pub #field_idents: #field_types),*
                 }
@@ -68,7 +75,7 @@ pub fn generate(config: &MessageEnumConfig) -> anyhow::Result<String> {
     }
 
     let enum_def = quote! {
-        #[derive(Debug, Clone, Copy)]
+        #derives
         #vis enum #enum_ident {
             #(#enum_variants),*
         }
