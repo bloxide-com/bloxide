@@ -24,7 +24,7 @@ bloxide/
   crates/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
-    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], transitions!, #[blox_event], etc.
+    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], transitions!, #[delegatable], etc.
     bloxide-spawn/             ← dynamic actor support: SpawnCap, PeerCtrl, HasPeers, introduce_peers (no_std)
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
@@ -46,6 +46,12 @@ bloxide/
       embassy-demo-impl/       ← impl crate: PingBehavior (concrete behavior for Ping)
       counter-demo-impl/       ← impl crate: CounterBehavior for tokio-minimal-demo
       tokio-pool-demo-impl/    ← impl crate: tokio worker factory for pool demo
+    tools/
+      bloxide-codegen/         ← TOML-driven code generator library
+      cargo-blox/              ← CLI: cargo blox generate / new / build / check / test / run
+  tools/
+    bloxide-viz-export/        ← source-to-JSON exporter for visualizer
+    bloxide-visualizer/        ← browser-based state-machine visualizer
   runtimes/
     bloxide-embassy/           ← Embassy runtime implementation
     bloxide-tokio/             ← Tokio runtime implementation; implements SpawnCap and DynamicChannelCap
@@ -129,6 +135,11 @@ Then dive deeper as needed:
 | How do effects (timers) and capabilities work? | `spec/architecture/10-effects-and-capabilities.md` |
 | **How do action crates, impl crates, and bloxes fit together?** | **`spec/architecture/12-action-crate-pattern.md`** |
 | How do dynamic actors, factory injection, and peer introduction work? | `spec/architecture/11-dynamic-actors.md` |
+| How does factory injection interact with supervision? | `spec/architecture/13-factory-injection-and-supervision.md` |
+| How does the unified lifecycle model work? | `spec/architecture/14-unified-lifecycle.md` |
+| How does supervisor-owned spawning work? | `spec/architecture/15-supervisor-owned-spawning.md` |
+| What is the spawn service pattern? | `spec/architecture/16-spawn-service.md` |
+| How is SpawnCap designed? | `spec/architecture/17-spawn-cap-design.md` |
 | Spec for the Ping actor | `spec/bloxes/ping.md` |
 | Spec for the Pong actor | `spec/bloxes/pong.md` |
 | Spec for the Counter actor | `spec/bloxes/counter.md` |
@@ -190,10 +201,10 @@ The `#[derive(BloxCtx)]` macro supports these field annotations:
 - **`#[delegates(Trait1, Trait2, ...)]`** — Required for behavior fields. Generates forwarding impls
   to the inner type. Traits must be marked with `#[delegatable]` in their definition crate.
 
-**Deprecated (auto-detected by convention):**
-- ~~`#[self_id]`~~ — Auto-detected from `self_id: ActorId` field
-- ~~`#[provides(Trait)]`~~ — Auto-detected from `_ref` field naming convention
-- ~~`#[ctor]`~~ — Auto-detected for non-`_ref` fields (factories, etc.)
+**Auto-detected by convention; explicit annotations remain for backward compatibility:**
+- `#[self_id]` — Auto-detected from `self_id: ActorId` field
+- `#[provides(Trait)]` — Auto-detected from `_ref` field naming convention
+- `#[ctor]` — Auto-detected for non-`_ref` fields (factories, etc.)
 
 
 1. **`bloxide-core` is `no_std`** — zero OS, Tokio, or Embassy imports. `futures-core` is the only always-on runtime library dep; optional instrumentation deps (such as feature-gated `tracing`) must remain `no_std` compatible. Proc-macro crates (e.g., `bloxide-macros`) are exempt — they compile for the host and have no `no_std` impact.
@@ -211,24 +222,25 @@ The `#[derive(BloxCtx)]` macro supports these field annotations:
 13. **`is_error` takes precedence over `is_terminal`** — if a state returns `true` for both `is_error()` and `is_terminal()`, the runtime reports only `ChildLifecycleEvent::Failed` (not `Done`). Use `is_error` for fault states that should trigger supervisor intervention, and `is_terminal` for normal completion.
 14. **Logging via `bloxide-log` macros** — use `blox_log_info!`, `blox_log_debug!`, etc. from `bloxide-log`. Logging is a compile-time feature flag (`log` or `defmt`), not a runtime trait. Never add a `Logs` trait or logger generic parameter to blox contexts.
 
-15. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via `#[ctor]` fields in blox context structs. The binary (or impl crate) provides the concrete factory closure at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
+15. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (auto-detected by naming convention, e.g. `foo_factory: fn(...) -> ...`). The binary (or impl crate) provides the concrete factory closure at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
 16. **KillCap is a runtime capability, not a message** — `supervisor.kill(child_id)` immediately aborts the child's task without any callbacks firing. No `on_exit` handlers run; the task is dropped in-place. KillCap is for (1) unresponsive actors that cannot process Stop, or (2) cleanup of stopped actors whose resources should be freed immediately. Kill works for both static and dynamic actors; killed actors are permanently dead and cannot be restarted — normal lifecycle uses Reset/Stop through dispatch(). KillCap lives in `bloxide-core` as a trait; runtimes implement it (e.g., `TokioKillCap` wraps `JoinHandle::abort`). Supervisors hold a `KillCap` reference; actors never see it.
 
 ## Development Workflow
 
 1. **Spec first** — Write/update `spec/bloxes/<name>.md` with state diagram, events, transitions
-2. **Tests next** — Write `TestRuntime`-based tests per acceptance criteria
-3. **Then code** — Implement `MachineSpec` to pass tests
-4. **Review** — Verify impl matches spec; update tests if gaps found
-5. **Keep in sync** — Update spec diagrams if implementation reveals spec errors
+2. **Generate** — Run `cargo blox generate` to regenerate boilerplate from `blox.toml` specs
+3. **Tests next** — Write `TestRuntime`-based tests per acceptance criteria
+4. **Then code** — Implement `MachineSpec` to pass tests
+5. **Review** — Verify impl matches spec; update tests if gaps found
+6. **Keep in sync** — Update spec diagrams if implementation reveals spec errors
 
 See `skills/building-with-bloxide/SKILL.md` for the full step-by-step workflow.
 
 ## Clarification: Factory Injection and Supervision
 
-If you're confused about `#[ctor]` fields or why supervised actors return `&[]` for `root_transitions()`, read `spec/architecture/13-factory-injection-and-supervision.md`. It contains:
+If you're confused about constructor fields or why supervised actors return `&[]` for `root_transitions()`, read `spec/architecture/13-factory-injection-and-supervision.md`. It contains:
 
 - **Layer-by-layer walkthrough** of factory injection for dynamic spawning
-- **How `#[ctor]` works** and what code it generates
+- **How constructor fields work** and what code they generate
 - **Why lifecycle events bypass the actor's handler table** (two-stream architecture)
 - **Decision trees** for choosing field annotations

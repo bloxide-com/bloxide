@@ -6,7 +6,7 @@ use bloxide_core::{
     transition::ActionResult,
     transitions,
 };
-use bloxide_macros::{BloxCtx, StateTopology};
+use bloxide_macros::BloxCtx;
 
 use bloxide_core::lifecycle::ChildLifecycleEvent;
 
@@ -17,18 +17,12 @@ use crate::{
     registry::{ChildAction, ChildGroup},
 };
 
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(RUNNING_FNS, SHUTTING_DOWN_FNS)]
-pub enum SupervisorState {
-    Running,
-    ShuttingDown,
-}
+pub use crate::generated::topology::SupervisorState;
 
 #[derive(BloxCtx)]
 pub struct SupervisorCtx<R: BloxRuntime> {
-    #[self_id]
-    pub self_id: ActorId,
+    pub self_id: ActorId, // auto-detected as HasSelfId via naming convention
+    // children does not follow the *_ref naming convention, so #[provides] is required
     #[provides(HasChildren<R>)]
     pub children: ChildGroup<R>,
     pub pending: ChildAction,
@@ -198,7 +192,8 @@ impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
         Rt::Stream<SupervisorControl<R>>,
     );
 
-    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = supervisor_state_handler_table!(Self);
+    const HANDLER_TABLE: &'static [&'static StateFns<Self>] =
+        crate::supervisor_state_handler_table!(Self);
 
     fn initial_state() -> SupervisorState {
         SupervisorState::Running

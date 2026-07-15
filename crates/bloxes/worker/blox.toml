@@ -1,0 +1,46 @@
+[actor]
+name = "Worker"
+
+[event]
+name = "WorkerEvent"
+generics = "<R: BloxRuntime>"
+debug = false
+
+[[event.mailboxes]]
+variant = "Ctrl"
+message = "WorkerCtrl"
+message_path = "pool_messages::WorkerCtrl<R>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "WorkerMsg"
+message_path = "pool_messages::WorkerMsg"
+
+[topology]
+handler_fns = ["WAITING_FNS", "DONE_FNS"]
+
+[[topology.states]]
+name = "Waiting"
+initial = true
+
+[[topology.states]]
+name = "Done"
+terminal = true
+
+[context]
+name = "WorkerCtx"
+generics = "<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask>"
+actions_crate = "pool_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "pool_ref"
+ty = "ActorRef<PoolMsg, R>"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["HasWorkerPeers<R>", "HasCurrentTask"]

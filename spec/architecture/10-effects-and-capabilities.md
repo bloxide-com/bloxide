@@ -277,7 +277,7 @@ fn paused_state_resumes_after_timeout() {
     let ctx = PingCtx::new(ping_id, pong_ref, self_ref, timer_ref, TestBehavior::default());
     let mut machine = StateMachine::new(ctx);
 
-    machine.start();
+    machine.dispatch(PingEvent::Lifecycle(LifecycleCommand::Start));
     // ... drive rounds until Paused ...
 
     // Manually advance the virtual clock; ready callbacks enqueue Resume.

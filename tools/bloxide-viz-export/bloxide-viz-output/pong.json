@@ -1,0 +1,96 @@
+{
+  "name": "Pong",
+  "crate_path": "/home/bboganware/repos/bloxide/crates/bloxes/pong",
+  "states": [
+    {
+      "name": "Ready",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    },
+    {
+      "name": "Error",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    }
+  ],
+  "events": [
+    {
+      "message_set": "PingPongMsg",
+      "variant": "Ping",
+      "full_name": "PingPongMsg :: Ping (_ping)"
+    }
+  ],
+  "handlers": [
+    {
+      "state": "Ready",
+      "event": "PingPongMsg :: Ping (_ping)",
+      "label": "stay",
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "{ actions [Self :: reply_pong_action] guard (_ctx , results) { results . any_failed () => PongState :: Error , _ => stay , } }",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Error",
+      "event": "PingPongMsg :: Ping (_ping)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    }
+  ],
+  "entry_exit": {
+    "Error": {
+      "on_entry": [
+        "log_error"
+      ],
+      "on_exit": []
+    },
+    "Ready": {
+      "on_entry": [],
+      "on_exit": []
+    }
+  },
+  "message_sets": [
+    {
+      "name": "PingPongMsg",
+      "variants": [
+        "Ping"
+      ]
+    }
+  ],
+  "messages": [],
+  "actions": [],
+  "context": {
+    "struct_name": "PongCtx",
+    "fields": [
+      {
+        "name": "self_id",
+        "ty": "ActorId",
+        "annotations": []
+      },
+      {
+        "name": "peer_ref",
+        "ty": "ActorRef < PingPongMsg , R >",
+        "annotations": []
+      }
+    ]
+  }
+}

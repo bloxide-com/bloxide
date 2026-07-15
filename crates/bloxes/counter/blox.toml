@@ -1,0 +1,19 @@
+[actor]
+name = "Counter"
+
+[event]
+name = "CounterEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "CounterMsg"
+message_path = "counter_messages::CounterMsg"
+
+[topology]
+handler_fns = ["READY_FNS", "DONE_FNS"]
+
+[[topology.states]]
+name = "Ready"
+
+[[topology.states]]
+name = "Done"

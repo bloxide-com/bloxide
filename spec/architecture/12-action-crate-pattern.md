@@ -132,14 +132,10 @@ runtime crate or an impl crate.
 ```rust
 #[derive(BloxCtx)]
 pub struct PingCtx<R: BloxRuntime, B: CountsRounds + HasCurrentTimer> {
-    #[self_id]
-    pub self_id: ActorId,
-    #[provides(HasPeerRef<R>)]
-    pub peer_ref: ActorRef<PingPongMsg, R>,
-    #[provides(HasSelfRef<R>)]
-    pub self_ref: ActorRef<PingPongMsg, R>,
-    #[provides(HasTimerRef<R>)]
-    pub timer_ref: ActorRef<TimerCommand, R>,
+    pub self_id: ActorId,                       // auto-detected → impl HasSelfId
+    pub peer_ref: ActorRef<PingPongMsg, R>,      // auto-detected → impl HasPeerRef<R>
+    pub self_ref: ActorRef<PingPongMsg, R>,      // auto-detected → impl HasSelfRef<R>
+    pub timer_ref: ActorRef<TimerCommand, R>,    // auto-detected → impl HasTimerRef<R>
     #[delegates(HasCurrentTimer, CountsRounds)]
     pub behavior: B,
 }
@@ -164,11 +160,14 @@ It creates channels, constructs contexts, injects impl types, and starts tasks.
 
 `BloxCtx` exists to generate accessor impls and a constructor from annotated fields.
 
-Common annotations:
+Common field conventions (auto-detected by naming):
 
-- `#[self_id]` for `HasSelfId`
-- `#[provides(Trait<R>)]` for accessor traits backed by fields
-- `#[ctor]` for constructor-only fields
+- `self_id: ActorId` → `impl HasSelfId`
+- `foo_ref: ActorRef<M, R>` → `impl HasFooRef<R>`
+- `foo_factory: fn(...)` → constructor parameter only (no trait)
+
+Required annotation:
+
 - `#[delegates(TraitA, TraitB)]` for forwarding behavior traits to a contained field
 
 This lets bloxes stay explicit about what data they need without hand-writing a large

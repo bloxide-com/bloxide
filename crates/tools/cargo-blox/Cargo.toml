@@ -1,0 +1,23 @@
+[package]
+name = "cargo-blox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+description = "Cargo subcommand for Bloxide — generate, build, and manage actor projects"
+
+[[bin]]
+name = "cargo-blox"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+clap-cargo = { version = "0.15", features = ["cargo_metadata"] }
+cargo_metadata = "0.18"
+anyhow = "1"
+walkdir = "2"
+notify = "6"
+toml = "0.8"
+bloxide-codegen = { path = "../bloxide-codegen" }

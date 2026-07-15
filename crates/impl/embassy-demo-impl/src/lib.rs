@@ -1,6 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Concrete behavior trait implementations shared by ping-pong demos.
 //!
+//! Note: This crate is named embassy-demo-impl for historical reasons but contains
+//! runtime-agnostic Ping/Pong behavior implementations shared by both Embassy and Tokio demos.
+//!
 //! This crate provides a composite behavior type that implements all behavior
 //! traits defined in the action crate. The wiring binary injects it into the
 //! blox context at construction time.

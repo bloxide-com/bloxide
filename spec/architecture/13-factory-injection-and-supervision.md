@@ -5,9 +5,11 @@
 > return `&[]` from `root_transitions()`, or learning LCA transition patterns.
 > For the canonical lifecycle handling reference, see `02-hsm-engine.md`.
 
-This document clarifies two common confusion points: (1) how `#[ctor]` fields and factory injection work, and (2) why supervised actors don't handle lifecycle events in their `root_transitions()`.
+This document clarifies two common confusion points: (1) how factory injection works
+through naming-convention fields, and (2) why supervised actors don't handle lifecycle
+events in their `root_transitions()`.
 
-## Part 1: `#[ctor]` Fields and Factory Injection
+## Part 1: Factory Injection
 
 ### The Problem
 
@@ -21,7 +23,7 @@ How does the Pool invoke spawning logic without knowing the runtime?
 
 ### The Solution: Factory Injection
 
-The `#[ctor]` attribute marks a field as a **constructor parameter** that is injected at construction time. The blox stores a function pointer and invokes it without knowing its implementation.
+Fields matching the `_factory` naming convention are **constructor parameters** auto-detected by `#[derive(BloxCtx)]`. The blox stores a function pointer and invokes it without knowing its implementation.
 
 ### Layer-by-Layer Walkthrough
 
@@ -85,23 +87,20 @@ This crate is the **only place** that:
 - Imports `TokioRuntime` (binds to a specific runtime)
 - Calls `TokioRuntime::spawn` (uses runtime-specific spawning)
 
-**Layer 4 (blox)**: `pool/src/ctx.rs` declares the factory field with `#[ctor]`:
+**Layer 4 (blox)**: `pool/src/ctx.rs` declares the factory field, auto-detected by naming convention:
 
 ```rust
 #[derive(BloxCtx)]
 pub struct PoolCtx<R: BloxRuntime> {
-    #[self_id]
-    pub self_id: ActorId,
+    pub self_id: ActorId,                        // auto-detected → impl HasSelfId
     
     /// Pool's own ActorRef — keeps the pool channel open.
-    #[ctor]
-    pub self_ref: ActorRef<PoolMsg, R>,
+    pub self_ref: ActorRef<PoolMsg, R>,           // auto-detected → impl HasSelfRef<R>
     
     /// Factory function injected at construction time.
-    #[ctor]
-    pub worker_factory: WorkerSpawnFn<R>,
+    pub worker_factory: WorkerSpawnFn<R>,         // auto-detected → constructor parameter only
     
-    // Unannotated fields are Default::default() in constructor
+    // Fields without matching conventions use Default::default() in constructor
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
     pub worker_ctrls: Vec<ActorRef<WorkerCtrl<R>, R>>,
     pub pending: u32,
@@ -119,17 +118,17 @@ impl<R: BloxRuntime> HasWorkerFactory<R> for PoolCtx<R> {
 ```rust
 impl<R: BloxRuntime> PoolCtx<R> {
     pub fn new(
-        self_id: ActorId,                    // from #[self_id]
-        self_ref: ActorRef<PoolMsg, R>,      // from #[ctor]
-        worker_factory: WorkerSpawnFn<R>,    // from #[ctor]
+        self_id: ActorId,                    // from self_id field
+        self_ref: ActorRef<PoolMsg, R>,      // from _ref field
+        worker_factory: WorkerSpawnFn<R>,    // from _factory field
     ) -> Self {
         Self {
             self_id,
             self_ref,
             worker_factory,
-            worker_refs: Default::default(), // no annotation
-            worker_ctrls: Default::default(), // no annotation
-            pending: Default::default(),     // no annotation
+            worker_refs: Default::default(),
+            worker_ctrls: Default::default(),
+            pending: Default::default(),
         }
     }
 }
@@ -158,15 +157,15 @@ The factory injection pattern **does not require the blox to have `R: SpawnCap`*
 
 2. The Pool blox remains `R: BloxRuntime` only — it invokes `worker_factory(id, pool_ref)` unaware of whether the runtime is Tokio (spawn cap) or Embassy (static task registration).
 
-### Summary: `#[ctor]` Annotation Effects
+### Summary: Field Naming Convention Effects
 
-| Annotation | Constructor Param | Trait Impl Generated |
+| Field Pattern | Constructor Param | Trait Impl Generated |
 |------------|------------------|---------------------|
-| `#[self_id]` | ✅ Yes | `impl HasSelfId` |
-| `#[ctor]` | ✅ Yes | ❌ None |
-| `#[provides(Trait<R>)]` | ✅ Yes | `impl Trait<R>` |
-| `#[delegates(Trait1, Trait2)` | ✅ Yes | Via companion macro |
-| (no annotation) | ❌ No (Default::default()) | ❌ None |
+| `self_id: ActorId` | ✅ Yes | `impl HasSelfId` |
+| `foo_ref: ActorRef<M, R>` | ✅ Yes | `impl HasFooRef<R>` |
+| `foo_factory: fn(...)` | ✅ Yes | ❌ None |
+| `#[delegates(Trait1, Trait2)] behavior: B` | ✅ Yes | Via companion macro |
+| (no matching convention) | ❌ No (Default::default()) | ❌ None |
 
 ---
 
@@ -182,9 +181,9 @@ The invariant says:
 
 Does this mean supervised actors can't have global fallback handlers? Where do lifecycle events (Start, Reset, Stop) get handled?
 
-### The Answer: Two Separate Event Streams
+### The Answer: Unified Dispatch Through `VirtualRoot`
 
-The `SupervisedRunLoop` trait implementation runs a merged loop over **two independent streams**:
+Lifecycle commands now flow through `dispatch()` at the `VirtualRoot` level, just like domain events. The runtime wraps lifecycle commands into the actor's `Event` enum and dispatches them:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -200,29 +199,26 @@ The `SupervisedRunLoop` trait implementation runs a merged loop over **two indep
 │         │                                                         │
 │         ▼                                                         │
 │   ┌─────────────────────────────────────────┐                     │
-│   │  LifecycleCommand?                      │                     │
-│   │    Start    → machine.start()           │  ← BYPASSES         │
-│   │    Reset     → machine.reset()          │    HANDLER TABLE    │
-│   │    Stop     → exit task                 │                     │
-│   │    Ping     → send Alive notification   │                     │
-│   └─────────────────────────────────────────┘                     │
-│         │                                                         │
-│         ▼ (if domain event)                                      │
-│   ┌─────────────────────────────────────────┐                     │
-│   │  machine.dispatch(event)                │  ← USES             │
-│   │    → StateFns::transitions             │    HANDLER TABLE     │
-│   │    → bubbling → root_transitions()      │                     │
+│   │  Wrap into Event enum → dispatch(event) │                     │
+│   │    VirtualRoot intercepts lifecycle:    │                     │
+│   │      Start → exit Init, enter initial   │                     │
+│   │      Reset → full LCA exit, enter Init  │                     │
+│   │      Stop  → full LCA exit, enter Init   │                     │
+│   │      Ping  → emit Alive notification    │                     │
+│   │    User states handle domain events:      │                     │
+│   │      → StateFns::transitions             │                     │
+│   │      → bubbling → root_transitions()      │                     │
 │   └─────────────────────────────────────────┘                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Insights
 
-1. **Lifecycle events never reach `dispatch()`** — The runtime handles them directly via `machine.start()`, `machine.reset()`, etc.
+1. **Lifecycle commands flow through `dispatch()`** — The runtime wraps them into the actor's `Event` enum and dispatches them. VirtualRoot intercepts `LifecycleCommand` variants before any user-declared state sees them.
 
 2. **`root_transitions()` is for domain events only** — If no handler matches a domain event anywhere in the hierarchy, it bubbles to `root_transitions()`. If that's empty, the event is silently dropped.
 
-3. **Supervised actors don't need lifecycle handlers** — Lifecycle is not their concern; it's the runtime's concern. The actor's `MachineSpec` only defines domain behavior.
+3. **Supervised actors don't need lifecycle handlers** — Lifecycle is handled by VirtualRoot defaults. The actor's `MachineSpec` only defines domain behavior.
 
 4. **A supervised actor CAN have root transitions** — The invariant says "returns `&[]` for supervised actors" as a convention, not a technical requirement. If you have domain events that need global fallback handling, you can return non-empty `root_transitions()`. The lifecycle handling is orthogonal.
 
@@ -246,13 +242,13 @@ This is perfectly valid. Lifecycle commands still bypass the worker's handlers.
 
 ## Quick Reference
 
-### `#[ctor]` Decision Tree
+### Field Naming Convention Decision Tree
 
 ```
 Does the field need a trait impl generated?
-├── Yes: Use #[self_id] or #[provides(Trait<R>)] or #[delegates(...)]
+├── Yes: Use naming convention (self_id, foo_ref) or #[delegates(...)]
 └── No: Is it provided at construction time?
-    ├── Yes: Use #[ctor]
+    ├── Yes: Use _factory naming convention
     └── No: Leave unannotated (Default::default() in constructor)
 ```
 
@@ -281,7 +277,7 @@ Does the field need a trait impl generated?
 
 | Event Source | Processed By | Path Through |
 |--------------|--------------|--------------|
-| `lifecycle_stream` (Start, Reset, Stop, Ping) | Runtime's `SupervisedRunLoop` | Direct `machine.start()` / `machine.reset()` |
+| `lifecycle_stream` (Start, Reset, Stop, Ping) | Runtime's supervised run loop | `dispatch(event)` → VirtualRoot intercepts lifecycle |
 | `domain_mailboxes` (domain messages) | Actor's `MachineSpec` | `dispatch()` → handlers → bubbling → `root_transitions()` |
 
 ---

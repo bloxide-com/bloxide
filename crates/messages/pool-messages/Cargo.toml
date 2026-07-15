@@ -7,6 +7,9 @@ description = "Shared message types for the worker pool example"
 repository.workspace = true
 license.workspace = true
 
+[features]
+default = []
+
 [dependencies]
 bloxide-macros = { path = "../../bloxide-macros" }
 bloxide-core = { path = "../../bloxide-core" }

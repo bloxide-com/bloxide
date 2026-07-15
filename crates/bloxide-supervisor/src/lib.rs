@@ -6,6 +6,7 @@ extern crate alloc;
 pub mod actions;
 pub mod control;
 pub mod event;
+pub mod generated;
 pub mod prelude;
 pub mod registry;
 pub mod supervisor;

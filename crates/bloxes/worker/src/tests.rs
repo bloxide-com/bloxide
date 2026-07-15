@@ -19,12 +19,8 @@ mod worker_tests {
     use pool_messages::{AddWorkerPeer, WorkerCtrl};
     use pool_messages::{DoWork, PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
-    use crate::{WorkerCtx, WorkerEvent, WorkerSpec, WorkerState};
+    use crate::prelude::*;
 
-    // ── Test behavior type ───────────────────────────────────────────────────
-
-    /// Test behavior that holds worker state.
-    /// Implements the traits needed by WorkerCtx's behavior type parameter.
     #[derive(Default)]
     struct TestBehavior {
         task_id: u32,
@@ -55,8 +51,6 @@ mod worker_tests {
             &mut self.peers
         }
     }
-
-    // ── Test fixture ─────────────────────────────────────────────────────────
 
     struct WorkerHarness {
         machine: StateMachine<WorkerSpec<TestRuntime, TestBehavior>>,
@@ -108,8 +102,6 @@ mod worker_tests {
         }
     }
 
-    // ── Tests ────────────────────────────────────────────────────────────────
-
     #[test]
     fn worker_starts_in_waiting() {
         let mut h = WorkerHarness::new();
@@ -152,7 +144,6 @@ mod worker_tests {
         let mut h = WorkerHarness::new();
         h.start();
 
-        // Create a fake peer ActorRef
         let peer_id = TestRuntime::alloc_actor_id();
         let (peer_ref, _peer_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(peer_id, 16);
@@ -167,7 +158,6 @@ mod worker_tests {
         let mut h = WorkerHarness::new();
         h.start();
 
-        // Register two peers
         let peer1_id = TestRuntime::alloc_actor_id();
         let peer2_id = TestRuntime::alloc_actor_id();
         let (peer1_ref, mut peer1_rx) =
@@ -182,7 +172,6 @@ mod worker_tests {
         h.dispatch_do_work(3);
         assert_eq!(h.current_state(), MachineState::State(WorkerState::Done));
 
-        // Both peers should have received a PeerResult
         let p1_msgs = peer1_rx.drain_payloads();
         let p2_msgs = peer2_rx.drain_payloads();
         assert_eq!(p1_msgs.len(), 1, "peer1 should receive one PeerResult");
@@ -209,7 +198,6 @@ mod worker_tests {
         let mut h = WorkerHarness::new();
         h.start();
 
-        // PeerResult while in Waiting should be silently dropped (stay)
         h.machine.dispatch(
             Envelope(
                 0,

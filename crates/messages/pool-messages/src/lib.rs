@@ -1,23 +1,18 @@
-// Copyright 2025 Bloxide, all rights reserved.
+// Copyright 2025 Bloxide, all rights reserved
 //! Pure domain message types for the worker pool example.
 //!
 //! No runtime dependencies — only plain data.
 #![no_std]
 
+pub mod generated;
+
 pub mod prelude {
     pub use crate::*;
 }
 
-use bloxide_core::{ActorId, ActorRef, BloxRuntime};
-use bloxide_macros::blox_messages;
+pub use generated::*;
 
-// Messages sent to the pool actor.
-blox_messages! {
-    pub enum PoolMsg {
-        SpawnWorker { task_id: u32 },
-        WorkDone { worker_id: usize, task_id: u32, result: u32 },
-    }
-}
+use bloxide_core::{ActorId, ActorRef, BloxRuntime};
 
 /// Control messages for worker peer introduction.
 /// Sent on a dedicated control channel alongside domain WorkerMsg.
@@ -34,12 +29,4 @@ pub struct AddWorkerPeer<R: BloxRuntime> {
 
 pub struct RemoveWorkerPeer {
     pub peer_id: ActorId,
-}
-
-// Messages sent to a worker actor.
-blox_messages! {
-    pub enum WorkerMsg {
-        DoWork { task_id: u32 },
-        PeerResult { from_id: usize, result: u32 },
-    }
 }

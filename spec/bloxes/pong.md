@@ -14,19 +14,19 @@ The Pong actor responds to every `PingPongMsg::Ping` it receives by sending `Pin
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Ready : runtime calls machine.start()
+    [*] --> Ready : dispatch(Start)
 
     Ready --> Ready : PingPongMsg::Ping [NoTransition, sends PingPongMsg::Pong]
 ```
 
-> `[Init]` is engine-implicit (not in the `PongState` enum). The actor enters Init at construction and waits. The runtime calls `machine.start()` to exit Init and enter `Ready`. The runtime calls `machine.reset()` to return to Init.
+    > `[Init]` is engine-implicit (not in the `PongState` enum). The actor enters Init at construction and waits. `dispatch(PongEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`. `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` returns to Init.
 > `Ready` is the only user-declared state and is a leaf. `Ready → Ready` is `Stay`, not a self-transition — `on_entry` does not fire.
 
 ## States
 
 | State | Kind | Description |
 |-------|------|-------------|
-| `[Init]` | engine-implicit | Waiting for runtime `start()`; `on_init_entry` logs "reset" |
+| `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` logs "reset" |
 | `Ready` | leaf | Actively responding to pings; stays here indefinitely |
 
 ## Events
@@ -83,10 +83,10 @@ The response message is sent inside the transition action `reply_pong_action`, d
 
 ## Acceptance Criteria
 
-- [x] `machine.start()` exits Init and enters `Ready`; runtime emits `ChildLifecycleEvent::Started`
+- [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`; runtime emits `ChildLifecycleEvent::Started`
 - [x] `PingPongMsg::Ping(Ping { round: n })` in `Ready` sends `PingPongMsg::Pong(Pong { round: n })` to Ping and returns `Stay`
 - [x] `Ready::on_entry` does NOT fire on `PingPongMsg::Ping` (it is `Stay`, not a self-transition)
-- [x] `machine.reset()` returns to Init; `on_init_entry` fires (no-op); runtime emits `ChildLifecycleEvent::Reset`
+- [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` returns to Init; `on_init_entry` fires (no-op); runtime emits `ChildLifecycleEvent::Reset`
 - [x] Unknown events bubble to root (no root rules) and are silently dropped
 - [x] Pong has no round counter — it is stateless with respect to round tracking
 - [x] `is_terminal()` always returns `false` for Pong — it has no terminal state
@@ -105,7 +105,7 @@ The response message is sent inside the transition action `reply_pong_action`, d
 
 | Acceptance Criterion | Test Function | File |
 |---|---|---|
-| `machine.start()` exits Init → Ready | `test_start_enters_ready` | `tests.rs` |
+| `dispatch(LifecycleCommand::Start)` exits Init → Ready | `test_start_enters_ready` | `tests.rs` |
 | Ping in Ready triggers send_pong → stay | `test_ping_sends_pong` | `tests.rs` |
 | send_pong failure → Error | `test_send_failure` | `tests.rs` |
 | `is_error(Error)` returns true | (inline assertion) | `tests.rs` |

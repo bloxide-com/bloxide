@@ -19,17 +19,22 @@ members = [
     "crates/actions/ping-pong-actions",
     "crates/actions/pool-actions",
     "crates/actions/counter-actions",
+    "crates/actions/bhsm-tst-actions",
     "crates/messages/ping-pong-messages",
     "crates/messages/pool-messages",
     "crates/messages/counter-messages",
+    "crates/messages/bhsm-tst-messages",
     "crates/bloxes/ping",
     "crates/bloxes/pong",
     "crates/bloxes/worker",
     "crates/bloxes/pool",
     "crates/bloxes/counter",
+    "crates/bloxes/bhsm-tst",
     "crates/impl/embassy-demo-impl",
     "crates/impl/counter-demo-impl",
     "crates/impl/tokio-pool-demo-impl",
+    "crates/tools/bloxide-codegen",
+    "crates/tools/cargo-blox",
 ]
 resolver = "2"
 
@@ -55,17 +60,22 @@ bloxide-tokio = { path = "runtimes/bloxide-tokio" }
 ping-pong-actions = { path = "crates/actions/ping-pong-actions" }
 pool-actions = { path = "crates/actions/pool-actions" }
 counter-actions = { path = "crates/actions/counter-actions" }
+bhsm-tst-actions = { path = "crates/actions/bhsm-tst-actions" }
 ping-pong-messages = { path = "crates/messages/ping-pong-messages" }
 pool-messages = { path = "crates/messages/pool-messages" }
 counter-messages = { path = "crates/messages/counter-messages" }
+bhsm-tst-messages = { path = "crates/messages/bhsm-tst-messages" }
 ping-blox = { path = "crates/bloxes/ping" }
 pong-blox = { path = "crates/bloxes/pong" }
 worker-blox = { path = "crates/bloxes/worker" }
 pool-blox = { path = "crates/bloxes/pool" }
 counter-blox = { path = "crates/bloxes/counter" }
+bhsm-tst-blox = { path = "crates/bloxes/bhsm-tst" }
 embassy-demo-impl = { path = "crates/impl/embassy-demo-impl" }
 counter-demo-impl = { path = "crates/impl/counter-demo-impl" }
 tokio-pool-demo-impl = { path = "crates/impl/tokio-pool-demo-impl" }
+bloxide-codegen = { path = "crates/tools/bloxide-codegen" }
+cargo-blox = { path = "crates/tools/cargo-blox" }
 
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std", "tracing"] }
@@ -77,6 +87,8 @@ ping-blox = { workspace = true }
 pong-blox = { workspace = true }
 pool-blox = { workspace = true, features = ["std"] }
 counter-blox = { workspace = true }
+bhsm-tst-blox = { workspace = true }
+bhsm-tst-messages = { workspace = true }
 ping-pong-messages = { workspace = true }
 pool-messages = { workspace = true }
 counter-messages = { workspace = true }

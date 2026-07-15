@@ -1,0 +1,53 @@
+[actor]
+name = "Pool"
+
+[event]
+name = "PoolEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PoolMsg"
+message_path = "pool_messages::PoolMsg"
+
+[context]
+name = "PoolCtx"
+generics = "<R: BloxRuntime>"
+actions_crate = "pool_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "self_ref"
+ty = "ActorRef<PoolMsg, R>"
+
+[[context.fields]]
+name = "worker_factory"
+ty = "WorkerSpawnFn<R>"
+
+[[context.fields]]
+name = "worker_refs"
+ty = "Vec<ActorRef<WorkerMsg, R>>"
+
+[[context.fields]]
+name = "worker_ctrls"
+ty = "Vec<ActorRef<WorkerCtrl<R>, R>>"
+
+[[context.fields]]
+name = "pending"
+ty = "u32"
+
+[topology]
+handler_fns = ["IDLE_FNS", "ACTIVE_FNS", "ALL_DONE_FNS"]
+
+[[topology.states]]
+name = "Idle"
+initial = true
+
+[[topology.states]]
+name = "Active"
+
+[[topology.states]]
+name = "AllDone"
+terminal = true

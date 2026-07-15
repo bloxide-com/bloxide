@@ -1,0 +1,207 @@
+{
+  "name": "Pool",
+  "crate_path": "/home/bboganware/repos/bloxide/crates/bloxes/pool",
+  "states": [
+    {
+      "name": "Idle",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    },
+    {
+      "name": "Active",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    },
+    {
+      "name": "AllDone",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    }
+  ],
+  "events": [
+    {
+      "message_set": "PoolMsg",
+      "variant": "SpawnWorker",
+      "full_name": "PoolMsg :: SpawnWorker (_)"
+    },
+    {
+      "message_set": "PoolMsg",
+      "variant": "WorkDone",
+      "full_name": "PoolMsg :: WorkDone (_done)"
+    }
+  ],
+  "handlers": [
+    {
+      "state": "Idle",
+      "event": "PoolMsg :: SpawnWorker (_)",
+      "label": "stay",
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "{ actions [Self :: handle_spawn_worker] transition PoolState :: Active }",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Active",
+      "event": "PoolMsg :: SpawnWorker (_)",
+      "label": "stay",
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "{ actions [Self :: handle_spawn_worker] stay }",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Active",
+      "event": "PoolMsg :: WorkDone (_done)",
+      "label": "stay",
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "{ actions [Self :: handle_work_done] guard (ctx , _results) { ctx . pending () == 0 => PoolState :: AllDone , _ => stay , } }",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Idle",
+      "event": "PoolMsg :: WorkDone (_done)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "AllDone",
+      "event": "PoolMsg :: SpawnWorker (_)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "AllDone",
+      "event": "PoolMsg :: WorkDone (_done)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    }
+  ],
+  "entry_exit": {
+    "AllDone": {
+      "on_entry": [
+        "log_all_done"
+      ],
+      "on_exit": []
+    },
+    "Active": {
+      "on_entry": [],
+      "on_exit": []
+    },
+    "Idle": {
+      "on_entry": [],
+      "on_exit": []
+    }
+  },
+  "message_sets": [
+    {
+      "name": "PoolMsg",
+      "variants": [
+        "SpawnWorker",
+        "WorkDone"
+      ]
+    }
+  ],
+  "messages": [],
+  "actions": [],
+  "context": {
+    "struct_name": "PoolCtx",
+    "fields": [
+      {
+        "name": "self_id",
+        "ty": "ActorId",
+        "annotations": []
+      },
+      {
+        "name": "self_ref",
+        "ty": "ActorRef < PoolMsg , R >",
+        "annotations": [
+          "# [doc = \" Pool's own ActorRef — cloned into each worker at spawn time so the\"]",
+          "# [doc = \" worker can notify the pool when done. Also keeps the pool channel open.\"]",
+          "# [ctor]"
+        ]
+      },
+      {
+        "name": "worker_factory",
+        "ty": "WorkerSpawnFn < R >",
+        "annotations": [
+          "# [doc = \" Factory function injected at construction time; called to create and\"]",
+          "# [doc = \" spawn a worker without pool-blox knowing the concrete worker type.\"]",
+          "# [ctor]"
+        ]
+      },
+      {
+        "name": "worker_refs",
+        "ty": "Vec < ActorRef < WorkerMsg , R > >",
+        "annotations": [
+          "# [doc = \" Domain ActorRefs for all spawned workers (keeps their channels alive).\"]"
+        ]
+      },
+      {
+        "name": "worker_ctrls",
+        "ty": "Vec < ActorRef < WorkerCtrl < R > , R > >",
+        "annotations": [
+          "# [doc = \" Ctrl ActorRefs for all spawned workers (used for peer introduction).\"]"
+        ]
+      },
+      {
+        "name": "pending",
+        "ty": "u32",
+        "annotations": [
+          "# [doc = \" Number of workers whose `WorkDone` we are still waiting for.\"]"
+        ]
+      }
+    ]
+  }
+}

@@ -5,7 +5,7 @@ use crate::command::{next_timer_id, TimerCommand, TimerId, TIMER_ACTOR_ID};
 
 /// Accessor trait for blox contexts that hold a timer service reference.
 ///
-/// Implement via `#[provides(HasTimerRef<R>)]` on a `timer_ref` field
+/// Auto-detected from a `timer_ref: ActorRef<TimerCommand, R>` field
 /// in a `#[derive(BloxCtx)]` context struct.
 pub trait HasTimerRef<R: BloxRuntime> {
     fn timer_ref(&self) -> &ActorRef<TimerCommand, R>;

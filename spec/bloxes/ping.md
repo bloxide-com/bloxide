@@ -22,7 +22,7 @@ The Ping actor initiates and drives a ping-pong exchange with the Pong actor. It
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Active : runtime calls machine.start()
+    [*] --> Active : dispatch(Start)
 
     state Operating {
         Active
@@ -36,7 +36,7 @@ stateDiagram-v2
     Active --> Error : "PingPongMsg::Pong [results.any_failed()]"
 ```
 
-> `[Init]` is engine-implicit (not in the `PingState` enum). The actor enters Init at construction and waits. The runtime calls `machine.start()` to exit Init and enter the first operational state. The runtime calls `machine.reset()` to exit all operational states and re-enter Init.
+    > `[Init]` is engine-implicit (not in the `PingState` enum). The actor enters Init at construction and waits. `dispatch(PingEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters the first operational state. `dispatch(PingEvent::Lifecycle(LifecycleCommand::Reset))` exits all operational states and re-enters Init.
 > `Operating` is a composite state (never active). `Active`, `Paused`, `Done`, and `Error` are leaf states.
 > There is no external `Pause` signal — the transition is internally driven by the round counter.
 > The `Error` guard (`results.any_failed()`) is checked before round-based conditions, so action failures take priority.
@@ -45,7 +45,7 @@ stateDiagram-v2
 
 | State | Kind | Description |
 |-------|------|-------------|
-| `[Init]` | engine-implicit | Waiting for runtime `start()`; `on_init_entry` resets domain state |
+| `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` resets domain state |
 | `Operating` | composite | Groups `Active` and `Paused`; absorbs stray `Pong` while in `Paused` |
 | `Active` | leaf | One round in progress; sends ping on entry, waits for pong |
 | `Paused` | leaf | Exchange suspended; sets a timer on entry; stray `Pong` bubbles to Operating |
@@ -188,7 +188,7 @@ Exit:   Active.on_exit      ← (empty)
 Entry:  Error.on_entry      ← log_error (is_error() notifies supervisor via runtime as Failed)
 ```
 
-### `Done → [Init]` (runtime calls machine.reset())
+### `Done → [Init]` (dispatch Reset)
 ```
 current_state = Done, source_path = [Done]
 
@@ -207,7 +207,7 @@ Runtime emits: ChildLifecycleEvent::Reset to supervisor
 
 ## Acceptance Criteria
 
-- [x] `machine.start()` exits Init and enters Operating then Active; `Active::on_entry` fires; `increment_round` and `send_initial_ping` run
+- [x] `dispatch(PingEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters Operating then Active; `Active::on_entry` fires; `increment_round` and `send_initial_ping` run
 - [x] `PingPongMsg::Pong(n)` in `Active` with `round < PAUSE_AT_ROUND` self-transitions
 - [x] `PingPongMsg::Pong(n)` in `Active` with `round == PAUSE_AT_ROUND` transitions to `Paused`; timer is set
 - [x] After `PAUSE_DURATION_MS`, `PingPongMsg::Resume` arrives at `Paused` via mailbox; transitions to `Active`
@@ -216,7 +216,7 @@ Runtime emits: ChildLifecycleEvent::Reset to supervisor
 - [x] `is_terminal(&PingState::Done)` returns `true`
 - [x] `is_error(&PingState::Error)` returns `true`; runtime reports `ChildLifecycleEvent::Failed` (not `Done`)
 - [x] `PingPongMsg::Pong(n)` in `Active` when `results.any_failed()` transitions to `Error`; the error guard is checked before round-based guards
-- [x] `machine.reset()` from any state (including `Error`) exits all states and calls `on_init_entry`; behavior reset via B::default()
+- [x] `dispatch(PingEvent::Lifecycle(LifecycleCommand::Reset))` from any state (including `Error`) exits all states and calls `on_init_entry`; behavior reset via B::default()
 - [x] `on_init_entry` does NOT send any messages — it only resets domain state
 - [x] Unknown events bubble to root (no root rules) and are silently dropped
 
@@ -237,7 +237,7 @@ Runtime emits: ChildLifecycleEvent::Reset to supervisor
 
 | Acceptance Criterion | Test Function | File |
 |---|---|---|
-| `machine.start()` exits Init → Active | `test_start_enters_active` | `tests.rs` |
+| `dispatch(LifecycleCommand::Start)` exits Init → Active | `test_start_enters_active` | `tests.rs` |
 | Pong in Active with round < PAUSE self-transitions | `test_pong_in_active_continues` | `tests.rs` |
 | Pong in Active at PAUSE_AT_ROUND → Paused | `test_pong_at_pause_round` | `tests.rs` |
 | Resume in Paused → Active | `test_resume_from_paused` | `tests.rs` |
@@ -246,4 +246,4 @@ Runtime emits: ChildLifecycleEvent::Reset to supervisor
 | `is_terminal(Done)` returns true | (inline in test) | `tests.rs` |
 | `is_error(Error)` returns true | (inline in test) | `tests.rs` |
 | Pong with failed action → Error | `test_action_failure` | `tests.rs` |
-| `machine.reset()` clears state | `test_reset` | `tests.rs` |
+| `dispatch(LifecycleCommand::Reset)` clears state | `test_reset` | `tests.rs` |

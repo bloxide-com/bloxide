@@ -21,7 +21,7 @@ Workers are spawned dynamically by the Pool actor.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Waiting : runtime calls machine.start()
+    [*] --> Waiting : dispatch(Start)
     Waiting --> Done : WorkerMsg::DoWork
 ```
 
@@ -31,7 +31,7 @@ stateDiagram-v2
 
 | State | Kind | Description |
 |-------|------|-------------|
-| `[Init]` | engine-implicit | Waiting for `start()`; `on_init_entry` clears peers and task state |
+| `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` clears peers and task state |
 | `Waiting` | leaf, initial | Accumulating peer introductions; awaiting work assignment |
 | `Done` | leaf, terminal | Work complete; broadcast result to peers, notify pool |
 
@@ -110,7 +110,7 @@ pub struct WorkerCtx<R: BloxRuntime> {
 
 ## Acceptance Criteria
 
-- [ ] `machine.start()` exits Init and enters `Waiting`
+- [ ] `dispatch(WorkerEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Waiting`
 - [ ] `WorkerCtrl::AddPeer` in `Waiting` adds peer to list, stays in `Waiting`
 - [ ] `WorkerMsg::DoWork` in `Waiting` sets task_id and result, transitions to `Done`
 - [ ] `Done::on_entry` broadcasts result to all accumulated peers
@@ -122,7 +122,7 @@ pub struct WorkerCtx<R: BloxRuntime> {
 
 | Acceptance Criterion | Test Function |
 |---|---|
-| start enters Waiting | `test_start_enters_waiting()` |
+| `dispatch(LifecycleCommand::Start)` enters Waiting | `test_start_enters_waiting()` |
 | AddPeer accumulates | `test_add_peer_accumulates()` |
 | DoWork transitions to Done | `test_do_work_transitions()` |
 | Done broadcasts to peers | `test_done_broadcasts()` |

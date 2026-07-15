@@ -1,0 +1,29 @@
+[actor]
+name = "Pong"
+
+[context]
+name = "PongCtx"
+generics = "<R: BloxRuntime>"
+actions_crate = "ping_pong_actions"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "peer_ref"
+ty = "ActorRef<PingPongMsg, R>"
+
+[event]
+name = "PongEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+
+[topology]
+
+[[topology.states]]
+name = "Ready"
+initial = true

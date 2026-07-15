@@ -11,7 +11,7 @@ flowchart TD
     C["ChildGroupBuilder::new(strategy)\nspawn_child! per child task"] --> D
     D["group.finish()\nreturns ChildGroup + sup_notify_rx + sup_control_rx"] --> E
     E["sup_id = next_actor_id!()\nSupervisorCtx::new(sup_id, children)\nStateMachine::new(sup_ctx)"] --> F
-    F["sup_machine.start()\nspawner.must_spawn(supervisor_task(...))"] --> G
+    F["sup_machine.dispatch(Start)\nspawner.must_spawn(supervisor_task(...))"] --> G
     G["Start executor\nrun loops begin"]
 ```
 
@@ -64,14 +64,17 @@ flowchart LR
 `run_supervised_actor` is used for all actors in a supervised group. It polls lifecycle commands with priority over domain events:
 
 ```rust
-// SupervisedRunLoop trait method (implemented by the runtime crate):
-async fn run_supervised_actor<S: MachineSpec + 'static>(
+// Runtime-specific supervised actor function (implemented by the runtime crate):
+async fn run_supervised_actor<S, R>(
     machine: StateMachine<S>,
-    domain_mailboxes: S::Mailboxes<Self>,
-    lifecycle_stream: Self::Stream<LifecycleCommand>,   // runtime-internal
+    domain_mailboxes: S::Mailboxes<R>,
+    lifecycle_stream: R::Stream<LifecycleCommand>,   // runtime-internal
     actor_id: ActorId,
-    supervisor_notify: Self::Sender<ChildLifecycleEvent>, // runtime-internal
-);
+    supervisor_notify: R::Sender<ChildLifecycleEvent>, // runtime-internal
+)
+where
+    S: MachineSpec + 'static,
+    R: BloxRuntime;
 ```
 
 The `lifecycle_stream` and `supervisor_notify` arguments are created by `ChildGroupBuilder`/`spawn_child!` and passed to the task automatically. User code never sees them.
@@ -148,7 +151,7 @@ fn setup(spawner: Spawner) {
 
     let sup_ctx = SupervisorCtx::new(sup_id, children);
     let mut sup_machine = StateMachine::new(sup_ctx);
-    sup_machine.start();
+    sup_machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     spawner.must_spawn(supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)));
 }
 ```

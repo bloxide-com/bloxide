@@ -1,0 +1,36 @@
+[[messages]]
+name = "BhsmTstMsg"
+visibility = "pub"
+
+[[messages.variants]]
+name = "A"
+
+[[messages.variants]]
+name = "B"
+
+[[messages.variants]]
+name = "C"
+
+[[messages.variants]]
+name = "D"
+
+[[messages.variants]]
+name = "E"
+
+[[messages.variants]]
+name = "F"
+
+[[messages.variants]]
+name = "G"
+
+[[messages.variants]]
+name = "H"
+
+[[messages.variants]]
+name = "I"
+
+[[messages.variants]]
+name = "K"
+
+[[messages.variants]]
+name = "X"

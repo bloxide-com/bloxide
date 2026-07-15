@@ -1,0 +1,96 @@
+{
+  "name": "Counter",
+  "crate_path": "/home/bboganware/repos/bloxide/crates/bloxes/counter",
+  "states": [
+    {
+      "name": "Ready",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    },
+    {
+      "name": "Done",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    }
+  ],
+  "events": [
+    {
+      "message_set": "CounterMsg",
+      "variant": "Tick",
+      "full_name": "CounterMsg :: Tick (_tick)"
+    }
+  ],
+  "handlers": [
+    {
+      "state": "Ready",
+      "event": "CounterMsg :: Tick (_tick)",
+      "label": "stay",
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "{ actions [Self :: count_tick] guard (ctx , _results) { ctx . count () >= B :: Count :: from (DONE_AT_COUNT) => CounterState :: Done , _ => stay , } }",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Done",
+      "event": "CounterMsg :: Tick (_tick)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    }
+  ],
+  "entry_exit": {
+    "Ready": {
+      "on_entry": [],
+      "on_exit": []
+    },
+    "Done": {
+      "on_entry": [],
+      "on_exit": []
+    }
+  },
+  "message_sets": [
+    {
+      "name": "CounterMsg",
+      "variants": [
+        "Tick"
+      ]
+    }
+  ],
+  "messages": [],
+  "actions": [],
+  "context": {
+    "struct_name": "CounterCtx",
+    "fields": [
+      {
+        "name": "self_id",
+        "ty": "ActorId",
+        "annotations": []
+      },
+      {
+        "name": "behavior",
+        "ty": "B",
+        "annotations": [
+          "# [delegates (CountsTicks)]"
+        ]
+      }
+    ]
+  }
+}

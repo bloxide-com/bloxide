@@ -1,0 +1,19 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "bhsm-tst-blox"
+version.workspace = true
+edition.workspace = true
+description = "BhsmTst actor blox — deep HSM topology demo (QHsmTst)"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["std"]
+std = ["bloxide-core/std"]
+codegen = []
+
+[dependencies]
+bloxide-core = { workspace = true, features = ["alloc"] }
+bloxide-macros = { workspace = true }
+bhsm-tst-actions = { workspace = true }
+bhsm-tst-messages = { workspace = true }

@@ -1,0 +1,279 @@
+{
+  "name": "Ping",
+  "crate_path": "/home/bboganware/repos/bloxide/crates/bloxes/ping",
+  "states": [
+    {
+      "name": "Operating",
+      "kind": "Composite",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    },
+    {
+      "name": "Active",
+      "kind": "Leaf",
+      "parent": "Operating",
+      "description": "",
+      "depth": 1
+    },
+    {
+      "name": "Paused",
+      "kind": "Leaf",
+      "parent": "Operating",
+      "description": "",
+      "depth": 1
+    },
+    {
+      "name": "Done",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    },
+    {
+      "name": "Error",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    }
+  ],
+  "events": [
+    {
+      "message_set": "PingPongMsg",
+      "variant": "Pong",
+      "full_name": "PingPongMsg :: Pong (_)"
+    },
+    {
+      "message_set": "PingPongMsg",
+      "variant": "Resume",
+      "full_name": "PingPongMsg :: Resume (_resume)"
+    }
+  ],
+  "handlers": [
+    {
+      "state": "Operating",
+      "event": "PingPongMsg :: Pong (_)",
+      "label": "stay",
+      "actions": [],
+      "guard": {
+        "description": "Stay",
+        "raw": "stay",
+        "branches": [
+          {
+            "condition": "_",
+            "target": "Stay"
+          }
+        ]
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Active",
+      "event": "PingPongMsg :: Pong (_)",
+      "label": "stay",
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "{ actions [Self :: log_pong_received , Self :: forward_ping] guard (ctx , results) { results . any_failed () => PingState :: Error , ctx . round () >= B :: Round :: from (MAX_ROUNDS) => PingState :: Done , ctx . round () == B :: Round :: from (PAUSE_AT_ROUND) => PingState :: Paused , _ => PingState :: Active , } }",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Paused",
+      "event": "PingPongMsg :: Resume (_resume)",
+      "label": "stay",
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "{ actions [Self :: forward_ping] transition PingState :: Active }",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Paused",
+      "event": "PingPongMsg :: Pong (_)",
+      "label": "⬇️ stay (Operating)",
+      "actions": [],
+      "guard": {
+        "description": "Stay",
+        "raw": "stay",
+        "branches": [
+          {
+            "condition": "_",
+            "target": "Stay"
+          }
+        ]
+      },
+      "target": "Stay",
+      "source": {
+        "Inherited": "Operating"
+      },
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Active",
+      "event": "PingPongMsg :: Resume (_resume)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Done",
+      "event": "PingPongMsg :: Pong (_)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Done",
+      "event": "PingPongMsg :: Resume (_resume)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Error",
+      "event": "PingPongMsg :: Pong (_)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Error",
+      "event": "PingPongMsg :: Resume (_resume)",
+      "label": "∅",
+      "actions": [],
+      "guard": {
+        "description": "No handler — dropped",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Dropped",
+      "on_entry": [],
+      "on_exit": []
+    }
+  ],
+  "entry_exit": {
+    "Done": {
+      "on_entry": [
+        "log_done"
+      ],
+      "on_exit": []
+    },
+    "Active": {
+      "on_entry": [
+        "increment_round",
+        "log_round",
+        "send_initial_ping"
+      ],
+      "on_exit": []
+    },
+    "Error": {
+      "on_entry": [
+        "log_error"
+      ],
+      "on_exit": []
+    },
+    "Paused": {
+      "on_entry": [
+        "schedule_pause_timer"
+      ],
+      "on_exit": [
+        "cancel_pause_timer"
+      ]
+    },
+    "Operating": {
+      "on_entry": [],
+      "on_exit": []
+    }
+  },
+  "message_sets": [
+    {
+      "name": "PingPongMsg",
+      "variants": [
+        "Pong",
+        "Resume"
+      ]
+    }
+  ],
+  "messages": [],
+  "actions": [],
+  "context": {
+    "struct_name": "PingCtx",
+    "fields": [
+      {
+        "name": "self_id",
+        "ty": "ActorId",
+        "annotations": []
+      },
+      {
+        "name": "peer_ref",
+        "ty": "ActorRef < PingPongMsg , R >",
+        "annotations": []
+      },
+      {
+        "name": "self_ref",
+        "ty": "ActorRef < PingPongMsg , R >",
+        "annotations": []
+      },
+      {
+        "name": "timer_ref",
+        "ty": "ActorRef < TimerCommand , R >",
+        "annotations": []
+      },
+      {
+        "name": "behavior",
+        "ty": "B",
+        "annotations": [
+          "# [delegates (HasCurrentTimer , CountsRounds)]"
+        ]
+      }
+    ]
+  }
+}

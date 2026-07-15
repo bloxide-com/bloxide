@@ -2,11 +2,15 @@
 /// Describes the parent-child relationship of a state enum and provides
 /// precomputed root-first ancestry paths.
 ///
-/// Implement this trait via `#[derive(StateTopology)]` from `bloxide-macros`.
-/// The derive requires:
-/// - `#[repr(u8)]` on the enum (so `as usize` gives the discriminant index)
-/// - `#[composite]` attribute on composite (non-leaf) states
-/// - `#[parent(ParentVariant)]` attribute on each non-top-level state
+/// This trait is implemented by code generated from `blox.toml` by
+/// `bloxide-codegen`. The `[topology]` section defines:
+/// - `handler_fns` for the handler table macro
+/// - `[[topology.states]]` entries with `name`, `composite = true`, and `parent` fields
+///
+/// After running `cargo blox generate`, the generated code provides:
+/// - The state enum with `#[repr(u8)]`
+/// - `impl StateTopology` with parent/leaf/path/index methods
+/// - A handler table macro for `MachineSpec::HANDLER_TABLE`
 ///
 /// # Invariants
 ///
@@ -69,7 +73,7 @@ impl<S: StateTopology> LeafState<S> {
     /// passing a non-leaf state is undefined behavior — the engine assumes
     /// all active states and transition targets are leaves.
     ///
-    /// The `#[derive(StateTopology)]` macro only generates `LeafState` values
+    /// The `bloxide-codegen` topology generator only produces `LeafState` values
     /// for leaf states; manual construction must ensure the same.
     #[inline]
     pub fn new(state: S) -> Self {

@@ -2,6 +2,24 @@
 use proc_macro2::{Delimiter, Ident, TokenStream as TokenStream2, TokenTree};
 use quote::quote;
 
+/// Convert a PascalCase identifier to UPPER_SNAKE_CASE.
+/// E.g. "Lifecycle" -> "LIFECYCLE", "GoB" -> "GO_B", "SelfLoop" -> "SELF_LOOP".
+pub(crate) fn to_upper_snake_case(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    let chars: Vec<char> = s.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if c.is_uppercase() && i > 0 {
+            let prev_lower = chars[i - 1].is_lowercase() || chars[i - 1].is_ascii_digit();
+            let next_lower = chars.get(i + 1).is_some_and(|c| c.is_lowercase());
+            if prev_lower || (chars[i - 1].is_uppercase() && next_lower) {
+                out.push('_');
+            }
+        }
+        out.push(c.to_ascii_uppercase());
+    }
+    out
+}
+
 // ── Shorthand pattern detection ───────────────────────────────────────────────
 //
 // Pattern classification determines how a transition arm's pattern is matched:
@@ -242,7 +260,7 @@ fn extract_event_tag(pat: &TokenStream2) -> TokenStream2 {
     let enum_path: Vec<_> = path_segments[..path_segments.len() - 1].to_vec();
 
     // Convert variant name to UPPER_SNAKE_CASE
-    let upper_snake = crate::event_tag::to_upper_snake_case(&variant_ident.to_string());
+    let upper_snake = to_upper_snake_case(&variant_ident.to_string());
     let tag_const = quote::format_ident!("{}_TAG", upper_snake);
 
     // Build the qualified path: EnumPath::VARIANT_TAG

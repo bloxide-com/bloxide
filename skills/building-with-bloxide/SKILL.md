@@ -31,20 +31,33 @@ Layer 5 — Binary        Channels, context construction, task spawning.
 
 Shared message enums used by two or more bloxes. Pure data — no `ActorRef`, no runtime types.
 
-```rust
-// crates/messages/ping-pong-messages/src/lib.rs
-#![no_std]
+Define messages in `blox.toml` and generate via `cargo blox generate`:
 
-use bloxide_macros::blox_messages;
+```toml
+// crates/messages/ping-pong-messages/blox.toml
+[[messages]]
+name = "PingPongMsg"
+visibility = "pub"
 
-blox_messages! {
-    pub enum PingPongMsg {
-        Ping { round: u32 },
-        Pong { round: u32 },
-        Resume {},
-    }
-}
+[[messages.variants]]
+name = "Ping"
+
+[[messages.variants.fields]]
+name = "round"
+ty = "u32"
+
+[[messages.variants]]
+name = "Pong"
+
+[[messages.variants.fields]]
+name = "round"
+ty = "u32"
+
+[[messages.variants]]
+name = "Resume"
 ```
+
+After editing `blox.toml`, run `cargo blox generate` to produce `src/generated/messages_pingpongmsg.rs`.
 
 **Rules:**
 - Use named struct variants: `Ping { round: u32 }`, not `Ping(u32)`
@@ -133,9 +146,9 @@ Bloxes with no mutable state (like Pong) skip this layer entirely.
 
 A blox crate defines:
 
-1. **State topology** via `#[derive(StateTopology)]`
+1. **State topology** via `blox.toml` + `cargo blox generate`
 2. **Context struct** via `#[derive(BloxCtx)]`
-3. **Event enum** via `event!` macro
+3. **Event enum** via `blox.toml` + `cargo blox generate`
 4. **`MachineSpec`** with `StateFns` tables and `transitions!` macro
 
 ### Context Struct
@@ -171,14 +184,24 @@ pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds> {
 
 ### Event Enum
 
-Use the `event!` macro to define the unified event type:
+Define the unified event type in `blox.toml`:
+
+```toml
+// crates/bloxes/ping/blox.toml
+[event]
+name = "PingEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+```
+
+After running `cargo blox generate`, use the generated event in `src/events.rs`:
 
 ```rust
 // crates/bloxes/ping/src/events.rs
-use bloxide_macros::event;
-use ping_pong_messages::PingPongMsg;
-
-event!(Ping { Msg: PingPongMsg });
+pub use crate::generated::events::*;
 ```
 
 This generates:
@@ -189,36 +212,60 @@ This generates:
 
 For multiple mailboxes:
 
-```rust
-event!(Worker<R> { 
-    Ctrl: WorkerCtrl<R>,   // Index 0 (higher priority)
-    Msg: WorkerMsg         // Index 1
-});
+```toml
+[event]
+name = "WorkerEvent"
+generics = "<R: BloxRuntime>"
+
+[[event.mailboxes]]
+variant = "Ctrl"
+message = "WorkerCtrl"
+message_path = "pool_messages::WorkerCtrl"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "WorkerMsg"
+message_path = "pool_messages::WorkerMsg"
 ```
 
 ### State Topology
 
-```rust
-use bloxide_macros::StateTopology;
+Define state topology in `blox.toml`:
 
-#[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-#[repr(u8)]
-#[handler_fns(OPERATING_FNS, ACTIVE_FNS, PAUSED_FNS, DONE_FNS, ERROR_FNS)]
-pub enum PingState {
-    #[composite]
-    Operating,
-    #[parent(Operating)]
-    Active,
-    #[parent(Operating)]
-    Paused,
-    Done,
-    Error,
-}
+```toml
+// crates/bloxes/ping/blox.toml
+[topology]
+handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
+
+[[topology.states]]
+name = "Operating"
+composite = true
+
+[[topology.states]]
+name = "Active"
+parent = "Operating"
+
+[[topology.states]]
+name = "Paused"
+parent = "Operating"
+
+[[topology.states]]
+name = "Done"
+
+[[topology.states]]
+name = "Error"
 ```
 
-- Use `#[composite]` for non-leaf states
-- Use `#[parent(ParentState)]` for child states
-- `#[handler_fns(...)]` generates the handler table macro
+- Use `composite = true` for non-leaf states
+- Use `parent = "ParentState"` for child states
+- `handler_fns` generates the handler table macro
+
+After running `cargo blox generate`, use the generated state enum in `src/spec.rs`:
+
+```rust
+pub use crate::generated::topology::PingState;
+use crate::generated::topology::ping_state_handler_table;
+```
 
 ### Transition Rules
 
@@ -290,6 +337,10 @@ MyMsg::Foo(_) => {
 ### MachineSpec Implementation
 
 ```rust
+// src/spec.rs
+pub use crate::generated::topology::PingState;
+use crate::generated::topology::ping_state_handler_table;
+
 impl<R, B> MachineSpec for PingSpec<R, B>
 where
     R: BloxRuntime,
@@ -354,6 +405,62 @@ let mut sup_machine = StateMachine::<SupervisorSpec<TokioRuntime>>::new(sup_ctx)
 sup_machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
 supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
 ```
+
+## Code Generation with `cargo blox`
+
+Bloxide supports build-time code generation via the `cargo blox` CLI tool.
+
+### Installation
+
+```bash
+cargo install --path crates/tools/cargo-blox
+```
+
+### Creating a New Blox
+
+```bash
+cargo blox new my-actor
+```
+
+This scaffolds the five-layer crate structure:
+- `crates/messages/my-actor-messages/`
+- `crates/actions/my-actor-actions/`
+- `crates/bloxes/my-actor/`
+
+### Generating Boilerplate
+
+After editing `blox.toml` in any crate, run:
+
+```bash
+cargo blox generate
+```
+
+This regenerates:
+- Message structs and enums from `messages` tables
+- Event types from `event` tables
+- State topology enums from `topology` tables
+
+### Building with Code Generation
+
+```bash
+cargo blox build    # generate + cargo build
+cargo blox check    # generate + cargo check (fastest)
+cargo blox test     # generate + cargo test
+cargo blox run      # generate + cargo run
+```
+
+### Running `cargo blox generate`
+
+After editing `blox.toml` in any crate, run:
+
+```bash
+cargo blox generate
+```
+
+This regenerates:
+- Message structs and enums from `messages` tables
+- Event types from `event` tables
+- State topology enums and handler table macros from `topology` tables
 
 ## Key Invariants
 

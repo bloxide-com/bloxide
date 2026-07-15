@@ -1,23 +1,12 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Procedural macros for bloxide.
 //!
-//! Provides ergonomic derive and attribute macros that complement the
-//! declarative macros in `bloxide-core`.
+//! Provides ergonomic derive and attribute macros for blox authors.
 //!
 //! # Available macros
 //!
 //! - `#[derive(BloxCtx)]` — derive accessor trait impls and a `fn new(...)`
 //!   constructor for a blox context struct.
-//!
-//! - `#[derive(StateTopology)]` — derive `StateTopology` for a state enum.
-//!
-//! - `#[derive(EventTag)]` — derive `EventTag` for an event enum.
-//!
-//! - `#[blox_event]` — generate `From<Envelope<M>>` impls, `EventTag` impl,
-//!   tag constants, and payload accessors for every variant of a blox event enum.
-//!
-//! - `mailboxes_impls!(N)` — generate `impl Mailboxes<E> for (S1, ..., SK)`
-//!   for every arity `k` from 1 to N. Removes the hard tuple-arity cap.
 //!
 //! - `channels!(RuntimeType; MsgType1(CAP1), MsgType2(CAP2), ...)` — generate
 //!   channel creation code for any number of mailboxes via `StaticChannelCap`.
@@ -31,6 +20,9 @@
 //!
 //! - `#[delegatable]` — keep a trait definition unchanged and emit a companion
 //!   `macro_rules! __delegate_TraitName` macro that generates forwarding impls.
+//!
+//! - `next_actor_id!()` — allocate the next compile-time actor ID from the
+//!   same counter used by `channels!`.
 
 use proc_macro::TokenStream;
 
@@ -52,35 +44,14 @@ mod blox_messages;
 
 /// Derive accessor trait impls and a `fn new(...)` constructor for a blox context struct.
 ///
-/// # Supported field annotations
+/// # Convention-based detection (primary)
 ///
-/// - `#[self_id]` — generates `impl HasSelfId for Struct { fn self_id(&self) -> ActorId }`
-/// - `#[provides(TraitName<R>)]` — generates `impl TraitName<R> for Struct` with a
-///   single accessor method (method name = field name, return type = `&FieldType`)
-/// - `#[ctor]` — marks the field as a constructor parameter without generating any
-///   trait impl; useful for fields that the runtime injects (e.g., factory closures,
-///   spawn capabilities) that should not be exposed as `HasXRef` accessor traits.
+/// Field roles are inferred from naming convention and type:
 ///
-///   Example:
-///   ```ignore
-///   #[derive(BloxCtx)]
-///   pub struct PoolCtx<R: BloxRuntime> {
-///       #[self_id]
-///       pub self_ref: ActorRef<PoolMsg, R>,
-///       #[provides(WorkerRef)]
-///       pub workers: Vec<ActorRef<WorkerMsg, R>>,
-///       #[ctor]
-///       spawn_worker: WorkerSpawnFn<R>,  // Injected at construction, no accessor trait
-///   }
-///   ```
-/// - `#[delegates(TraitName)]` — emits `__delegate_TraitName!(...)` companion macro
-///   invocations that generate forwarding impls (the trait must be annotated with
-///   `#[delegatable]` from this crate)
-///
-/// # Constructor
-///
-/// `fn new(...)` takes annotated fields as parameters and zero-initializes
-/// unannotated fields via `Default::default()`.
+/// - `self_id: ActorId` → `impl HasSelfId`
+/// - `foo_ref: ActorRef<M, R>` → `impl HasFooRef<R>`
+/// - `foo_factory: fn(...) -> ...` → `impl HasFooFactory`
+/// - Other fields → constructor parameter (no trait impl)
 ///
 /// # Example
 ///
@@ -88,13 +59,11 @@ mod blox_messages;
 /// // Doc test ignored: imports not resolvable in rustdoc compilation context
 /// #[derive(BloxCtx)]
 /// pub struct PingCtx<R: BloxRuntime> {
-///     #[self_id]
-///     pub self_id: ActorId,
-///     #[provides(HasPeerRef<R>)]
-///     pub peer_ref: ActorRef<PingPongMsg, R>,
-///     #[provides(HasTimerRef<R>)]
-///     pub timer_ref: ActorRef<TimerCommand, R>,
-///     pub round: u32,           // → Default::default() in constructor
+///     pub self_id: ActorId,                    // → impl HasSelfId
+///     pub peer_ref: ActorRef<PingPongMsg, R>,   // → impl HasPeerRef<R>
+///     pub timer_ref: ActorRef<TimerCommand, R>, // → impl HasTimerRef<R>
+///     #[delegates(HasCurrentTimer, CountsRounds)]
+///     pub behavior: B,
 /// }
 /// ```
 ///
@@ -102,7 +71,29 @@ mod blox_messages;
 /// - `impl HasSelfId for PingCtx<R>`
 /// - `impl HasPeerRef<R> for PingCtx<R> { fn peer_ref(&self) -> &ActorRef<...> }`
 /// - `impl HasTimerRef<R> for PingCtx<R> { fn timer_ref(&self) -> &ActorRef<...> }`
-/// - `fn new(self_id, peer_ref, timer_ref) -> Self { round: 0, ... }`
+/// - Forwarding `impl HasCurrentTimer for PingCtx<R> { ... }` via `__delegate_HasCurrentTimer!`
+/// - Forwarding `impl CountsRounds for PingCtx<R> { ... }` via `__delegate_CountsRounds!`
+/// - `fn new(self_id, peer_ref, timer_ref, behavior) -> Self`
+///
+/// # Supported field annotations
+///
+/// Explicit annotations are supported for backward compatibility but are
+/// auto-detected by field naming convention in most cases:
+///
+/// - `#[self_id]` — same as `self_id: ActorId` convention
+/// - `#[provides(TraitName<R>)]` — generates `impl TraitName<R> for Struct` with a
+///   single accessor method (method name = field name, return type = `&FieldType`)
+/// - `#[ctor]` — marks the field as a constructor parameter without generating any
+///   trait impl; useful when a field matches a naming convention but you don't
+///   want the associated trait impl generated
+/// - `#[delegates(TraitName)]` — emits `__delegate_TraitName!(...)` companion macro
+///   invocations that generate forwarding impls (the trait must be annotated with
+///   `#[delegatable]` from this crate)
+///
+/// # Constructor
+///
+/// `fn new(...)` takes annotated or convention-detected constructor fields as
+/// parameters and zero-initializes plain state fields via `Default::default()`.
 #[proc_macro_derive(BloxCtx, attributes(self_id, ctor, provides, delegates))]
 pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);

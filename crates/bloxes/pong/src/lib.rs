@@ -4,15 +4,11 @@
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod actions;
+pub mod generated;
 pub mod prelude;
 
-mod ctx;
-mod events;
-mod spec;
-
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))]
 mod tests;
 
-pub use ctx::PongCtx;
-pub use events::PongEvent;
-pub use spec::{PongSpec, PongState};
+pub use generated::*;

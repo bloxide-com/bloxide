@@ -21,10 +21,10 @@ pub const LIFECYCLE_TAG: u8 = 254;
 /// — a rule with this tag always proceeds to the `matches` call regardless
 /// of the incoming event's tag.
 ///
-/// Implement this trait via:
-/// - `#[derive(EventTag)]` on the event enum (from `bloxide-macros`)
-/// - The `blox_event!` declarative macro (generates the impl automatically)
-/// - The `#[blox_event]` proc-macro attribute (generates the impl automatically)
+/// This trait is implemented by code generated from `blox.toml` by
+/// `bloxide-codegen`. The `[event]` section defines the event enum name,
+/// mailbox variants, and message types. After running `cargo blox generate`,
+/// the generated event enum includes an `impl EventTag` with sequential tags.
 pub trait EventTag {
     /// Returns the `u8` discriminant tag for this event variant.
     /// Tags are assigned by variant declaration order starting at 0.

@@ -1,0 +1,46 @@
+[actor]
+name = "BhsmTst"
+
+[event]
+name = "BhsmTstEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "BhsmTstMsg"
+message_path = "bhsm_tst_messages::BhsmTstMsg"
+
+[topology]
+handler_fns = ["S_FNS", "S1_FNS", "S11_FNS", "S2_FNS", "S21_FNS", "S211_FNS", "ERROR_FNS", "DONE_FNS"]
+
+[[topology.states]]
+name = "S"
+composite = true
+
+[[topology.states]]
+name = "S1"
+parent = "S"
+composite = true
+
+[[topology.states]]
+name = "S11"
+parent = "S1"
+
+[[topology.states]]
+name = "S2"
+parent = "S"
+composite = true
+
+[[topology.states]]
+name = "S21"
+parent = "S2"
+composite = true
+
+[[topology.states]]
+name = "S211"
+parent = "S21"
+
+[[topology.states]]
+name = "Error"
+
+[[topology.states]]
+name = "Done"
