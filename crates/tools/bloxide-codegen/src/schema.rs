@@ -246,7 +246,47 @@ pub struct ContextUseField {
 #[derive(Debug, Deserialize, Clone)]
 pub struct WiringConfig {
     pub runtime: String,
+    #[serde(default)]
     pub channels: Vec<ChannelConfig>,
+    #[serde(default)]
+    pub actors: Vec<WiringActorConfig>,
+    #[serde(default)]
+    pub connections: Vec<WiringConnectionConfig>,
+    #[serde(default)]
+    pub supervisors: Vec<WiringSupervisorConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct WiringActorConfig {
+    pub blox: String,
+    pub name: String,
+    pub behavior: Option<String>,
+    #[serde(default)]
+    pub behavior_traits: Vec<String>,
+    #[serde(default)]
+    pub context_fields: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct WiringConnectionConfig {
+    pub from: String,
+    pub to: String,
+    pub message: String,
+    pub channel_capacity: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct WiringSupervisorConfig {
+    pub name: String,
+    pub strategy: String,
+    #[serde(default)]
+    pub children: Vec<WiringSupervisorChildConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct WiringSupervisorChildConfig {
+    pub actor: String,
+    pub restart_max: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

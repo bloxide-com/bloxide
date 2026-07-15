@@ -2,6 +2,7 @@
 //! Public API for bloxide-codegen — generate Rust source from blox.toml specs.
 
 pub mod ctx;
+pub mod wiring;
 mod events;
 mod mailboxes;
 mod messages;
@@ -49,6 +50,13 @@ pub fn generate_all(
     {
         let code = spec_skeleton::generate(actor, topology, context, event, crate_name)?;
         files.push(("spec_skeleton.rs".to_string(), code));
+    }
+
+    if let Some(wiring) = &config.wiring {
+        if !wiring.actors.is_empty() {
+            let code = wiring::generate(wiring, crate_name)?;
+            files.push(("wiring_main.rs".to_string(), code));
+        }
     }
 
     if let Some(mailboxes) = &config.mailboxes {

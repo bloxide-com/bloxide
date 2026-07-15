@@ -1538,3 +1538,311 @@ runtime = "tokio"
     assert!(config.actors.is_empty());
     assert!(config.supervision.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// blox.toml [[wiring.*]] schema and codegen tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_parse_wiring_actors_connections() {
+    let toml = r#"
+[wiring]
+runtime = "tokio"
+
+[[wiring.actors]]
+blox = "ping"
+name = "ping_actor"
+behavior = "DemoBehavior"
+behavior_traits = ["CountsRounds", "HasCurrentTimer"]
+context_fields = { peer_ref = "pong_actor", self_ref = "ping_actor" }
+
+[[wiring.actors]]
+blox = "pong"
+name = "pong_actor"
+
+[[wiring.connections]]
+from = "ping_actor"
+to = "pong_actor"
+message = "PingPongMsg"
+channel_capacity = 32
+
+[[wiring.connections]]
+from = "pong_actor"
+to = "ping_actor"
+message = "PingPongMsg"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let wiring = config.wiring.expect("wiring section missing");
+    assert_eq!(wiring.runtime, "tokio");
+    assert!(wiring.channels.is_empty());
+    assert_eq!(wiring.actors.len(), 2);
+    assert_eq!(wiring.connections.len(), 2);
+
+    let ping = &wiring.actors[0];
+    assert_eq!(ping.blox, "ping");
+    assert_eq!(ping.name, "ping_actor");
+    assert_eq!(ping.behavior.as_deref(), Some("DemoBehavior"));
+    assert_eq!(ping.behavior_traits, vec!["CountsRounds", "HasCurrentTimer"]);
+    assert_eq!(ping.context_fields.get("peer_ref").map(String::as_str), Some("pong_actor"));
+    assert_eq!(ping.context_fields.get("self_ref").map(String::as_str), Some("ping_actor"));
+
+    let pong = &wiring.actors[1];
+    assert_eq!(pong.blox, "pong");
+    assert_eq!(pong.name, "pong_actor");
+    assert!(pong.behavior.is_none());
+    assert!(pong.behavior_traits.is_empty());
+
+    let c0 = &wiring.connections[0];
+    assert_eq!(c0.from, "ping_actor");
+    assert_eq!(c0.to, "pong_actor");
+    assert_eq!(c0.message, "PingPongMsg");
+    assert_eq!(c0.channel_capacity, Some(32));
+
+    let c1 = &wiring.connections[1];
+    assert_eq!(c1.channel_capacity, None);
+}
+
+#[test]
+fn test_parse_wiring_supervisors() {
+    let toml = r#"
+[wiring]
+runtime = "tokio"
+
+[[wiring.actors]]
+blox = "ping"
+name = "ping_actor"
+
+[[wiring.actors]]
+blox = "pong"
+name = "pong_actor"
+
+[[wiring.supervisors]]
+name = "main_supervisor"
+strategy = "one_for_one"
+
+[[wiring.supervisors.children]]
+actor = "ping_actor"
+restart_max = 3
+
+[[wiring.supervisors.children]]
+actor = "pong_actor"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let wiring = config.wiring.expect("wiring section missing");
+    assert_eq!(wiring.supervisors.len(), 1);
+
+    let sup = &wiring.supervisors[0];
+    assert_eq!(sup.name, "main_supervisor");
+    assert_eq!(sup.strategy, "one_for_one");
+    assert_eq!(sup.children.len(), 2);
+
+    let child0 = &sup.children[0];
+    assert_eq!(child0.actor, "ping_actor");
+    assert_eq!(child0.restart_max, Some(3));
+
+    let child1 = &sup.children[1];
+    assert_eq!(child1.actor, "pong_actor");
+    assert_eq!(child1.restart_max, None);
+}
+
+#[test]
+fn test_generate_wiring_tokio() {
+    let toml = r#"
+[wiring]
+runtime = "tokio"
+
+[[wiring.actors]]
+blox = "ping"
+name = "ping_actor"
+behavior = "DemoBehavior"
+behavior_traits = ["CountsRounds", "HasCurrentTimer"]
+context_fields = { peer_ref = "pong_actor", self_ref = "ping_actor" }
+
+[[wiring.actors]]
+blox = "pong"
+name = "pong_actor"
+
+[[wiring.connections]]
+from = "ping_actor"
+to = "pong_actor"
+message = "PingPongMsg"
+channel_capacity = 32
+
+[[wiring.connections]]
+from = "pong_actor"
+to = "ping_actor"
+message = "PingPongMsg"
+
+[[wiring.supervisors]]
+name = "main_supervisor"
+strategy = "one_for_one"
+
+[[wiring.supervisors.children]]
+actor = "ping_actor"
+restart_max = 3
+
+[[wiring.supervisors.children]]
+actor = "pong_actor"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "wiring-demo").expect("generate failed");
+
+    let wiring_file = files
+        .iter()
+        .find(|(n, _)| n == "wiring_main.rs")
+        .expect("wiring_main.rs missing");
+    let content = &wiring_file.1;
+
+    // Imports
+    assert!(content.contains("use ::bloxide_tokio::prelude::*;"));
+    assert!(content.contains("use ::ping_blox::prelude::*;"));
+    assert!(content.contains("use ::pong_blox::prelude::*;"));
+    assert!(content.contains("use ::ping_actions::{CountsRounds, HasCurrentTimer};"));
+
+    // Channel creation
+    assert!(content.contains("::bloxide_tokio::channels!"));
+    assert!(content.contains("PingPongMsg(32)"));
+
+    // Context construction
+    assert!(content.contains("PingCtx::new("));
+    assert!(content.contains("pong_actor_ref.clone()"));
+    assert!(content.contains("ping_actor_ref.clone()"));
+    assert!(content.contains("DemoBehavior::default()"));
+    assert!(content.contains("PongCtx::new("));
+
+    // Machine construction
+    assert!(content.contains("::bloxide_core::StateMachine::new("));
+
+    // Spawn calls
+    assert!(content.contains("::bloxide_tokio::spawn_child!"));
+    assert!(content.contains("ChildPolicy::Restart { max : 3u32 }"));
+    assert!(content.contains("ChildPolicy::Stop"));
+
+    // Supervisor wiring
+    assert!(content.contains("ChildGroupBuilder::new("));
+    assert!(content.contains("SupervisorCtx::new("));
+    assert!(content.contains("SupervisorSpec"));
+    assert!(content.contains("TokioRuntime"));
+    assert!(content.contains("LifecycleCommand::Start"));
+
+    // Main function
+    assert!(content.contains("#[tokio::main]"));
+    assert!(content.contains("async fn main()"));
+}
+
+#[test]
+fn test_generate_wiring_embassy() {
+    let toml = r#"
+[wiring]
+runtime = "embassy"
+
+[[wiring.actors]]
+blox = "ping"
+name = "ping_actor"
+behavior = "DemoBehavior"
+behavior_traits = ["CountsRounds", "HasCurrentTimer"]
+context_fields = { peer_ref = "pong_actor", self_ref = "ping_actor" }
+
+[[wiring.actors]]
+blox = "pong"
+name = "pong_actor"
+
+[[wiring.connections]]
+from = "ping_actor"
+to = "pong_actor"
+message = "PingPongMsg"
+
+[[wiring.connections]]
+from = "pong_actor"
+to = "ping_actor"
+message = "PingPongMsg"
+
+[[wiring.supervisors]]
+name = "main_supervisor"
+strategy = "one_for_one"
+
+[[wiring.supervisors.children]]
+actor = "ping_actor"
+
+[[wiring.supervisors.children]]
+actor = "pong_actor"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "wiring-demo").expect("generate failed");
+
+    let wiring_file = files
+        .iter()
+        .find(|(n, _)| n == "wiring_main.rs")
+        .expect("wiring_main.rs missing");
+    let content = &wiring_file.1;
+
+    // Imports
+    assert!(content.contains("use ::bloxide_embassy::prelude::*;"));
+    assert!(content.contains("use ::ping_blox::prelude::*;"));
+    assert!(content.contains("use ::pong_blox::prelude::*;"));
+
+    // Embassy main pattern
+    assert!(content.contains("fn main()"));
+    assert!(content.contains("embassy_executor::Executor"));
+    assert!(content.contains("fn setup(spawner: ::embassy_executor::Spawner)"));
+
+    // Channel creation and spawn
+    assert!(content.contains("::bloxide_embassy::channels!"));
+    assert!(content.contains("::bloxide_embassy::spawn_child!"));
+    assert!(content.contains("spawner,"));
+
+    // Supervisor
+    assert!(content.contains("SupervisorSpec"));
+    assert!(content.contains("EmbassyRuntime"));
+    assert!(content.contains("spawner.must_spawn(supervisor_task("));
+}
+
+#[test]
+fn test_wiring_validation_unknown_actor_in_connection() {
+    let toml = r#"
+[wiring]
+runtime = "tokio"
+
+[[wiring.actors]]
+blox = "ping"
+name = "ping_actor"
+
+[[wiring.connections]]
+from = "ping_actor"
+to = "unknown_actor"
+message = "PingPongMsg"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let result = generate_all(&config, "wiring-demo");
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("unknown actor"));
+}
+
+#[test]
+fn test_wiring_validation_orphan_connection() {
+    let toml = r#"
+[wiring]
+runtime = "tokio"
+
+[[wiring.actors]]
+blox = "pong"
+name = "pong_actor"
+
+[[wiring.connections]]
+from = "orphan_actor"
+to = "pong_actor"
+message = "PingPongMsg"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let result = generate_all(&config, "wiring-demo");
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(err.contains("unknown actor"));
+}
