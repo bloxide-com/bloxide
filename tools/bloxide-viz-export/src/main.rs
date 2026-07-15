@@ -11,7 +11,6 @@ fn main() {
             "Usage: {} <path-to-bloxide-workspace> [output-dir]",
             args[0]
         );
-        eprintln!("");
         eprintln!("Scans the workspace for blox crates and exports visualization JSON files.");
         eprintln!("If output-dir is not provided, outputs to ./bloxide-viz-output/");
         std::process::exit(1);
@@ -28,7 +27,10 @@ fn main() {
         std::process::exit(1);
     }
 
-    println!("Scanning {} for blox crates...", workspace_path.display());
+    println!(
+        "Scanning {} for blox.toml files...",
+        workspace_path.display()
+    );
 
     match export_workspace(workspace_path) {
         Ok(specs) => {

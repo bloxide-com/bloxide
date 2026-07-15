@@ -1,54 +1,48 @@
 // Copyright 2025 Bloxide, all rights reserved
 pub mod model;
-pub mod parser;
 
-use quote::ToTokens;
+use bloxide_codegen::schema::{
+    BloxConfig, ContextConfig, StateConfig, TopologyConfig, TransitionConfig, WiringConfig,
+};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
 
 pub use model::BloxSpec;
 
-/// Scan a workspace for blox crates and export them as `BloxSpec` structs.
+/// Scan a workspace for `blox.toml` files and export them as `BloxSpec` structs.
 ///
 /// Returns one `BloxSpec` per discovered blox crate.
 pub fn export_workspace(workspace_path: &Path) -> Result<Vec<BloxSpec>, String> {
-    let blox_crates = find_blox_crates(workspace_path);
+    let blox_tomls = find_blox_tomls(workspace_path);
 
-    if blox_crates.is_empty() {
-        return Err("No blox crates found.".to_string());
+    if blox_tomls.is_empty() {
+        // Fallback: check if any spec.rs files exist (old-style) and warn
+        if has_spec_rs_files(workspace_path) {
+            return Err(
+                "No blox.toml files found, but spec.rs files were detected. \
+                 Run `cargo blox generate` to create blox.toml files from existing specs."
+                    .to_string(),
+            );
+        }
+        return Err("No blox.toml files found.".to_string());
     }
 
     let mut specs = Vec::new();
 
-    for (name, crate_path) in &blox_crates {
-        let spec_path = crate_path.join("src/spec.rs");
-        let events_path = crate_path.join("src/events.rs");
-        let ctx_path = crate_path.join("src/ctx.rs");
+    for (name, toml_path) in &blox_tomls {
+        let content = fs::read_to_string(toml_path)
+            .map_err(|e| format!("could not read {}: {}", toml_path.display(), e))?;
 
-        let source = fs::read_to_string(&spec_path)
-            .map_err(|e| format!("could not read {}: {}", spec_path.display(), e))?;
+        let config: BloxConfig = toml::from_str(&content)
+            .map_err(|e| format!("failed to parse {}: {}", toml_path.display(), e))?;
 
-        if source.is_empty() {
-            continue;
-        }
+        let crate_path = toml_path
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
 
-        let mut spec = parser::parse_blox_file(name, &crate_path.to_string_lossy(), &source)?;
-
-        // Try to parse events.rs for additional event/message info
-        if events_path.exists() {
-            if let Ok(events_source) = fs::read_to_string(&events_path) {
-                extract_messages_from_events(&mut spec, &events_source);
-            }
-        }
-
-        // Try to parse ctx.rs for context fields
-        if ctx_path.exists() {
-            if let Ok(ctx_source) = fs::read_to_string(&ctx_path) {
-                extract_context_fields(&mut spec, &ctx_source);
-            }
-        }
-
+        let spec = config_to_spec(name, &crate_path, &config);
         specs.push(spec);
     }
 
@@ -71,36 +65,466 @@ pub fn write_specs_to_json(specs: &[BloxSpec], output_dir: &Path) -> Result<(), 
     Ok(())
 }
 
-fn find_blox_crates(workspace_path: &Path) -> Vec<(String, PathBuf)> {
+// ---------------------------------------------------------------------------
+// blox.toml → BloxSpec mapping
+// ---------------------------------------------------------------------------
+
+/// Convert a parsed `BloxConfig` into the viz-export `BloxSpec` model.
+fn config_to_spec(name: &str, crate_path: &str, config: &BloxConfig) -> BloxSpec {
+    let mut spec = BloxSpec {
+        name: name.to_string(),
+        crate_path: crate_path.to_string(),
+        states: Vec::new(),
+        events: Vec::new(),
+        handlers: Vec::new(),
+        entry_exit: HashMap::new(),
+        message_sets: Vec::new(),
+        messages: Vec::new(),
+        actions: Vec::new(),
+        context: None,
+    };
+
+    // --- States ---
+    if let Some(topology) = &config.topology {
+        extract_states(&mut spec, topology);
+        extract_transitions(&mut spec, topology);
+        extract_entry_exit(&mut spec, topology);
+    }
+
+    // --- Events from mailboxes ---
+    // Mailboxes tell us which message types the actor receives. The actual
+    // event variants (e.g. PingPongMsg::Pong) come from transitions. But for
+    // crates with no declarative transitions (handler_fns-only), we derive
+    // events from the [messages] section if present.
+    if spec.events.is_empty() {
+        if let Some(messages) = &config.messages {
+            for msg_enum in messages {
+                for variant in &msg_enum.variants {
+                    let full_name = format!("{}::{}", msg_enum.name, variant.name);
+                    spec.events.push(model::Event {
+                        message_set: msg_enum.name.clone(),
+                        variant: variant.name.clone(),
+                        full_name,
+                    });
+                }
+            }
+        }
+    }
+
+    // --- Message definitions ---
+    if let Some(messages) = &config.messages {
+        for msg_enum in messages {
+            let variants: Vec<model::MessageVariant> = msg_enum
+                .variants
+                .iter()
+                .map(|v| {
+                    let fields: Vec<String> = v
+                        .fields
+                        .iter()
+                        .map(|f| format!("{}: {}", f.name, f.ty))
+                        .collect();
+                    model::MessageVariant {
+                        name: v.name.clone(),
+                        fields,
+                    }
+                })
+                .collect();
+            spec.messages.push(model::MessageDef {
+                crate_name: "unknown".to_string(),
+                enum_name: msg_enum.name.clone(),
+                variants,
+            });
+        }
+    }
+
+    // --- Context ---
+    if let Some(context) = &config.context {
+        extract_context(&mut spec, context);
+    }
+
+    // --- Post-processing: compute hierarchy, inherited/dropped handlers ---
+    compute_hierarchy(&mut spec.states);
+    fill_inherited_handlers(&mut spec.handlers, &spec.states);
+    fill_dropped_handlers(&mut spec.handlers, &spec.states, &spec.events);
+
+    // Build message sets from events
+    let mut sets: HashMap<String, Vec<String>> = HashMap::new();
+    for event in &spec.events {
+        sets.entry(event.message_set.clone())
+            .or_default()
+            .push(event.variant.clone());
+    }
+    spec.message_sets = sets
+        .into_iter()
+        .map(|(name, variants)| model::MessageSet { name, variants })
+        .collect();
+
+    // --- Wiring (connections view) ---
+    if let Some(wiring) = &config.wiring {
+        extract_wiring(&mut spec, wiring);
+    }
+
+    spec
+}
+
+fn extract_states(spec: &mut BloxSpec, topology: &TopologyConfig) {
+    for state_cfg in &topology.states {
+        let kind = state_kind(state_cfg);
+        let name = state_cfg.name.clone();
+        let parent = state_cfg.parent.clone();
+
+        if !spec.states.iter().any(|s| s.name == name) {
+            spec.states.push(model::State {
+                name,
+                kind,
+                parent,
+                description: String::new(),
+                depth: 0,
+            });
+        }
+    }
+}
+
+fn state_kind(state_cfg: &StateConfig) -> model::StateKind {
+    if state_cfg.error.unwrap_or(false) {
+        model::StateKind::Error
+    } else if state_cfg.terminal.unwrap_or(false) {
+        model::StateKind::Terminal
+    } else if state_cfg.composite.unwrap_or(false) {
+        model::StateKind::Composite
+    } else {
+        model::StateKind::Leaf
+    }
+}
+
+fn extract_transitions(spec: &mut BloxSpec, topology: &TopologyConfig) {
+    for trans in &topology.transitions {
+        let (message_set, variant) = parse_event_pattern(&trans.event);
+        let full_event = format!("{}::{}", message_set, variant);
+
+        // Add event if not already present
+        if !spec.events.iter().any(|e| e.full_name == full_event) {
+            spec.events.push(model::Event {
+                message_set: message_set.clone(),
+                variant: variant.clone(),
+                full_name: full_event.clone(),
+            });
+        }
+
+        // Determine target and guard branches
+        let (target, guard_branches) = build_target_and_guards(trans);
+
+        let guard = model::Guard {
+            description: build_guard_description(trans, &guard_branches),
+            raw: String::new(),
+            branches: guard_branches,
+        };
+
+        let label = build_handler_label(&trans.actions, &target);
+
+        spec.handlers.push(model::Handler {
+            state: trans.state.clone(),
+            event: full_event,
+            label,
+            actions: trans.actions.clone(),
+            guard,
+            target,
+            source: model::HandlerSource::Explicit,
+            on_entry: Vec::new(),
+            on_exit: Vec::new(),
+        });
+    }
+}
+
+fn build_target_and_guards(trans: &TransitionConfig) -> (model::Target, Vec<model::GuardBranch>) {
+    if trans.guards.is_empty() {
+        let target = parse_target(&trans.target);
+        (target, Vec::new())
+    } else {
+        // Build guard branches from the guards list
+        let branches: Vec<model::GuardBranch> = trans
+            .guards
+            .iter()
+            .map(|g| model::GuardBranch {
+                condition: g.condition.clone(),
+                target: parse_target(&g.target),
+            })
+            .collect();
+        // The top-level target is the fallback (_ arm)
+        let fallback = parse_target(&trans.target);
+        (fallback, branches)
+    }
+}
+
+fn parse_target(s: &str) -> model::Target {
+    let s = s.trim();
+    match s {
+        "stay" => model::Target::Stay,
+        "reset" | "Reset" => model::Target::Reset,
+        "fail" => model::Target::Transition("__fail__".to_string()),
+        _ => model::Target::Transition(s.to_string()),
+    }
+}
+
+fn build_guard_description(trans: &TransitionConfig, branches: &[model::GuardBranch]) -> String {
+    if branches.is_empty() {
+        parse_target(&trans.target).display()
+    } else {
+        let lines: Vec<String> = branches
+            .iter()
+            .map(|b| format!("{} => {}", b.condition, b.target.display()))
+            .collect();
+        format!(
+            "{}\n_ => {}",
+            lines.join("\n"),
+            parse_target(&trans.target).display()
+        )
+    }
+}
+
+fn build_handler_label(actions: &[String], target: &model::Target) -> String {
+    if actions.is_empty() {
+        target.display()
+    } else {
+        let action_label = if actions.len() == 1 {
+            actions[0].clone()
+        } else {
+            format!("{} actions", actions.len())
+        };
+        format!("{} → {}", action_label, target.display())
+    }
+}
+
+fn extract_entry_exit(spec: &mut BloxSpec, topology: &TopologyConfig) {
+    for entry in &topology.entry {
+        let ee = spec
+            .entry_exit
+            .entry(entry.state.clone())
+            .or_insert_with(|| model::EntryExit {
+                on_entry: Vec::new(),
+                on_exit: Vec::new(),
+            });
+        ee.on_entry = entry.actions.clone();
+    }
+
+    for exit in &topology.exit {
+        let ee = spec
+            .entry_exit
+            .entry(exit.state.clone())
+            .or_insert_with(|| model::EntryExit {
+                on_entry: Vec::new(),
+                on_exit: Vec::new(),
+            });
+        ee.on_exit = exit.actions.clone();
+    }
+}
+
+fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
+    let fields: Vec<model::ContextField> = context
+        .fields
+        .iter()
+        .map(|f| {
+            let annotations: Vec<String> = f
+                .delegates
+                .as_ref()
+                .map(|ds| ds.iter().map(|d| format!("#[delegates({})]", d)).collect())
+                .unwrap_or_default();
+            model::ContextField {
+                name: f.name.clone(),
+                ty: f.ty.clone(),
+                annotations,
+            }
+        })
+        .collect();
+
+    spec.context = Some(model::ContextDef {
+        struct_name: context.name.clone(),
+        fields,
+    });
+}
+
+fn extract_wiring(spec: &mut BloxSpec, wiring: &WiringConfig) {
+    // The wiring section adds connection-level information.
+    // We store wiring actors as "actions" entries (they represent system-level
+    // wiring) and connections as handlers on a synthetic "Wiring" state.
+    //
+    // This is a lightweight mapping — the visualizer can use the JSON to show
+    // actor connections alongside state-machine views.
+    for conn in &wiring.connections {
+        let event_name = format!("{}::{}", conn.message, conn.from);
+        // Add as a handler on a synthetic "Wiring" state
+        if !spec
+            .handlers
+            .iter()
+            .any(|h| h.state == "Wiring" && h.event == event_name)
+        {
+            spec.handlers.push(model::Handler {
+                state: "Wiring".to_string(),
+                event: event_name.clone(),
+                label: format!("{} → {}", conn.from, conn.to),
+                actions: Vec::new(),
+                guard: model::Guard {
+                    description: format!("{} → {}", conn.from, conn.to),
+                    raw: String::new(),
+                    branches: Vec::new(),
+                },
+                target: model::Target::Transition(conn.to.clone()),
+                source: model::HandlerSource::Explicit,
+                on_entry: Vec::new(),
+                on_exit: Vec::new(),
+            });
+        }
+    }
+}
+
+fn parse_event_pattern(pattern: &str) -> (String, String) {
+    let pattern = pattern.trim();
+    // Remove trailing parenthetical content like (_)
+    let clean = if let Some(pos) = pattern.find('(') {
+        &pattern[..pos]
+    } else {
+        pattern
+    };
+
+    if let Some(pos) = clean.find("::") {
+        let message_set = clean[..pos].trim().to_string();
+        let variant = clean[pos + 2..].trim().to_string();
+        (message_set, variant)
+    } else {
+        ("Unknown".to_string(), clean.to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hierarchy and handler post-processing
+// ---------------------------------------------------------------------------
+
+fn compute_hierarchy(states: &mut [model::State]) {
+    for state in states.iter_mut() {
+        if state.parent.is_some() {
+            state.depth = 1;
+        }
+    }
+}
+
+fn fill_inherited_handlers(handlers: &mut Vec<model::Handler>, states: &[model::State]) {
+    let composites: Vec<&model::State> = states
+        .iter()
+        .filter(|s| matches!(s.kind, model::StateKind::Composite))
+        .collect();
+
+    for composite in &composites {
+        let composite_handlers: Vec<model::Handler> = handlers
+            .iter()
+            .filter(|h| h.state == composite.name)
+            .cloned()
+            .collect();
+
+        let children: Vec<&model::State> = states
+            .iter()
+            .filter(|s| s.parent.as_ref() == Some(&composite.name))
+            .collect();
+
+        for child in children {
+            for ch in &composite_handlers {
+                if !handlers
+                    .iter()
+                    .any(|h| h.state == child.name && h.event == ch.event)
+                {
+                    handlers.push(model::Handler {
+                        state: child.name.clone(),
+                        event: ch.event.clone(),
+                        label: format!("⬇️ {} ({})", ch.label, composite.name),
+                        actions: ch.actions.clone(),
+                        guard: ch.guard.clone(),
+                        target: ch.target.clone(),
+                        source: model::HandlerSource::Inherited(composite.name.clone()),
+                        on_entry: Vec::new(),
+                        on_exit: Vec::new(),
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn fill_dropped_handlers(
+    handlers: &mut Vec<model::Handler>,
+    states: &[model::State],
+    events: &[model::Event],
+) {
+    let leaf_states: Vec<&model::State> = states.iter().filter(|s| s.kind.is_leaf()).collect();
+
+    for state in leaf_states {
+        for event in events {
+            if !handlers
+                .iter()
+                .any(|h| h.state == state.name && h.event == event.full_name)
+            {
+                handlers.push(model::Handler {
+                    state: state.name.clone(),
+                    event: event.full_name.clone(),
+                    label: "∅".to_string(),
+                    actions: Vec::new(),
+                    guard: model::Guard {
+                        description: "No handler — dropped".to_string(),
+                        raw: String::new(),
+                        branches: Vec::new(),
+                    },
+                    target: model::Target::Stay,
+                    source: model::HandlerSource::Dropped,
+                    on_entry: Vec::new(),
+                    on_exit: Vec::new(),
+                });
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// File discovery
+// ---------------------------------------------------------------------------
+
+fn find_blox_tomls(workspace_path: &Path) -> Vec<(String, PathBuf)> {
     let mut crates = Vec::new();
 
-    for entry in WalkDir::new(workspace_path)
-        .max_depth(6)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        let path = entry.path();
-        if path.file_name() == Some(std::ffi::OsStr::new("spec.rs")) {
-            let crate_path = path.parent().and_then(|p| p.parent());
-            if let Some(crate_path) = crate_path {
-                if let Ok(content) = fs::read_to_string(path) {
-                    if content.contains("MachineSpec for") && content.contains("StateTopology") {
-                        let blox_name = crate_path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .map(|n| {
-                                let mut chars = n.chars();
-                                match chars.next() {
-                                    None => String::new(),
-                                    Some(first) => {
-                                        first.to_uppercase().collect::<String>() + chars.as_str()
-                                    }
-                                }
-                            })
-                            .unwrap_or_else(|| "Unknown".to_string());
+    for entry in walkdir_tomls(workspace_path) {
+        let path = entry;
+        if path.file_name() != Some(std::ffi::OsStr::new("blox.toml")) {
+            continue;
+        }
 
-                        crates.push((blox_name, crate_path.to_path_buf()));
-                    }
+        let crate_path = path.parent();
+
+        // Skip if this is inside a target/ build directory
+        if path
+            .components()
+            .any(|c| c.as_os_str() == std::ffi::OsStr::new("target"))
+        {
+            continue;
+        }
+
+        if let Some(crate_path) = crate_path {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if content.contains("[actor]") || content.contains("[topology]") {
+                    let dir_name = crate_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Unknown");
+
+                    // Try to get the actor name from the TOML; fall back to
+                    // Pascal-casing the directory name
+                    let name = extract_actor_name(&content).unwrap_or_else(|| {
+                        let mut chars = dir_name.chars();
+                        match chars.next() {
+                            None => String::new(),
+                            Some(first) => {
+                                first.to_uppercase().collect::<String>() + chars.as_str()
+                            }
+                        }
+                    });
+
+                    crates.push((name, path.clone()));
                 }
             }
         }
@@ -111,90 +535,352 @@ fn find_blox_crates(workspace_path: &Path) -> Vec<(String, PathBuf)> {
     crates
 }
 
-fn extract_messages_from_events(spec: &mut BloxSpec, source: &str) {
-    if let Ok(file) = syn::parse_file(source) {
-        for item in &file.items {
-            if let syn::Item::Enum(item_enum) = item {
-                let has_blox_event = item_enum.attrs.iter().any(|attr| {
-                    attr.path()
-                        .get_ident()
-                        .map(|i| i == "blox_event")
-                        .unwrap_or(false)
-                });
+/// Extract the `[actor] name = "..."` value from a blox.toml string without
+/// full deserialization (used only for sorting/naming in discovery).
+fn extract_actor_name(content: &str) -> Option<String> {
+    let config: BloxConfig = toml::from_str(content).ok()?;
+    config.actor.map(|a| a.name)
+}
 
-                if has_blox_event {
-                    for variant in &item_enum.variants {
-                        let _variant_name = variant.ident.to_string();
-                        if let syn::Fields::Unnamed(fields) = &variant.fields {
-                            if let Some(field) = fields.unnamed.first() {
-                                let ty_str = format_type(&field.ty);
-                                if let Some(start) = ty_str.find('<') {
-                                    if let Some(end) = ty_str.rfind('>') {
-                                        let msg_type = &ty_str[start + 1..end];
-                                        if !spec.messages.iter().any(|m| m.enum_name == msg_type) {
-                                            spec.messages.push(model::MessageDef {
-                                                crate_name: "unknown".to_string(),
-                                                enum_name: msg_type.to_string(),
-                                                variants: Vec::new(),
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+/// Walk a directory tree for `blox.toml` files, up to max_depth 6.
+fn walkdir_tomls(workspace_path: &Path) -> Vec<PathBuf> {
+    let mut results = Vec::new();
+    walk_dir_recursive(workspace_path, 0, 6, &mut results);
+    results
+}
+
+fn walk_dir_recursive(path: &Path, depth: usize, max_depth: usize, results: &mut Vec<PathBuf>) {
+    if depth > max_depth {
+        return;
+    }
+
+    let entries = match fs::read_dir(path) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+
+        // Skip hidden directories and target/
+        if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with('.') || name == "target" {
+                continue;
             }
+        }
+
+        if entry_path.is_dir() {
+            walk_dir_recursive(&entry_path, depth + 1, max_depth, results);
+        } else if entry_path.file_name() == Some(std::ffi::OsStr::new("blox.toml")) {
+            results.push(entry_path);
         }
     }
 }
 
-fn extract_context_fields(spec: &mut BloxSpec, source: &str) {
-    if let Ok(file) = syn::parse_file(source) {
-        for item in &file.items {
-            if let syn::Item::Struct(item_struct) = item {
-                let has_blox_ctx = item_struct.attrs.iter().any(|attr| {
-                    attr.path()
-                        .get_ident()
-                        .map(|i| i == "derive")
-                        .unwrap_or(false)
-                        && attr.parse_args::<syn::Expr>().ok().map_or(false, |e| {
-                            e.to_token_stream().to_string().contains("BloxCtx")
-                        })
-                });
+/// Check if any spec.rs files exist in the workspace (for the fallback warning).
+fn has_spec_rs_files(workspace_path: &Path) -> bool {
+    let mut found = Vec::new();
+    walk_dir_recursive_spec(workspace_path, 0, 6, &mut found);
+    !found.is_empty()
+}
 
-                if has_blox_ctx {
-                    let mut fields = Vec::new();
-                    for field in &item_struct.fields {
-                        let name = field
-                            .ident
-                            .as_ref()
-                            .map(|i| i.to_string())
-                            .unwrap_or_default();
-                        let ty = format_type(&field.ty);
-                        let annotations: Vec<String> = field
-                            .attrs
-                            .iter()
-                            .map(|attr| attr.to_token_stream().to_string())
-                            .collect();
+fn walk_dir_recursive_spec(
+    path: &Path,
+    depth: usize,
+    max_depth: usize,
+    results: &mut Vec<PathBuf>,
+) {
+    if depth > max_depth {
+        return;
+    }
 
-                        fields.push(model::ContextField {
-                            name,
-                            ty,
-                            annotations,
-                        });
-                    }
+    let entries = match fs::read_dir(path) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
 
-                    spec.context = Some(model::ContextDef {
-                        struct_name: item_struct.ident.to_string(),
-                        fields,
-                    });
-                }
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+
+        if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with('.') || name == "target" {
+                continue;
             }
+        }
+
+        if entry_path.is_dir() {
+            walk_dir_recursive_spec(&entry_path, depth + 1, max_depth, results);
+        } else if entry_path.file_name() == Some(std::ffi::OsStr::new("spec.rs")) {
+            results.push(entry_path);
         }
     }
 }
 
-fn format_type(ty: &syn::Type) -> String {
-    ty.to_token_stream().to_string()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn workspace_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf()
+    }
+
+    #[test]
+    fn test_export_finds_blox_tomls() {
+        let ws = workspace_root();
+        let tomls = find_blox_tomls(&ws);
+        assert!(
+            tomls.len() >= 5,
+            "expected at least 5 blox.toml files, found {}: {:?}",
+            tomls.len(),
+            tomls.iter().map(|(n, _)| n).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_export_workspace() {
+        let ws = workspace_root();
+        let specs = export_workspace(&ws).expect("export should succeed");
+        assert!(
+            specs.len() >= 5,
+            "expected at least 5 specs, got {}",
+            specs.len()
+        );
+
+        // Verify each spec has states
+        for spec in &specs {
+            assert!(
+                !spec.states.is_empty(),
+                "spec '{}' has no states",
+                spec.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_ping_spec_contents() {
+        let ws = workspace_root();
+        let specs = export_workspace(&ws).expect("export should succeed");
+        let ping = specs
+            .iter()
+            .find(|s| s.name == "Ping")
+            .expect("Ping spec should exist");
+
+        // States
+        assert!(ping.states.iter().any(|s| s.name == "Operating"));
+        assert!(ping.states.iter().any(|s| s.name == "Active"));
+        assert!(ping.states.iter().any(|s| s.name == "Paused"));
+        assert!(ping.states.iter().any(|s| s.name == "Done"));
+        assert!(ping.states.iter().any(|s| s.name == "Error"));
+
+        // Operating is composite
+        let operating = ping.states.iter().find(|s| s.name == "Operating").unwrap();
+        assert_eq!(operating.kind, model::StateKind::Composite);
+
+        // Done is terminal
+        let done = ping.states.iter().find(|s| s.name == "Done").unwrap();
+        assert_eq!(done.kind, model::StateKind::Terminal);
+
+        // Error is error
+        let error = ping.states.iter().find(|s| s.name == "Error").unwrap();
+        assert_eq!(error.kind, model::StateKind::Error);
+
+        // Events
+        assert!(ping
+            .events
+            .iter()
+            .any(|e| e.full_name == "PingPongMsg::Pong"));
+        assert!(ping
+            .events
+            .iter()
+            .any(|e| e.full_name == "PingPongMsg::Resume"));
+
+        // Handlers — Active has a handler for Pong
+        assert!(ping
+            .handlers
+            .iter()
+            .any(|h| h.state == "Active" && h.event == "PingPongMsg::Pong"));
+
+        // Active entry actions
+        let entry = ping.entry_exit.get("Active").expect("Active has entry");
+        assert!(!entry.on_entry.is_empty());
+        assert!(entry.on_entry.iter().any(|a| a == "send_initial_ping"));
+
+        // Paused entry/exit
+        let paused_entry = ping
+            .entry_exit
+            .get("Paused")
+            .expect("Paused has entry/exit");
+        assert!(paused_entry
+            .on_entry
+            .iter()
+            .any(|a| a == "Self::schedule_pause_timer"));
+        assert!(paused_entry
+            .on_exit
+            .iter()
+            .any(|a| a == "Self::cancel_pause_timer"));
+
+        // Context
+        let ctx = ping.context.as_ref().expect("Ping has context");
+        assert_eq!(ctx.struct_name, "PingCtx");
+        assert!(ctx.fields.iter().any(|f| f.name == "peer_ref"));
+        assert!(ctx.fields.iter().any(|f| f.name == "behavior"));
+    }
+
+    #[test]
+    fn test_counter_spec_contents() {
+        let ws = workspace_root();
+        let specs = export_workspace(&ws).expect("export should succeed");
+        let counter = specs
+            .iter()
+            .find(|s| s.name == "Counter")
+            .expect("Counter spec should exist");
+
+        // States
+        assert!(counter.states.iter().any(|s| s.name == "Ready"));
+        assert!(counter.states.iter().any(|s| s.name == "Done"));
+
+        // Ready handler for Tick
+        assert!(counter
+            .handlers
+            .iter()
+            .any(|h| h.state == "Ready" && h.event == "CounterMsg::Tick"));
+
+        // The Ready handler should have guard branches
+        let ready_handler = counter
+            .handlers
+            .iter()
+            .find(|h| h.state == "Ready" && h.event == "CounterMsg::Tick")
+            .unwrap();
+        assert!(
+            !ready_handler.guard.branches.is_empty(),
+            "Ready handler should have guard branches"
+        );
+
+        // Check guard branch targeting Done
+        assert!(ready_handler
+            .guard
+            .branches
+            .iter()
+            .any(|b| b.target.display() == "Done"));
+    }
+
+    #[test]
+    fn test_pool_spec_contents() {
+        let ws = workspace_root();
+        let specs = export_workspace(&ws).expect("export should succeed");
+        let pool = specs
+            .iter()
+            .find(|s| s.name == "Pool")
+            .expect("Pool spec should exist");
+
+        // States
+        assert!(pool.states.iter().any(|s| s.name == "Idle"));
+        assert!(pool.states.iter().any(|s| s.name == "Active"));
+        assert!(pool.states.iter().any(|s| s.name == "AllDone"));
+
+        // AllDone is terminal
+        let all_done = pool.states.iter().find(|s| s.name == "AllDone").unwrap();
+        assert_eq!(all_done.kind, model::StateKind::Terminal);
+
+        // Idle → Active on SpawnWorker
+        assert!(pool.handlers.iter().any(|h| h.state == "Idle"
+            && h.event == "PoolMsg::SpawnWorker"
+            && h.target.display() == "Active"));
+
+        // AllDone entry action
+        let entry = pool.entry_exit.get("AllDone").expect("AllDone has entry");
+        assert!(entry.on_entry.iter().any(|a| a == "log_all_done"));
+    }
+
+    #[test]
+    fn test_json_serialization() {
+        let ws = workspace_root();
+        let specs = export_workspace(&ws).expect("export should succeed");
+
+        // Every spec should serialize to JSON without error
+        for spec in &specs {
+            let json = serde_json::to_string_pretty(spec);
+            assert!(json.is_ok(), "failed to serialize spec '{}'", spec.name);
+
+            // And deserialize back
+            let json_str = json.unwrap();
+            let back: Result<BloxSpec, _> = serde_json::from_str(&json_str);
+            assert!(back.is_ok(), "failed to deserialize spec '{}'", spec.name);
+        }
+    }
+
+    #[test]
+    fn test_write_specs_to_json() {
+        let ws = workspace_root();
+        let specs = export_workspace(&ws).expect("export should succeed");
+        let tmp = std::env::temp_dir().join("bloxide-viz-export-test");
+        // Clean up any previous run
+        let _ = fs::remove_dir_all(&tmp);
+
+        write_specs_to_json(&specs, &tmp).expect("write should succeed");
+
+        // Check that at least one JSON file was written
+        let files: Vec<_> = fs::read_dir(&tmp)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.path().extension() == Some(std::ffi::OsStr::new("json")))
+            .collect();
+        assert!(
+            files.len() >= 5,
+            "expected at least 5 JSON files, found {}",
+            files.len()
+        );
+
+        // Clean up
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_dropped_handlers() {
+        let ws = workspace_root();
+        let specs = export_workspace(&ws).expect("export should succeed");
+        let counter = specs
+            .iter()
+            .find(|s| s.name == "Counter")
+            .expect("Counter spec should exist");
+
+        // Done is a terminal leaf state with no explicit handler for Tick.
+        // It should have a Dropped handler.
+        let dropped = counter.handlers.iter().find(|h| {
+            h.state == "Done"
+                && h.event == "CounterMsg::Tick"
+                && h.source == model::HandlerSource::Dropped
+        });
+        assert!(
+            dropped.is_some(),
+            "Done state should have a Dropped handler for CounterMsg::Tick"
+        );
+    }
+
+    #[test]
+    fn test_inherited_handlers() {
+        let ws = workspace_root();
+        let specs = export_workspace(&ws).expect("export should succeed");
+        let ping = specs
+            .iter()
+            .find(|s| s.name == "Ping")
+            .expect("Ping spec should exist");
+
+        // Paused has no explicit Pong handler, so it should inherit from
+        // its parent (Operating) which does handle Pong.
+        let paused_inherited = ping.handlers.iter().find(|h| {
+            h.state == "Paused"
+                && h.event == "PingPongMsg::Pong"
+                && matches!(h.source, model::HandlerSource::Inherited(_))
+        });
+        assert!(
+            paused_inherited.is_some(),
+            "Paused should inherit Pong handler from Operating"
+        );
+    }
 }
