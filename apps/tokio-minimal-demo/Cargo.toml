@@ -1,0 +1,20 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "tokio-minimal-demo"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+bloxide-core       = { workspace = true, features = ["std"] }
+bloxide-tokio      = { workspace = true }
+bloxide-log        = { workspace = true, features = ["log"] }
+bloxide-supervisor = { workspace = true, features = ["std"] }
+counter-blox       = { workspace = true }
+counter-actions    = { workspace = true }
+counter-messages   = { workspace = true }
+counter-demo-impl  = { workspace = true }
+tokio              = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-log        = { workspace = true }

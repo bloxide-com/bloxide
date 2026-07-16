@@ -104,7 +104,7 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
 |-----------|----------|
 | Blox unit tests (TestRuntime) | `crates/bloxes/*/src/tests.rs` |
 | Action crate tests | `crates/actions/*/src/tests.rs` |
-| Integration tests (full runtime) | `examples/*-demo.rs` or `tests/` |
+| Integration tests (full runtime) | `apps/*-demo/` (system.toml + generated main.rs) or `tests/` |
 
 ---
 
@@ -281,7 +281,7 @@ transitions![
 | Messages crate | `crates/messages/<name>-messages/` |
 | Actions crate | `crates/actions/<name>-actions/` |
 | Impl crate | `crates/impl/<name>-impl/` |
-| Binary | `examples/<name>-demo.rs` |
+| Binary | `apps/<name>-demo/` (system.toml + generated main.rs) |
 | Blox spec | `spec/bloxes/<name>.md` |
 
 ---

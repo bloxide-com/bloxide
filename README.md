@@ -25,7 +25,7 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 - Read [AGENTS.md](AGENTS.md) for the three-layer principle, five-layer application structure, and two-tier trait system in one place.
 - Use [skills/building-with-bloxide/SKILL.md](skills/building-with-bloxide/SKILL.md) as the step-by-step build workflow.
 - Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the API reference while you build (being updated for bloxide-codegen workflow).
-- For the smallest runnable example, start with `cargo run --example tokio-minimal-demo` (now fully five-layered via `counter-*` crates).
+- For the smallest runnable app, start with `cargo run -p tokio-minimal-demo` (now fully five-layered via `counter-*` crates).
 
 ---
 
@@ -93,11 +93,11 @@ bloxide/
 ├── runtimes/          # runtime implementations
 │   ├── bloxide-embassy/   # Embassy runtime (embedded target)
 │   └── bloxide-tokio/     # Tokio runtime (std target)
-├── examples/          # top-level runnable example entrypoints
-│   ├── embassy-demo.rs
-│   ├── tokio-minimal-demo.rs
-│   ├── tokio-demo.rs
-│   └── tokio-pool-demo.rs
+├── apps/             # declarative wiring manifests + generated binaries
+│   ├── embassy-demo/
+│   ├── tokio-demo/
+│   ├── tokio-minimal-demo/
+│   └── tokio-pool-demo/
 ├── skills/            # agent skills (workflows for building/evolving)
 │   ├── building-with-bloxide/
 │   └── contributing-to-bloxide/
@@ -113,20 +113,22 @@ bloxide/
 
 ---
 
-## Running the examples
+## Running the apps
+
+Each app has a `system.toml` wiring manifest and a generated `main.rs`. Regenerate with `cargo blox wire --system apps/<name>/system.toml` if needed.
 
 ```bash
 # Minimal single-actor Tokio example (5-layer architecture)
-cargo run --example tokio-minimal-demo
+cargo run -p tokio-minimal-demo
 
 # Ping-pong with OTP supervision, timer-driven pause, and full HSM tracing
-RUST_LOG=trace cargo run --example tokio-demo
+RUST_LOG=trace cargo run -p tokio-demo
 
 # Worker pool with dynamic spawning
-RUST_LOG=info cargo run --example tokio-pool-demo
+RUST_LOG=info cargo run -p tokio-pool-demo
 
 # Embassy (std target, simulates embedded)
-RUST_LOG=trace cargo run --example embassy-demo
+RUST_LOG=trace cargo run -p embassy-demo
 ```
 
 ---

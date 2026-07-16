@@ -353,6 +353,20 @@ pub struct SystemMeta {
     pub name: Option<String>,
 }
 
+/// A bootstrap message to send to an actor after the supervisor starts.
+#[derive(Debug, Deserialize, Clone)]
+pub struct BootstrapMessage {
+    /// Full message variant path, e.g. "CounterMsg::Tick" or "PoolMsg::SpawnWorker".
+    /// Format: "<MsgType>::<VariantName>"
+    pub message: String,
+    /// Optional payload fields as key-value pairs.
+    /// For unit-like variants (e.g. Tick), omit this.
+    /// For struct variants with fields, provide field values:
+    ///   payload = { task_id = 0 }
+    #[serde(default)]
+    pub payload: Option<toml::Table>,
+}
+
 /// An `[[actors]]` entry — one actor instance in the system.
 #[derive(Debug, Deserialize, Clone)]
 pub struct ActorInstance {
@@ -372,6 +386,10 @@ pub struct ActorInstance {
     /// Traits the behavior type implements (e.g. `["CountsRounds", "HasCurrentTimer"]`).
     #[serde(default)]
     pub behavior_traits: Vec<String>,
+    /// Bootstrap messages to send after supervisor starts.
+    #[serde(default)]
+    pub bootstrap: Vec<BootstrapMessage>,
+
     /// Constructor param injections: field name → source mapping.
     ///
     /// ```toml
@@ -392,11 +410,19 @@ pub struct ActorInstance {
 }
 
 /// A value in `[actors.inject]` — where a constructor param's handle comes from.
+///
+/// When `source = "factory"`, `crate` and `function` identify the factory
+/// function to inject as a function pointer.
 #[derive(Debug, Deserialize, Clone)]
 pub struct InjectSource {
     /// `"self"` — create a channel for this actor and inject its ref.
     /// `"actor"` — use another actor's channel ref (requires `actor` field).
     pub source: String,
+    /// Crate name for factory injection (when `source = "factory"`).
+    #[serde(rename = "crate")]
+    pub crate_name: Option<String>,
+    /// Function name for factory injection (when `source = "factory"`).
+    pub function: Option<String>,
     /// Name of the source actor when `source = "actor"`.
     pub actor: Option<String>,
     /// Mailbox index for multi-mailbox actors (0-based).

@@ -4,7 +4,7 @@ name = "bloxide"
 version.workspace = true
 edition.workspace = true
 publish = false
-description = "Workspace host crate for runnable examples"
+description = "Workspace host crate for bloxide apps and tools"
 
 [workspace]
 members = [
@@ -45,6 +45,9 @@ members = [
     "crates/tools/cargo-blox",
     "tools/bloxide-viz-export",
     "apps/tokio-demo",
+    "apps/tokio-minimal-demo",
+    "apps/tokio-pool-demo",
+    "apps/embassy-demo",
 ]
 resolver = "2"
 
@@ -98,6 +101,7 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-log = "0.2"
+static_cell = "2"
 
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std", "tracing"] }

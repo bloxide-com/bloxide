@@ -61,6 +61,35 @@ fn collect_ctor_fields(blox_config: &BloxConfig) -> Vec<CtorField> {
     fields
 }
 
+fn toml_value_to_tokens(value: &toml::Value) -> anyhow::Result<proc_macro2::TokenStream> {
+    use proc_macro2::Span;
+    match value {
+        toml::Value::Integer(i) => {
+            let lit = proc_macro2::Literal::i64_unsuffixed(*i);
+            Ok(quote! { #lit })
+        }
+        toml::Value::String(s) => {
+            let lit = syn::LitStr::new(s, Span::call_site());
+            Ok(quote! { #lit })
+        }
+        toml::Value::Float(f) => {
+            let lit = proc_macro2::Literal::f64_unsuffixed(*f);
+            Ok(quote! { #lit })
+        }
+        toml::Value::Boolean(true) => Ok(quote! { true }),
+        toml::Value::Boolean(false) => Ok(quote! { false }),
+        toml::Value::Array(arr) => {
+            let elems: Vec<_> = arr.iter().map(toml_value_to_tokens).collect::<Result<_, _>>()?;
+            Ok(quote! { [#(#elems),*] })
+        }
+        toml::Value::Datetime(dt) => {
+            let lit = syn::LitStr::new(&dt.to_string(), Span::call_site());
+            Ok(quote! { #lit })
+        }
+        toml::Value::Table(_) => anyhow::bail!("nested tables are not supported as bootstrap payload values"),
+    }
+}
+
 /// Return the primary mailbox message type and its crate from a blox config.
 fn primary_message(blox_config: &BloxConfig) -> Option<(String, String)> {
     let event = blox_config.event.as_ref()?;
@@ -208,7 +237,32 @@ pub fn generate(
         }
     }
 
-    // Message type imports.
+    // Message type imports and bootstrap struct imports.
+    let mut bootstrap_imports: BTreeSet<(String, String)> = BTreeSet::new();
+    for actor in &config.actors {
+        if actor.kind.as_deref() == Some("timer") {
+            continue;
+        }
+        if let Some(blox_config) = blox_configs.get(&actor.blox) {
+            if let Some((msg_crate, _msg_type)) = primary_message(blox_config) {
+                for boot in &actor.bootstrap {
+                    let variant = boot
+                        .message
+                        .split("::")
+                        .nth(1)
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "actor '{}' bootstrap message '{}' is not in the form MsgType::VariantName",
+                                actor.name,
+                                boot.message
+                            )
+                        })?;
+                    bootstrap_imports.insert((msg_crate.clone(), variant.to_string()));
+                }
+            }
+        }
+    }
+
     let mut message_imports: BTreeSet<(String, String)> = BTreeSet::new();
     for actor in &config.actors {
         if actor.kind.as_deref() == Some("timer") {
@@ -220,6 +274,13 @@ pub fn generate(
             }
         }
     }
+    for (msg_crate, variant) in bootstrap_imports {
+        let crate_ident = format_ident!("{}", msg_crate);
+        let variant_ident = format_ident!("{}", variant);
+        use_stmts.push(quote! {
+            use ::#crate_ident::#variant_ident;
+        });
+    }
     for (msg_crate, msg_type) in message_imports {
         let crate_ident = format_ident!("{}", msg_crate);
         let type_ident = format_ident!("{}", msg_type);
@@ -229,13 +290,25 @@ pub fn generate(
     }
 
     // ── Timer spawn ─────────────────────────────────────────────────────────
+    let mut embassy_timer_task_decl = Vec::new();
     let mut timer_stmts = Vec::new();
+
     let has_timer = config.actors.iter().any(|a| a.kind.as_deref() == Some("timer"));
     if has_timer {
-        timer_stmts.push(quote! {
-            let timer_ref = ::#runtime_crate_ident::spawn_timer!(8);
-        });
+        if is_tokio {
+            timer_stmts.push(quote! {
+                let timer_ref = ::#runtime_crate_ident::spawn_timer!(8);
+            });
+        } else {
+            embassy_timer_task_decl.push(quote! {
+                ::#runtime_crate_ident::timer_task!(timer_task);
+            });
+            timer_stmts.push(quote! {
+                let timer_ref = ::#runtime_crate_ident::spawn_timer!(spawner, timer_task, 8);
+            });
+        }
     }
+
 
     // ── Channel creation ────────────────────────────────────────────────────
     let mut channel_stmts = Vec::new();
@@ -277,14 +350,16 @@ pub fn generate(
         let spec_ident = format_ident!("{}Spec", actor_name);
         let task_ident = format_ident!("{}_task", actor.name);
 
-        let has_behavior_generic = blox_config
+        let generics_str = blox_config
             .context
             .as_ref()
             .and_then(|c| c.generics.as_deref())
-            .map(|g| g.contains("B:"))
-            .unwrap_or(false);
+            .unwrap_or("");
 
-        let spec_ty = if has_behavior_generic {
+        let has_r = generics_str.contains("R:");
+        let has_b = generics_str.contains("B:");
+
+        let spec_ty = if has_r && has_b {
             let behavior = actor.behavior.as_ref().ok_or_else(|| {
                 anyhow::anyhow!(
                     "actor '{}' blox has behavior generic but no behavior type specified",
@@ -293,8 +368,19 @@ pub fn generate(
             })?;
             let behavior_ident = format_ident!("{}", behavior);
             quote! { #spec_ident<#runtime_ident, #behavior_ident> }
-        } else {
+        } else if has_b {
+            let behavior = actor.behavior.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "actor '{}' blox has behavior generic but no behavior type specified",
+                    actor.name
+                )
+            })?;
+            let behavior_ident = format_ident!("{}", behavior);
+            quote! { #spec_ident<#behavior_ident> }
+        } else if has_r {
             quote! { #spec_ident<#runtime_ident> }
+        } else {
+            quote! { #spec_ident }
         };
 
         task_decls.push(quote! {
@@ -331,6 +417,24 @@ pub fn generate(
                 if source.source == "self" {
                     let ref_ident = format_ident!("{}_ref", actor.name);
                     ctor_args.push(quote! { #ref_ident.clone() });
+                } else if source.source == "factory" {
+                    let factory_crate = source.crate_name.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "actor '{}' inject field '{}' source = 'factory' missing crate name",
+                            actor.name,
+                            field.name
+                        )
+                    })?;
+                    let factory_fn = source.function.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "actor '{}' inject field '{}' source = 'factory' missing function name",
+                            actor.name,
+                            field.name
+                        )
+                    })?;
+                    let crate_ident = format_ident!("{}", factory_crate);
+                    let fn_ident = format_ident!("{}", factory_fn);
+                    ctor_args.push(quote! { ::#crate_ident::#fn_ident as _ });
                 } else if source.source == "actor" {
                     let src_actor = source.actor.as_deref().ok_or_else(|| {
                         anyhow::anyhow!(
@@ -464,10 +568,18 @@ pub fn generate(
             }
         }
 
+        let kill_cap_stmt = if is_tokio {
+            quote! {
+                let #kill_cap_ident = #group_ident.kill_cap().clone();
+            }
+        } else {
+            quote! {}
+        };
+
         supervisor_stmts.push(quote! {
             let #control_ref_ident = #group_ident.control_ref();
             let #notify_ident = #group_ident.notify_sender();
-            let #kill_cap_ident = #group_ident.kill_cap().clone();
+            #kill_cap_stmt
             let #sup_id_ident = ::#runtime_crate_ident::next_actor_id!();
             let (children, #sup_notify_rx_ident, #sup_control_rx_ident) = #group_ident.finish();
         });
@@ -485,9 +597,15 @@ pub fn generate(
             #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident>::Lifecycle(LifecycleCommand::Start));
         });
 
-        root_task_decls.push(quote! {
-            ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
-        });
+        if is_tokio {
+            root_task_decls.push(quote! {
+                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
+            });
+        } else {
+            root_task_decls.push(quote! {
+                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>, std::process::exit(0));
+            });
+        }
     }
 
     // ── Supervisor run statements ───────────────────────────────────────────
@@ -513,9 +631,62 @@ pub fn generate(
         } else {
             format_ident!("sup_control_rx_{}", idx)
         };
-        supervisor_run_stmts.push(quote! {
-            #task_ident(#sup_machine_ident, (#sup_notify_rx_ident, #sup_control_rx_ident)).await;
-        });
+        if is_tokio {
+            supervisor_run_stmts.push(quote! {
+                #task_ident(#sup_machine_ident, (#sup_notify_rx_ident, #sup_control_rx_ident)).await;
+            });
+        } else {
+            supervisor_run_stmts.push(quote! {
+                spawner.must_spawn(#task_ident(#sup_machine_ident, (#sup_notify_rx_ident, #sup_control_rx_ident)));
+            });
+        }
+    }
+
+    // ── Bootstrap message sends ─────────────────────────────────────────────
+    let mut bootstrap_send_stmts = Vec::new();
+    for actor in &config.actors {
+        if actor.kind.as_deref() == Some("timer") {
+            continue;
+        }
+        if actor.bootstrap.is_empty() {
+            continue;
+        }
+        let ref_ident = format_ident!("{}_ref", actor.name);
+        let id_ident = format_ident!("{}_id", actor.name);
+        for boot in &actor.bootstrap {
+            let parts: Vec<&str> = boot.message.split("::").collect();
+            if parts.len() != 2 {
+                anyhow::bail!(
+                    "actor '{}' bootstrap message '{}' is not in the form MsgType::VariantName",
+                    actor.name,
+                    boot.message
+                );
+            }
+            let msg_type_ident = format_ident!("{}", parts[0]);
+            let variant_ident = format_ident!("{}", parts[1]);
+
+            let msg_expr = if let Some(payload) = &boot.payload {
+                let mut field_tokens = Vec::new();
+                for (key, value) in payload {
+                    let field_ident = format_ident!("{}", key);
+                    let value_tokens = toml_value_to_tokens(value)?;
+                    field_tokens.push(quote! { #field_ident: #value_tokens });
+                }
+                quote! { #msg_type_ident::#variant_ident(#variant_ident { #(#field_tokens),* }) }
+            } else {
+                quote! { #msg_type_ident::#variant_ident(#variant_ident) }
+            };
+
+            if is_tokio {
+                bootstrap_send_stmts.push(quote! {
+                    let _ = #ref_ident.send(#id_ident, #msg_expr).await;
+                });
+            } else {
+                bootstrap_send_stmts.push(quote! {
+                    let _ = #ref_ident.try_send(#id_ident, #msg_expr);
+                });
+            }
+        }
     }
 
     // ── Main function ───────────────────────────────────────────────────────
@@ -536,6 +707,7 @@ pub fn generate(
                 #(#ctx_stmts)*
                 #(#machine_stmts)*
                 #(#supervisor_stmts)*
+                #(#bootstrap_send_stmts)*
                 #(#supervisor_run_stmts)*
                 println!(#done_lit);
             }
@@ -555,6 +727,7 @@ pub fn generate(
                 #(#ctx_stmts)*
                 #(#machine_stmts)*
                 #(#supervisor_stmts)*
+                #(#bootstrap_send_stmts)*
                 #(#supervisor_run_stmts)*
                 println!(#done_lit);
             }
@@ -562,6 +735,7 @@ pub fn generate(
     };
 
     let tokens = quote! {
+        #(#embassy_timer_task_decl)*
         #(#use_stmts)*
         #(#task_decls)*
         #(#root_task_decls)*

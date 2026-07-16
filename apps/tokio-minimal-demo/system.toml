@@ -1,0 +1,28 @@
+# Copyright 2025 Bloxide, all rights reserved
+[system]
+runtime = "tokio"
+name = "tokio-minimal-demo"
+
+[[actors]]
+name = "counter"
+blox = "counter-blox"
+behavior = "CounterBehavior"
+behavior_impl = "counter-demo-impl"
+
+  # CounterCtx has only self_id (auto-injected) and behavior (delegate, auto-defaulted).
+  # No inject entries needed — self_id and behavior are handled by codegen.
+
+  # Counter needs 2 Tick messages to reach Done terminal state (DONE_AT_COUNT = 2).
+  [[actors.bootstrap]]
+  message = "CounterMsg::Tick"
+
+  [[actors.bootstrap]]
+  message = "CounterMsg::Tick"
+
+[[supervision]]
+supervisor = "bloxide-supervisor"
+strategy = "one_for_one"
+children = ["counter"]
+
+  [supervision.policies]
+  counter = { stop = true }

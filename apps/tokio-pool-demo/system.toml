@@ -1,0 +1,33 @@
+# Copyright 2025 Bloxide, all rights reserved
+[system]
+runtime = "tokio"
+name = "tokio-pool-demo"
+
+[[actors]]
+name = "pool"
+blox = "pool-blox"
+
+  [actors.inject]
+  self_ref = { source = "self" }
+  worker_factory = { source = "factory", crate = "tokio_pool_demo_impl", function = "spawn_worker_tokio" }
+
+  # Bootstrap: send 3 SpawnWorker messages to trigger Idle→Active→AllDone
+  [[actors.bootstrap]]
+  message = "PoolMsg::SpawnWorker"
+  payload = { task_id = 0 }
+
+  [[actors.bootstrap]]
+  message = "PoolMsg::SpawnWorker"
+  payload = { task_id = 1 }
+
+  [[actors.bootstrap]]
+  message = "PoolMsg::SpawnWorker"
+  payload = { task_id = 2 }
+
+[[supervision]]
+supervisor = "bloxide-supervisor"
+strategy = "one_for_one"
+children = ["pool"]
+
+  [supervision.policies]
+  pool = { stop = true }

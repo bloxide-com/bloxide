@@ -1,0 +1,36 @@
+# Copyright 2025 Bloxide, all rights reserved
+[system]
+runtime = "embassy"
+name = "embassy-demo"
+
+[[actors]]
+name = "timer"
+blox = "bloxide-timer"
+kind = "timer"
+
+[[actors]]
+name = "ping"
+blox = "ping-blox"
+behavior = "PingBehavior"
+behavior_impl = "embassy-demo-impl"
+
+  [actors.inject]
+  self_ref = { source = "self" }
+  peer_ref = { source = "actor", actor = "pong" }
+  timer_ref = { source = "actor", actor = "timer" }
+
+[[actors]]
+name = "pong"
+blox = "pong-blox"
+
+  [actors.inject]
+  peer_ref = { source = "actor", actor = "ping" }
+
+[[supervision]]
+supervisor = "bloxide-supervisor"
+strategy = "one_for_one"
+children = ["ping", "pong"]
+
+  [supervision.policies]
+  ping = { restart = { max = 1 } }
+  pong = { stop = true }

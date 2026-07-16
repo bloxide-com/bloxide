@@ -55,11 +55,11 @@ bloxide/
   runtimes/
     bloxide-embassy/           ← Embassy runtime implementation
     bloxide-tokio/             ← Tokio runtime implementation; implements SpawnCap and DynamicChannelCap
-  examples/
-    embassy-demo.rs            ← binary: wires ping/pong actors and spawns Embassy tasks
-    tokio-minimal-demo.rs      ← binary: smallest runnable layered Tokio example (counter actor)
-    tokio-demo.rs              ← binary: wires ping/pong actors on Tokio
-    tokio-pool-demo.rs         ← binary: wires pool/worker actors; injects spawn_worker from impl crate
+  apps/
+    embassy-demo/             ← system.toml + generated main.rs: ping/pong on Embassy
+    tokio-demo/               ← system.toml + generated main.rs: ping/pong on Tokio
+    tokio-minimal-demo/       ← system.toml + generated main.rs: counter actor on Tokio
+    tokio-pool-demo/          ← system.toml + generated main.rs: pool/worker on Tokio
   AGENTS.md                    ← this file
 ```
 
