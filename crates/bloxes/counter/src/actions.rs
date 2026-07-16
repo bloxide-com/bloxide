@@ -1,9 +1,10 @@
 // Copyright 2025 Bloxide, all rights reserved
 use crate::prelude::*;
+use blox_ctx_ticks::CountsTicks;
 use bloxide_core::{
-    capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions,
+    spec::StateFns, transition::ActionResult, transitions,
 };
-use counter_actions::{increment_count, CountsTicks};
+use counter_actions::increment_count;
 use counter_messages::CounterMsg;
 
 const DONE_AT_COUNT: u8 = 2;

@@ -1,0 +1,17 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "blox-ctx-worker-peers"
+version.workspace = true
+edition.workspace = true
+description = "Domain context crate: HasWorkerPeers delegatable behavior trait"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+std = ["bloxide-core/std"]
+
+[dependencies]
+bloxide-core = { workspace = true, features = ["alloc"] }
+bloxide-macros = { workspace = true }
+pool-messages = { workspace = true }

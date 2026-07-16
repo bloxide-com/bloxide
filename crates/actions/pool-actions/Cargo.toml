@@ -14,5 +14,9 @@ std = ["bloxide-core/std", "bloxide-spawn/std"]
 [dependencies]
 bloxide-core  = { workspace = true, features = ["alloc"] }
 bloxide-spawn = { workspace = true }
-pool-messages = { workspace = true }
 bloxide-macros = { workspace = true }
+pool-messages = { workspace = true }
+blox-ctx-workers = { workspace = true }
+blox-ctx-pool-ref = { workspace = true }
+blox-ctx-current-task = { workspace = true }
+blox-ctx-worker-peers = { workspace = true }

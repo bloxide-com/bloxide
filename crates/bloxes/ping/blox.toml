@@ -5,30 +5,51 @@ name = "Ping"
 [context]
 name = "PingCtx"
 generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
-actions_crate = "ping_pong_actions"
 extra_where = ["B: Default", "B::Round: Into<u32>"]
 on_init = "ctx.behavior = B::default();"
 imports = [
-    "ping_pong_actions::{HasPeerRef, HasSelfRef}",
     "ping_pong_messages::PingPongMsg",
-    "bloxide_timer::{HasTimerRef, TimerCommand, TimerId}",
+    "bloxide_timer::{TimerCommand, TimerId}",
 ]
 
+# Accessor traits from bloxide-messaging (2-param, require #[provides])
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasPeerRef<R, PingPongMsg>"
+field = "peer_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "accessor"
+
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasSelfRef<R, PingPongMsg>"
+field = "self_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "accessor"
+
+# Accessor trait from bloxide-timer (1-param, convention-based inference works)
+[[context.uses]]
+crate = "bloxide_timer"
+trait = "HasTimerRef<R>"
+field = "timer_ref"
+field_type = "ActorRef<TimerCommand, R>"
+role = "accessor"
+
+# Behavior traits from context crates (delegatable)
+[[context.uses]]
+crate = "blox_ctx_current_timer"
+trait = "HasCurrentTimer"
+delegatable = true
+
+[[context.uses]]
+crate = "blox_ctx_rounds"
+trait = "CountsRounds"
+delegatable = true
+
+# Blox-specific fields
 [[context.fields]]
 name = "self_id"
 ty = "ActorId"
-
-[[context.fields]]
-name = "peer_ref"
-ty = "ActorRef<PingPongMsg, R>"
-
-[[context.fields]]
-name = "self_ref"
-ty = "ActorRef<PingPongMsg, R>"
-
-[[context.fields]]
-name = "timer_ref"
-ty = "ActorRef<TimerCommand, R>"
 
 [[context.fields]]
 name = "behavior"

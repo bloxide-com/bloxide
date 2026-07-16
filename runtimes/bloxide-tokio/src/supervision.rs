@@ -278,6 +278,7 @@ mod tests {
     // ── Minimal test MachineSpec for report_outcome tests ─────────────────────
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    #[allow(dead_code)]
     enum TestState {
         Running,
         Done,

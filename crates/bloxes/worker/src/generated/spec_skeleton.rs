@@ -4,10 +4,8 @@ use ::bloxide_core::capability::BloxRuntime;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use crate::{WorkerCtx, WorkerEvent};
 pub use crate::generated::topology::WorkerState;
-use pool_actions::{traits::HasWorkerPeers, traits::HasCurrentTask};
-use pool_actions::traits::HasPoolRef;
-use pool_messages::{PoolMsg, WorkerMsg};
-use alloc::vec::Vec;
+use blox_ctx_worker_peers::HasWorkerPeers;
+use blox_ctx_current_task::HasCurrentTask;
 pub struct WorkerSpec<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> {
     _phantom: PhantomData<(R, B)>,
 }

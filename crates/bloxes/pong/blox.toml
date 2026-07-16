@@ -5,19 +5,22 @@ name = "Pong"
 [context]
 name = "PongCtx"
 generics = "<R: BloxRuntime>"
-actions_crate = "ping_pong_actions"
 imports = [
-    "ping_pong_actions::HasPeerRef",
     "ping_pong_messages::PingPongMsg",
 ]
 
+# Accessor trait from bloxide-messaging (2-param, requires #[provides])
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasPeerRef<R, PingPongMsg>"
+field = "peer_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "accessor"
+
+# Blox-specific fields
 [[context.fields]]
 name = "self_id"
 ty = "ActorId"
-
-[[context.fields]]
-name = "peer_ref"
-ty = "ActorRef<PingPongMsg, R>"
 
 [event]
 name = "PongEvent"

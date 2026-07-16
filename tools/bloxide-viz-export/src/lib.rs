@@ -2,7 +2,8 @@
 pub mod model;
 
 use bloxide_codegen::schema::{
-    BloxConfig, ContextConfig, StateConfig, TopologyConfig, TransitionConfig, WiringConfig,
+    BloxConfig, ContextConfig, StateConfig, TopologyConfig, TransitionConfig,
+    WiringConfig,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -338,9 +339,35 @@ fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
         })
         .collect();
 
+    // Fields contributed by composable context crates (`[[context.uses]]`).
+    let mut uses: Vec<model::ContextField> = Vec::new();
+    for u in &context.uses {
+        if let (Some(name), Some(ty)) = (&u.field, &u.field_type) {
+            let annotation = u
+                .trait_
+                .as_ref()
+                .map(|t| format!("#[provides({})]", t))
+                .into_iter()
+                .collect();
+            uses.push(model::ContextField {
+                name: name.clone(),
+                ty: ty.clone(),
+                annotations: annotation,
+            });
+        }
+        for f in &u.fields {
+            uses.push(model::ContextField {
+                name: f.name.clone(),
+                ty: f.ty.clone(),
+                annotations: Vec::new(),
+            });
+        }
+    }
+
     spec.context = Some(model::ContextDef {
         struct_name: context.name.clone(),
         fields,
+        uses,
     });
 }
 
@@ -742,8 +769,8 @@ mod tests {
         // Context
         let ctx = ping.context.as_ref().expect("Ping has context");
         assert_eq!(ctx.struct_name, "PingCtx");
-        assert!(ctx.fields.iter().any(|f| f.name == "peer_ref"));
         assert!(ctx.fields.iter().any(|f| f.name == "behavior"));
+        assert!(ctx.uses.iter().any(|f| f.name == "peer_ref"));
     }
 
     #[test]

@@ -145,6 +145,8 @@ pub struct ActionDef {
 pub struct ContextDef {
     pub struct_name: String,
     pub fields: Vec<ContextField>,
+    /// Fields contributed by composable context crates (`[[context.uses]]`).
+    pub uses: Vec<ContextField>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

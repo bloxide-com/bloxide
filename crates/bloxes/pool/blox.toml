@@ -13,37 +13,50 @@ message_path = "pool_messages::PoolMsg"
 [context]
 name = "PoolCtx"
 generics = "<R: BloxRuntime>"
-actions_crate = "pool_actions"
 on_init = "ctx.worker_refs_mut().clear(); ctx.worker_ctrls_mut().clear(); ctx.set_pending(0);"
 imports = [
     "pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg}",
-    "pool_actions::traits::{HasSelfRef, HasWorkers, WorkerSpawnFn}",
+    "blox_ctx_workers::WorkerSpawnFn",
     "alloc::vec::Vec",
 ]
 
+# Accessor trait from bloxide-messaging (2-param, requires #[provides])
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasSelfRef<R, PoolMsg>"
+field = "self_ref"
+field_type = "ActorRef<PoolMsg, R>"
+role = "accessor"
+
+# Multi-field context crate: HasWorkers + HasWorkerFactory with impl macro
+[[context.uses]]
+crate = "blox_ctx_workers"
+traits = ["HasWorkers<R>", "HasWorkerFactory<R>"]
+impl_macro = "impl_has_workers"
+
+  [[context.uses.fields]]
+  name = "worker_refs"
+  ty = "Vec<ActorRef<WorkerMsg, R>>"
+  role = "state"
+
+  [[context.uses.fields]]
+  name = "worker_ctrls"
+  ty = "Vec<ActorRef<WorkerCtrl<R>, R>>"
+  role = "state"
+
+  [[context.uses.fields]]
+  name = "pending"
+  ty = "u32"
+  role = "state"
+
+# Blox-specific fields
 [[context.fields]]
 name = "self_id"
 ty = "ActorId"
 
 [[context.fields]]
-name = "self_ref"
-ty = "ActorRef<PoolMsg, R>"
-
-[[context.fields]]
 name = "worker_factory"
 ty = "WorkerSpawnFn<R>"
-
-[[context.fields]]
-name = "worker_refs"
-ty = "Vec<ActorRef<WorkerMsg, R>>"
-
-[[context.fields]]
-name = "worker_ctrls"
-ty = "Vec<ActorRef<WorkerCtrl<R>, R>>"
-
-[[context.fields]]
-name = "pending"
-ty = "u32"
 
 [topology]
 # Legacy: hand-written StateFns constants in actions.rs

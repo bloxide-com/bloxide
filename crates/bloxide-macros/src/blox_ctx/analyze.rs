@@ -14,8 +14,19 @@ const ANNOTATION_CTOR: &str = "ctor";
 const ANNOTATION_PROVIDES: &str = "provides";
 const ANNOTATION_DELEGATES: &str = "delegates";
 
-const ALL_DEPRECATED_ANNOTATIONS: &[&str] =
-    &[ANNOTATION_SELF_ID, ANNOTATION_CTOR, ANNOTATION_PROVIDES];
+// Annotations that are always recognized by BloxCtx (deprecated + non-deprecated).
+const ALL_RECOGNIZED_ANNOTATIONS: &[&str] = &[
+    ANNOTATION_SELF_ID,
+    ANNOTATION_CTOR,
+    ANNOTATION_PROVIDES,
+    ANNOTATION_DELEGATES,
+];
+
+// Annotations that trigger a deprecation warning. `#[provides]` is NOT
+// deprecated — it is the canonical way to bind multi-param accessor traits
+// (e.g. `HasPeerRef<R, PingPongMsg>`) that convention-based inference cannot
+// infer (it only generates 1-param `HasPeerRef<R>`).
+const DEPRECATED_ANNOTATIONS: &[&str] = &[ANNOTATION_SELF_ID, ANNOTATION_CTOR];
 
 /// Categorization of a field's role in the context.
 #[derive(Clone)]
@@ -151,10 +162,10 @@ fn extract_explicit_annotation(
         let path = attr.path();
 
         // Check if this is a BloxCtx annotation.
-        let is_deprecated = ALL_DEPRECATED_ANNOTATIONS.iter().any(|a| path.is_ident(a));
-        let is_delegates = path.is_ident(ANNOTATION_DELEGATES);
+        let is_recognized = ALL_RECOGNIZED_ANNOTATIONS.iter().any(|a| path.is_ident(a));
+        let is_deprecated = DEPRECATED_ANNOTATIONS.iter().any(|a| path.is_ident(a));
 
-        if !is_deprecated && !is_delegates {
+        if !is_recognized {
             continue;
         }
 

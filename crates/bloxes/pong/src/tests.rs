@@ -28,7 +28,7 @@ mod pong_tests {
             let (ping_ref, to_ping_rx) =
                 <TestRuntime as DynamicChannelCap>::channel::<PingPongMsg>(ping_id, 16);
 
-            let ctx = PongCtx::new(pong_id, ping_ref);
+            let ctx = PongCtx::new(ping_ref, pong_id);
             let machine = StateMachine::<PongSpec<TestRuntime>>::new(ctx);
 
             PongHarness {

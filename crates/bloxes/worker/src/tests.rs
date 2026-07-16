@@ -14,8 +14,8 @@ mod worker_tests {
         capability::DynamicChannelCap, messaging::ActorRef, spec::MachineSpec, Envelope,
         MachineState, StateMachine,
     };
-    use pool_actions::traits::HasCurrentTask;
-    use pool_actions::traits::HasWorkerPeers;
+    use blox_ctx_current_task::HasCurrentTask;
+    use blox_ctx_worker_peers::HasWorkerPeers;
     use pool_messages::{AddWorkerPeer, WorkerCtrl};
     use pool_messages::{DoWork, PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
@@ -65,7 +65,7 @@ mod worker_tests {
             let (pool_ref, pool_rx) =
                 <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 16);
 
-            let ctx = WorkerCtx::new(worker_id, pool_ref, TestBehavior::default());
+            let ctx = WorkerCtx::new(pool_ref, worker_id, TestBehavior::default());
             let machine = StateMachine::<WorkerSpec<TestRuntime, TestBehavior>>::new(ctx);
 
             WorkerHarness { machine, pool_rx }

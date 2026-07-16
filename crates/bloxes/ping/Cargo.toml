@@ -16,6 +16,9 @@ bloxide-core        = { workspace = true, features = ["alloc"] }
 bloxide-macros      = { workspace = true }
 bloxide-log         = { workspace = true }
 bloxide-timer       = { workspace = true }
+bloxide-messaging   = { workspace = true }
+blox-ctx-rounds     = { workspace = true }
+blox-ctx-current-timer = { workspace = true }
 ping-pong-actions   = { workspace = true }
 ping-pong-messages  = { workspace = true }
 [dev-dependencies]

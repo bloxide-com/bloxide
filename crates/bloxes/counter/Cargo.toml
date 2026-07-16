@@ -14,5 +14,6 @@ std = ["bloxide-core/std"]
 [dependencies]
 bloxide-core = { workspace = true, features = ["alloc"] }
 bloxide-macros = { workspace = true }
+blox-ctx-ticks = { workspace = true }
 counter-actions = { workspace = true }
 counter-messages = { workspace = true }

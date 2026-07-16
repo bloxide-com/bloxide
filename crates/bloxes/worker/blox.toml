@@ -32,26 +32,40 @@ terminal = true
 [context]
 name = "WorkerCtx"
 generics = "<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask>"
-actions_crate = "pool_actions"
 on_init = "ctx.set_task_id(0); ctx.set_result(0); ctx.peers_mut().clear();"
 imports = [
-    "pool_actions::traits::HasPoolRef",
     "pool_messages::{PoolMsg, WorkerMsg}",
     "alloc::vec::Vec",
 ]
 
+# Accessor trait from context crate (1-param, convention-based inference works)
+[[context.uses]]
+crate = "blox_ctx_pool_ref"
+trait = "HasPoolRef<R>"
+field = "pool_ref"
+field_type = "ActorRef<PoolMsg, R>"
+role = "accessor"
+
+# Behavior traits from context crates (delegatable)
+[[context.uses]]
+crate = "blox_ctx_worker_peers"
+trait = "HasWorkerPeers<R>"
+delegatable = true
+
+[[context.uses]]
+crate = "blox_ctx_current_task"
+trait = "HasCurrentTask"
+delegatable = true
+
+# Blox-specific fields
 [[context.fields]]
 name = "self_id"
 ty = "ActorId"
 
 [[context.fields]]
-name = "pool_ref"
-ty = "ActorRef<PoolMsg, R>"
-
-[[context.fields]]
 name = "behavior"
 ty = "B"
-delegates = ["traits::HasWorkerPeers<R>", "traits::HasCurrentTask"]
+delegates = ["HasWorkerPeers<R>", "HasCurrentTask"]
 
 # --- Declarative transitions (documentation; handler_fns takes precedence) ---
 

@@ -2,14 +2,13 @@
 //! Action functions and StateFns constants for the Worker actor.
 //!
 //! Moved from `spec.rs` during migration to TOML-driven structure.
+use blox_ctx_current_task::HasCurrentTask;
+use blox_ctx_worker_peers::HasWorkerPeers;
 use bloxide_core::{
     accessor::HasSelfId, capability::BloxRuntime, spec::StateFns, transition::ActionResult,
     transitions,
 };
-use pool_actions::{
-    actions::{apply_worker_control, broadcast_to_peers, notify_pool_done},
-    traits::{HasCurrentTask, HasWorkerPeers},
-};
+use pool_actions::actions::{apply_worker_control, broadcast_to_peers, notify_pool_done};
 use pool_messages::{WorkerCtrl, WorkerMsg};
 
 use crate::{WorkerCtx, WorkerEvent, WorkerSpec, WorkerState};

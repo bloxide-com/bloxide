@@ -1,0 +1,16 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "bloxide-messaging"
+version.workspace = true
+edition.workspace = true
+description = "Messaging service for bloxide — HasSelfRef and HasPeerRef accessor traits"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["alloc"]
+alloc = ["bloxide-core/alloc"]
+std = ["bloxide-core/std", "alloc"]
+
+[dependencies]
+bloxide-core = { workspace = true }

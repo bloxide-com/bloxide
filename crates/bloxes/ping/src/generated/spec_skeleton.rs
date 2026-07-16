@@ -4,10 +4,8 @@ use ::bloxide_core::capability::BloxRuntime;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use crate::{PingCtx, PingEvent};
 pub use crate::generated::topology::PingState;
-use ping_pong_actions::{HasCurrentTimer, CountsRounds};
-use ping_pong_actions::{HasPeerRef, HasSelfRef};
-use ping_pong_messages::PingPongMsg;
-use bloxide_timer::{HasTimerRef, TimerCommand, TimerId};
+use blox_ctx_current_timer::HasCurrentTimer;
+use blox_ctx_rounds::CountsRounds;
 pub struct PingSpec<R: BloxRuntime, B: HasCurrentTimer + CountsRounds + 'static>
 where
     B: Default,

@@ -79,7 +79,7 @@ pub fn spawn_worker_tokio(
     let worker_id = ctrl_ref.id();
 
     let behavior = WorkerBehavior::default();
-    let worker_ctx = WorkerCtx::new(worker_id, pool_ref.clone(), behavior);
+    let worker_ctx = WorkerCtx::new(pool_ref.clone(), worker_id, behavior);
     let machine =
         StateMachine::<WorkerSpec<TokioRuntime, WorkerBehavior<TokioRuntime>>>::new(worker_ctx);
 

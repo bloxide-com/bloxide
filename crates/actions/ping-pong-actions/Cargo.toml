@@ -12,4 +12,7 @@ bloxide-core = { workspace = true }
 bloxide-log = { workspace = true }
 bloxide-macros = { workspace = true }
 bloxide-timer = { workspace = true }
+bloxide-messaging = { workspace = true }
+blox-ctx-rounds = { workspace = true }
+blox-ctx-current-timer = { workspace = true }
 ping-pong-messages = { workspace = true }

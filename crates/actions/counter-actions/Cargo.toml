@@ -9,3 +9,4 @@ license.workspace = true
 
 [dependencies]
 bloxide-macros = { workspace = true }
+blox-ctx-ticks = { workspace = true }

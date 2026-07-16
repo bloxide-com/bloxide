@@ -1,0 +1,11 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "blox-ctx-rounds"
+version.workspace = true
+edition.workspace = true
+description = "Domain context crate: CountsRounds delegatable behavior trait"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxide-macros = { workspace = true }

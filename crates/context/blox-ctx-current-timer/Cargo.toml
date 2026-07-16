@@ -1,0 +1,12 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "blox-ctx-current-timer"
+version.workspace = true
+edition.workspace = true
+description = "Domain context crate: HasCurrentTimer delegatable behavior trait"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxide-macros = { workspace = true }
+bloxide-timer = { workspace = true }

@@ -1,0 +1,16 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "blox-ctx-pool-ref"
+version.workspace = true
+edition.workspace = true
+description = "Domain context crate: HasPoolRef accessor trait"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = []
+std = ["bloxide-core/std"]
+
+[dependencies]
+bloxide-core = { workspace = true, features = ["alloc"] }
+pool-messages = { workspace = true }

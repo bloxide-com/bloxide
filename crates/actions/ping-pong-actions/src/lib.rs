@@ -1,66 +1,34 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Domain action traits and generic functions for the ping-pong example.
 //!
-//! This crate is a portable action crate: it defines traits and trait-bounded
-//! generic functions without concrete runtime types.
+//! This crate is a portable action crate: it defines trait-bounded generic
+//! functions without concrete runtime types.
 //!
 //! # Layer responsibilities
 //!
-//! - **Accessor traits** (`HasPeerRef`, `HasSelfRef`): expose the `ActorRef<PingPongMsg, R>`
-//!   handles that actions need to send messages. Both Ping and Pong share `PingPongMsg`.
+//! - **Accessor traits** (`HasPeerRef`, `HasSelfRef`): now live in the
+//!   `bloxide-messaging` context crate. Re-exported here for convenience.
 //!
-//! - **Behavior traits** (`CountsRounds`, `HasCurrentTimer`): define what data the context
-//!   exposes to actions. Implemented on context structs in the blox crate (simple field
-//!   delegation).
+//! - **Behavior traits** (`CountsRounds`, `HasCurrentTimer`): now live in
+//!   dedicated context crates (`blox-ctx-rounds`, `blox-ctx-current-timer`).
+//!   Re-exported here for convenience.
 //!
-//! - **Generic action functions**: trait-bounded fns composable into `on_entry`/`on_exit`
-//!   slices and transition action lists. All work against trait bounds — no concrete types.
+//! - **Generic action functions**: trait-bounded fns composable into
+//!   `on_entry`/`on_exit` slices and transition action lists. All work against
+//!   trait bounds — no concrete types.
 
 #![no_std]
 
+// Re-export traits from context crates so existing imports continue to work.
+pub use blox_ctx_current_timer::HasCurrentTimer;
+pub use blox_ctx_rounds::CountsRounds;
+pub use bloxide_messaging::{HasPeerRef, HasSelfRef};
+
 use bloxide_core::{
-    accessor::HasSelfId, capability::BloxRuntime, messaging::ActorRef, transition::ActionResult,
+    accessor::HasSelfId, capability::BloxRuntime, transition::ActionResult,
 };
-use bloxide_macros::delegatable;
-use bloxide_timer::{cancel_timer, set_timer, HasTimerRef, TimerId};
+use bloxide_timer::{cancel_timer, set_timer, HasTimerRef};
 use ping_pong_messages::{Ping, PingPongMsg, Pong, Resume};
-
-// ── Accessor traits ───────────────────────────────────────────────────────────
-
-/// Provides access to the peer actor's mailbox (the other actor in the pair).
-///
-/// Both Ping and Pong use `PingPongMsg`, so the peer ref type is the same
-/// for both actors.
-pub trait HasPeerRef<R: BloxRuntime> {
-    fn peer_ref(&self) -> &ActorRef<PingPongMsg, R>;
-}
-
-/// Provides access to this actor's own mailbox (for timer-delivered self messages).
-pub trait HasSelfRef<R: BloxRuntime> {
-    fn self_ref(&self) -> &ActorRef<PingPongMsg, R>;
-}
-
-// ── Behavior traits ───────────────────────────────────────────────────────────
-
-/// Tracks the current round number in the ping-pong exchange.
-#[delegatable]
-pub trait CountsRounds {
-    type Round: Copy
-        + PartialEq
-        + PartialOrd
-        + core::ops::Add<Output = Self::Round>
-        + From<u8>
-        + core::fmt::Display;
-    fn round(&self) -> Self::Round;
-    fn set_round(&mut self, round: Self::Round);
-}
-
-/// Provides read/write access to the current pending timer ID.
-#[delegatable]
-pub trait HasCurrentTimer {
-    fn current_timer(&self) -> Option<TimerId>;
-    fn set_current_timer(&mut self, timer: Option<TimerId>);
-}
 
 // ── Entry/exit action functions ────────────────────────────────────────────────
 //
@@ -79,7 +47,7 @@ pub fn increment_round<C: CountsRounds>(ctx: &mut C) {
 pub fn schedule_resume<R, C>(ctx: &mut C, duration_ms: u64)
 where
     R: BloxRuntime,
-    C: HasSelfRef<R> + HasTimerRef<R> + HasSelfId + HasCurrentTimer,
+    C: HasSelfRef<R, PingPongMsg> + HasTimerRef<R> + HasSelfId + HasCurrentTimer,
 {
     let id = set_timer::<R, C, PingPongMsg>(
         ctx,
@@ -110,7 +78,7 @@ where
 pub fn send_ping<R, C>(ctx: &mut C) -> ActionResult
 where
     R: BloxRuntime,
-    C: HasSelfId + HasPeerRef<R> + CountsRounds,
+    C: HasSelfId + HasPeerRef<R, PingPongMsg> + CountsRounds,
     C::Round: Into<u32>,
 {
     ActionResult::from(ctx.peer_ref().try_send(
@@ -127,7 +95,7 @@ where
 pub fn send_initial_ping<R, C>(ctx: &mut C)
 where
     R: BloxRuntime,
-    C: HasSelfId + HasPeerRef<R> + CountsRounds,
+    C: HasSelfId + HasPeerRef<R, PingPongMsg> + CountsRounds,
     C::Round: Into<u32>,
 {
     if ctx.round() == C::Round::from(1) {
@@ -157,7 +125,7 @@ where
 pub fn send_pong<R, C>(ctx: &mut C, ping: &Ping) -> ActionResult
 where
     R: BloxRuntime,
-    C: HasSelfId + HasPeerRef<R>,
+    C: HasSelfId + HasPeerRef<R, PingPongMsg>,
 {
     ActionResult::from(
         ctx.peer_ref()

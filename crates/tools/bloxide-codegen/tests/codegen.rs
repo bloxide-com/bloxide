@@ -545,6 +545,224 @@ delegates = ["CountsTicks"]
     assert!(content.contains("use counter_actions::{CountsTicks, __delegate_CountsTicks}"));
 }
 
+// ─── context.uses tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_generate_ctx_uses_single_field_accessor() {
+    let toml = r#"
+[actor]
+name = "Ping"
+
+[context]
+name = "PingCtx"
+generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
+actions_crate = "ping_pong_actions"
+
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasPeerRef<R, PingPongMsg>"
+field = "peer_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "ctor"
+
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasSelfRef<R, PingPongMsg>"
+field = "self_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "ctor"
+
+[[context.uses]]
+crate = "blox_ctx_rounds"
+trait = "CountsRounds"
+delegatable = true
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["CountsRounds"]
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "ping-blox").expect("generate failed");
+    let ctx_file = files
+        .iter()
+        .find(|(n, _)| n == "ctx.rs")
+        .expect("ctx.rs missing");
+    let content = &ctx_file.1;
+
+    // Struct + derive
+    assert!(content.contains("#[derive(BloxCtx)]"));
+    assert!(content.contains("pub struct PingCtx"));
+
+    // Single-field accessor fields from uses
+    assert!(content.contains("pub peer_ref: ActorRef<PingPongMsg, R>"));
+    assert!(content.contains("pub self_ref: ActorRef<PingPongMsg, R>"));
+
+    // Import: bloxide_messaging grouped import for both traits
+    assert!(content.contains("bloxide_messaging"));
+    assert!(content.contains("HasPeerRef"));
+    assert!(content.contains("HasSelfRef"));
+
+    // Delegatable trait import + delegate macro
+    assert!(content.contains("blox_ctx_rounds"));
+    assert!(content.contains("CountsRounds"));
+    assert!(content.contains("__delegate_CountsRounds"));
+
+    // Behavior field with #[delegates]
+    assert!(content.contains("#[delegates(CountsRounds)]"));
+    assert!(content.contains("pub behavior: B"));
+
+    // Framework imports
+    assert!(content.contains("use ::bloxide_core::ActorId"));
+    assert!(content.contains("use ::bloxide_macros::BloxCtx"));
+}
+
+#[test]
+fn test_generate_ctx_uses_delegatable_only() {
+    let toml = r#"
+[actor]
+name = "Counter"
+
+[context]
+name = "CounterCtx"
+generics = "<B: CountsTicks>"
+
+[[context.uses]]
+crate = "blox_ctx_ticks"
+trait = "CountsTicks"
+delegatable = true
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+delegates = ["CountsTicks"]
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "counter-blox").expect("generate failed");
+    let ctx_file = files
+        .iter()
+        .find(|(n, _)| n == "ctx.rs")
+        .expect("ctx.rs missing");
+    let content = &ctx_file.1;
+
+    // Delegatable trait from uses, not from actions_crate
+    assert!(content.contains("blox_ctx_ticks"));
+    assert!(content.contains("CountsTicks"));
+    assert!(content.contains("__delegate_CountsTicks"));
+
+    // Should NOT import from counter_actions (trait comes from uses)
+    assert!(!content.contains("counter_actions"));
+}
+
+#[test]
+fn test_generate_ctx_uses_multi_field_with_impl_macro() {
+    let toml = r#"
+[actor]
+name = "Pool"
+
+[context]
+name = "PoolCtx"
+generics = "<R: BloxRuntime, B: HasWorkers<R> + HasWorkerFactory<R>>"
+
+[[context.uses]]
+crate = "blox_ctx_workers"
+traits = ["HasWorkers<R>", "HasWorkerFactory<R>"]
+impl_macro = "impl_has_workers"
+
+  [[context.uses.fields]]
+  name = "worker_refs"
+  ty = "Vec<ActorRef<WorkerMsg, R>>"
+  role = "state"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[[context.fields]]
+name = "behavior"
+ty = "B"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "pool-blox").expect("generate failed");
+    let ctx_file = files
+        .iter()
+        .find(|(n, _)| n == "ctx.rs")
+        .expect("ctx.rs missing");
+    let content = &ctx_file.1;
+
+    // Multi-field sub-field
+    assert!(content.contains("pub worker_refs:"));
+
+    // Trait imports from blox_ctx_workers
+    assert!(content.contains("blox_ctx_workers"));
+    assert!(content.contains("HasWorkers"));
+    assert!(content.contains("HasWorkerFactory"));
+
+    // Impl macro call
+    assert!(content.contains("impl_has_workers"));
+    assert!(content.contains("PoolCtx"));
+}
+
+#[test]
+fn test_generate_spec_skeleton_uses_delegatable() {
+    let toml = r#"
+[actor]
+name = "Counter"
+
+[event]
+name = "CounterEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "CounterMsg"
+message_path = "counter_messages::CounterMsg"
+
+[context]
+name = "CounterCtx"
+generics = "<B: CountsTicks>"
+
+[[context.uses]]
+crate = "blox_ctx_ticks"
+trait = "CountsTicks"
+delegatable = true
+
+[topology]
+handler_fns = ["READY_FNS", "DONE_FNS"]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.states]]
+name = "Done"
+terminal = true
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "counter-blox").expect("generate failed");
+    let skeleton_file = files
+        .iter()
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &skeleton_file.1;
+
+    // The spec_skeleton should import the delegatable trait from its crate
+    // so the where-clause bound resolves.
+    assert!(content.contains("blox_ctx_ticks"));
+    assert!(content.contains("CountsTicks"));
+}
+
 #[test]
 fn test_generate_spec_skeleton_counter() {
     let toml = r#"
@@ -1342,7 +1560,10 @@ children = ["ping", "pong"]
     assert_eq!(ping.name, "ping");
     assert_eq!(ping.blox, "ping-blox");
     assert_eq!(ping.behavior.as_deref(), Some("DemoBehavior"));
-    assert_eq!(ping.behavior_traits, vec!["CountsRounds", "HasCurrentTimer"]);
+    assert_eq!(
+        ping.behavior_traits,
+        vec!["CountsRounds", "HasCurrentTimer"]
+    );
     assert_eq!(ping.inject.len(), 3);
 
     let self_ref = ping.inject.get("self_ref").expect("self_ref missing");
@@ -1583,9 +1804,18 @@ message = "PingPongMsg"
     assert_eq!(ping.blox, "ping");
     assert_eq!(ping.name, "ping_actor");
     assert_eq!(ping.behavior.as_deref(), Some("DemoBehavior"));
-    assert_eq!(ping.behavior_traits, vec!["CountsRounds", "HasCurrentTimer"]);
-    assert_eq!(ping.context_fields.get("peer_ref").map(String::as_str), Some("pong_actor"));
-    assert_eq!(ping.context_fields.get("self_ref").map(String::as_str), Some("ping_actor"));
+    assert_eq!(
+        ping.behavior_traits,
+        vec!["CountsRounds", "HasCurrentTimer"]
+    );
+    assert_eq!(
+        ping.context_fields.get("peer_ref").map(String::as_str),
+        Some("pong_actor")
+    );
+    assert_eq!(
+        ping.context_fields.get("self_ref").map(String::as_str),
+        Some("ping_actor")
+    );
 
     let pong = &wiring.actors[1];
     assert_eq!(pong.blox, "pong");

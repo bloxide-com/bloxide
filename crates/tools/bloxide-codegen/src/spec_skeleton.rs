@@ -1,7 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Generate MachineSpec skeleton from actor, topology, context, and event config.
 
-use quote::{format_ident, quote, ToTokens};
+use quote::{ToTokens, format_ident, quote};
 
 use crate::schema::{ActorConfig, ContextConfig, EventConfig, TopologyConfig};
 
@@ -126,8 +126,8 @@ pub fn generate(
         if !behavior_idents.is_empty() {
             for param in spec_generics.type_params_mut() {
                 if behavior_idents.iter().any(|id| id == &param.ident) {
-                    let static_bound: syn::TypeParamBound = syn::parse_str("'static")
-                        .expect("'static' is a valid lifetime bound");
+                    let static_bound: syn::TypeParamBound =
+                        syn::parse_str("'static").expect("'static' is a valid lifetime bound");
                     param.bounds.push(static_bound);
                 }
             }
@@ -164,8 +164,7 @@ pub fn generate(
         });
     }
 
-    let (spec_impl_generics, spec_ty_generics, spec_where_clause) =
-        spec_generics.split_for_impl();
+    let (spec_impl_generics, spec_ty_generics, spec_where_clause) = spec_generics.split_for_impl();
 
     let ctx_ty = if ctx_generics.type_params().count() > 0 {
         let (_impl_g, ty_g, _where_g) = ctx_generics.split_for_impl();
@@ -174,19 +173,48 @@ pub fn generate(
         quote! { #ctx_ident }
     };
 
-    let delegate_traits: Vec<String> = {
-        let mut traits = Vec::new();
-        for field in &context.fields {
-            if let Some(ref d) = field.delegates {
-                for tr in d {
-                    if !traits.contains(tr) {
-                        traits.push(tr.clone());
-                    }
+    // Collect delegate trait paths from both `[[context.uses]]` (delegatable
+    // entries) and legacy `[[context.fields]]` with `delegates = [...]`.
+    // The spec_skeleton needs these imports so that `where`-clause bounds
+    // like `B: CountsRounds` resolve.  Each trait is imported from its
+    // respective crate — context crates for `uses` entries, actions crate
+    // for legacy fields.
+    let mut delegate_imports: Vec<(String, String)> = Vec::new(); // (crate_name, trait_string)
+
+    // From `[[context.uses]]` — delegatable traits.
+    for u in &context.uses {
+        if u.delegatable {
+            let trait_strs: Vec<&str> = if let Some(ref t) = u.trait_ {
+                vec![t.as_str()]
+            } else {
+                u.traits.iter().map(|s| s.as_str()).collect()
+            };
+            for ts in trait_strs {
+                if !delegate_imports
+                    .iter()
+                    .any(|(c, t)| c == &u.crate_name && t == ts)
+                {
+                    delegate_imports.push((u.crate_name.clone(), ts.to_string()));
                 }
             }
         }
-        traits
-    };
+    }
+
+    // From legacy `[[context.fields]]` — traits referenced in `delegates`.
+    let actions_crate = context
+        .actions_crate
+        .clone()
+        .unwrap_or_else(|| derive_actions_crate(crate_name));
+    for field in &context.fields {
+        if let Some(ref d) = field.delegates {
+            for tr in d {
+                // Skip traits already imported via uses.
+                if !delegate_imports.iter().any(|(_, t)| t == tr) {
+                    delegate_imports.push((actions_crate.clone(), tr.clone()));
+                }
+            }
+        }
+    }
 
     let context_has_runtime = context
         .generics
@@ -288,32 +316,33 @@ pub fn generate(
         pub use crate::generated::topology::#state_ident;
     });
 
-    if !delegate_traits.is_empty() {
-        let actions_crate = context
-            .actions_crate
-            .clone()
-            .unwrap_or_else(|| derive_actions_crate(crate_name));
-        let actions_crate_ident = format_ident!("{}", actions_crate);
-        let trait_paths: Vec<_> = delegate_traits
-            .iter()
-            .map(|t| {
-                syn::parse_str::<syn::Path>(t)
-                    .map_err(|e| anyhow::anyhow!("invalid delegate trait '{}': {}", t, e))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        // Use the full path (without generic args) relative to the actions crate.
-        // e.g. "traits::HasWorkerPeers<R>" → pool_actions::traits::HasWorkerPeers
-        let trait_import_paths: Vec<_> = trait_paths.iter().map(path_without_generics).collect();
-        use_stmts.push(quote! {
-            use #actions_crate_ident::{#(#trait_import_paths),*};
-        });
-    }
-
-    // Emit user-provided imports from the context config.
-    for import in &context.imports {
-        let tree = syn::parse_str::<syn::UseTree>(import)
-            .map_err(|e| anyhow::anyhow!("invalid import '{}': {}", import, e))?;
-        use_stmts.push(quote! { use #tree; });
+    // Emit delegate trait imports — grouped by crate.
+    // Each entry is (crate_name, trait_string).  We group by crate to emit
+    // one `use` statement per crate.
+    if !delegate_imports.is_empty() {
+        // Group by crate name, preserving order.
+        let mut crate_order: Vec<String> = Vec::new();
+        for (crate_name, _) in &delegate_imports {
+            if !crate_order.contains(crate_name) {
+                crate_order.push(crate_name.clone());
+            }
+        }
+        for crate_name in &crate_order {
+            let crate_ident = format_ident!("{}", crate_name);
+            let trait_paths: Vec<syn::Path> = delegate_imports
+                .iter()
+                .filter(|(c, _)| c == crate_name)
+                .map(|(_, t)| {
+                    syn::parse_str::<syn::Path>(t)
+                        .map_err(|e| anyhow::anyhow!("invalid delegate trait '{}': {}", t, e))
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let trait_import_paths: Vec<_> =
+                trait_paths.iter().map(path_without_generics).collect();
+            use_stmts.push(quote! {
+                use #crate_ident::{#(#trait_import_paths),*};
+            });
+        }
     }
 
     let struct_def = quote! {

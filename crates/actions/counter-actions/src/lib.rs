@@ -1,19 +1,15 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Action traits and generic functions for the layered counter demo.
+//!
+//! The `CountsTicks` trait now lives in the `blox-ctx-ticks` context crate.
+//! Re-exported here for convenience. New code should import directly from
+//! `blox_ctx_ticks`.
 #![no_std]
 
-use bloxide_macros::delegatable;
+pub use blox_ctx_ticks::CountsTicks;
 
 pub mod prelude {
     pub use crate::{increment_count, CountsTicks};
-}
-
-/// Behavior trait for contexts that track a count.
-#[delegatable]
-pub trait CountsTicks {
-    type Count: Copy + PartialOrd + core::ops::Add<Output = Self::Count> + From<u8>;
-    fn count(&self) -> Self::Count;
-    fn set_count(&mut self, count: Self::Count);
 }
 
 /// Generic, reusable increment operation used by counter blox actions.

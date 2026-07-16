@@ -19,7 +19,8 @@ mod ping_tests {
         spec::MachineSpec, DynamicChannelCap, Envelope, MachineState, StateMachine,
     };
     use bloxide_timer::{test_utils::VirtualClock, TimerCommand, TimerId};
-    use ping_pong_actions::{CountsRounds, HasCurrentTimer};
+    use blox_ctx_current_timer::HasCurrentTimer;
+    use blox_ctx_rounds::CountsRounds;
     use ping_pong_messages::{Ping, PingPongMsg, Pong};
     use std::vec::Vec;
 
@@ -69,10 +70,10 @@ mod ping_tests {
                 <TestRuntime as DynamicChannelCap>::channel::<TimerCommand>(timer_id, 16);
 
             let ctx = PingCtx::new(
-                ping_id,
                 pong_ref,
                 self_ref,
                 timer_ref,
+                ping_id,
                 TestBehavior::default(),
             );
             let machine = StateMachine::<PingSpec<TestRuntime, TestBehavior>>::new(ctx);

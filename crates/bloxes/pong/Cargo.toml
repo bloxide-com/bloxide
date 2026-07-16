@@ -15,6 +15,7 @@ std = ["bloxide-core/std"]
 bloxide-core        = { workspace = true, features = ["alloc"] }
 bloxide-macros      = { workspace = true }
 bloxide-log         = { workspace = true }
+bloxide-messaging   = { workspace = true }
 ping-pong-actions   = { workspace = true }
 ping-pong-messages  = { workspace = true }
 

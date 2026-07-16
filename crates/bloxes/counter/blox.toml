@@ -5,9 +5,15 @@ name = "Counter"
 [context]
 name = "CounterCtx"
 generics = "<B: CountsTicks>"
-actions_crate = "counter_actions"
 on_init = "ctx.set_count(B::Count::from(0));"
 
+# Behavior trait from context crate (delegatable)
+[[context.uses]]
+crate = "blox_ctx_ticks"
+trait = "CountsTicks"
+delegatable = true
+
+# Blox-specific fields
 [[context.fields]]
 name = "self_id"
 ty = "ActorId"

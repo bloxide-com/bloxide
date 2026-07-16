@@ -53,7 +53,7 @@ mod pool_tests {
             let (pool_ref, _pool_rx) =
                 <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
 
-            let ctx = PoolCtx::new(pool_id, pool_ref.clone(), mock_spawn_worker);
+            let ctx = PoolCtx::new(pool_ref.clone(), pool_id, mock_spawn_worker);
             let machine = StateMachine::<PoolSpec<TestRuntime>>::new(ctx);
 
             PoolHarness { machine }
@@ -221,7 +221,7 @@ mod pool_tests {
         let pool_id = TestRuntime::alloc_actor_id();
         let (pool_ref, _pool_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
-        let ctx = PoolCtx::new(pool_id, pool_ref.clone(), mock_spawn_worker_full_channel);
+        let ctx = PoolCtx::new(pool_ref.clone(), pool_id, mock_spawn_worker_full_channel);
         let mut machine = StateMachine::<PoolSpec<TestRuntime>>::new(ctx);
         machine.dispatch(PoolEvent::Lifecycle(LifecycleCommand::Start));
 

@@ -7,7 +7,7 @@
 mod counter_tests {
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::{spec::MachineSpec, Envelope, MachineState, StateMachine};
-    use counter_actions::CountsTicks;
+    use blox_ctx_ticks::CountsTicks;
     use counter_messages::{CounterMsg, Tick};
 
     use crate::{CounterCtx, CounterEvent, CounterSpec, CounterState};

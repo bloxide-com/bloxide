@@ -225,12 +225,46 @@ The `#[derive(BloxCtx)]` macro supports these field annotations:
 15. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (auto-detected by naming convention, e.g. `foo_factory: fn(...) -> ...`). The binary (or impl crate) provides the concrete factory closure at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
 16. **KillCap is a runtime capability, not a message** — `supervisor.kill(child_id)` immediately aborts the child's task without any callbacks firing. No `on_exit` handlers run; the task is dropped in-place. KillCap is for (1) unresponsive actors that cannot process Stop, or (2) cleanup of stopped actors whose resources should be freed immediately. Kill works for both static and dynamic actors; killed actors are permanently dead and cannot be restarted — normal lifecycle uses Reset/Stop through dispatch(). KillCap lives in `bloxide-core` as a trait; runtimes implement it (e.g., `TokioKillCap` wraps `JoinHandle::abort`). Supervisors hold a `KillCap` reference; actors never see it.
 
+## Code Delegation Rule (MANDATORY)
+
+**All code implementation work goes through Kimi Code CLI (`kimi`).** The Hermes
+agent's job is to understand the problem, design the solution, write the spec,
+and delegate the mechanical coding to Kimi. Hermes does NOT write or edit Rust
+code directly with inline tool calls (patch, write_file, etc.).
+
+### What Hermes does:
+- Architecture design, problem analysis, conversation with the user
+- Writing/updating specs (`spec/`), AGENTS.md, skills, and documentation
+- Reading code to understand state and diagnose problems
+- Writing the delegation prompt with full context (file paths, what to change, test commands)
+- Verifying Kimi's output compiles (`cargo check`, `cargo test`)
+
+### What Kimi does:
+- All Rust code changes: new files, edits, refactors, bug fixes
+- Running `cargo blox generate`, `cargo check`, `cargo test` in the loop
+- Creating commits and opening PRs
+
+### How to delegate:
+```bash
+# From the project root (/repos/internal/bloxide)
+kimi -p "<task description with file paths, acceptance criteria, test commands>"
+```
+
+Or via Hermes `delegate_task` with toolsets=["terminal", "file"] pointing at a
+background `kimi -p` invocation.
+
+### Why:
+Hermes has a tool-call iteration limit. Inline coding (read file, patch, read
+file, patch, cargo check, patch...) burns through that limit fast. Kimi has its
+own iteration loop with subagents and can run for hours. Delegating keeps
+Hermes focused on design and verification, not mechanical editing.
+
 ## Development Workflow
 
 1. **Spec first** — Write/update `spec/bloxes/<name>.md` with state diagram, events, transitions
 2. **Generate** — Run `cargo blox generate` to regenerate boilerplate from `blox.toml` specs
 3. **Tests next** — Write `TestRuntime`-based tests per acceptance criteria
-4. **Then code** — Implement `MachineSpec` to pass tests
+4. **Then code** — **Delegate to Kimi**: `kimi -p "Implement MachineSpec for <blox> to pass tests in <path>. Run cargo test."`
 5. **Review** — Verify impl matches spec; update tests if gaps found
 6. **Keep in sync** — Update spec diagrams if implementation reveals spec errors
 

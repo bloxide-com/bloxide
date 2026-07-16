@@ -9,7 +9,6 @@ use bloxide_core::{
     transitions,
 };
 
-use crate::bhsm_tst_state_handler_table;
 use crate::{BhsmTstCtx, BhsmTstEvent};
 
 pub use crate::generated::topology::BhsmTstState;
