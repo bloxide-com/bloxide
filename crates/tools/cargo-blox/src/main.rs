@@ -124,6 +124,9 @@ enum BloxSubcommand {
         /// Output path for main.rs (default: <system.toml dir>/src/main.rs)
         #[arg(long)]
         output: Option<PathBuf>,
+        /// After generating main.rs, run the generated binary crate
+        #[arg(long)]
+        run: bool,
     },
     /// Verify round-trip: blox.toml → codegen → viz-export → JSON → compare
     Verify {
@@ -184,7 +187,11 @@ fn main() -> anyhow::Result<()> {
             BloxSubcommand::Lint => lint::lint(),
             BloxSubcommand::Ci => ci::ci(),
             BloxSubcommand::Verify { workspace } => verify::verify(workspace),
-            BloxSubcommand::Wire { system, output } => wire::wire(system, output),
+            BloxSubcommand::Wire {
+                system,
+                output,
+                run,
+            } => wire::wire(system, output, run),
             BloxSubcommand::AddState {
                 blox_name,
                 state_name,
