@@ -138,3 +138,7 @@ pub fn generate_to_dir(
 
     Ok(written)
 }
+
+// NOTE: `generate_system_wiring_from_toml` and the `system_wiring` module
+// are temporarily removed — they belong to Stage 2 (issue #83) and don't
+// compile yet. They will be restored when #83 is completed.

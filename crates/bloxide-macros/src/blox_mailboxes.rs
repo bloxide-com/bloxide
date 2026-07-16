@@ -18,6 +18,7 @@ use quote::{format_ident, quote};
 /// Parsed input for the `blox_mailboxes!` macro.
 #[allow(dead_code)]
 pub struct BloxMailboxesInput {
+    derives: Vec<syn::Path>,
     vis: syn::Visibility,
     event_ident: syn::Ident,
     generics: syn::Generics,
@@ -33,6 +34,18 @@ pub struct MailboxSpec {
 
 impl syn::parse::Parse for BloxMailboxesInput {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        // Parse optional #[derive(...)] attributes before the enum.
+        let attrs = input.call(syn::Attribute::parse_outer)?;
+        let mut derives = Vec::new();
+        for attr in &attrs {
+            if attr.path().is_ident("derive") {
+                attr.parse_nested_meta(|meta| {
+                    derives.push(meta.path);
+                    Ok(())
+                })?;
+            }
+        }
+
         // Parse: pub enum EventName<R: BloxRuntime> { ... }
         let vis = input.parse()?;
         let _enum_token: syn::Token![enum] = input.parse()?;
@@ -68,6 +81,7 @@ impl syn::parse::Parse for BloxMailboxesInput {
         let _semi: syn::Token![;] = input.parse()?;
 
         Ok(BloxMailboxesInput {
+            derives,
             vis,
             event_ident,
             generics,
@@ -96,9 +110,17 @@ pub(crate) fn blox_mailboxes_inner(input: &BloxMailboxesInput) -> syn::Result<To
         });
     }
 
+    // Build derive attribute: use user-specified derives, or default to Debug.
+    let derive_attr = if input.derives.is_empty() {
+        quote! { #[derive(Debug)] }
+    } else {
+        let derives = &input.derives;
+        quote! { #[derive(#(#derives),*)] }
+    };
+
     // Generate the event enum
     let enum_def = quote! {
-        #[derive(Debug)]
+        #derive_attr
         #vis enum #event_ident #ty_generics #where_clause {
             #(#enum_variants),*
         }
@@ -336,5 +358,39 @@ mod tests {
 
         // Should have Msg variant
         assert!(output_str.contains("Envelope < SimpleMsg"));
+    }
+
+    #[test]
+    fn test_custom_derives() {
+        let input: BloxMailboxesInput = syn::parse2(quote! {
+            #[derive(Debug, Clone, PartialEq)]
+            pub enum WorkerEvent<R: BloxRuntime> {
+                Peer: PeerCtrl<WorkerMsg, R>,
+                Msg: WorkerMsg,
+            };
+        })
+        .unwrap();
+
+        let output = blox_mailboxes_inner(&input).unwrap();
+        let output_str = output.to_string();
+
+        // All three custom derives should appear in the generated enum
+        assert!(output_str.contains("derive (Debug , Clone , PartialEq)"));
+    }
+
+    #[test]
+    fn test_default_derives_when_none_specified() {
+        let input: BloxMailboxesInput = syn::parse2(quote! {
+            pub enum SimpleEvent {
+                Msg: SimpleMsg,
+            };
+        })
+        .unwrap();
+
+        let output = blox_mailboxes_inner(&input).unwrap();
+        let output_str = output.to_string();
+
+        // Should default to Debug only
+        assert!(output_str.contains("derive (Debug)"));
     }
 }

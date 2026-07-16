@@ -204,6 +204,97 @@ message_path = "counter_messages::CounterMsg"
 }
 
 #[test]
+fn test_generate_event_with_custom_derives() {
+    let toml = r#"
+[actor]
+name = "Counter"
+
+[event]
+name = "CounterEvent"
+derives = ["Debug", "Clone", "PartialEq"]
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "CounterMsg"
+message_path = "counter_messages::CounterMsg"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "counter-blox").expect("generate failed");
+
+    let events_file = files
+        .iter()
+        .find(|(n, _)| n == "events.rs")
+        .expect("events.rs missing");
+    let content = &events_file.1;
+
+    // All three custom derives should appear
+    assert!(content.contains("#[derive(Debug, Clone, PartialEq)]"));
+}
+
+#[test]
+fn test_generate_event_with_empty_derives() {
+    let toml = r#"
+[actor]
+name = "Worker"
+
+[event]
+name = "WorkerEvent"
+generics = "<R: BloxRuntime>"
+derives = []
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "WorkerMsg"
+message_path = "pool_messages::WorkerMsg"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "worker-blox").expect("generate failed");
+
+    let events_file = files
+        .iter()
+        .find(|(n, _)| n == "events.rs")
+        .expect("events.rs missing");
+    let content = &events_file.1;
+
+    // No derive attribute at all
+    assert!(!content.contains("#[derive"));
+    assert!(content.contains("pub enum WorkerEvent"));
+}
+
+#[test]
+fn test_generate_event_legacy_debug_false() {
+    let toml = r#"
+[actor]
+name = "Worker"
+
+[event]
+name = "WorkerEvent"
+generics = "<R: BloxRuntime>"
+debug = false
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "WorkerMsg"
+message_path = "pool_messages::WorkerMsg"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "worker-blox").expect("generate failed");
+
+    let events_file = files
+        .iter()
+        .find(|(n, _)| n == "events.rs")
+        .expect("events.rs missing");
+    let content = &events_file.1;
+
+    // Legacy debug=false should still produce no derives
+    assert!(!content.contains("#[derive"));
+    assert!(content.contains("pub enum WorkerEvent"));
+}
+
+#[test]
 fn test_generate_counter_topology() {
     let toml = r#"
 [actor]

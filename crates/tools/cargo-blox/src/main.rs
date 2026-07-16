@@ -21,6 +21,7 @@ mod state;
 mod test;
 mod utils;
 mod verify;
+mod wire;
 mod watch;
 
 #[derive(Parser)]
@@ -115,6 +116,15 @@ enum BloxSubcommand {
     Lint,
     /// Run full CI feature matrix
     Ci,
+    /// Generate a binary main.rs from a system.toml wiring manifest
+    Wire {
+        /// Path to system.toml (default: workspace root)
+        #[arg(long)]
+        system: Option<PathBuf>,
+        /// Output path for main.rs (default: <system.toml dir>/src/main.rs)
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// Verify round-trip: blox.toml → codegen → viz-export → JSON → compare
     Verify {
         #[arg(long)]
@@ -174,6 +184,7 @@ fn main() -> anyhow::Result<()> {
             BloxSubcommand::Lint => lint::lint(),
             BloxSubcommand::Ci => ci::ci(),
             BloxSubcommand::Verify { workspace } => verify::verify(workspace),
+            BloxSubcommand::Wire { system, output } => wire::wire(system, output),
             BloxSubcommand::AddState {
                 blox_name,
                 state_name,

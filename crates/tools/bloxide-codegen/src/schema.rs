@@ -47,7 +47,12 @@ pub struct EventConfig {
     pub name: String,
     pub generics: Option<String>, // e.g. "<R: BloxRuntime>"
     #[serde(default)]
-    pub debug: Option<bool>, // default true
+    pub debug: Option<bool>, // default true; deprecated — use `derives` instead
+    /// Custom derive trait paths to apply to the generated event enum.
+    /// When set, overrides `debug`. An empty list means no derives at all.
+    /// When unset (None), falls back to `debug` for backward compatibility.
+    #[serde(default)]
+    pub derives: Option<Vec<String>>,
     pub mailboxes: Vec<MailboxConfig>,
 }
 

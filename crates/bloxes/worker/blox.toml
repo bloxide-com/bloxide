@@ -5,7 +5,7 @@ name = "Worker"
 [event]
 name = "WorkerEvent"
 generics = "<R: BloxRuntime>"
-debug = false
+derives = []
 
 [[event.mailboxes]]
 variant = "Ctrl"

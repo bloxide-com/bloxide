@@ -25,6 +25,7 @@ use quote::{format_ident, quote};
 
 /// Parsed input for the `blox_event!` macro.
 pub struct BloxEventInput {
+    derives: Vec<syn::Path>,
     blox_name: syn::Ident,
     generics: syn::Generics,
     mailboxes: Vec<MailboxSpec>,
@@ -38,6 +39,18 @@ pub struct MailboxSpec {
 
 impl syn::parse::Parse for BloxEventInput {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        // Parse optional #[derive(...)] attributes before the blox name.
+        let attrs = input.call(syn::Attribute::parse_outer)?;
+        let mut derives = Vec::new();
+        for attr in &attrs {
+            if attr.path().is_ident("derive") {
+                attr.parse_nested_meta(|meta| {
+                    derives.push(meta.path);
+                    Ok(())
+                })?;
+            }
+        }
+
         // Parse: BloxName<generics> { Variant: Type, ... }
         let blox_name: syn::Ident = input.parse()?;
 
@@ -72,6 +85,7 @@ impl syn::parse::Parse for BloxEventInput {
         let _semi: Option<syn::Token![;]> = input.parse().ok();
 
         Ok(BloxEventInput {
+            derives,
             blox_name,
             generics,
             mailboxes,
@@ -99,9 +113,17 @@ pub(crate) fn blox_event_inner(input: &BloxEventInput) -> syn::Result<TokenStrea
         });
     }
 
+    // Build derive attribute: use user-specified derives, or default to Debug.
+    let derive_attr = if input.derives.is_empty() {
+        quote! { #[derive(Debug)] }
+    } else {
+        let derives = &input.derives;
+        quote! { #[derive(#(#derives),*)] }
+    };
+
     // Generate the event enum (always pub)
     let enum_def = quote! {
-        #[derive(Debug)]
+        #derive_attr
         pub enum #event_ident #ty_generics #where_clause {
             #(#enum_variants),*
         }
@@ -340,5 +362,34 @@ mod tests {
         // Verify tag constants
         assert!(output_str.contains("PEER_TAG"));
         assert!(output_str.contains("MSG_TAG"));
+    }
+
+    #[test]
+    fn test_custom_derives() {
+        let input: BloxEventInput = syn::parse2(quote! {
+            #[derive(Debug, Clone, PartialEq)]
+            Ping { Msg: PingPongMsg }
+        })
+        .unwrap();
+
+        let output = blox_event_inner(&input).unwrap();
+        let output_str = output.to_string();
+
+        // All three custom derives should appear in the generated enum
+        assert!(output_str.contains("derive (Debug , Clone , PartialEq)"));
+    }
+
+    #[test]
+    fn test_default_derives_when_none_specified() {
+        let input: BloxEventInput = syn::parse2(quote! {
+            Ping { Msg: PingPongMsg }
+        })
+        .unwrap();
+
+        let output = blox_event_inner(&input).unwrap();
+        let output_str = output.to_string();
+
+        // Should default to Debug only
+        assert!(output_str.contains("derive (Debug)"));
     }
 }

@@ -53,10 +53,24 @@ pub fn generate(config: &EventConfig) -> anyhow::Result<String> {
     };
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    // Conditionally derive Debug
-    let derive_debug = if config.debug == Some(false) {
+    // Build the derive attribute.
+    // Priority: `derives` field (if set) > `debug` field (legacy) > default Debug.
+    let derive_attr = if let Some(ref derives) = config.derives {
+        if derives.is_empty() {
+            // Empty list = no derives at all
+            quote! {}
+        } else {
+            let derive_paths: Vec<syn::Path> = derives
+                .iter()
+                .filter_map(|d| syn::parse_str::<syn::Path>(d).ok())
+                .collect();
+            quote! { #[derive(#(#derive_paths),*)] }
+        }
+    } else if config.debug == Some(false) {
+        // Legacy: debug=false means no derives
         quote! {}
     } else {
+        // Default: Debug only
         quote! { #[derive(Debug)] }
     };
 
@@ -92,7 +106,7 @@ pub fn generate(config: &EventConfig) -> anyhow::Result<String> {
     }
 
     let enum_def = quote! {
-        #derive_debug
+        #derive_attr
         pub enum #event_ident #generics {
             #(#enum_variants),*
         }
