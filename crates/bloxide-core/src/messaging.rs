@@ -21,6 +21,12 @@ pub type ActorId = usize;
 #[derive(Debug)]
 pub struct Envelope<M>(pub ActorId, pub M);
 
+impl<M: Clone> Clone for Envelope<M> {
+    fn clone(&self) -> Self {
+        Envelope(self.0, self.1.clone())
+    }
+}
+
 /// A clonable, typed handle to an actor's mailbox.
 pub struct ActorRef<M: Send + 'static, R: BloxRuntime> {
     id: ActorId,
@@ -62,6 +68,18 @@ impl<M: Send + 'static, R: BloxRuntime> Clone for ActorRef<M, R> {
             id: self.id,
             tx: self.tx.clone(),
         }
+    }
+}
+
+impl<M, R: BloxRuntime> core::fmt::Debug for ActorRef<M, R>
+where
+    M: Send + 'static,
+{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ActorRef")
+            .field("id", &self.id)
+            .field("msg_type", &core::any::type_name::<M>())
+            .finish()
     }
 }
 
