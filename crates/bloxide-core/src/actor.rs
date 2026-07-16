@@ -18,7 +18,10 @@ where
     M: Mailboxes<S::Event>,
 {
     loop {
-        let event = poll_fn(|cx| mailboxes.poll_next(cx)).await;
+        let event = match poll_fn(|cx| mailboxes.poll_next(cx)).await {
+            Some(event) => event,
+            None => return,
+        };
         machine.dispatch(event);
     }
 }
@@ -41,7 +44,10 @@ where
     M: Mailboxes<S::Event>,
 {
     loop {
-        let event = poll_fn(|cx| mailboxes.poll_next(cx)).await;
+        let event = match poll_fn(|cx| mailboxes.poll_next(cx)).await {
+            Some(event) => event,
+            None => return,
+        };
         match machine.dispatch(event) {
             DispatchOutcome::Started(MachineState::State(state))
                 if S::is_terminal(&state) || S::is_error(&state) =>
@@ -85,7 +91,10 @@ where
 
     // Run to completion
     loop {
-        let event = poll_fn(|cx| mailboxes.poll_next(cx)).await;
+        let event = match poll_fn(|cx| mailboxes.poll_next(cx)).await {
+            Some(event) => event,
+            None => return,
+        };
         match machine.dispatch(event) {
             DispatchOutcome::Started(MachineState::State(state))
                 if S::is_terminal(&state) || S::is_error(&state) =>

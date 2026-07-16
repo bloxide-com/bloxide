@@ -11,15 +11,13 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -38,26 +36,22 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -78,37 +72,31 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -131,48 +119,40 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -198,59 +178,49 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -278,70 +248,58 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -372,81 +330,67 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -479,92 +423,76 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.7).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 7 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -601,103 +529,85 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.7).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 7 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.8).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 8 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -736,114 +646,94 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.7).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 7 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.8).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 8 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.9).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 9 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -885,125 +775,103 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.7).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 7 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.8).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 8 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.9).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 9 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.10).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 10 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -1047,136 +915,112 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.7).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 7 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.8).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 8 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.9).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 9 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.10).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 10 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.11).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 11 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -1223,147 +1067,121 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.7).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 7 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.8).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 8 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.9).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 9 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.10).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 10 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.11).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 11 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.12).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 12 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -1412,158 +1230,130 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.7).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 7 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.8).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 8 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.9).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 9 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.10).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 10 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.11).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 11 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.12).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 12 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.13).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 13 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -1615,169 +1405,139 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.7).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 7 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.8).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 8 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.9).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 9 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.10).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 10 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.11).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 11 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.12).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 12 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.13).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 13 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.14).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 14 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
@@ -1849,180 +1609,148 @@ where
     fn poll_next(
         &mut self,
         cx: &mut ::core::task::Context<'_>,
-    ) -> ::core::task::Poll<E> {
+    ) -> ::core::task::Poll<::core::option::Option<E>> {
         match ::core::pin::Pin::new(&mut self.0).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 0 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.1).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 1 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.2).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 2 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.3).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 3 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.4).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 4 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.5).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 5 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.6).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 6 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.7).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 7 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.8).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 8 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.9).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 9 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.10).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 10 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.11).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 11 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.12).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 12 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.13).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 13 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.14).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 14 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }
         match ::core::pin::Pin::new(&mut self.15).poll_next(cx) {
             ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                return ::core::task::Poll::Ready(E::from(item));
+                return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
             }
             ::core::task::Poll::Ready(::core::option::Option::None) => {
-                debug_assert!(
-                    false, "mailbox stream 15 closed — self-sender invariant violated"
-                );
+                return ::core::task::Poll::Ready(::core::option::Option::None);
             }
             ::core::task::Poll::Pending => {}
         }

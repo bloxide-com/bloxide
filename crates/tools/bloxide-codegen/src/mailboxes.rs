@@ -35,19 +35,14 @@ pub fn generate(config: &MailboxesConfig) -> anyhow::Result<String> {
         let match_arms: Vec<_> = type_params
             .iter()
             .zip(indices.iter())
-            .enumerate()
-            .map(|(i, (_tp, idx))| {
-                let msg = format!(
-                    "mailbox stream {} closed — self-sender invariant violated",
-                    i
-                );
+            .map(|(_tp, idx)| {
                 quote! {
                     match ::core::pin::Pin::new(&mut self.#idx).poll_next(cx) {
                         ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                            return ::core::task::Poll::Ready(E::from(item));
+                            return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
                         }
                         ::core::task::Poll::Ready(::core::option::Option::None) => {
-                            debug_assert!(false, #msg);
+                            return ::core::task::Poll::Ready(::core::option::Option::None);
                         }
                         ::core::task::Poll::Pending => {}
                     }
@@ -65,7 +60,7 @@ pub fn generate(config: &MailboxesConfig) -> anyhow::Result<String> {
                 fn poll_next(
                     &mut self,
                     cx: &mut ::core::task::Context<'_>,
-                ) -> ::core::task::Poll<E> {
+                ) -> ::core::task::Poll<::core::option::Option<E>> {
                     #(#match_arms)*
                     ::core::task::Poll::Pending
                 }

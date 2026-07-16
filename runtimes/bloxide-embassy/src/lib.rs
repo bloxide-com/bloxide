@@ -201,7 +201,10 @@ where
 {
     use bloxide_core::engine::DispatchOutcome;
     loop {
-        let event = poll_fn(|cx| mailboxes.poll_next(cx)).await;
+        let event = match poll_fn(|cx| mailboxes.poll_next(cx)).await {
+            Some(event) => event,
+            None => return,
+        };
         if let DispatchOutcome::Reset = machine.dispatch(event) {
             return;
         }

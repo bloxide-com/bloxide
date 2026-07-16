@@ -57,11 +57,12 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
 
             // Then check domain mailboxes
             match domain_mailboxes.poll_next(cx) {
-                Poll::Ready(event) => {
+                Poll::Ready(Some(event)) => {
                     let outcome = machine.dispatch(event);
                     report_outcome::<S>(&outcome, actor_id, &supervisor_notify);
                     Poll::Ready(LoopAction::Continue)
                 }
+                Poll::Ready(None) => Poll::Ready(LoopAction::Stop),
                 Poll::Pending => Poll::Pending,
             }
         })

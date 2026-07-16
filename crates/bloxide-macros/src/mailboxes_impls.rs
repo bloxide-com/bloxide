@@ -34,16 +34,14 @@ pub(crate) fn mailboxes_impls_inner(input: TokenStream) -> TokenStream {
         let match_arms: Vec<TokenStream2> = type_params
             .iter()
             .zip(indices.iter())
-            .enumerate()
-            .map(|(i, (_tp, idx))| {
-                let msg = format!("mailbox stream {i} closed — self-sender invariant violated");
+            .map(|(_tp, idx)| {
                 quote! {
                     match ::core::pin::Pin::new(&mut self.#idx).poll_next(cx) {
                         ::core::task::Poll::Ready(::core::option::Option::Some(item)) => {
-                            return ::core::task::Poll::Ready(E::from(item));
+                            return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
                         }
                         ::core::task::Poll::Ready(::core::option::Option::None) => {
-                            debug_assert!(false, #msg);
+                            return ::core::task::Poll::Ready(::core::option::Option::None);
                         }
                         ::core::task::Poll::Pending => {}
                     }
@@ -61,7 +59,7 @@ pub(crate) fn mailboxes_impls_inner(input: TokenStream) -> TokenStream {
                 fn poll_next(
                     &mut self,
                     cx: &mut ::core::task::Context<'_>,
-                ) -> ::core::task::Poll<E> {
+                ) -> ::core::task::Poll<::core::option::Option<E>> {
                     use ::futures_core::Stream;
                     #(#match_arms)*
                     ::core::task::Poll::Pending
