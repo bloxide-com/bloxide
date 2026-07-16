@@ -1,21 +1,33 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! `cargo blox wire` — generate a binary main.rs from a system.toml manifest.
 
-use anyhow::Result;
 use std::path::PathBuf;
+use anyhow::Result;
 
 pub fn wire(system: Option<PathBuf>, output: Option<PathBuf>) -> Result<()> {
-    // NOTE: system_wiring codegen is disabled until Stage 2 (issue #83) is
-    // completed. The `generate_system_wiring_from_toml` function was removed
-    // from bloxide-codegen because it didn't compile.
-    let _ = (system, output);
-    anyhow::bail!(
-        "`cargo blox wire` is not yet available — system_wiring codegen is \
-         under development (see GitHub issue #83)"
-    )
+    let workspace_root = find_workspace_root()?;
+    let system_path = system.unwrap_or_else(|| workspace_root.join("system.toml"));
+
+    if !system_path.exists() {
+        anyhow::bail!("system.toml not found at {}", system_path.display());
+    }
+
+    let main_rs = bloxide_codegen::generate_system_wiring_from_toml(
+        &system_path,
+        &workspace_root,
+    )?;
+
+    let output_path = output.unwrap_or_else(|| {
+        // Default: src/main.rs in the same directory as system.toml
+        system_path.parent().unwrap().join("src").join("main.rs")
+    });
+
+    std::fs::create_dir_all(output_path.parent().unwrap())?;
+    std::fs::write(&output_path, &main_rs)?;
+    println!("bloxide: generated {}", output_path.display());
+    Ok(())
 }
 
-#[allow(dead_code)]
 fn find_workspace_root() -> Result<PathBuf> {
     let manifest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string()));

@@ -349,6 +349,8 @@ pub struct SystemConfig {
 pub struct SystemMeta {
     /// Target runtime: `"tokio"`, `"embassy"`, or `"test"`.
     pub runtime: String,
+    /// Optional system name (used as the binary name in generated output).
+    pub name: Option<String>,
 }
 
 /// An `[[actors]]` entry — one actor instance in the system.
@@ -361,6 +363,12 @@ pub struct ActorInstance {
     /// Behavior type name (e.g. `"DemoBehavior"`).
     /// Required when the blox context has a generic behavior parameter `B`.
     pub behavior: Option<String>,
+    /// Actor kind: "timer" for timer service actors, None for normal blox actors.
+    pub kind: Option<String>,
+    /// Crate that provides the behavior type (e.g. "embassy_demo_impl").
+    pub behavior_impl: Option<String>,
+    /// Channel capacity for this actor's primary mailbox (default 16).
+    pub channel_capacity: Option<usize>,
     /// Traits the behavior type implements (e.g. `["CountsRounds", "HasCurrentTimer"]`).
     #[serde(default)]
     pub behavior_traits: Vec<String>,

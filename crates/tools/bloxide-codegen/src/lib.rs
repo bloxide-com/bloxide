@@ -7,10 +7,12 @@ mod events;
 mod mailboxes;
 mod messages;
 pub mod schema;
+pub mod system_wiring;
 pub mod spec_skeleton;
 mod topology;
 
-use schema::BloxConfig;
+use schema::{BloxConfig, SystemConfig};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 /// Generate all artifacts from a parsed `BloxConfig`.
@@ -139,6 +141,66 @@ pub fn generate_to_dir(
     Ok(written)
 }
 
-// NOTE: `generate_system_wiring_from_toml` and the `system_wiring` module
-// are temporarily removed — they belong to Stage 2 (issue #83) and don't
-// compile yet. They will be restored when #83 is completed.
+/// Generate a system wiring binary (main.rs) from a system.toml manifest.
+///
+/// Reads the system.toml at `system_path`, discovers all blox.toml files in the
+/// workspace, parses them into BloxConfig entries, and calls
+/// `system_wiring::generate` to produce the main.rs content.
+pub fn generate_system_wiring_from_toml(
+    system_path: &Path,
+    workspace_root: &Path,
+) -> anyhow::Result<String> {
+    let content = std::fs::read_to_string(system_path)?;
+    let config: SystemConfig = toml::from_str(&content)?;
+
+    // Discover all blox.toml files in the workspace.
+    let mut blox_configs = BTreeMap::new();
+    for entry in walkdir::WalkDir::new(workspace_root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if entry.file_name() == "blox.toml" {
+            let blox_content = std::fs::read_to_string(entry.path())?;
+            let blox_config: BloxConfig = toml::from_str(&blox_content)?;
+            // Use the parent directory name as the key (e.g. "ping" for crates/bloxes/ping/blox.toml)
+            // But the system.toml references blox crates by their crate name (e.g. "ping-blox")
+            // so we need to derive the crate name from the Cargo.toml in the same directory.
+            let dir = entry.path().parent().unwrap();
+            let cargo_toml_path = dir.join("Cargo.toml");
+            let key = if cargo_toml_path.exists() {
+                let cargo_content = std::fs::read_to_string(&cargo_toml_path)?;
+                // Parse [package] name = "..." from Cargo.toml
+                cargo_content
+                    .lines()
+                    .find_map(|line| {
+                        let trimmed = line.trim();
+                        if trimmed.starts_with("name = ") {
+                            let name = trimmed
+                                .strip_prefix("name = ")
+                                .unwrap()
+                                .trim()
+                                .trim_matches('"');
+                            Some(name.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| {
+                        dir.file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .to_string()
+                    })
+            } else {
+                dir.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            };
+            blox_configs.insert(key, blox_config);
+        }
+    }
+
+    let generated = system_wiring::generate(&config, &blox_configs)?;
+    Ok(generated)
+}

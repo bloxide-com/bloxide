@@ -44,6 +44,7 @@ members = [
     "crates/tools/bloxide-codegen",
     "crates/tools/cargo-blox",
     "tools/bloxide-viz-export",
+    "apps/tokio-demo",
 ]
 resolver = "2"
 
@@ -93,6 +94,10 @@ counter-demo-impl = { path = "crates/impl/counter-demo-impl" }
 tokio-pool-demo-impl = { path = "crates/impl/tokio-pool-demo-impl" }
 bloxide-codegen = { path = "crates/tools/bloxide-codegen" }
 cargo-blox = { path = "crates/tools/cargo-blox" }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-log = "0.2"
 
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std", "tracing"] }
