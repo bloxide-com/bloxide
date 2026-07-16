@@ -4,6 +4,8 @@ use ::bloxide_core::capability::BloxRuntime;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use crate::{PongCtx, PongEvent};
 pub use crate::generated::topology::PongState;
+#[allow(unused_imports)]
+use bloxide_messaging::HasPeerRef;
 pub struct PongSpec<R: BloxRuntime> {
     _phantom: PhantomData<R>,
 }

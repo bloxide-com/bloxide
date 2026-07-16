@@ -3,6 +3,7 @@ use ::core::marker::PhantomData;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use crate::{CounterCtx, CounterEvent};
 pub use crate::generated::topology::CounterState;
+#[allow(unused_imports)]
 use blox_ctx_ticks::CountsTicks;
 pub struct CounterSpec<B: CountsTicks + 'static> {
     _phantom: PhantomData<B>,

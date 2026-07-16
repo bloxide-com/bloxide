@@ -201,6 +201,7 @@ pub fn generate(config: &ContextConfig, crate_name: &str) -> anyhow::Result<Stri
                 all_items.push(quote! { #m });
             }
             use_stmts.push(quote! {
+                #[allow(unused_imports)]
                 use #crate_ident::{#(#all_items),*};
             });
         }
@@ -261,6 +262,7 @@ pub fn generate(config: &ContextConfig, crate_name: &str) -> anyhow::Result<Stri
                 all_items.push(quote! { #d });
             }
             use_stmts.push(quote! {
+                #[allow(unused_imports)]
                 use #actions_crate_ident::{#(#all_items),*};
             });
         }

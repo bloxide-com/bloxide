@@ -106,7 +106,7 @@ fn ensure_generated_mod(
                 mod_content.push_str("#[macro_use]\n");
             }
             mod_content.push_str(&format!("pub mod {};\n", mod_name));
-            mod_content.push_str(&format!("pub use {}::*;\n", mod_name));
+            mod_content.push_str(&format!("#[allow(unused_imports)]\npub use {}::*;\n", mod_name));
         }
     }
     std::fs::write(&generated_mod, mod_content)?;

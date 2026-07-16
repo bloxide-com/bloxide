@@ -4,7 +4,13 @@ use ::bloxide_core::capability::BloxRuntime;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use crate::{PingCtx, PingEvent};
 pub use crate::generated::topology::PingState;
+#[allow(unused_imports)]
+use bloxide_messaging::{HasPeerRef, HasSelfRef};
+#[allow(unused_imports)]
+use bloxide_timer::HasTimerRef;
+#[allow(unused_imports)]
 use blox_ctx_current_timer::HasCurrentTimer;
+#[allow(unused_imports)]
 use blox_ctx_rounds::CountsRounds;
 pub struct PingSpec<R: BloxRuntime, B: HasCurrentTimer + CountsRounds + 'static>
 where

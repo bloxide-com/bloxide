@@ -2076,3 +2076,67 @@ message = "PingPongMsg"
     let err = result.unwrap_err().to_string();
     assert!(err.contains("unknown actor"));
 }
+
+#[test]
+fn test_generate_spec_skeleton_non_delegatable_uses_for_on_init() {
+    let toml = r#"
+[actor]
+name = "Pool"
+
+[event]
+name = "PoolEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PoolMsg"
+message_path = "pool_messages::PoolMsg"
+
+[context]
+name = "PoolCtx"
+generics = "<R: BloxRuntime>"
+on_init = "ctx.worker_refs_mut().clear(); ctx.set_pending(0);"
+
+[[context.uses]]
+crate = "blox_ctx_workers"
+traits = ["HasWorkers<R>"]
+impl_macro = "impl_has_workers"
+
+  [[context.uses.fields]]
+  name = "worker_refs"
+  ty = "Vec<ActorRef<WorkerMsg, R>>"
+  role = "state"
+
+  [[context.uses.fields]]
+  name = "pending"
+  ty = "u32"
+  role = "state"
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
+[topology]
+handler_fns = ["IDLE_FNS", "ACTIVE_FNS"]
+
+[[topology.states]]
+name = "Idle"
+initial = true
+
+[[topology.states]]
+name = "Active"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "pool-blox").expect("generate failed");
+    let skeleton_file = files
+        .iter()
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &skeleton_file.1;
+
+    // Non-delegatable uses (impl_macro) should still be imported in spec_skeleton.rs
+    // when referenced by on_init code.
+    assert!(content.contains("blox_ctx_workers"));
+    assert!(content.contains("HasWorkers"));
+    assert!(content.contains("on_init_entry"));
+}

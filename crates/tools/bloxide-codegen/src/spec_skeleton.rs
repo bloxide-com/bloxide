@@ -181,21 +181,21 @@ pub fn generate(
     // for legacy fields.
     let mut delegate_imports: Vec<(String, String)> = Vec::new(); // (crate_name, trait_string)
 
-    // From `[[context.uses]]` — delegatable traits.
+    // From `[[context.uses]]` — all traits (delegatable and non-delegatable).
+    // Non-delegatable traits may be referenced by `on_init` code, so they
+    // must be imported even when not delegated.
     for u in &context.uses {
-        if u.delegatable {
-            let trait_strs: Vec<&str> = if let Some(ref t) = u.trait_ {
-                vec![t.as_str()]
-            } else {
-                u.traits.iter().map(|s| s.as_str()).collect()
-            };
-            for ts in trait_strs {
-                if !delegate_imports
-                    .iter()
-                    .any(|(c, t)| c == &u.crate_name && t == ts)
-                {
-                    delegate_imports.push((u.crate_name.clone(), ts.to_string()));
-                }
+        let trait_strs: Vec<&str> = if let Some(ref t) = u.trait_ {
+            vec![t.as_str()]
+        } else {
+            u.traits.iter().map(|s| s.as_str()).collect()
+        };
+        for ts in trait_strs {
+            if !delegate_imports
+                .iter()
+                .any(|(c, t)| c == &u.crate_name && t == ts)
+            {
+                delegate_imports.push((u.crate_name.clone(), ts.to_string()));
             }
         }
     }
@@ -340,6 +340,7 @@ pub fn generate(
             let trait_import_paths: Vec<_> =
                 trait_paths.iter().map(path_without_generics).collect();
             use_stmts.push(quote! {
+                #[allow(unused_imports)]
                 use #crate_ident::{#(#trait_import_paths),*};
             });
         }
