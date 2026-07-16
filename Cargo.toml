@@ -11,8 +11,10 @@ members = [
     "crates/bloxide-core",
     "crates/bloxide-log",
     "crates/bloxide-macros",
-    "crates/bloxide-spawn",
     "crates/bloxide-supervisor",
+    "crates/bloxide-supervisor-context",
+    "crates/bloxide-supervisor-actions",
+    "crates/bloxide-peers",
     "crates/bloxide-timer",
     "crates/bloxide-messaging",
     "runtimes/bloxide-embassy",
@@ -65,8 +67,10 @@ categories = ["embedded", "no-std", "asynchronous", "rust-patterns"]
 bloxide-core = { path = "crates/bloxide-core" }
 bloxide-log = { path = "crates/bloxide-log" }
 bloxide-macros = { path = "crates/bloxide-macros" }
-bloxide-spawn = { path = "crates/bloxide-spawn" }
 bloxide-supervisor = { path = "crates/bloxide-supervisor" }
+bloxide-supervisor-context = { path = "crates/bloxide-supervisor-context" }
+bloxide-supervisor-actions = { path = "crates/bloxide-supervisor-actions" }
+bloxide-peers = { path = "crates/bloxide-peers" }
 bloxide-timer = { path = "crates/bloxide-timer" }
 bloxide-messaging = { path = "crates/bloxide-messaging" }
 bloxide-embassy = { path = "runtimes/bloxide-embassy" }
