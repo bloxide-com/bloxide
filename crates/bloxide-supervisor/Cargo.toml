@@ -11,11 +11,15 @@ license.workspace = true
 default = ["alloc"]
 alloc   = ["bloxide-core/alloc"]
 std     = ["bloxide-core/std", "alloc"]
+dynamic = ["bloxide-supervisor-context/dynamic", "bloxide-supervisor-actions/dynamic", "alloc", "dep:futures-core"]
 
 [dependencies]
 bloxide-core = { workspace = true }
 bloxide-log = { workspace = true }
 bloxide-macros = { workspace = true }
+bloxide-supervisor-context = { workspace = true }
+bloxide-supervisor-actions = { workspace = true }
+futures-core = { version = "0.3", default-features = false, optional = true }
 
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std"] }

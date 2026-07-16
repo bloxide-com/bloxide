@@ -15,23 +15,6 @@ pub use bloxide_core::{
 };
 pub use pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg};
 
-/// Function pointer type for spawning a single worker actor.
-///
-/// The factory allocates channels, constructs and spawns the worker task,
-/// and returns the worker's domain and ctrl `ActorRef`s to the caller.
-/// Sending `DoWork` and introducing peers is handled by the caller (the pool)
-/// after the factory returns, so the pool controls message ordering.
-pub type WorkerSpawnFn<R> =
-    fn(ActorId, &ActorRef<PoolMsg, R>) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>);
-
-/// Accessor for contexts that hold a worker spawn factory.
-///
-/// Implemented by `PoolCtx`. Allows generic pool logic to create workers
-/// without knowing the concrete worker type.
-pub trait HasWorkerFactory<R: BloxRuntime> {
-    fn worker_factory(&self) -> WorkerSpawnFn<R>;
-}
-
 /// Accessor for contexts that spawn and track workers.
 ///
 /// Implemented by the pool's context. Enables generic action functions
@@ -60,7 +43,9 @@ macro_rules! impl_has_workers {
             fn worker_refs(&self) -> &[$crate::ActorRef<$crate::WorkerMsg, $R>] {
                 &self.worker_refs
             }
-            fn worker_refs_mut(&mut self) -> &mut $crate::Vec<$crate::ActorRef<$crate::WorkerMsg, $R>> {
+            fn worker_refs_mut(
+                &mut self,
+            ) -> &mut $crate::Vec<$crate::ActorRef<$crate::WorkerMsg, $R>> {
                 &mut self.worker_refs
             }
             fn worker_ctrls(&self) -> &[$crate::ActorRef<$crate::WorkerCtrl<$R>, $R>] {

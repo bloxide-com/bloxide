@@ -1,6 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Peer introduction control messages and helper.
 
+#![no_std]
 extern crate alloc;
 use alloc::vec::Vec;
 use core::fmt;

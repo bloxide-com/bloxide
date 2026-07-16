@@ -21,8 +21,8 @@ mod state;
 mod test;
 mod utils;
 mod verify;
-mod wire;
 mod watch;
+mod wire;
 
 #[derive(Parser)]
 #[command(name = "cargo")]

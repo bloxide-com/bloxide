@@ -1,7 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 use core::future::Future;
 
-use bloxide_spawn::SpawnCap;
+use bloxide_core::SpawnCap;
 
 use crate::TokioRuntime;
 

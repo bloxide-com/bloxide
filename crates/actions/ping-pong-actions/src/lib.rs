@@ -24,9 +24,7 @@ pub use blox_ctx_current_timer::HasCurrentTimer;
 pub use blox_ctx_rounds::CountsRounds;
 pub use bloxide_messaging::{HasPeerRef, HasSelfRef};
 
-use bloxide_core::{
-    accessor::HasSelfId, capability::BloxRuntime, transition::ActionResult,
-};
+use bloxide_core::{accessor::HasSelfId, capability::BloxRuntime, transition::ActionResult};
 use bloxide_timer::{cancel_timer, set_timer, HasTimerRef};
 use ping_pong_messages::{Ping, PingPongMsg, Pong, Resume};
 

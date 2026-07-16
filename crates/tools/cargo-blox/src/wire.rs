@@ -1,8 +1,8 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! `cargo blox wire` — generate a binary main.rs from a system.toml manifest.
 
-use std::path::PathBuf;
 use anyhow::Result;
+use std::path::PathBuf;
 
 pub fn wire(system: Option<PathBuf>, output: Option<PathBuf>, run: bool) -> Result<()> {
     let workspace_root = find_workspace_root()?;
@@ -12,10 +12,7 @@ pub fn wire(system: Option<PathBuf>, output: Option<PathBuf>, run: bool) -> Resu
         anyhow::bail!("system.toml not found at {}", system_path.display());
     }
 
-    let main_rs = bloxide_codegen::generate_system_wiring_from_toml(
-        &system_path,
-        &workspace_root,
-    )?;
+    let main_rs = bloxide_codegen::generate_system_wiring_from_toml(&system_path, &workspace_root)?;
 
     let output_path = output.unwrap_or_else(|| {
         // Default: src/main.rs in the same directory as system.toml
@@ -31,8 +28,12 @@ pub fn wire(system: Option<PathBuf>, output: Option<PathBuf>, run: bool) -> Resu
         let cargo_toml_path = system_dir.join("Cargo.toml");
         let cargo_toml_content = std::fs::read_to_string(&cargo_toml_path)
             .map_err(|e| anyhow::anyhow!("failed to read {}: {}", cargo_toml_path.display(), e))?;
-        let crate_name = parse_package_name(&cargo_toml_content)
-            .ok_or_else(|| anyhow::anyhow!("could not find [package] name in {}", cargo_toml_path.display()))?;
+        let crate_name = parse_package_name(&cargo_toml_content).ok_or_else(|| {
+            anyhow::anyhow!(
+                "could not find [package] name in {}",
+                cargo_toml_path.display()
+            )
+        })?;
 
         println!("bloxide: running crate '{}'...", crate_name);
         let status = std::process::Command::new("cargo")

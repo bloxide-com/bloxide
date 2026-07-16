@@ -9,11 +9,10 @@ license.workspace = true
 
 [features]
 default = []
-std = ["bloxide-core/std", "bloxide-spawn/std"]
+std = ["bloxide-core/std"]
 
 [dependencies]
 bloxide-core  = { workspace = true, features = ["alloc"] }
-bloxide-spawn = { workspace = true }
 bloxide-macros = { workspace = true }
 pool-messages = { workspace = true }
 blox-ctx-workers = { workspace = true }

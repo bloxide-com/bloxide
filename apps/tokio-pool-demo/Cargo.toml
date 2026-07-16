@@ -9,8 +9,7 @@ publish = false
 bloxide-core       = { workspace = true, features = ["std"] }
 bloxide-tokio      = { workspace = true }
 bloxide-log        = { workspace = true, features = ["log"] }
-bloxide-supervisor = { workspace = true, features = ["std"] }
-bloxide-spawn      = { workspace = true }
+bloxide-supervisor = { workspace = true, features = ["std", "dynamic"] }
 pool-blox          = { workspace = true }
 pool-messages      = { workspace = true }
 pool-actions       = { workspace = true }

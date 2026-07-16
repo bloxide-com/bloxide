@@ -1,0 +1,21 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "bloxide-supervisor-context"
+version.workspace = true
+edition.workspace = true
+description = "Context types for bloxide supervisor — ChildGroup, SpawnFactory, policies"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["alloc"]
+alloc = ["bloxide-core/alloc"]
+std = ["bloxide-core/std", "alloc"]
+dynamic = []
+
+[dependencies]
+bloxide-core = { workspace = true }
+bloxide-log = { workspace = true }
+
+[dev-dependencies]
+bloxide-core = { workspace = true, features = ["std"] }

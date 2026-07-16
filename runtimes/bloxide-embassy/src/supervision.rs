@@ -90,7 +90,8 @@ fn report_outcome<S: MachineSpec>(
     notify: &EmbassySender<ChildLifecycleEvent>,
 ) {
     let send = |event| {
-        if <EmbassyRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)).is_err() {
+        if <EmbassyRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)).is_err()
+        {
             bloxide_log::blox_log_warn!(
                 actor_id,
                 "failed to send lifecycle event to supervisor (channel full or closed)"
@@ -138,7 +139,7 @@ fn report_outcome<S: MachineSpec>(
 
 pub struct ChildGroupBuilder {
     group: ChildGroup<EmbassyRuntime>,
-    notify_tx: EmbassySender<ChildLifecycleEvent>,
+    notify_ref: ActorRef<ChildLifecycleEvent, EmbassyRuntime>,
     notify_rx: EmbassyStream<ChildLifecycleEvent>,
     control_ref: ActorRef<SupervisorControl<EmbassyRuntime>, EmbassyRuntime>,
     control_rx: EmbassyStream<SupervisorControl<EmbassyRuntime>>,
@@ -156,7 +157,7 @@ impl ChildGroupBuilder {
         >(bloxide_macros::next_actor_id!());
         Self {
             group: ChildGroup::new(shutdown),
-            notify_tx: notify_ref.sender(),
+            notify_ref,
             notify_rx,
             control_ref,
             control_rx,
@@ -174,7 +175,7 @@ impl ChildGroupBuilder {
         let (lifecycle_ref, cmd_rx) =
             <EmbassyRuntime as StaticChannelCap>::channel::<LifecycleCommand, 4>(id);
         self.group.add(id, lifecycle_ref, policy);
-        (cmd_rx, self.notify_tx)
+        (cmd_rx, self.notify_ref.sender())
     }
 
     pub fn control_ref(&self) -> ActorRef<SupervisorControl<EmbassyRuntime>, EmbassyRuntime> {
@@ -182,7 +183,11 @@ impl ChildGroupBuilder {
     }
 
     pub fn notify_sender(&self) -> EmbassySender<ChildLifecycleEvent> {
-        self.notify_tx
+        self.notify_ref.sender()
+    }
+
+    pub fn notify_ref(&self) -> ActorRef<ChildLifecycleEvent, EmbassyRuntime> {
+        self.notify_ref.clone()
     }
 
     pub fn finish(

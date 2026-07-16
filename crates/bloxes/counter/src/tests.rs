@@ -5,9 +5,9 @@
 
 #[cfg(all(test, feature = "std"))]
 mod counter_tests {
+    use blox_ctx_ticks::CountsTicks;
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::{spec::MachineSpec, Envelope, MachineState, StateMachine};
-    use blox_ctx_ticks::CountsTicks;
     use counter_messages::{CounterMsg, Tick};
 
     use crate::{CounterCtx, CounterEvent, CounterSpec, CounterState};

@@ -140,7 +140,7 @@ fn report_outcome<S: MachineSpec>(
 
 pub struct ChildGroupBuilder {
     group: ChildGroup<TokioRuntime>,
-    notify_tx: TokioSender<ChildLifecycleEvent>,
+    notify_ref: ActorRef<ChildLifecycleEvent, TokioRuntime>,
     notify_rx: TokioStream<ChildLifecycleEvent>,
     control_ref: ActorRef<SupervisorControl<TokioRuntime>, TokioRuntime>,
     control_rx: TokioStream<SupervisorControl<TokioRuntime>>,
@@ -160,7 +160,7 @@ impl ChildGroupBuilder {
         let kill_cap = std::sync::Arc::new(crate::TokioKillCap::new());
         Self {
             group: ChildGroup::with_kill_cap(shutdown, kill_cap.clone()),
-            notify_tx: notify_ref.sender(),
+            notify_ref,
             notify_rx,
             control_ref,
             control_rx,
@@ -182,7 +182,7 @@ impl ChildGroupBuilder {
         >(control_id, 16);
         Self {
             group: ChildGroup::with_kill_cap(shutdown, kill_cap.clone()),
-            notify_tx: notify_ref.sender(),
+            notify_ref,
             notify_rx,
             control_ref,
             control_rx,
@@ -201,7 +201,7 @@ impl ChildGroupBuilder {
         let (lifecycle_ref, cmd_rx) =
             <TokioRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(id, 4);
         self.group.add(id, lifecycle_ref, policy);
-        (cmd_rx, self.notify_tx.clone())
+        (cmd_rx, self.notify_ref.sender())
     }
 
     /// Returns a reference to the KillCap for registering spawned tasks.
@@ -214,7 +214,11 @@ impl ChildGroupBuilder {
     }
 
     pub fn notify_sender(&self) -> TokioSender<ChildLifecycleEvent> {
-        self.notify_tx.clone()
+        self.notify_ref.sender()
+    }
+
+    pub fn notify_ref(&self) -> ActorRef<ChildLifecycleEvent, TokioRuntime> {
+        self.notify_ref.clone()
     }
 
     pub fn finish(
@@ -386,10 +390,7 @@ mod tests {
         let mut saw_failed = false;
         while let Ok(envelope) = notify_rx.inner.try_recv() {
             count += 1;
-            if matches!(
-                envelope.1,
-                ChildLifecycleEvent::Failed { child_id: 42 }
-            ) {
+            if matches!(envelope.1, ChildLifecycleEvent::Failed { child_id: 42 }) {
                 saw_failed = true;
             }
         }

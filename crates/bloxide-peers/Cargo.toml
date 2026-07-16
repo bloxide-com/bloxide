@@ -1,16 +1,16 @@
 # Copyright 2025 Bloxide, all rights reserved
 [package]
-name = "bloxide-spawn"
+name = "bloxide-peers"
 version.workspace = true
 edition.workspace = true
-description = "Dynamic actor spawning and peer introduction for bloxide"
+description = "Peer introduction control messages and helpers for bloxide"
 repository.workspace = true
 license.workspace = true
 
 [features]
-default = []
-std = ["bloxide-core/std"]
+default = ["alloc"]
+alloc = ["bloxide-core/alloc"]
+std = ["bloxide-core/std", "alloc"]
 
 [dependencies]
 bloxide-core = { workspace = true }
-bloxide-macros = { workspace = true }

@@ -10,7 +10,6 @@ license.workspace = true
 [dependencies]
 bloxide-core = { workspace = true, features = ["std"] }
 bloxide-macros = { workspace = true }
-bloxide-spawn = { workspace = true, features = ["std"] }
 bloxide-supervisor = { workspace = true, features = ["std"] }
 bloxide-timer = { workspace = true, features = ["std"] }
 bloxide-log = { workspace = true, features = ["log"] }
