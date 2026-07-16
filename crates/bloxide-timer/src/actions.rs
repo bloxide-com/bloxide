@@ -22,9 +22,15 @@ where
     M: Send + 'static,
 {
     let id = next_timer_id();
+    let self_id = ctx.self_id();
     let target = target.clone();
     let deliver = alloc::boxed::Box::new(move || {
-        let _ = target.try_send(TIMER_ACTOR_ID, event);
+        if target.try_send(TIMER_ACTOR_ID, event).is_err() {
+            bloxide_log::blox_log_warn!(
+                self_id,
+                "timer delivery: target mailbox full, timer event dropped"
+            );
+        }
     });
     if ctx
         .timer_ref()
