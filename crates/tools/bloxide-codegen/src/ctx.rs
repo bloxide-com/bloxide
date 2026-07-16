@@ -451,7 +451,7 @@ pub fn generate(config: &ContextConfig, crate_name: &str) -> anyhow::Result<Stri
 
 /// Generate field attributes based on role and delegates.
 ///
-/// - `role = "ctor"` → `#[ctor]`
+/// - `role = "ctor"` → `#[blox_ctx(skip)]`
 /// - `role = "accessor"` + `provides_trait` → `#[provides(TraitPath)]`
 /// - `role = "delegate"` + `delegates = [...]` → `#[delegates(...)]`
 /// - `role = "self_id"` / `"state"` → no attribute
@@ -467,7 +467,7 @@ fn field_attrs_for_role(
     if let Some(r) = role {
         match r {
             "ctor" => {
-                attrs.push(quote! { #[ctor] });
+                attrs.push(quote! { #[blox_ctx(skip)] });
             }
             "accessor" => {
                 // For accessor fields, emit #[provides(TraitPath)] when an

@@ -132,18 +132,19 @@ impl<R: BloxRuntime, B: CountsRounds> CountsRounds for Struct<R, B> {
 
 ### Rule 5: Constructor Parameter Detection
 
-**Pattern**: ActorRef fields not matching `_ref` suffix, or fields with `#[ctor]`
+**Pattern**: ActorRef fields not matching `_ref` suffix, or fields with `#[blox_ctx(skip)]`
 
 ```rust
 // Acting as constructor param (passed to new()):
-pub config: Config,                 // Not ActorRef, not _ref/_factory → state (deprecated)
-pub channel: ActorRef<Msg, R>,      // Not _ref suffix → constructor param
+pub channel: ActorRef<Msg, R>,              // Not _ref suffix → constructor param
+#[blox_ctx(skip)]
+pub peer_ref: ActorRef<PingPongMsg, R>,     // _ref suffix, but skip → constructor param
 ```
 
 **Inference Logic**:
 - If field is `ActorRef` but doesn't end in `_ref`: treat as constructor parameter
-- If field has `#[ctor]` annotation: treat as constructor parameter
-- Otherwise: treat as state field (deprecated path)
+- If field has `#[blox_ctx(skip)]` annotation: treat as constructor parameter
+- Otherwise: treat as state field
 
 **Constructor Generation**:
 
@@ -282,21 +283,19 @@ required methods and generates implementations based on field type patterns.
 
 ## Annotations Reference
 
-### Required Annotation
+### Required Annotations
 
 | Annotation | Purpose | Usage |
 |------------|---------|-------|
 | `#[delegates(T1, T2, ...)]` | Mark field as behavior delegator | Behavior fields only |
+| `#[provides(Trait<R>)]` | Bind multi-param accessor trait | Accessor fields where convention cannot infer the trait |
+| `#[blox_ctx(skip)]` | Suppress auto-detection; make field a constructor param | Fields that match a naming convention but should not generate a trait impl |
 
-### Deprecated Annotations (Backward Compatibility)
+Use `#[blox_ctx(skip)]` on a field to suppress auto-detection. The field becomes a
+constructor parameter with no trait impl generated. This is useful when a field
+matches a naming convention (e.g. ends with `_ref`) but you don't want the
+associated accessor trait.
 
-| Annotation | Replacement | Notes |
-|-----------|-------------|-------|
-| `#[self_id]` | Naming convention `self_id: ActorId` | Still works, emits deprecation warning |
-| `#[provides(Trait)]` | Naming convention `foo_ref: ActorRef<M, R>` | Still works, emits deprecation warning |
-| `#[ctor]` | Naming convention or type-based inference | Still works, emits deprecation warning |
-
----
 
 ## Error Messages
 
@@ -394,34 +393,15 @@ error: #[derive(BloxCtx)] only supports structs
 
 ---
 
-### Warning: Deprecation Notice
-
-```
-warning: use of deprecated annotation
- --> src/ctx.rs:5:5
-  |
-5 |     #[self_id]
-6 |     pub self_id: ActorId,
-  |     ^^^^^^^^^^^^^^^^^^^^
-  |
-  = note: BloxCtx: using deprecated annotations. Use convention-based fields instead:
-          `self_id: ActorId` is auto-detected, `_ref` fields auto-generate accessor traits.
-          Only `#[delegates(...)]` is required for behavior fields.
-```
-
-**Fix**: Remove the annotation - the field is auto-detected by convention.
-
----
 
 ## Migration Guide
 
 ### From State Fields to Behavior Objects
 
-**Before** (deprecated pattern):
+**Before** (state fields directly in context):
 ```rust
 #[derive(BloxCtx)]
 pub struct WorkerCtx<R: BloxRuntime> {
-    #[self_id]
     pub self_id: ActorId,
     pub task_id: u32,      // state
     pub result: u32,       // state
@@ -464,10 +444,9 @@ pub struct WorkerCtx<R: BloxRuntime, B: HasCurrentTask + HasPeers<WorkerMsg, R>>
 
 | Before | After |
 |--------|-------|
-| `#[self_id] pub self_id: ActorId` | `pub self_id: ActorId` |
-| `#[provides(HasPeerRef<R>)] pub peer_ref: ActorRef<M, R>` | `pub peer_ref: ActorRef<M, R>` |
-| `#[ctor] pub config: Config` | `pub config: Config` (needs `fn config()` accessor trait) |
-| `#[ctor] pub factory: FactoryFn` | `pub factory: FactoryFn` (auto-detected as `_factory` suffix) |
+| `#[provides(HasPeerRef<R>)] pub peer_ref: ActorRef<M, R>` | `pub peer_ref: ActorRef<M, R>` (or keep `#[provides(...)]` for multi-param traits) |
+| `#[ctor] pub config: Config` | `#[blox_ctx(skip)] pub config: Config` |
+| `#[ctor] pub factory: FactoryFn` | `pub factory: FactoryFn` (auto-detected as `_factory` suffix) or `#[blox_ctx(skip)] pub factory: FactoryFn` |
 
 ---
 
@@ -479,8 +458,12 @@ pub struct WorkerCtx<R: BloxRuntime, B: HasCurrentTask + HasPeers<WorkerMsg, R>>
 | `*_ref: ActorRef<M, R>` | Accessor | No (auto-detected) |
 | `*_factory: fn(...)` | Accessor | No (auto-detected) |
 | `behavior: B` with traits | Delegates | **Yes**: `#[delegates(T1, T2)]` |
+| Field matching convention but no trait impl | Ctor param | **Yes**: `#[blox_ctx(skip)]` |
 | Other ActorRef fields | Ctor param | No |
-| Other types | State (deprecated) | No |
+| Other types | State | No |
 
-**Only `#[delegates]` is required** for marking behavior delegation fields.
-All other roles are inferred from naming conventions and type patterns.
+**`#[delegates]` is required** for marking behavior delegation fields.
+**`#[provides]` is required** for multi-param accessor traits that convention-based
+inference cannot infer. **`#[blox_ctx(skip)]`** suppresses auto-detection and makes a
+field a plain constructor parameter. All other roles are inferred from naming
+conventions and type patterns.

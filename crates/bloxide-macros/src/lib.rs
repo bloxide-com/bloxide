@@ -77,24 +77,26 @@ mod blox_messages;
 ///
 /// # Supported field annotations
 ///
-/// Explicit annotations are supported for backward compatibility but are
-/// auto-detected by field naming convention in most cases:
+/// Most field roles are auto-detected by naming convention. Only a few
+/// explicit annotations are required:
 ///
-/// - `#[self_id]` — same as `self_id: ActorId` convention
 /// - `#[provides(TraitName<R>)]` — generates `impl TraitName<R> for Struct` with a
-///   single accessor method (method name = field name, return type = `&FieldType`)
-/// - `#[ctor]` — marks the field as a constructor parameter without generating any
-///   trait impl; useful when a field matches a naming convention but you don't
-///   want the associated trait impl generated
+///   single accessor method (method name = field name, return type = `&FieldType`).
+///   This is the canonical way to bind multi-param accessor traits (e.g.
+///   `HasPeerRef<R, PingPongMsg>`) that convention-based inference cannot infer.
 /// - `#[delegates(TraitName)]` — emits `__delegate_TraitName!(...)` companion macro
 ///   invocations that generate forwarding impls (the trait must be annotated with
-///   `#[delegatable]` from this crate)
+///   `#[delegatable]` from this crate).
+/// - `#[blox_ctx(skip)]` — suppresses auto-detection for a field and makes it a
+///   plain constructor parameter without generating any trait impl. Use this when
+///   a field matches a naming convention (e.g. ends with `_ref`) but you don't want
+///   the associated accessor trait generated.
 ///
 /// # Constructor
 ///
 /// `fn new(...)` takes annotated or convention-detected constructor fields as
 /// parameters and zero-initializes plain state fields via `Default::default()`.
-#[proc_macro_derive(BloxCtx, attributes(self_id, ctor, provides, delegates))]
+#[proc_macro_derive(BloxCtx, attributes(provides, delegates, blox_ctx))]
 pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     match blox_ctx::derive_blox_ctx_inner(&input) {

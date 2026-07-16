@@ -15,11 +15,6 @@ pub fn generate(analysis: &ContextAnalysis) -> syn::Result<TokenStream> {
     let generics = &analysis.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    // Generate deprecation warnings if old annotations were used.
-    if analysis.has_deprecated_annotations {
-        output.extend(generate_deprecation_warning());
-    }
-
     // Generate HasSelfId impl.
     for field in &analysis.fields {
         if matches!(field.role, FieldRole::SelfId) {
@@ -112,18 +107,6 @@ pub fn generate(analysis: &ContextAnalysis) -> syn::Result<TokenStream> {
     }
 
     Ok(output)
-}
-
-/// Generate a compile-time deprecation warning for old annotations.
-fn generate_deprecation_warning() -> TokenStream {
-    quote! {
-        #[deprecated(
-            note = "BloxCtx: using deprecated annotations. Use convention-based fields instead: \
-                    `self_id: ActorId` is auto-detected, `_ref` fields auto-generate accessor traits. \
-                    Only `#[delegates(...)]` is required for behavior fields to document intent."
-        )]
-        const _: () = ();
-    }
 }
 
 /// Generate `impl HasSelfId for Struct`.

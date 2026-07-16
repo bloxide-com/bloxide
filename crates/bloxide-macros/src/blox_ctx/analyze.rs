@@ -9,24 +9,17 @@ use syn::{
 };
 
 // Recognized field annotations for BloxCtx.
-const ANNOTATION_SELF_ID: &str = "self_id";
-const ANNOTATION_CTOR: &str = "ctor";
 const ANNOTATION_PROVIDES: &str = "provides";
 const ANNOTATION_DELEGATES: &str = "delegates";
+const ANNOTATION_BLOX_CTX: &str = "blox_ctx";
+const ANNOTATION_SKIP: &str = "skip";
 
-// Annotations that are always recognized by BloxCtx (deprecated + non-deprecated).
+// Annotations that are always recognized by BloxCtx.
 const ALL_RECOGNIZED_ANNOTATIONS: &[&str] = &[
-    ANNOTATION_SELF_ID,
-    ANNOTATION_CTOR,
     ANNOTATION_PROVIDES,
     ANNOTATION_DELEGATES,
+    ANNOTATION_BLOX_CTX,
 ];
-
-// Annotations that trigger a deprecation warning. `#[provides]` is NOT
-// deprecated — it is the canonical way to bind multi-param accessor traits
-// (e.g. `HasPeerRef<R, PingPongMsg>`) that convention-based inference cannot
-// infer (it only generates 1-param `HasPeerRef<R>`).
-const DEPRECATED_ANNOTATIONS: &[&str] = &[ANNOTATION_SELF_ID, ANNOTATION_CTOR];
 
 /// Categorization of a field's role in the context.
 #[derive(Clone)]
@@ -53,8 +46,6 @@ pub struct ContextAnalysis {
     pub struct_name: Ident,
     pub generics: syn::Generics,
     pub fields: Vec<FieldAnalysis>,
-    /// Whether any deprecated annotations were used.
-    pub has_deprecated_annotations: bool,
 }
 
 /// Analysis result for a single field.
@@ -91,11 +82,10 @@ pub fn analyze(input: &DeriveInput) -> Result<ContextAnalysis> {
     };
 
     let mut field_analyses = Vec::new();
-    let mut has_deprecated_annotations = false;
     let mut seen_self_id = false;
 
     for field in fields {
-        let analysis = analyze_field(field, &mut has_deprecated_annotations)?;
+        let analysis = analyze_field(field)?;
 
         // Check for duplicate self_id fields.
         if matches!(analysis.role, FieldRole::SelfId) {
@@ -115,12 +105,11 @@ pub fn analyze(input: &DeriveInput) -> Result<ContextAnalysis> {
         struct_name,
         generics,
         fields: field_analyses,
-        has_deprecated_annotations,
     })
 }
 
 /// Analyze a single field and determine its role.
-fn analyze_field(field: &Field, has_deprecated_annotations: &mut bool) -> Result<FieldAnalysis> {
+fn analyze_field(field: &Field) -> Result<FieldAnalysis> {
     let name = field
         .ident
         .as_ref()
@@ -130,7 +119,7 @@ fn analyze_field(field: &Field, has_deprecated_annotations: &mut bool) -> Result
     let span = field.span();
 
     // Check for explicit annotations first.
-    let explicit_role = extract_explicit_annotation(field, has_deprecated_annotations)?;
+    let explicit_role = extract_explicit_annotation(field)?;
     if let Some(role) = explicit_role {
         return Ok(FieldAnalysis {
             name,
@@ -152,18 +141,28 @@ fn analyze_field(field: &Field, has_deprecated_annotations: &mut bool) -> Result
 
 /// Extract explicit annotation if present.
 /// Returns Ok(None) if no BloxCtx annotation is present.
-fn extract_explicit_annotation(
-    field: &Field,
-    has_deprecated_annotations: &mut bool,
-) -> Result<Option<FieldRole>> {
+fn extract_explicit_annotation(field: &Field) -> Result<Option<FieldRole>> {
     let mut result = None;
 
     for attr in &field.attrs {
         let path = attr.path();
 
+        // Reject old annotations that are no longer supported.
+        if path.is_ident("self_id") {
+            return Err(Error::new_spanned(
+                attr,
+                "BloxCtx: #[self_id] is no longer supported. Use the naming convention: self_id: ActorId",
+            ));
+        }
+        if path.is_ident("ctor") {
+            return Err(Error::new_spanned(
+                attr,
+                "BloxCtx: #[ctor] is no longer supported. Use naming conventions or #[blox_ctx(skip)] to suppress auto-detection.",
+            ));
+        }
+
         // Check if this is a BloxCtx annotation.
         let is_recognized = ALL_RECOGNIZED_ANNOTATIONS.iter().any(|a| path.is_ident(a));
-        let is_deprecated = DEPRECATED_ANNOTATIONS.iter().any(|a| path.is_ident(a));
 
         if !is_recognized {
             continue;
@@ -176,15 +175,7 @@ fn extract_explicit_annotation(
             ));
         }
 
-        if is_deprecated {
-            *has_deprecated_annotations = true;
-        }
-
-        if path.is_ident(ANNOTATION_SELF_ID) {
-            result = Some(FieldRole::SelfId);
-        } else if path.is_ident(ANNOTATION_CTOR) {
-            result = Some(FieldRole::Ctor);
-        } else if path.is_ident(ANNOTATION_PROVIDES) {
+        if path.is_ident(ANNOTATION_PROVIDES) {
             let tokens = parse_paren_tokens(attr)?;
             result = Some(FieldRole::Accessor(tokens));
         } else if path.is_ident(ANNOTATION_DELEGATES) {
@@ -196,10 +187,28 @@ fn extract_explicit_annotation(
                 ));
             }
             result = Some(FieldRole::Delegates(traits));
+        } else if is_blox_ctx_skip(attr) {
+            result = Some(FieldRole::Ctor);
         }
     }
 
     Ok(result)
+}
+
+/// Check whether an attribute is `#[blox_ctx(skip)]`.
+fn is_blox_ctx_skip(attr: &syn::Attribute) -> bool {
+    let path = attr.path();
+    if !path.is_ident(ANNOTATION_BLOX_CTX) {
+        return false;
+    }
+    match &attr.meta {
+        syn::Meta::List(list) => {
+            list.parse_args::<syn::Ident>()
+                .map(|ident| ident == ANNOTATION_SKIP)
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
 }
 
 /// Infer field role from naming conventions.

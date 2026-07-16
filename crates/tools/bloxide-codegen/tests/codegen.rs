@@ -690,6 +690,9 @@ delegates = ["CountsRounds"]
     assert!(content.contains("#[derive(BloxCtx)]"));
     assert!(content.contains("pub struct PingCtx"));
 
+    // role = "ctor" now emits #[blox_ctx(skip)]
+    assert!(content.contains("#[blox_ctx(skip)]"));
+
     // Single-field accessor fields from uses
     assert!(content.contains("pub peer_ref: ActorRef<PingPongMsg, R>"));
     assert!(content.contains("pub self_ref: ActorRef<PingPongMsg, R>"));
