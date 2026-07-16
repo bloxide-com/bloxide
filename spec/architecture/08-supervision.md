@@ -185,6 +185,35 @@ A child becomes "permanently done" when:
 - Its policy is `ChildPolicy::Stop` and it reports `Done` or `Failed`, OR
 - Its policy is `ChildPolicy::Restart { max }` and it has exhausted all restart attempts.
 
+## Group Restart Strategy (`RestartStrategy`)
+
+`RestartStrategy` determines which children are restarted when a child fails and its `ChildPolicy` allows a restart. Inspired by Erlang/OTP supervisor restart strategies.
+
+```rust
+pub enum RestartStrategy {
+    OneForOne,  // Restart only the failed child (default)
+    OneForAll,  // Restart all children when any child fails
+    RestForOne, // Restart the failed child and all children declared after it
+}
+```
+
+| Strategy | Behavior |
+|---|---|
+| **`OneForOne`** | Only the failed child is sent `Reset`. All other children continue running undisturbed. This is the default and matches the pre-existing behavior. |
+| **`OneForAll`** | The failed child AND all other active children are sent `Reset` simultaneously. Use when children are tightly coupled and cannot operate correctly without all peers being in a clean state. |
+| **`RestForOne`** | The failed child AND all children declared after it (higher indices in `ChildGroup`) are sent `Reset`. Children declared before the failed child are left running. Use when children have dependencies on earlier siblings but not vice versa. |
+
+Only children in `Init` or `Running` phase are affected by the strategy. Children that are already `AwaitingReset`, `PermanentlyDone`, `Stopped`, or `Killed` are skipped.
+
+The strategy is set on `ChildGroup` via the builder pattern:
+
+```rust
+let mut group = ChildGroup::new(GroupShutdown::WhenAllDone)
+    .with_restart_strategy(RestartStrategy::OneForAll);
+```
+
+The restart strategy only applies to children whose `ChildPolicy` is `Restart { max }` and have remaining restarts. If the failed child's policy is `Stop` or its restarts are exhausted, no sibling restart occurs — the child is marked permanently done and the `GroupShutdown` trigger is evaluated instead.
+
 ## Three Triggers
 
 The supervisor reacts to three kinds of child lifecycle events:
@@ -204,6 +233,7 @@ pub struct ChildGroup<R: BloxRuntime> { /* opaque */ }
 
 impl<R: BloxRuntime> ChildGroup<R> {
     pub fn new(shutdown: GroupShutdown) -> Self;
+    pub fn with_restart_strategy(self, strategy: RestartStrategy) -> Self;
     pub fn add(&mut self, id: ActorId, lifecycle_ref: ActorRef<LifecycleCommand, R>, policy: ChildPolicy);
     pub fn start_child(&self, child_id: ActorId, from: ActorId);
 
@@ -223,7 +253,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
 ```
 
 `handle_done_or_failed` applies the child's `ChildPolicy`:
-- If `Restart { max }` and restarts remaining → sends `Reset`, returns `Continue`
+- If `Restart { max }` and restarts remaining → sends `Reset` to the failed child, then applies the group's `RestartStrategy` (sending `Reset` to affected siblings), returns `Continue`
 - If `Stop` or restarts exhausted → marks child permanently done, evaluates `GroupShutdown`
 - Returns `BeginShutdown` when the group shutdown condition is met
 
@@ -569,6 +599,7 @@ Supervision-specific invariants:
 - `ChildGroup<R>` encapsulates all restart counting, policy evaluation, and shutdown logic.
 - Per-child `ChildPolicy` gives each child its own restart strategy (vs. the old group-wide approach).
 - `GroupShutdown` controls when the supervisor enters shutdown, not which children are affected.
+- `RestartStrategy` (OneForOne / OneForAll / RestForOne) controls which siblings are restarted alongside a failed child. Default is `OneForOne` (only the failed child).
 - `LifecycleCommand` and `ChildLifecycleEvent` are defined in `bloxide-core` (and re-exported by `bloxide-supervisor`).
 - No custom supervisor implementation is needed — `SupervisorSpec<R>` is a generic, reusable `MachineSpec`.
 

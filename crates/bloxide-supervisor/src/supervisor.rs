@@ -213,7 +213,7 @@ mod tests {
     use crate::{
         control::{RegisterChild, SupervisorControl},
         event::SupervisorEvent,
-        registry::{ChildAction, ChildGroup, ChildPolicy, GroupShutdown},
+        registry::{ChildAction, ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy},
         supervisor::{SupervisorCtx, SupervisorSpec, SupervisorState},
     };
     use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
@@ -230,6 +230,30 @@ mod tests {
         Vec<TestReceiver<LifecycleCommand>>,
     ) {
         let mut group = ChildGroup::new(shutdown);
+        let mut receivers = Vec::new();
+        for (i, policy) in policies.iter().enumerate() {
+            let id = i + 1;
+            let (actor_ref, rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
+            group.add(id, actor_ref, *policy);
+            receivers.push(rx);
+        }
+        let ctx = SupervisorCtx {
+            self_id: 100,
+            children: group,
+            pending: ChildAction::default(),
+        };
+        (StateMachine::new(ctx), receivers)
+    }
+
+    fn make_supervisor_with_strategy(
+        shutdown: GroupShutdown,
+        policies: &[ChildPolicy],
+        strategy: RestartStrategy,
+    ) -> (
+        StateMachine<SupervisorSpec<TestRuntime>>,
+        Vec<TestReceiver<LifecycleCommand>>,
+    ) {
+        let mut group = ChildGroup::new(shutdown).with_restart_strategy(strategy);
         let mut receivers = Vec::new();
         for (i, policy) in policies.iter().enumerate() {
             let id = i + 1;
@@ -533,5 +557,157 @@ mod tests {
         let second = receivers[0].drain_payloads();
         assert_eq!(second.len(), 1);
         assert!(matches!(second[0], LifecycleCommand::Reset));
+    }
+
+    // ── Restart strategy tests ──────────────────────────────────────────────
+
+    #[test]
+    fn one_for_one_restarts_only_failed_child() {
+        let (mut machine, mut receivers) = make_supervisor_with_strategy(
+            GroupShutdown::WhenAnyDone,
+            &[
+                ChildPolicy::Restart { max: 3 },
+                ChildPolicy::Restart { max: 3 },
+                ChildPolicy::Restart { max: 3 },
+            ],
+            RestartStrategy::OneForOne,
+        );
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+        drain_start_commands(&mut receivers);
+
+        // Fail child 2
+        let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 2 });
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
+
+        // Only child 2 should receive Reset
+        assert!(
+            receivers[0].drain_payloads().is_empty(),
+            "child 1 should not receive any command"
+        );
+        let cmds2 = receivers[1].drain_payloads();
+        assert_eq!(cmds2.len(), 1);
+        assert!(matches!(cmds2[0], LifecycleCommand::Reset));
+        assert!(
+            receivers[2].drain_payloads().is_empty(),
+            "child 3 should not receive any command"
+        );
+    }
+
+    #[test]
+    fn one_for_all_restarts_all_children() {
+        let (mut machine, mut receivers) = make_supervisor_with_strategy(
+            GroupShutdown::WhenAnyDone,
+            &[
+                ChildPolicy::Restart { max: 3 },
+                ChildPolicy::Restart { max: 3 },
+                ChildPolicy::Restart { max: 3 },
+            ],
+            RestartStrategy::OneForAll,
+        );
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+        drain_start_commands(&mut receivers);
+
+        // Fail child 2
+        let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 2 });
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
+
+        // All children should receive Reset
+        for (i, rx) in receivers.iter_mut().enumerate() {
+            let cmds = rx.drain_payloads();
+            assert_eq!(
+                cmds.len(),
+                1,
+                "child {} should receive exactly one Reset",
+                i + 1
+            );
+            assert!(
+                matches!(cmds[0], LifecycleCommand::Reset),
+                "child {} should receive Reset, got {:?}",
+                i + 1,
+                cmds[0]
+            );
+        }
+    }
+
+    #[test]
+    fn rest_for_one_restarts_subsequent_children() {
+        let (mut machine, mut receivers) = make_supervisor_with_strategy(
+            GroupShutdown::WhenAnyDone,
+            &[
+                ChildPolicy::Restart { max: 3 },
+                ChildPolicy::Restart { max: 3 },
+                ChildPolicy::Restart { max: 3 },
+                ChildPolicy::Restart { max: 3 },
+            ],
+            RestartStrategy::RestForOne,
+        );
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+        drain_start_commands(&mut receivers);
+
+        // Fail child 2 (index 1)
+        let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 2 });
+        assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
+
+        // Child 1 (index 0) should NOT receive any command
+        assert!(
+            receivers[0].drain_payloads().is_empty(),
+            "child 1 should not receive any command (it is before the failed child)"
+        );
+
+        // Children 2, 3, 4 should receive Reset
+        for i in 1..=3 {
+            let cmds = receivers[i].drain_payloads();
+            assert_eq!(
+                cmds.len(),
+                1,
+                "child {} should receive exactly one Reset",
+                i + 1
+            );
+            assert!(
+                matches!(cmds[0], LifecycleCommand::Reset),
+                "child {} should receive Reset, got {:?}",
+                i + 1,
+                cmds[0]
+            );
+        }
+    }
+
+    #[test]
+    fn restart_strategy_respects_max_restarts() {
+        let (mut machine, mut receivers) = make_supervisor_with_strategy(
+            GroupShutdown::WhenAnyDone,
+            [
+                ChildPolicy::Restart { max: 1 },
+                ChildPolicy::Restart { max: 1 },
+            ]
+            .as_slice(),
+            RestartStrategy::OneForAll,
+        );
+        machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+        drain_start_commands(&mut receivers);
+
+        // First failure of child 1: both children get Reset (restarts 0 < 1)
+        dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+        for rx in receivers.iter_mut() {
+            let cmds = rx.drain_payloads();
+            assert_eq!(cmds.len(), 1);
+            assert!(matches!(cmds[0], LifecycleCommand::Reset));
+        }
+
+        // Both children report Reset: each gets Start, restart counter increments to 1
+        dispatch_child_event(&mut machine, ChildLifecycleEvent::Reset { child_id: 1 });
+        dispatch_child_event(&mut machine, ChildLifecycleEvent::Reset { child_id: 2 });
+        for rx in receivers.iter_mut() {
+            let cmds = rx.drain_payloads();
+            assert_eq!(cmds.len(), 1);
+            assert!(matches!(cmds[0], LifecycleCommand::Start));
+        }
+
+        // Second failure of child 1: restarts 1 >= max 1 → permanently done → shutdown
+        let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+        assert_eq!(
+            outcome,
+            DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
+        );
     }
 }

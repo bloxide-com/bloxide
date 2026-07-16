@@ -21,6 +21,19 @@ pub enum ChildPolicy {
     Kill,
 }
 
+/// Group-level restart strategy determining which children are restarted
+/// when a child fails. Inspired by Erlang/OTP supervisor strategies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RestartStrategy {
+    /// Restart only the failed child (default, current behavior).
+    #[default]
+    OneForOne,
+    /// Restart all children when any child fails.
+    OneForAll,
+    /// Restart the failed child and all children declared after it.
+    RestForOne,
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum GroupShutdown {
     WhenAnyDone,
@@ -59,6 +72,7 @@ struct ChildEntry<R: BloxRuntime> {
 pub struct ChildGroup<R: BloxRuntime> {
     children: Vec<ChildEntry<R>>,
     shutdown: GroupShutdown,
+    restart_strategy: RestartStrategy,
     stopped_count: usize,
     /// Optional KillCap for policy-driven cleanup of dynamic actors.
     /// None for Embassy (no task abort), Some for Tokio.
@@ -70,6 +84,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
         Self {
             children: Vec::new(),
             shutdown,
+            restart_strategy: RestartStrategy::default(),
             stopped_count: 0,
             kill_cap: None,
         }
@@ -80,9 +95,16 @@ impl<R: BloxRuntime> ChildGroup<R> {
         Self {
             children: Vec::new(),
             shutdown,
+            restart_strategy: RestartStrategy::default(),
             stopped_count: 0,
             kill_cap: Some(kill_cap),
         }
+    }
+
+    /// Set the restart strategy after construction.
+    pub fn with_restart_strategy(mut self, strategy: RestartStrategy) -> Self {
+        self.restart_strategy = strategy;
+        self
     }
 
     /// Set the KillCap after construction (for builders that need deferred setup).
@@ -212,6 +234,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
         if let ChildPolicy::Restart { max } = policy {
             if restarts < max {
+                // Send Reset to the failed child
                 if self.children[idx]
                     .lifecycle_ref
                     .try_send(from, LifecycleCommand::Reset)
@@ -225,6 +248,10 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 }
                 self.children[idx].phase = ChildPhase::AwaitingReset;
                 self.children[idx].awaiting_alive = false;
+
+                // Apply restart strategy to other children
+                self.restart_siblings(idx, from);
+
                 return ChildAction::Continue;
             }
         }
@@ -234,6 +261,55 @@ impl<R: BloxRuntime> ChildGroup<R> {
         self.children[idx].awaiting_alive = false;
 
         self.check_shutdown()
+    }
+
+    /// Send Reset to sibling children based on the restart strategy.
+    ///
+    /// - `OneForOne`: no siblings are restarted (only the failed child).
+    /// - `OneForAll`: all other active children are restarted.
+    /// - `RestForOne`: all children declared after the failed child are restarted.
+    ///
+    /// Only children in `Init` or `Running` phase are restarted. Children that
+    /// are `AwaitingReset`, `PermanentlyDone`, `Stopped`, or `Killed` are skipped.
+    fn restart_siblings(&mut self, failed_idx: usize, from: ActorId) {
+        let strategy = self.restart_strategy;
+        if strategy == RestartStrategy::OneForOne {
+            return;
+        }
+
+        // Determine which indices to restart
+        let indices: Vec<usize> = match strategy {
+            RestartStrategy::OneForOne => return,
+            RestartStrategy::OneForAll => {
+                (0..self.children.len()).filter(|&i| i != failed_idx).collect()
+            }
+            RestartStrategy::RestForOne => {
+                (failed_idx + 1..self.children.len()).collect()
+            }
+        };
+
+        for i in indices {
+            // Only restart children that are active (Init or Running)
+            if !matches!(
+                self.children[i].phase,
+                ChildPhase::Init | ChildPhase::Running
+            ) {
+                continue;
+            }
+            if self.children[i]
+                .lifecycle_ref
+                .try_send(from, LifecycleCommand::Reset)
+                .is_err()
+            {
+                bloxide_log::blox_log_warn!(
+                    from,
+                    "try_send Reset to child {} failed (channel full)",
+                    self.children[i].id
+                );
+            }
+            self.children[i].phase = ChildPhase::AwaitingReset;
+            self.children[i].awaiting_alive = false;
+        }
     }
 
     fn check_shutdown(&self) -> ChildAction {

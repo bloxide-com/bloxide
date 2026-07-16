@@ -14,5 +14,5 @@ pub mod supervisor;
 pub use actions::HasChildren;
 pub use control::{RegisterChild, SupervisorControl};
 pub use event::SupervisorEvent;
-pub use registry::{ChildGroup, ChildPolicy, GroupShutdown};
+pub use registry::{ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy};
 pub use supervisor::{SupervisorCtx, SupervisorSpec, SupervisorState};
