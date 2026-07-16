@@ -60,6 +60,8 @@ mod tests {
         #[allow(dead_code)]
         Msg(u32),
         Complete,
+        // Event that would transition out of Done if the guard were missing.
+        GoRunning,
     }
 
     impl EventTag for TestEvent {
@@ -68,6 +70,7 @@ mod tests {
                 TestEvent::Lifecycle(_) => 254, // LIFECYCLE_TAG
                 TestEvent::Msg(_) => 0,
                 TestEvent::Complete => 1,
+                TestEvent::GoRunning => 2,
             }
         }
     }
@@ -141,11 +144,19 @@ mod tests {
                     },
                 }],
             },
-            // Done (terminal state)
+            // Done (terminal state) — has a transition rule that WOULD go back to
+            // Running, but the engine guard prevents it from firing.
             &crate::spec::StateFns {
                 on_entry: &[done_entry],
                 on_exit: &[],
-                transitions: &[],
+                transitions: &[TransitionRule {
+                    event_tag: 2, // GoRunning tag
+                    matches: |event: &TestEvent| matches!(event, TestEvent::GoRunning),
+                    actions: &[] as &[ActionFn<Self>],
+                    guard: |_ctx: &SpyCtx, _results: &ActionResults, _event: &TestEvent| {
+                        Guard::Transition(LeafState::new(TestState::Running))
+                    },
+                }],
             },
         ];
 
@@ -348,5 +359,39 @@ mod tests {
             machine.current_state(),
             MachineState::State(TestState::Running)
         ));
+    }
+
+    #[test]
+    fn terminal_state_cannot_transition_out_on_domain_event() {
+        let ctx = SpyCtx::default();
+        let mut machine = StateMachine::<TestSpec<TestRuntime>>::new(ctx);
+
+        // Start → Running
+        machine.handle_lifecycle(LifecycleCommand::Start);
+        assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 1);
+
+        // Complete → Done (terminal)
+        machine.dispatch(TestEvent::Complete);
+        assert_eq!(machine.ctx().done_entry_count.load(Ordering::SeqCst), 1);
+        assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);
+
+        // Dispatch GoRunning while in terminal Done state.
+        // The Done handler table HAS a rule for GoRunning → Running,
+        // but the engine guard must block it.
+        let outcome = machine.dispatch(TestEvent::GoRunning);
+
+        // Outcome must be HandledNoTransition, not a transition
+        assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
+
+        // State must still be Done
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Done)
+        ));
+
+        // No additional callbacks fired
+        assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 1);
+        assert_eq!(machine.ctx().done_entry_count.load(Ordering::SeqCst), 1);
+        assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);
     }
 }

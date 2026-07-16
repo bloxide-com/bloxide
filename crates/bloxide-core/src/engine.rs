@@ -287,6 +287,12 @@ impl<S: MachineSpec> StateMachine<S> {
             MachineState::State(s) => s,
             MachineState::Init => unreachable!("process_operational_event called while in Init"),
         };
+
+        // Terminal and error states are absorbing: domain events cannot transition out.
+        if S::is_terminal(&current) || S::is_error(&current) {
+            return DispatchOutcome::HandledNoTransition;
+        }
+
         let event_tag = event.event_tag();
         let current_path = current.path();
 
