@@ -81,12 +81,14 @@ impl SpawnFactory<TokioRuntime> for AppSpawnFactory {
         notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
     ) -> SpawnOutput<TokioRuntime> {
         match req {
-            AppSpawnRequest::Worker { task_id: _, reply_to } => {
+            AppSpawnRequest::Worker {
+                task_id: _,
+                reply_to,
+            } => {
                 let worker_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
-                let (ctrl_ref, ctrl_rx) =
-                    <TokioRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TokioRuntime>>(
-                        worker_id, 16,
-                    );
+                let (ctrl_ref, ctrl_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
+                    WorkerCtrl<TokioRuntime>,
+                >(worker_id, 16);
                 let (domain_ref, domain_rx) =
                     <TokioRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
                 let (lifecycle_ref, lifecycle_rx) =
@@ -94,9 +96,10 @@ impl SpawnFactory<TokioRuntime> for AppSpawnFactory {
 
                 let behavior = WorkerBehavior::<TokioRuntime>::default();
                 let worker_ctx = WorkerCtx::new(self.pool_ref.clone(), worker_id, behavior);
-                let machine = StateMachine::<
-                    WorkerSpec<TokioRuntime, WorkerBehavior<TokioRuntime>>,
-                >::new(worker_ctx);
+                let machine =
+                    StateMachine::<WorkerSpec<TokioRuntime, WorkerBehavior<TokioRuntime>>>::new(
+                        worker_ctx,
+                    );
 
                 let notify_sender = notify.sender();
                 <TokioRuntime as SpawnCap>::spawn(async move {

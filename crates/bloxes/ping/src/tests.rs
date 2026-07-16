@@ -12,6 +12,8 @@ mod ping_tests {
     use crate::{
         PingCtx, PingEvent, PingSpec, PingState, MAX_ROUNDS, PAUSE_AT_ROUND, PAUSE_DURATION_MS,
     };
+    use blox_ctx_current_timer::HasCurrentTimer;
+    use blox_ctx_rounds::CountsRounds;
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::ActorId;
     use bloxide_core::test_utils::{TestReceiver, TestRuntime, TestSender};
@@ -19,8 +21,6 @@ mod ping_tests {
         spec::MachineSpec, DynamicChannelCap, Envelope, MachineState, StateMachine,
     };
     use bloxide_timer::{test_utils::VirtualClock, TimerCommand, TimerId};
-    use blox_ctx_current_timer::HasCurrentTimer;
-    use blox_ctx_rounds::CountsRounds;
     use ping_pong_messages::{Ping, PingPongMsg, Pong};
     use std::vec::Vec;
 

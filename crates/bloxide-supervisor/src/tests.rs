@@ -72,7 +72,9 @@ fn dispatch_control_event(
     machine: &mut StateMachine<SupervisorSpec<TestRuntime, NoSpawnFactory>>,
     event: SupervisorControl<TestRuntime>,
 ) -> DispatchOutcome<SupervisorState> {
-    machine.dispatch(SupervisorEvent::<TestRuntime, NoSpawnFactory>::Control(event))
+    machine.dispatch(SupervisorEvent::<TestRuntime, NoSpawnFactory>::Control(
+        event,
+    ))
 }
 
 fn drain_start_commands(receivers: &mut [TestReceiver<LifecycleCommand>]) {
@@ -88,8 +90,10 @@ fn drain_start_commands(receivers: &mut [TestReceiver<LifecycleCommand>]) {
 
 #[test]
 fn start_enters_running() {
-    let (mut machine, mut receivers) =
-        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop, ChildPolicy::Stop]);
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAnyDone,
+        &[ChildPolicy::Stop, ChildPolicy::Stop],
+    );
     let outcome = machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     assert_eq!(
         outcome,
@@ -105,8 +109,10 @@ fn start_enters_running() {
 
 #[test]
 fn restart_policy_stays_running_on_done() {
-    let (mut machine, mut receivers) =
-        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Restart { max: 3 }]);
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAnyDone,
+        &[ChildPolicy::Restart { max: 3 }],
+    );
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -120,8 +126,10 @@ fn restart_policy_stays_running_on_done() {
 
 #[test]
 fn restart_policy_reset_sends_start() {
-    let (mut machine, mut receivers) =
-        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Restart { max: 3 }]);
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAnyDone,
+        &[ChildPolicy::Restart { max: 3 }],
+    );
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -138,8 +146,10 @@ fn restart_policy_reset_sends_start() {
 
 #[test]
 fn restart_limit_exhausted_shuts_down() {
-    let (mut machine, mut receivers) =
-        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Restart { max: 1 }]);
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAnyDone,
+        &[ChildPolicy::Restart { max: 1 }],
+    );
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -171,8 +181,10 @@ fn stop_policy_transitions_to_shutting_down() {
 
 #[test]
 fn shutting_down_stops_all_and_resets_when_done() {
-    let (mut machine, mut receivers) =
-        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop, ChildPolicy::Stop]);
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAnyDone,
+        &[ChildPolicy::Stop, ChildPolicy::Stop],
+    );
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -196,8 +208,10 @@ fn shutting_down_stops_all_and_resets_when_done() {
 
 #[test]
 fn when_all_done_waits_for_all_children() {
-    let (mut machine, mut receivers) =
-        make_supervisor(GroupShutdown::WhenAllDone, &[ChildPolicy::Stop, ChildPolicy::Stop]);
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAllDone,
+        &[ChildPolicy::Stop, ChildPolicy::Stop],
+    );
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -265,8 +279,10 @@ fn on_init_entry_clears_counters() {
 
 #[test]
 fn failed_event_treated_same_as_done() {
-    let (mut machine, mut receivers) =
-        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Restart { max: 3 }]);
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAnyDone,
+        &[ChildPolicy::Restart { max: 3 }],
+    );
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -286,8 +302,7 @@ fn register_child_event_adds_child_and_sends_start() {
     drain_start_commands(&mut receivers);
 
     let child_id = 77usize;
-    let (lifecycle_ref, mut lifecycle_rx) =
-        TestRuntime::channel::<LifecycleCommand>(child_id, 8);
+    let (lifecycle_ref, mut lifecycle_rx) = TestRuntime::channel::<LifecycleCommand>(child_id, 8);
     let register = RegisterChild::<TestRuntime> {
         id: child_id,
         lifecycle_ref,
@@ -304,8 +319,10 @@ fn register_child_event_adds_child_and_sends_start() {
 
 #[test]
 fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
-    let (mut machine, mut receivers) =
-        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Restart { max: 2 }]);
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAnyDone,
+        &[ChildPolicy::Restart { max: 2 }],
+    );
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 

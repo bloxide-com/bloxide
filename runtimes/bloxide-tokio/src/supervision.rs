@@ -390,10 +390,7 @@ mod tests {
         let mut saw_failed = false;
         while let Ok(envelope) = notify_rx.inner.try_recv() {
             count += 1;
-            if matches!(
-                envelope.1,
-                ChildLifecycleEvent::Failed { child_id: 42 }
-            ) {
+            if matches!(envelope.1, ChildLifecycleEvent::Failed { child_id: 42 }) {
                 saw_failed = true;
             }
         }

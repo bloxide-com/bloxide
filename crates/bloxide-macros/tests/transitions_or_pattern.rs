@@ -14,12 +14,22 @@ use std::sync::Arc;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
-enum OrState { #[default] Init, Idle, Active, Done }
+enum OrState {
+    #[default]
+    Init,
+    Idle,
+    Active,
+    Done,
+}
 
 impl StateTopology for OrState {
     const STATE_COUNT: usize = 4;
-    fn parent(self) -> Option<Self> { None }
-    fn is_leaf(self) -> bool { true }
+    fn parent(self) -> Option<Self> {
+        None
+    }
+    fn is_leaf(self) -> bool {
+        true
+    }
     fn path(self) -> &'static [Self] {
         match self {
             OrState::Init => &[OrState::Init],
@@ -28,7 +38,9 @@ impl StateTopology for OrState {
             OrState::Done => &[OrState::Done],
         }
     }
-    fn as_index(self) -> usize { self as usize }
+    fn as_index(self) -> usize {
+        self as usize
+    }
 }
 
 #[allow(dead_code)]
@@ -75,7 +87,8 @@ struct OrCtx {
 
 fn or_action(ctx: &mut OrCtx, event: &OrEvent) -> ActionResult {
     ctx.or_action_count.fetch_add(1, Ordering::SeqCst);
-    ctx.last_event_tag.store(event.event_tag() as u32, Ordering::SeqCst);
+    ctx.last_event_tag
+        .store(event.event_tag() as u32, Ordering::SeqCst);
     ActionResult::Ok
 }
 
@@ -95,7 +108,11 @@ impl<R: bloxide_core::capability::BloxRuntime> MachineSpec for OrSpec<R> {
     type Mailboxes<Rt: bloxide_core::capability::BloxRuntime> = NoMailboxes;
 
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = &[
-        &StateFns { on_entry: &[], on_exit: &[], transitions: &[] },
+        &StateFns {
+            on_entry: &[],
+            on_exit: &[],
+            transitions: &[],
+        },
         &StateFns {
             on_entry: &[],
             on_exit: &[],
@@ -110,14 +127,29 @@ impl<R: bloxide_core::capability::BloxRuntime> MachineSpec for OrSpec<R> {
                 },
             ],
         },
-        &StateFns { on_entry: &[], on_exit: &[], transitions: &[] },
-        &StateFns { on_entry: &[], on_exit: &[], transitions: &[] },
+        &StateFns {
+            on_entry: &[],
+            on_exit: &[],
+            transitions: &[],
+        },
+        &StateFns {
+            on_entry: &[],
+            on_exit: &[],
+            transitions: &[],
+        },
     ];
 
-    fn initial_state() -> OrState { OrState::Idle }
+    fn initial_state() -> OrState {
+        OrState::Idle
+    }
 }
 
-fn make_machine() -> (StateMachine<OrSpec<TR>>, Arc<AtomicU32>, Arc<AtomicU32>, Arc<AtomicU32>) {
+fn make_machine() -> (
+    StateMachine<OrSpec<TR>>,
+    Arc<AtomicU32>,
+    Arc<AtomicU32>,
+    Arc<AtomicU32>,
+) {
     let or_count = Arc::new(AtomicU32::new(0));
     let last_tag = Arc::new(AtomicU32::new(99));
     let tick_count = Arc::new(AtomicU32::new(0));
@@ -128,7 +160,10 @@ fn make_machine() -> (StateMachine<OrSpec<TR>>, Arc<AtomicU32>, Arc<AtomicU32>, 
     };
     let mut m = StateMachine::<OrSpec<TR>>::new(ctx);
     m.handle_lifecycle(LifecycleCommand::Start);
-    assert!(matches!(m.current_state(), MachineState::State(OrState::Idle)));
+    assert!(matches!(
+        m.current_state(),
+        MachineState::State(OrState::Idle)
+    ));
     (m, or_count, last_tag, tick_count)
 }
 
@@ -149,7 +184,10 @@ fn or_pattern_rule_uses_wildcard_tag() {
 fn or_pattern_matches_first_variant() {
     let (mut m, or_count, last_tag, _tick_count) = make_machine();
     let outcome = m.dispatch(OrEvent::GoActive);
-    assert!(matches!(outcome, DispatchOutcome::Transition(MachineState::State(OrState::Active))));
+    assert!(matches!(
+        outcome,
+        DispatchOutcome::Transition(MachineState::State(OrState::Active))
+    ));
     assert_eq!(or_count.load(Ordering::SeqCst), 1);
     assert_eq!(last_tag.load(Ordering::SeqCst), 0);
 }
@@ -161,7 +199,10 @@ fn or_pattern_matches_first_variant() {
 fn or_pattern_matches_second_variant() {
     let (mut m, or_count, last_tag, _tick_count) = make_machine();
     let outcome = m.dispatch(OrEvent::GoDone);
-    assert!(matches!(outcome, DispatchOutcome::Transition(MachineState::State(OrState::Active))));
+    assert!(matches!(
+        outcome,
+        DispatchOutcome::Transition(MachineState::State(OrState::Active))
+    ));
     assert_eq!(or_count.load(Ordering::SeqCst), 1);
     assert_eq!(last_tag.load(Ordering::SeqCst), 1);
 }
@@ -173,5 +214,8 @@ fn single_variant_rule_after_or_pattern_still_works() {
     let outcome = m.dispatch(OrEvent::Tick);
     assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
     assert_eq!(tick_count.load(Ordering::SeqCst), 1);
-    assert!(matches!(m.current_state(), MachineState::State(OrState::Idle)));
+    assert!(matches!(
+        m.current_state(),
+        MachineState::State(OrState::Idle)
+    ));
 }

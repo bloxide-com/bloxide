@@ -202,11 +202,10 @@ fn is_blox_ctx_skip(attr: &syn::Attribute) -> bool {
         return false;
     }
     match &attr.meta {
-        syn::Meta::List(list) => {
-            list.parse_args::<syn::Ident>()
-                .map(|ident| ident == ANNOTATION_SKIP)
-                .unwrap_or(false)
-        }
+        syn::Meta::List(list) => list
+            .parse_args::<syn::Ident>()
+            .map(|ident| ident == ANNOTATION_SKIP)
+            .unwrap_or(false),
         _ => false,
     }
 }
@@ -285,11 +284,12 @@ fn is_actor_ref_type(ty: &Type) -> bool {
 fn is_fn_type(ty: &Type) -> bool {
     match ty {
         Type::BareFn(_) => true,
-        Type::Path(TypePath { path, .. }) => {
-            path.segments.iter().any(|s| {
-                matches!(s.ident.to_string().as_str(), "fn" | "Fn" | "FnMut" | "FnOnce")
-            })
-        }
+        Type::Path(TypePath { path, .. }) => path.segments.iter().any(|s| {
+            matches!(
+                s.ident.to_string().as_str(),
+                "fn" | "Fn" | "FnMut" | "FnOnce"
+            )
+        }),
         _ => false,
     }
 }

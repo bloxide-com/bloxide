@@ -25,7 +25,8 @@ pub trait SpawnFactory<R: BloxRuntime> {
     /// `notify` is the supervisor's child-event mailbox — the factory
     /// passes it to run_supervised_actor so the child can report
     /// lifecycle events (Done, Failed, Reset, etc.) back to the supervisor.
-    fn spawn(&self, req: Self::Request, notify: ActorRef<ChildLifecycleEvent, R>) -> SpawnOutput<R>;
+    fn spawn(&self, req: Self::Request, notify: ActorRef<ChildLifecycleEvent, R>)
+        -> SpawnOutput<R>;
 }
 
 /// Accessor trait for the child notify channel.
@@ -61,7 +62,11 @@ pub enum NoSpawnRequest {}
 
 impl<R: BloxRuntime> SpawnFactory<R> for NoSpawnFactory {
     type Request = NoSpawnRequest;
-    fn spawn(&self, _req: Self::Request, _notify: ActorRef<ChildLifecycleEvent, R>) -> SpawnOutput<R> {
+    fn spawn(
+        &self,
+        _req: Self::Request,
+        _notify: ActorRef<ChildLifecycleEvent, R>,
+    ) -> SpawnOutput<R> {
         // This can never be called because NoSpawnRequest has no variants
         match _req {}
     }

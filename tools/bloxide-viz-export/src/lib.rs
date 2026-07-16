@@ -2,8 +2,7 @@
 pub mod model;
 
 use bloxide_codegen::schema::{
-    BloxConfig, ContextConfig, StateConfig, TopologyConfig, TransitionConfig,
-    WiringConfig,
+    BloxConfig, ContextConfig, StateConfig, TopologyConfig, TransitionConfig, WiringConfig,
 };
 use std::collections::HashMap;
 use std::fs;

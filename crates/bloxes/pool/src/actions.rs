@@ -1,22 +1,21 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Pool action functions and state handler tables.
-use bloxide_core::{
-    capability::BloxRuntime,
-    spec::StateFns,
-    transition::ActionResult,
-    transitions,
-    HasSelfId,
-};
 use blox_ctx_workers::HasWorkers;
-use pool_messages::{AppSpawnRequest, DoWork, PoolMsg, SpawnWorker, WorkerMsg};
+use bloxide_core::{
+    capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions, HasSelfId,
+};
 use pool_actions::actions::introduce_new_worker;
+use pool_messages::{AppSpawnRequest, DoWork, PoolMsg, SpawnWorker, WorkerMsg};
 
 pub use crate::generated::topology::PoolState;
 use crate::{PoolCtx, PoolEvent, PoolSpec};
 
 /// Handle a SpawnWorker request: send an AppSpawnRequest to the supervisor
 /// and transition to the Spawning state.
-pub fn handle_spawn_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEvent<R>) -> ActionResult {
+pub fn handle_spawn_worker<R: BloxRuntime>(
+    ctx: &mut PoolCtx<R>,
+    ev: &PoolEvent<R>,
+) -> ActionResult {
     if let Some(PoolMsg::SpawnWorker(SpawnWorker { task_id })) = ev.msg_payload() {
         bloxide_log::blox_log_info!(ctx.self_id(), "spawning worker for task_id={}", task_id);
         ctx.pending_task_id = *task_id;
@@ -26,7 +25,11 @@ pub fn handle_spawn_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEvent<
         };
         let self_id = ctx.self_id();
         if ctx.spawn_ref.try_send(self_id, req).is_err() {
-            bloxide_log::blox_log_warn!(self_id, "spawn mailbox full, dropping task_id={}", task_id);
+            bloxide_log::blox_log_warn!(
+                self_id,
+                "spawn mailbox full, dropping task_id={}",
+                task_id
+            );
         }
     }
     ActionResult::Ok
@@ -34,7 +37,10 @@ pub fn handle_spawn_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEvent<
 
 /// Handle a SpawnedWorker reply: store the worker refs, introduce peers,
 /// send DoWork, and transition to Active.
-pub fn handle_spawned_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEvent<R>) -> ActionResult {
+pub fn handle_spawned_worker<R: BloxRuntime>(
+    ctx: &mut PoolCtx<R>,
+    ev: &PoolEvent<R>,
+) -> ActionResult {
     if let Some(spawned) = ev.spawn_reply_payload() {
         let task_id = ctx.pending_task_id;
         bloxide_log::blox_log_info!(
@@ -54,7 +60,11 @@ pub fn handle_spawned_worker<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEven
             .try_send(self_id, WorkerMsg::DoWork(DoWork { task_id }))
             .is_err()
         {
-            bloxide_log::blox_log_warn!(self_id, "worker channel full, dropping task_id={}", task_id);
+            bloxide_log::blox_log_warn!(
+                self_id,
+                "worker channel full, dropping task_id={}",
+                task_id
+            );
             if ctx.pending() > 0 {
                 ctx.set_pending(ctx.pending() - 1);
             }

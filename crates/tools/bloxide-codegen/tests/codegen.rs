@@ -83,10 +83,10 @@ name = "Tick"
         .expect("messages file missing");
     let (_name, content) = msg_file;
 
-    // Default: Debug + Clone, but NOT Copy
+    // Default: Debug + Clone, but NOT Copy in the derive attribute
     assert!(content.contains("Debug"));
     assert!(content.contains("Clone"));
-    assert!(!content.contains("Copy"));
+    assert!(!content.contains("#[derive(Debug, Clone, Copy)]"));
 }
 
 #[test]

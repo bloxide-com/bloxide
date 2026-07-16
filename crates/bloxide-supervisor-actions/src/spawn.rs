@@ -34,8 +34,11 @@ where
         let notify = ctx.child_notify().clone();
         let output = ctx.spawn_factory().spawn(request.clone(), notify);
         let child_id = output.child_id;
-        ctx.children_mut()
-            .add(child_id, output.lifecycle_ref, to_child_policy(output.policy));
+        ctx.children_mut().add(
+            child_id,
+            output.lifecycle_ref,
+            to_child_policy(output.policy),
+        );
         ctx.children_mut().start_child(child_id, from);
     }
     ActionResult::Ok

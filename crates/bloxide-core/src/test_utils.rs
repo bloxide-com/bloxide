@@ -200,10 +200,7 @@ impl crate::capability::DynamicChannelCap for TestRuntime {
             full: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             waker: Arc::clone(&waker),
         };
-        let receiver = TestReceiver {
-            queue,
-            waker,
-        };
+        let receiver = TestReceiver { queue, waker };
         (ActorRef::new(id, sender), receiver)
     }
 }
@@ -249,8 +246,8 @@ pub use spawn_helpers::{drain_spawned, spawned_count};
 #[cfg(all(test, feature = "std"))]
 #[allow(dead_code)]
 mod waker_tests {
-    use crate::capability::{BloxRuntime, DynamicChannelCap};
     use crate::actor::run_actor_to_completion;
+    use crate::capability::{BloxRuntime, DynamicChannelCap};
     use crate::engine::StateMachine;
     use crate::event_tag::{EventTag, LifecycleEvent};
     use crate::lifecycle::LifecycleCommand;
@@ -278,10 +275,14 @@ mod waker_tests {
                 make_raw_waker(flag as *const WakeFlag)
             }
             unsafe fn wake(flag: *const ()) {
-                (*(flag as *const WakeFlag)).woken.store(true, Ordering::SeqCst);
+                (*(flag as *const WakeFlag))
+                    .woken
+                    .store(true, Ordering::SeqCst);
             }
             unsafe fn wake_by_ref(flag: *const ()) {
-                (*(flag as *const WakeFlag)).woken.store(true, Ordering::SeqCst);
+                (*(flag as *const WakeFlag))
+                    .woken
+                    .store(true, Ordering::SeqCst);
             }
             unsafe fn drop_waker(_flag: *const ()) {}
             static VTABLE: RawWakerVTable =

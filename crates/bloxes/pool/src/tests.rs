@@ -14,10 +14,11 @@ mod pool_tests {
         capability::{BloxRuntime, DynamicChannelCap},
         lifecycle::LifecycleCommand,
         messaging::ActorRef,
-        spec::MachineSpec, Envelope, MachineState, StateMachine,
+        spec::MachineSpec,
+        Envelope, MachineState, StateMachine,
     };
     use pool_messages::{
-        AppSpawnRequest, WorkDone, PoolMsg, SpawnedWorker, SpawnWorker, WorkerCtrl, WorkerMsg,
+        AppSpawnRequest, PoolMsg, SpawnWorker, SpawnedWorker, WorkDone, WorkerCtrl, WorkerMsg,
     };
 
     use crate::{PoolCtx, PoolEvent, PoolSpec, PoolState};
@@ -37,16 +38,14 @@ mod pool_tests {
                 <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
 
             let spawn_id = TestRuntime::alloc_actor_id();
-            let (spawn_ref, spawn_rx) =
-                <TestRuntime as DynamicChannelCap>::channel::<AppSpawnRequest<TestRuntime>>(
-                    spawn_id, 16,
-                );
+            let (spawn_ref, spawn_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+                AppSpawnRequest<TestRuntime>,
+            >(spawn_id, 16);
 
             let reply_id = TestRuntime::alloc_actor_id();
-            let (spawn_reply_ref, _reply_rx) =
-                <TestRuntime as DynamicChannelCap>::channel::<SpawnedWorker<TestRuntime>>(
-                    reply_id, 16,
-                );
+            let (spawn_reply_ref, _reply_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+                SpawnedWorker<TestRuntime>,
+            >(reply_id, 16);
 
             let ctx = PoolCtx::new(
                 pool_ref.clone(),
@@ -242,23 +241,15 @@ mod pool_tests {
             <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
 
         let spawn_id = TestRuntime::alloc_actor_id();
-        let (spawn_ref, _spawn_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<AppSpawnRequest<TestRuntime>>(
-                spawn_id, 16,
-            );
+        let (spawn_ref, _spawn_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+            AppSpawnRequest<TestRuntime>,
+        >(spawn_id, 16);
 
         let reply_id = TestRuntime::alloc_actor_id();
         let (spawn_reply_ref, _reply_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<SpawnedWorker<TestRuntime>>(
-                reply_id, 16,
-            );
+            <TestRuntime as DynamicChannelCap>::channel::<SpawnedWorker<TestRuntime>>(reply_id, 16);
 
-        let ctx = PoolCtx::new(
-            pool_ref.clone(),
-            pool_id,
-            spawn_ref,
-            spawn_reply_ref,
-        );
+        let ctx = PoolCtx::new(pool_ref.clone(), pool_id, spawn_ref, spawn_reply_ref);
         let mut machine = StateMachine::<PoolSpec<TestRuntime>>::new(ctx);
         machine.dispatch(PoolEvent::Lifecycle(LifecycleCommand::Start));
 

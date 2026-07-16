@@ -62,10 +62,7 @@ where
     Rt: BloxRuntime,
     F: SpawnFactory<R> + 'static,
 {
-    fn poll_next(
-        &mut self,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<SupervisorEvent<R, F>>> {
+    fn poll_next(&mut self, cx: &mut Context<'_>) -> Poll<Option<SupervisorEvent<R, F>>> {
         // Poll child_rx first (highest priority).
         match Pin::new(&mut self.child_rx).poll_next(cx) {
             Poll::Ready(Some(Envelope(_, msg))) => {

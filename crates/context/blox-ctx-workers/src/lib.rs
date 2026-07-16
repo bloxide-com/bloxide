@@ -43,7 +43,9 @@ macro_rules! impl_has_workers {
             fn worker_refs(&self) -> &[$crate::ActorRef<$crate::WorkerMsg, $R>] {
                 &self.worker_refs
             }
-            fn worker_refs_mut(&mut self) -> &mut $crate::Vec<$crate::ActorRef<$crate::WorkerMsg, $R>> {
+            fn worker_refs_mut(
+                &mut self,
+            ) -> &mut $crate::Vec<$crate::ActorRef<$crate::WorkerMsg, $R>> {
                 &mut self.worker_refs
             }
             fn worker_ctrls(&self) -> &[$crate::ActorRef<$crate::WorkerCtrl<$R>, $R>] {

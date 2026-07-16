@@ -58,7 +58,11 @@ impl syn::parse::Parse for BloxMessagesInput {
         let lookahead = input.lookahead1();
         if lookahead.peek(syn::Ident)
             && input.peek2(syn::Token![,])
-            && input.cursor().ident().map(|(ident, _)| ident == "copy").unwrap_or(false)
+            && input
+                .cursor()
+                .ident()
+                .map(|(ident, _)| ident == "copy")
+                .unwrap_or(false)
         {
             let _copy_kw: syn::Ident = input.parse()?;
             let _comma: syn::Token![,] = input.parse()?;

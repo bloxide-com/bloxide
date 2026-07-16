@@ -297,12 +297,10 @@ impl<R: BloxRuntime> ChildGroup<R> {
         // Determine which indices to restart
         let indices: Vec<usize> = match strategy {
             RestartStrategy::OneForOne => return,
-            RestartStrategy::OneForAll => {
-                (0..self.children.len()).filter(|&i| i != failed_idx).collect()
-            }
-            RestartStrategy::RestForOne => {
-                (failed_idx + 1..self.children.len()).collect()
-            }
+            RestartStrategy::OneForAll => (0..self.children.len())
+                .filter(|&i| i != failed_idx)
+                .collect(),
+            RestartStrategy::RestForOne => (failed_idx + 1..self.children.len()).collect(),
         };
 
         for i in indices {

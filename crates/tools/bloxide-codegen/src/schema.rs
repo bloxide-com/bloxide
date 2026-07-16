@@ -357,7 +357,7 @@ pub struct SystemMeta {
 #[derive(Debug, Deserialize, Clone)]
 pub struct BootstrapMessage {
     /// Full message variant path, e.g. "CounterMsg::Tick" or "PoolMsg::SpawnWorker".
-    /// Format: "<MsgType>::<VariantName>"
+    /// Format: `<MsgType>::<VariantName>`
     pub message: String,
     /// Optional payload fields as key-value pairs.
     /// For unit-like variants (e.g. Tick), omit this.

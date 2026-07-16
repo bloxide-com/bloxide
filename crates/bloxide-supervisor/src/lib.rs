@@ -21,8 +21,7 @@ mod tests;
 pub use bloxide_supervisor_context::{
     ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup, HasChildGroupMut,
     HasChildNotify, HasPending, NoSpawnFactory, NoSpawnRequest, RegisterChild, RestartStrategy,
-    SupervisorControl,
-    SupervisorEvent, SupervisorEventLike,
+    SupervisorControl, SupervisorEvent, SupervisorEventLike,
 };
 
 // Re-export from generated

@@ -90,7 +90,8 @@ fn report_outcome<S: MachineSpec>(
     notify: &EmbassySender<ChildLifecycleEvent>,
 ) {
     let send = |event| {
-        if <EmbassyRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)).is_err() {
+        if <EmbassyRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)).is_err()
+        {
             bloxide_log::blox_log_warn!(
                 actor_id,
                 "failed to send lifecycle event to supervisor (channel full or closed)"
