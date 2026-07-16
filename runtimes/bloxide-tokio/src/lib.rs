@@ -3,7 +3,7 @@ use bloxide_core::{mailboxes::Mailboxes, spec::MachineSpec, StateMachine};
 use core::future::poll_fn;
 
 pub use bloxide_core::{run_actor, run_actor_auto_start, run_actor_to_completion};
-pub use bloxide_spawn::SpawnCap;
+pub use bloxide_core::SpawnCap;
 
 #[doc(hidden)]
 pub use bloxide_macros::dyn_channels as __dyn_channels_proc_macro;

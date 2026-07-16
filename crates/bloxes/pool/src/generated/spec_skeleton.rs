@@ -7,16 +7,17 @@ pub use crate::generated::topology::PoolState;
 #[allow(unused_imports)]
 use bloxide_messaging::HasSelfRef;
 #[allow(unused_imports)]
-use blox_ctx_workers::{HasWorkers, HasWorkerFactory};
+use blox_ctx_workers::HasWorkers;
 pub struct PoolSpec<R: BloxRuntime> {
     _phantom: PhantomData<R>,
 }
 impl<R: BloxRuntime> MachineSpec for PoolSpec<R> {
     type State = PoolState;
-    type Event = PoolEvent;
+    type Event = PoolEvent<R>;
     type Ctx = PoolCtx<R>;
     type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> = (
         Rt::Stream<pool_messages::PoolMsg>,
+        Rt::Stream<pool_messages::SpawnedWorker<R>>,
     );
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = pool_state_handler_table!(
         Self

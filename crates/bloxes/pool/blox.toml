@@ -4,19 +4,24 @@ name = "Pool"
 
 [event]
 name = "PoolEvent"
+generics = "<R: BloxRuntime>"
 
 [[event.mailboxes]]
 variant = "Msg"
 message = "PoolMsg"
 message_path = "pool_messages::PoolMsg"
 
+[[event.mailboxes]]
+variant = "SpawnReply"
+message = "SpawnedWorker"
+message_path = "pool_messages::SpawnedWorker<R>"
+
 [context]
 name = "PoolCtx"
 generics = "<R: BloxRuntime>"
 on_init = "ctx.worker_refs_mut().clear(); ctx.worker_ctrls_mut().clear(); ctx.set_pending(0);"
 imports = [
-    "pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg}",
-    "blox_ctx_workers::WorkerSpawnFn",
+    "pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg, AppSpawnRequest, SpawnedWorker}",
     "alloc::vec::Vec",
 ]
 
@@ -28,10 +33,10 @@ field = "self_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "accessor"
 
-# Multi-field context crate: HasWorkers + HasWorkerFactory with impl macro
+# Multi-field context crate: HasWorkers with impl macro
 [[context.uses]]
 crate = "blox_ctx_workers"
-traits = ["HasWorkers<R>", "HasWorkerFactory<R>"]
+traits = ["HasWorkers<R>"]
 impl_macro = "impl_has_workers"
 
   [[context.uses.fields]]
@@ -54,17 +59,34 @@ impl_macro = "impl_has_workers"
 name = "self_id"
 ty = "ActorId"
 
+# Ref to the supervisor's spawn mailbox — Pool sends AppSpawnRequest here
 [[context.fields]]
-name = "worker_factory"
-ty = "WorkerSpawnFn<R>"
+name = "spawn_ref"
+ty = "ActorRef<AppSpawnRequest<R>, R>"
+role = "ctor"
+
+# Ref to the Pool's own spawn-reply mailbox — included in AppSpawnRequest as reply_to
+[[context.fields]]
+name = "spawn_reply_ref"
+ty = "ActorRef<SpawnedWorker<R>, R>"
+role = "ctor"
+
+# Pending task_id for the in-flight spawn request (Spawning state)
+[[context.fields]]
+name = "pending_task_id"
+ty = "u32"
+role = "state"
 
 [topology]
 # Legacy: hand-written StateFns constants in actions.rs
-handler_fns = ["IDLE_FNS", "ACTIVE_FNS", "ALL_DONE_FNS"]
+handler_fns = ["IDLE_FNS", "SPAWNING_FNS", "ACTIVE_FNS", "ALL_DONE_FNS"]
 
 [[topology.states]]
 name = "Idle"
 initial = true
+
+[[topology.states]]
+name = "Spawning"
 
 [[topology.states]]
 name = "Active"
@@ -75,20 +97,28 @@ terminal = true
 
 # --- Declarative transitions (documentation; handler_fns takes precedence) ---
 
-# Idle: SpawnWorker → Active
+# Idle: SpawnWorker → Spawning
 [[topology.transitions]]
 state = "Idle"
 event = "PoolMsg::SpawnWorker(_)"
-target = "Active"
+target = "Spawning"
 actions = ["handle_spawn_worker"]
 
-# Active: SpawnWorker stays, WorkDone with guard
+# Spawning: SpawnedWorker reply → Active
+[[topology.transitions]]
+state = "Spawning"
+event = "SpawnedWorker(_)"
+target = "Active"
+actions = ["handle_spawned_worker"]
+
+# Active: SpawnWorker → Spawning (async spawn)
 [[topology.transitions]]
 state = "Active"
 event = "PoolMsg::SpawnWorker(_)"
-target = "stay"
+target = "Spawning"
 actions = ["handle_spawn_worker"]
 
+# Active: WorkDone with guard
 [[topology.transitions]]
 state = "Active"
 event = "PoolMsg::WorkDone(_)"

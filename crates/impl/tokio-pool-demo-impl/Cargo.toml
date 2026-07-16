@@ -9,8 +9,7 @@ publish = false
 [dependencies]
 bloxide-core = { workspace = true, features = ["std"] }
 bloxide-tokio = { workspace = true }
-bloxide-spawn = { workspace = true, features = ["std"] }
+bloxide-supervisor-context = { workspace = true, features = ["std"] }
 pool-messages = { workspace = true }
 pool-actions = { workspace = true }
 worker-blox = { workspace = true, features = ["std"] }
-tokio = { version = "1", features = ["rt"] }

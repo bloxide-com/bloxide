@@ -8,4 +8,4 @@
 pub use blox_ctx_current_task::HasCurrentTask;
 pub use blox_ctx_pool_ref::HasPoolRef;
 pub use blox_ctx_worker_peers::HasWorkerPeers;
-pub use blox_ctx_workers::{HasWorkerFactory, HasWorkers, WorkerSpawnFn};
+pub use blox_ctx_workers::HasWorkers;

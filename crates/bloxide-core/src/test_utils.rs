@@ -208,6 +208,44 @@ impl crate::capability::DynamicChannelCap for TestRuntime {
     }
 }
 
+// ── SpawnCap test helpers ──────────────────────────────────────────────────
+#[cfg(feature = "std")]
+mod spawn_helpers {
+    use crate::capability::SpawnCap;
+    use crate::test_utils::TestRuntime;
+    use alloc::boxed::Box;
+    use alloc::vec::Vec;
+    use core::future::Future;
+    use core::pin::Pin;
+    use std::cell::RefCell;
+    use std::thread_local;
+
+    type SpawnedVec = Vec<Pin<Box<dyn Future<Output = ()> + Send>>>;
+
+    thread_local! {
+        static SPAWNED: RefCell<SpawnedVec> = RefCell::new(Vec::new());
+    }
+
+    impl SpawnCap for TestRuntime {
+        fn spawn(future: impl Future<Output = ()> + Send + 'static) {
+            SPAWNED.with(|s| s.borrow_mut().push(Box::pin(future)));
+        }
+    }
+
+    /// Drain all futures submitted via `SpawnCap::spawn` since the last drain.
+    pub fn drain_spawned() -> SpawnedVec {
+        SPAWNED.with(|s| s.borrow_mut().drain(..).collect())
+    }
+
+    /// Returns the number of futures submitted since the last drain.
+    pub fn spawned_count() -> usize {
+        SPAWNED.with(|s| s.borrow().len())
+    }
+}
+
+#[cfg(feature = "std")]
+pub use spawn_helpers::{drain_spawned, spawned_count};
+
 #[cfg(all(test, feature = "std"))]
 #[allow(dead_code)]
 mod waker_tests {

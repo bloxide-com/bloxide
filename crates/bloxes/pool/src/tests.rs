@@ -1,9 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Unit tests for the Pool blox.
 //!
-//! Uses `TestRuntime` + `SpawnCap for TestRuntime` from `bloxide-spawn`.
-//! Spawned futures are captured in a thread-local vec and never actually run,
-//! so tests verify pool state-machine behavior without running worker tasks.
+//! Uses `TestRuntime` to verify the pool state-machine behavior for the
+//! supervisor-based 2-phase spawn model. Spawn requests are sent to a mock
+//! spawn mailbox and replies are injected via `SpawnReply` events.
 //!
 //! Run with: `cargo test -p pool-blox --features std`
 
@@ -11,40 +11,23 @@
 mod pool_tests {
     use bloxide_core::test_utils::TestRuntime;
     use bloxide_core::{
-        capability::DynamicChannelCap, lifecycle::LifecycleCommand, messaging::ActorRef,
+        capability::{BloxRuntime, DynamicChannelCap},
+        lifecycle::LifecycleCommand,
+        messaging::ActorRef,
         spec::MachineSpec, Envelope, MachineState, StateMachine,
     };
-    use bloxide_spawn::{test_impl::drain_spawned, SpawnCap};
-    use pool_messages::{PoolMsg, SpawnWorker, WorkDone, WorkerCtrl, WorkerMsg};
+    use pool_messages::{
+        AppSpawnRequest, WorkDone, PoolMsg, SpawnedWorker, SpawnWorker, WorkerCtrl, WorkerMsg,
+    };
 
     use crate::{PoolCtx, PoolEvent, PoolSpec, PoolState};
-
-    // ── Mock worker factory ──────────────────────────────────────────────────
-    //
-    // Creates channels for a dummy worker and queues a no-op future, but never
-    // constructs a real WorkerCtx or WorkerSpec. This keeps pool tests isolated
-    // from worker-blox entirely.
-
-    fn mock_spawn_worker(
-        _pool_id: bloxide_core::messaging::ActorId,
-        _pool_ref: &ActorRef<PoolMsg, TestRuntime>,
-    ) -> (
-        ActorRef<WorkerMsg, TestRuntime>,
-        ActorRef<WorkerCtrl<TestRuntime>, TestRuntime>,
-    ) {
-        let wid = TestRuntime::alloc_actor_id();
-        let (domain_ref, _domain_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(wid, 16);
-        let (ctrl_ref, _ctrl_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TestRuntime>>(wid, 16);
-        TestRuntime::spawn(async {});
-        (domain_ref, ctrl_ref)
-    }
 
     // ── Test fixture ─────────────────────────────────────────────────────────
 
     struct PoolHarness {
         machine: StateMachine<PoolSpec<TestRuntime>>,
+        _spawn_rx: <TestRuntime as BloxRuntime>::Receiver<AppSpawnRequest<TestRuntime>>,
+        _spawn_reply_ref: ActorRef<SpawnedWorker<TestRuntime>, TestRuntime>,
     }
 
     impl PoolHarness {
@@ -53,10 +36,31 @@ mod pool_tests {
             let (pool_ref, _pool_rx) =
                 <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
 
-            let ctx = PoolCtx::new(pool_ref.clone(), pool_id, mock_spawn_worker);
+            let spawn_id = TestRuntime::alloc_actor_id();
+            let (spawn_ref, spawn_rx) =
+                <TestRuntime as DynamicChannelCap>::channel::<AppSpawnRequest<TestRuntime>>(
+                    spawn_id, 16,
+                );
+
+            let reply_id = TestRuntime::alloc_actor_id();
+            let (spawn_reply_ref, _reply_rx) =
+                <TestRuntime as DynamicChannelCap>::channel::<SpawnedWorker<TestRuntime>>(
+                    reply_id, 16,
+                );
+
+            let ctx = PoolCtx::new(
+                pool_ref.clone(),
+                pool_id,
+                spawn_ref,
+                spawn_reply_ref.clone(),
+            );
             let machine = StateMachine::<PoolSpec<TestRuntime>>::new(ctx);
 
-            PoolHarness { machine }
+            PoolHarness {
+                machine,
+                _spawn_rx: spawn_rx,
+                _spawn_reply_ref: spawn_reply_ref.clone(),
+            }
         }
 
         fn start(&mut self) {
@@ -68,6 +72,22 @@ mod pool_tests {
             self.machine.dispatch(PoolEvent::Msg(Envelope(
                 0,
                 PoolMsg::SpawnWorker(SpawnWorker { task_id }),
+            )));
+        }
+
+        fn dispatch_spawned_worker(
+            &mut self,
+            worker_id: usize,
+            domain_ref: ActorRef<WorkerMsg, TestRuntime>,
+            ctrl_ref: ActorRef<WorkerCtrl<TestRuntime>, TestRuntime>,
+        ) {
+            self.machine.dispatch(PoolEvent::SpawnReply(Envelope(
+                0,
+                SpawnedWorker {
+                    child_id: worker_id,
+                    domain_ref,
+                    ctrl_ref,
+                },
             )));
         }
 
@@ -91,6 +111,20 @@ mod pool_tests {
         }
     }
 
+    // Helper to create dummy worker refs for a reply.
+    fn dummy_worker_refs(
+        worker_id: usize,
+    ) -> (
+        ActorRef<WorkerMsg, TestRuntime>,
+        ActorRef<WorkerCtrl<TestRuntime>, TestRuntime>,
+    ) {
+        let (domain_ref, _domain_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
+        let (ctrl_ref, _ctrl_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TestRuntime>>(worker_id, 16);
+        (domain_ref, ctrl_ref)
+    }
+
     // ── Tests ────────────────────────────────────────────────────────────────
 
     #[test]
@@ -101,53 +135,59 @@ mod pool_tests {
     }
 
     #[test]
-    fn spawn_worker_transitions_idle_to_active() {
-        drain_spawned(); // clear any leftovers from earlier tests
+    fn spawn_worker_transitions_idle_to_spawning() {
         let mut h = PoolHarness::new();
         h.start();
 
         h.dispatch_spawn_worker(1);
 
+        assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
+        assert_eq!(h.pending(), 0);
+    }
+
+    #[test]
+    fn spawn_worker_then_spawned_worker_transitions_to_active() {
+        let mut h = PoolHarness::new();
+        h.start();
+
+        h.dispatch_spawn_worker(1);
+        let (domain_ref, ctrl_ref) = dummy_worker_refs(1);
+        h.dispatch_spawned_worker(1, domain_ref, ctrl_ref);
+
         assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
         assert_eq!(h.pending(), 1);
-        assert_eq!(
-            bloxide_spawn::test_impl::spawned_count(),
-            1,
-            "one worker future should be queued"
-        );
-        drain_spawned();
     }
 
     #[test]
     fn multiple_spawn_workers_stay_active() {
-        drain_spawned();
         let mut h = PoolHarness::new();
         h.start();
 
-        h.dispatch_spawn_worker(1);
-        h.dispatch_spawn_worker(2);
-        h.dispatch_spawn_worker(3);
+        for i in 1u32..=3 {
+            let worker_id = i as usize;
+            h.dispatch_spawn_worker(i);
+            let (domain_ref, ctrl_ref) = dummy_worker_refs(worker_id);
+            h.dispatch_spawned_worker(worker_id, domain_ref, ctrl_ref);
+        }
 
         assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
         assert_eq!(h.pending(), 3);
-        assert_eq!(
-            bloxide_spawn::test_impl::spawned_count(),
-            3,
-            "three worker futures should be queued"
-        );
-        drain_spawned();
     }
 
     #[test]
     fn work_done_decrements_pending() {
-        drain_spawned();
         let mut h = PoolHarness::new();
         h.start();
 
         h.dispatch_spawn_worker(10);
+        let (domain_ref, ctrl_ref) = dummy_worker_refs(1);
+        h.dispatch_spawned_worker(1, domain_ref, ctrl_ref);
+
         h.dispatch_spawn_worker(20);
+        let (domain_ref2, ctrl_ref2) = dummy_worker_refs(2);
+        h.dispatch_spawned_worker(2, domain_ref2, ctrl_ref2);
+
         assert_eq!(h.pending(), 2);
-        drain_spawned();
 
         h.dispatch_work_done(1, 10, 20);
         assert_eq!(h.pending(), 1);
@@ -156,13 +196,16 @@ mod pool_tests {
 
     #[test]
     fn all_work_done_transitions_to_all_done() {
-        drain_spawned();
         let mut h = PoolHarness::new();
         h.start();
 
         h.dispatch_spawn_worker(1);
+        let (domain_ref, ctrl_ref) = dummy_worker_refs(1);
+        h.dispatch_spawned_worker(1, domain_ref, ctrl_ref);
+
         h.dispatch_spawn_worker(2);
-        drain_spawned();
+        let (domain_ref2, ctrl_ref2) = dummy_worker_refs(2);
+        h.dispatch_spawned_worker(2, domain_ref2, ctrl_ref2);
 
         h.dispatch_work_done(1, 1, 2);
         assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
@@ -174,13 +217,16 @@ mod pool_tests {
 
     #[test]
     fn pool_stores_worker_refs() {
-        drain_spawned();
         let mut h = PoolHarness::new();
         h.start();
 
         h.dispatch_spawn_worker(1);
+        let (domain_ref, ctrl_ref) = dummy_worker_refs(1);
+        h.dispatch_spawned_worker(1, domain_ref, ctrl_ref);
+
         h.dispatch_spawn_worker(2);
-        drain_spawned();
+        let (domain_ref2, ctrl_ref2) = dummy_worker_refs(2);
+        h.dispatch_spawned_worker(2, domain_ref2, ctrl_ref2);
 
         assert_eq!(
             h.machine.ctx().worker_refs.len(),
@@ -189,47 +235,52 @@ mod pool_tests {
         );
     }
 
-    // ── Mock factory that creates a worker with a full domain channel ────────
-    //
-    // Returns the domain ref's TestSender so the test can set it full before
-    // spawn_worker fires the DoWork send. This simulates a worker whose mailbox
-    // is at capacity.
-
-    fn mock_spawn_worker_full_channel(
-        _pool_id: bloxide_core::messaging::ActorId,
-        _pool_ref: &ActorRef<PoolMsg, TestRuntime>,
-    ) -> (
-        ActorRef<WorkerMsg, TestRuntime>,
-        ActorRef<WorkerCtrl<TestRuntime>, TestRuntime>,
-    ) {
-        let wid = TestRuntime::alloc_actor_id();
-        let (domain_ref, _domain_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(wid, 16);
-        let (ctrl_ref, _ctrl_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TestRuntime>>(wid, 16);
-        TestRuntime::spawn(async {});
-
-        // Mark the domain channel as full so try_send(DoWork) will fail
-        domain_ref.sender().set_full(true);
-
-        (domain_ref, ctrl_ref)
-    }
-
     #[test]
-    fn spawn_worker_with_full_channel_decrements_pending() {
-        drain_spawned();
+    fn spawned_worker_with_full_domain_channel_decrements_pending() {
         let pool_id = TestRuntime::alloc_actor_id();
         let (pool_ref, _pool_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
-        let ctx = PoolCtx::new(pool_ref.clone(), pool_id, mock_spawn_worker_full_channel);
+
+        let spawn_id = TestRuntime::alloc_actor_id();
+        let (spawn_ref, _spawn_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<AppSpawnRequest<TestRuntime>>(
+                spawn_id, 16,
+            );
+
+        let reply_id = TestRuntime::alloc_actor_id();
+        let (spawn_reply_ref, _reply_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<SpawnedWorker<TestRuntime>>(
+                reply_id, 16,
+            );
+
+        let ctx = PoolCtx::new(
+            pool_ref.clone(),
+            pool_id,
+            spawn_ref,
+            spawn_reply_ref,
+        );
         let mut machine = StateMachine::<PoolSpec<TestRuntime>>::new(ctx);
         machine.dispatch(PoolEvent::Lifecycle(LifecycleCommand::Start));
 
-        // SpawnWorker increments pending to 1, but try_send(DoWork) fails,
-        // so pending should be decremented back to 0.
         machine.dispatch(PoolEvent::Msg(Envelope(
             0,
             PoolMsg::SpawnWorker(SpawnWorker { task_id: 42 }),
+        )));
+
+        let worker_id = 1usize;
+        let (domain_ref, _domain_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
+        let (ctrl_ref, _ctrl_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TestRuntime>>(worker_id, 16);
+        domain_ref.sender().set_full(true);
+
+        machine.dispatch(PoolEvent::SpawnReply(Envelope(
+            0,
+            SpawnedWorker {
+                child_id: worker_id,
+                domain_ref,
+                ctrl_ref,
+            },
         )));
 
         assert_eq!(
@@ -242,6 +293,5 @@ mod pool_tests {
             1,
             "worker ref should still be stored even though DoWork was dropped"
         );
-        drain_spawned();
     }
 }

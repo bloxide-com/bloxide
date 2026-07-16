@@ -1,5 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
 use crate::messaging::{ActorId, ActorRef, Envelope};
+use core::future::Future;
 
 /// Base trait for runtime-specific message sending and receiving.
 ///
@@ -114,6 +115,16 @@ pub trait DynamicChannelCap: BloxRuntime {
         id: ActorId,
         capacity: usize,
     ) -> (ActorRef<M, Self>, Self::Receiver<M>);
+}
+
+/// Tier 2 capability for runtimes that support spawning actor tasks at runtime.
+///
+/// Extends `DynamicChannelCap` (which provides `alloc_actor_id` and `channel`).
+/// Blox crates that need dynamic spawning declare `R: SpawnCap`.
+/// Embassy does NOT implement this trait — use static wiring for Embassy.
+pub trait SpawnCap: DynamicChannelCap {
+    /// Spawn a future as an independent task.
+    fn spawn(future: impl Future<Output = ()> + Send + 'static);
 }
 
 /// Capability to terminate actors and free allocated resources for dynamic actors based on policy.

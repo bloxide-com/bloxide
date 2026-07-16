@@ -30,3 +30,33 @@ pub struct AddWorkerPeer<R: BloxRuntime> {
 pub struct RemoveWorkerPeer {
     pub peer_id: ActorId,
 }
+
+/// Spawn request sent by the Pool to the Supervisor's spawn mailbox.
+///
+/// The Pool creates a typed reply channel and includes it in the request.
+/// The factory sends a `SpawnedWorker` reply back on that channel.
+#[derive(Debug, Clone)]
+pub enum AppSpawnRequest<R: BloxRuntime> {
+    /// Request to spawn a new worker actor.
+    Worker {
+        /// Task ID for the new worker.
+        task_id: u32,
+        /// Reply channel: the factory sends `SpawnedWorker` here.
+        reply_to: ActorRef<SpawnedWorker<R>, R>,
+    },
+}
+
+/// Reply from the spawn factory containing the newly spawned worker's refs.
+///
+/// Sent by the factory back to the Pool via the `reply_to` channel in
+/// `AppSpawnRequest`. The Pool uses these refs to send `DoWork` and
+/// introduce peers.
+#[derive(Debug, Clone)]
+pub struct SpawnedWorker<R: BloxRuntime> {
+    /// Actor ID of the spawned worker.
+    pub child_id: ActorId,
+    /// Domain message channel ref (for `WorkerMsg`).
+    pub domain_ref: ActorRef<WorkerMsg, R>,
+    /// Control channel ref (for `WorkerCtrl<R>`).
+    pub ctrl_ref: ActorRef<WorkerCtrl<R>, R>,
+}

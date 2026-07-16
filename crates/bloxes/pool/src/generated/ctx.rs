@@ -2,9 +2,8 @@
 #[allow(unused_imports)]
 use bloxide_messaging::HasSelfRef;
 #[allow(unused_imports)]
-use blox_ctx_workers::{HasWorkers, HasWorkerFactory, impl_has_workers};
-use pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg};
-use blox_ctx_workers::WorkerSpawnFn;
+use blox_ctx_workers::{HasWorkers, impl_has_workers};
+use pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg, AppSpawnRequest, SpawnedWorker};
 use alloc::vec::Vec;
 use ::bloxide_core::ActorId;
 use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef};
@@ -17,6 +16,10 @@ pub struct PoolCtx<R: BloxRuntime> {
     pub worker_ctrls: Vec<ActorRef<WorkerCtrl<R>, R>>,
     pub pending: u32,
     pub self_id: ActorId,
-    pub worker_factory: WorkerSpawnFn<R>,
+    #[blox_ctx(skip)]
+    pub spawn_ref: ActorRef<AppSpawnRequest<R>, R>,
+    #[blox_ctx(skip)]
+    pub spawn_reply_ref: ActorRef<SpawnedWorker<R>, R>,
+    pub pending_task_id: u32,
 }
 impl_has_workers!(PoolCtx < R >);

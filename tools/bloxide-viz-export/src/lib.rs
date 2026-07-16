@@ -822,6 +822,7 @@ mod tests {
 
         // States
         assert!(pool.states.iter().any(|s| s.name == "Idle"));
+        assert!(pool.states.iter().any(|s| s.name == "Spawning"));
         assert!(pool.states.iter().any(|s| s.name == "Active"));
         assert!(pool.states.iter().any(|s| s.name == "AllDone"));
 
@@ -829,9 +830,14 @@ mod tests {
         let all_done = pool.states.iter().find(|s| s.name == "AllDone").unwrap();
         assert_eq!(all_done.kind, model::StateKind::Terminal);
 
-        // Idle → Active on SpawnWorker
+        // Idle → Spawning on SpawnWorker
         assert!(pool.handlers.iter().any(|h| h.state == "Idle"
             && h.event == "PoolMsg::SpawnWorker"
+            && h.target.display() == "Spawning"));
+
+        // Spawning → Active on SpawnReply
+        assert!(pool.handlers.iter().any(|h| h.state == "Spawning"
+            && h.event == "Unknown::SpawnedWorker"
             && h.target.display() == "Active"));
 
         // AllDone entry action

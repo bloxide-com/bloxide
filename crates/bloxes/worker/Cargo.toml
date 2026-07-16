@@ -11,13 +11,11 @@ license.workspace = true
 default = ["std"]
 std = [
     "bloxide-core/std",
-    "bloxide-spawn/std",
     "pool-actions/std",
 ]
 
 [dependencies]
 bloxide-core    = { workspace = true, features = ["alloc"] }
-bloxide-spawn   = { workspace = true }
 bloxide-macros  = { workspace = true }
 bloxide-log     = { workspace = true }
 pool-messages   = { workspace = true }
@@ -28,4 +26,3 @@ blox-ctx-current-task = { workspace = true }
 
 [dev-dependencies]
 bloxide-core    = { workspace = true, features = ["std"] }
-bloxide-spawn   = { workspace = true, features = ["std"] }
