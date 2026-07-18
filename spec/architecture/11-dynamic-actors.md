@@ -303,52 +303,74 @@ classDiagram
 Defined in `bloxide-core::actor`:
 
 ```rust
-/// Start an actor and run until it reaches a terminal/error state or resets.
+/// Run an actor until it reaches a terminal/error state or resets.
 ///
-/// Calls `machine.start()` to transition out of Init, then dispatches events
-/// until `DispatchOutcome::Started` or `DispatchOutcome::Transition` enters a
-/// terminal or error state, or `DispatchOutcome::Reset` is observed. Suitable
-/// for dynamically spawned actors that should exit their task when their work
-/// is done.
+/// Dispatches events until `DispatchOutcome::Started` or `DispatchOutcome::Transition`
+/// enters a terminal or error state, or `DispatchOutcome::Reset`/`DispatchOutcome::Stopped`
+/// is observed. Suitable for dynamically spawned actors that should exit their
+/// task when their work is done.
+///
+/// Note: This function does NOT call `machine.start()`. The actor expects lifecycle
+/// commands (including Start) to arrive via the event stream.
+///
+/// For unsupervised actors without a lifecycle mailbox, use `run_actor_auto_start`
+/// instead, which auto-starts before running.
 pub async fn run_actor_to_completion<S, M>(mut machine: StateMachine<S>, mut mailboxes: M)
 where
     S: MachineSpec + 'static,
     M: Mailboxes<S::Event>,
 {
-    match machine.start() {
-        DispatchOutcome::Started(state) if S::is_terminal(&state) || S::is_error(&state) => {
-            return;
-        }
-        _ => {}
-    }
     loop {
-        let event = poll_fn(|cx| mailboxes.poll_next(cx)).await;
+        let event = match poll_fn(|cx| mailboxes.poll_next(cx)).await {
+            Some(event) => event,
+            None => return,
+        };
         match machine.dispatch(event) {
-            DispatchOutcome::Transition(state)
+            DispatchOutcome::Started(MachineState::State(state))
                 if S::is_terminal(&state) || S::is_error(&state) =>
             {
                 return;
             }
+            DispatchOutcome::Transition(MachineState::State(state))
+                if S::is_terminal(&state) || S::is_error(&state) =>
+            {
+                return;
+            }
+            DispatchOutcome::Done(_) => return,
+            DispatchOutcome::Failed => return,
             DispatchOutcome::Reset => return,
+            DispatchOutcome::Stopped => return,
             _ => {}
         }
     }
 }
 ```
 
-### `run_actor_to_completion` vs `run_actor`
+### `run_actor_to_completion` vs `run_actor` vs `run_actor_auto_start`
 
-| | `run_actor` | `run_actor_to_completion` |
-|---|---|---|
-| Calls `machine.start()` | No — caller is responsible | Yes — called internally |
-| Exit condition | Never (permanent) | Terminal state, error state, or Reset |
-| Use case | Permanent actors (Embassy, supervised actors) | Dynamically spawned finite-lifetime actors |
-| Supervision | Used by `run_supervised_actor` | Unsupervised by default; use `run_supervised_actor` + `SupervisorControl::RegisterChild` for supervised dynamic actors |
+| | `run_actor` | `run_actor_to_completion` | `run_actor_auto_start` |
+|---|---|---|---|
+| Calls `machine.start()` / `handle_lifecycle(Start)` | No — caller is responsible | No — caller must send `Start` via the lifecycle mailbox | Yes — called internally before the run loop |
+| Exit condition | Never (permanent) | Terminal state, error state, Reset, Stopped, Done, or Failed | Same as `run_actor_to_completion` |
+| Use case | Permanent actors (Embassy, supervised actors) | Dynamically spawned finite-lifetime actors with a lifecycle mailbox | Unsupervised dynamic actors without a lifecycle mailbox that must auto-start |
+| Supervision | Used by `run_supervised_actor` | Unsupervised by default; use `run_supervised_actor` + `SupervisorControl::RegisterChild` for supervised dynamic actors | Unsupervised; for supervision use `run_supervised_actor` instead |
 
-`run_actor_to_completion` calls `machine.start()` internally so the wiring binary
-only needs to construct the `StateMachine` and pass it to `SpawnCap::spawn`.
-When you need supervision for dynamic children, use `run_supervised_actor` and
-register each child through the supervisor control-plane channel.
+`run_actor_to_completion` does NOT call `machine.start()` — the actor expects
+the `Start` lifecycle command to arrive via its event stream (typically through a
+lifecycle mailbox). The wiring binary must therefore send `Start` to the spawned
+child, or use `run_actor_auto_start` if the actor has no lifecycle mailbox and
+should start immediately. When you need supervision for dynamic children, use
+`run_supervised_actor` and register each child through the supervisor
+control-plane channel.
+
+### `run_actor_auto_start`
+
+For unsupervised actors that have no lifecycle mailbox and need to start
+immediately on spawn, use `run_actor_auto_start` (also in `bloxide-core::actor`).
+It calls `machine.handle_lifecycle(LifecycleCommand::Start)` to transition out of
+`Init` before entering the same run-to-completion loop as `run_actor_to_completion`.
+This is the right choice for fire-and-forget dynamic actors whose spawner does not
+retain a lifecycle `ActorRef` for them.
 
 ---
 
@@ -722,9 +744,9 @@ An actor run with `run_actor_to_completion` exits when any of the following occu
 ```mermaid
 stateDiagram-v2
     [*] --> Init
-    Init --> Running : "machine.start() (inside run_actor_to_completion)"
-    Init --> Done : "start() enters terminal state"
-    Init --> Error : "start() enters error state"
+    Init --> Running : "Start command received via lifecycle mailbox"
+    Init --> Done : "Start enters terminal state"
+    Init --> Error : "Start enters error state"
     Running --> Running : "domain events (stay / self-transition)"
     Running --> Done : "transition to terminal state (is_terminal)"
     Running --> Error : "transition to error state (is_error)"
