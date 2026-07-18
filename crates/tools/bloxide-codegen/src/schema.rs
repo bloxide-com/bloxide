@@ -95,6 +95,15 @@ pub struct TopologyConfig {
     /// Exit actions per state.
     #[serde(default)]
     pub exit: Vec<EntryExitConfig>,
+    /// Raw `use` statements for the spec_skeleton module. These import the
+    /// action functions referenced in transitions/entry/exit.
+    /// e.g. `["bloxide_supervisor_context::{start_children, stop_all_children, handle_done_or_failed, ...}"]`
+    #[serde(default)]
+    pub spec_imports: Vec<String>,
+    /// Feature-gated raw `use` statements for the spec_skeleton module.
+    /// These imports appear only in the feature variant.
+    #[serde(default)]
+    pub feature_spec_imports: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -160,6 +169,13 @@ pub struct ContextConfig {
     /// Body of `on_init_entry` as a raw string (inserted verbatim).
     #[serde(default)]
     pub on_init: Option<String>,
+    /// Extra impl blocks emitted after the context struct, wrapped with the
+    /// appropriate generics for each variant. Each entry is a raw impl body
+    /// WITHOUT the `impl<...>` header — the codegen wraps it as:
+    /// `impl<VARIANT_GENERICS> <body>`
+    /// where `<body>` is the entry content (e.g. `HasPending for Ctx<R> { ... }`).
+    #[serde(default)]
+    pub extra_impls: Vec<String>,
     #[serde(default)]
     pub fields: Vec<ContextFieldConfig>,
     #[serde(default)]
@@ -237,6 +253,15 @@ pub struct ContextFieldConfig {
     /// `#[cfg(feature = "...")]`.
     #[serde(default)]
     pub feature: Option<String>,
+    /// `#[provides(TraitPath)]` annotation for the BloxCtx derive macro.
+    /// Generates `impl TraitPath for Struct` that returns `&self.field`.
+    /// May include associated type bindings: `"HasSpawnFactory<R>, type Factory = F"`.
+    #[serde(default)]
+    pub provides: Option<String>,
+    /// `#[provides_mut(TraitPath, method_name)]` annotation for BloxCtx.
+    /// Generates `impl TraitPath for Struct` with a mutable accessor.
+    #[serde(default)]
+    pub provides_mut: Option<String>,
 }
 
 /// A `[[context.uses]]` entry — pulls traits and fields from a composable

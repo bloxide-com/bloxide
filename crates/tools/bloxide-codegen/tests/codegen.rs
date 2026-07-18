@@ -690,8 +690,9 @@ delegates = ["CountsRounds"]
     assert!(content.contains("#[derive(BloxCtx)]"));
     assert!(content.contains("pub struct PingCtx"));
 
-    // role = "ctor" now emits #[blox_ctx(skip)]
-    assert!(content.contains("#[blox_ctx(skip)]"));
+    // role = "accessor" with trait → emits #[provides(...)] (not #[blox_ctx(skip)])
+    // The old #[blox_ctx(skip)] was replaced by #[provides(Trait)] for accessor fields.
+    assert!(content.contains("#[provides"));
 
     // Single-field accessor fields from uses
     assert!(content.contains("pub peer_ref: ActorRef<PingPongMsg, R>"));

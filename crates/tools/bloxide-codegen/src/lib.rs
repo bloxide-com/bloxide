@@ -39,7 +39,12 @@ pub fn generate_all(
 
     if let Some(topology) = &config.topology {
         let actor_name = config.actor.as_ref().map(|a| a.name.as_str());
-        let code = topology::generate(topology, actor_name, crate_name)?;
+        let has_feature = config
+            .context
+            .as_ref()
+            .and_then(|c| c.feature.as_ref())
+            .is_some();
+        let code = topology::generate(topology, actor_name, crate_name, has_feature)?;
         files.push(("topology.rs".to_string(), code));
     }
 

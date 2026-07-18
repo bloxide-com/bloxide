@@ -436,6 +436,7 @@ fn test_full_round_trip_no_data_loss() {
                 let handler = spec.handlers.iter().find(|h| {
                     h.state == trans.state
                         && h.event == full_event
+                        && h.actions == trans.actions
                         && matches!(h.source, bloxide_viz_export::model::HandlerSource::Explicit)
                 });
 
