@@ -51,7 +51,7 @@ Only what *every* blox needs, no exceptions:
 - `HasSelfId` + `self_id: ActorId` field pattern
 - `ActorId`, `ActorRef`, `BloxRuntime`
 - `MachineSpec`, `StateFns`, `StateTopology`
-- `StateRule`, `TransitionRule` (transition rules are now declared in `blox.toml` via `[[topology.transitions]]` and emitted by `bloxide-codegen`; the `transitions!` proc-macro was removed in Phase 4)
+- `StateRule`, `TransitionRule` (transition rules are declared in `blox.toml` via `[[topology.transitions]]` and emitted by `bloxide-codegen`)
 - `ActionResult`, `StateRule`
 
 ### Service-level crates

@@ -4,18 +4,16 @@
 > understanding the composition model (messages + actions + blox), or learning the
 > portable building-block pattern for bloxide actors.
 
-> ⚠️ **Syntax Update (Phase 4, July 2026):** The `transitions!` /
-> `root_transitions!` proc-macros shown in the "Macro form" section below
-> have been **REMOVED**. Transition rules are now declared declaratively
-> in `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen`
-> emits raw `StateRule { ... }` struct literals from those entries. The
-> **composition model** (messages + actions + blox) and the
-> `TransitionRule` struct shape described here are unchanged — only the
-> *syntax* for producing rules moved from a Rust proc-macro to TOML. The
-> `transitions![...]` code blocks below are retained as **historical /
-> illustrative** syntax. See `spec/architecture/20-blox-toml-source-of-truth.md`
-> for the current TOML schema and `QUICK_REFERENCE.md` → "Declarative
-> Transitions (blox.toml)" for a worked example.
+> ⚠️ **Syntax Update (Phase 4, July 2026):** Transition rules are
+> declared declaratively in `blox.toml` via `[[topology.transitions]]`,
+> and `bloxide-codegen` emits raw `StateRule { ... }` struct literals
+> from those entries. The **composition model** (messages + actions +
+> blox) and the `TransitionRule` struct shape described here are
+> unchanged — only the *syntax* for producing rules moved to TOML.
+> The code blocks below show the TOML syntax. See
+> `spec/architecture/20-blox-toml-source-of-truth.md` for the current
+> TOML schema and `QUICK_REFERENCE.md` → "Declarative Transitions
+> (blox.toml)" for a worked example.
 
 Bloxide uses a composition model inspired by visual block programming: a blox is assembled from three kinds of reusable building blocks — **messages**, **actions**, and **state machine logic**. This keeps each concern in its own crate and ensures the blox itself contains no platform-specific code.
 
@@ -110,64 +108,77 @@ of how the arm is visually arranged.
 - **`*Msg`** — patterns on types ending in `Msg` (e.g. `PingPongMsg::Ping(ping)`) use `msg_payload()` for matching. The macro expands to `ev.msg_payload().map_or(false, |m| matches!(m, ...))`. Bindings like `ping` are extracted via `msg_payload()` in actions/guards.
 - **`*Ctrl`** — patterns on types ending in `Ctrl` (e.g. `WorkerCtrl::AddPeer(p)`) use `ctrl_payload()` for matching. Bindings are extracted via `ctrl_payload()`.
 
-```rust
-transitions![
-    // Sink — absorb without side-effects
-    MyEvent::Foo(_) => stay,
+```toml
+# Sink — absorb without side-effects
+[[topology.transitions]]
+pattern = "MyEvent::Foo(_)"
+to = "stay"
 
-    // Pure transition — no side-effects
-    MyEvent::Bar(_) => { transition MyState::Done },
+# Pure transition — no side-effects
+[[topology.transitions]]
+pattern = "MyEvent::Bar(_)"
+to = "Done"
 
-    // Actions + stay
-    MyEvent::Msg(_) => {
-        actions [Self::my_action]
-        stay
-    },
+# Actions + stay
+[[topology.transitions]]
+pattern = "MyEvent::Msg(_)"
+actions = ["my_action"]
+to = "stay"
 
-    // Actions + unconditional transition
-    MyEvent::Baz(_) => {
-        actions [Self::reset_count]
-        transition MyState::Active
-    },
+# Actions + unconditional transition
+[[topology.transitions]]
+pattern = "MyEvent::Baz(_)"
+actions = ["reset_count"]
+to = "Active"
 
-    // Actions + conditional guard
-    MyEvent::Msg(_) => {
-        actions [Self::increment_count]
-        guard(ctx, _results) {
-            ctx.count >= MAX => MyState::Done,
-            _                => MyState::Active,
-        }
-    },
+# Actions + conditional guard
+[[topology.transitions]]
+pattern = "MyEvent::Msg(_)"
+actions = ["increment_count"]
 
-    // Guard only (no side-effects)
-    MyEvent::Check(_) => {
-        guard(ctx, _results) {
-            ctx.count >= MAX => MyState::Done,
-            _                => MyState::Active,
-        }
-    },
-]
+  [[topology.transitions.guards]]
+  condition = "ctx.count >= MAX"
+  to = "Done"
+
+  [[topology.transitions.guards]]
+  to = "Active"
+
+# Guard only (no side-effects)
+[[topology.transitions]]
+pattern = "MyEvent::Check(_)"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.count >= MAX"
+  to = "Done"
+
+  [[topology.transitions.guards]]
+  to = "Active"
 ```
 
-Both state-level (`[[topology.transitions]]`) and root-level (`MachineSpec::root_transitions()`) rules support `reset` as a terminal outcome (in place of a state target or `stay`). When a guard returns `Reset`, the engine fires the full LCA exit chain (leaf → root) then calls `on_init_entry` — identical to the `machine.reset()` code path:
+Both state-level (`[[topology.transitions]]`) and root-level (`[[topology.transitions]]` with `scope = "root"`) rules support `reset` as a terminal outcome (in place of a state target or `stay`). When a guard returns `Reset`, the engine fires the full LCA exit chain (leaf → root) then calls `on_init_entry` — identical to the `machine.reset()` code path:
 
-```rust
-// State-level — actor self-terminates when a condition is met
-transitions![
-    MyEvent::AllDone(_) => reset,
-    MyEvent::PartialDone(_) => {
-        actions [Self::my_action_fn]
-        guard(ctx, _results) {
-            ctx.is_complete() => reset,
-            _                 => stay,
-        }
-    },
-]
+```toml
+# State-level — actor self-terminates when a condition is met
+[[topology.transitions]]
+pattern = "MyEvent::AllDone(_)"
+to = "reset"
 
-// Root-level — same syntax, evaluated when events bubble past all states
-root_transitions![
-    MyEvent::SomeCondition(_) => reset,
-]
+[[topology.transitions]]
+pattern = "MyEvent::PartialDone(_)"
+actions = ["my_action_fn"]
+
+  [[topology.transitions.guards]]
+  condition = "ctx.is_complete()"
+  to = "reset"
+
+  [[topology.transitions.guards]]
+  to = "stay"
+
+# Root-level — same syntax with `scope = "root"`, evaluated when events bubble past all states
+[[topology.transitions]]
+scope = "root"
+pattern = "MyEvent::SomeCondition(_)"
+to = "reset"
 ```
 
 For supervised actors, the runtime handles Start/Reset/Ping via `machine.start()` and `machine.reset()` — no lifecycle root rules are needed. `root_transitions()` defaults to `&[]` and is optional.

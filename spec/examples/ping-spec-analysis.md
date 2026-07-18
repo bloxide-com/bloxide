@@ -33,24 +33,28 @@ This document shows how each section of a blox spec maps to concrete code artifa
 
 ### Code (from spec.rs)
 
-> The `transitions![...]` block below is **pre-Phase 4 syntax** — transition rules are now declared as `[[topology.transitions]]` entries in `blox.toml` and emitted as raw `StateRule { ... }` struct literals by `bloxide-codegen`. The structure of each rule (actions, guard, targets) is unchanged.
+> The transition rule below is declared as a `[[topology.transitions]]` entry in `blox.toml` and emitted as a raw `StateRule { ... }` struct literal by `bloxide-codegen`. The structure of each rule (actions, guard, targets) is shown in TOML form.
 
-```rust
-const ACTIVE_FNS: StateFns<Self> = StateFns {
-    on_entry: &[increment_round, Self::log_round, send_initial_ping],
-    on_exit: &[],
-    transitions: transitions![
-        PingPongMsg::Pong(_) => {
-            actions [Self::log_pong_received, Self::forward_ping]
-            guard(ctx, results) {
-                results.any_failed()                        => PingState::Error,
-                ctx.round() >= B::Round::from(MAX_ROUNDS)   => PingState::Done,
-                ctx.round() == B::Round::from(PAUSE_AT_ROUND) => PingState::Paused,
-                _                                           => PingState::Active,
-            }
-        },
-    ],
-};
+```toml
+[[topology.transitions]]
+state = "Active"
+pattern = "PingPongMsg::Pong(_)"
+actions = ["log_pong_received", "forward_ping"]
+
+  [[topology.transitions.guards]]
+  condition = "results.any_failed()"
+  to = "Error"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round() >= B::Round::from(MAX_ROUNDS)"
+  to = "Done"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round() == B::Round::from(PAUSE_AT_ROUND)"
+  to = "Paused"
+
+  [[topology.transitions.guards]]
+  to = "Active"
 ```
 
 ### Correspondence

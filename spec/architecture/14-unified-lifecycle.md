@@ -543,29 +543,32 @@ fn report_outcome<S: MachineSpec>(
 
 ## Phase 7: Macro Updates
 
-> **Historical note (Phase 4, July 2026):** The `transitions!` and `root_transitions!` proc-macros were **removed** in Phase 4. Transition rules are now declared declaratively in `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen` emits raw `StateRule { ... }` struct literals. The `fail`/`reset` outcomes described below are still valid — they are expressed as guard outcomes in the TOML-driven codegen, not via a proc-macro. This section is retained as a record of the original design intent.
+> **Note:** Transition rules are declared declaratively in `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen` emits raw `StateRule { ... }` struct literals. The `fail`/`reset` outcomes described below are expressed as guard outcomes in the TOML-driven codegen. This section is retained as a record of the original design intent.
 
-### 7.1 transitions! Macro - Add `fail`
+### 7.1 Add `fail` Guard Outcome
 
-**File:** `crates/bloxide-macros/src/transitions.rs` *(deleted in Phase 4)*
+**File:** `crates/bloxide-codegen/src/...` (emitted from `blox.toml`)
 
 Add support for `fail` outcome (in addition to `stay`, `transition`, `reset`):
 
-```rust
-// pre-Phase 4 syntax — now `[[topology.transitions]]` with guard outcome `fail` in blox.toml
-transitions![
-    SomeError(_) => fail,  // Maps to Guard::Fail
-    SomeReset(_) => reset, // Maps to Guard::Reset
-]
+```toml
+# In blox.toml — guard outcomes map to Guard variants
+[[topology.transitions]]
+pattern = "SomeError(_)"
+to = "fail"   # Maps to Guard::Fail
+
+[[topology.transitions]]
+pattern = "SomeReset(_)"
+to = "reset"  # Maps to Guard::Reset
 ```
 
 ### 7.2 No Init State Injection in Enum
 
 Do NOT inject Init into the user's enum. The `MachineState` type handles it implicitly.
 
-### 7.3 Update root_transitions! Macro
+### 7.3 Root-Scope Transitions
 
-~~Keep `root_transitions!` for domain events that need global fallback, but lifecycle is always handled by engine at VirtualRoot.~~ *(The `root_transitions!` proc-macro was removed in Phase 4. Root-scope transitions are now declared with `scope = "root"` on `[[topology.transitions]]` entries in `blox.toml`.)*
+Root-scope transitions are declared with `scope = "root"` on `[[topology.transitions]]` entries in `blox.toml`. Lifecycle is always handled by the engine at VirtualRoot.
 
 ---
 

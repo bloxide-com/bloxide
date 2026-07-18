@@ -207,18 +207,12 @@ fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionRes
     ActionResult::Ok
 }
 
-// In the transitions! table (pre-Phase 4 syntax — now `[[topology.transitions]]` in blox.toml):
-transitions![
-    WorkerCtrl(add) => {
-        actions [|ctx, ev| {
-            if let Some(ctrl) = ev.ctrl_payload() {
-                handle_worker_ctrl(ctx, ctrl);
-            }
-            ActionResult::Ok
-        }]
-        stay
-    },
-]
+```toml
+# In the [[topology.transitions]] table in blox.toml:
+[[topology.transitions]]
+pattern = "WorkerCtrl(add)"
+actions = ["handle_worker_ctrl_inline"]
+to = "stay"
 ```
 
 ### Factory Type with Domain-Specific Ctrl
@@ -595,18 +589,12 @@ fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionRes
     ActionResult::Ok
 }
 
-// In the transitions! table (pre-Phase 4 syntax — now `[[topology.transitions]]` in blox.toml):
-transitions![
-    WorkerCtrl(_) => {
-        actions [|ctx, ev| {
-            if let Some(ctrl) = ev.ctrl_payload() {
-                handle_worker_ctrl(ctx, ctrl);
-            }
-            ActionResult::Ok
-        }]
-        stay
-    },
-]
+```toml
+# In the [[topology.transitions]] table in blox.toml:
+[[topology.transitions]]
+pattern = "WorkerCtrl(_)"
+actions = ["handle_worker_ctrl_inline"]
+to = "stay"
 ```
 
 introduces the newcomer to all existing workers via bidirectional `AddPeer` messages.

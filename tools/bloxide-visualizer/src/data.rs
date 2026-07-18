@@ -99,7 +99,7 @@ mod tests {
             let spec = parse_json_spec("Counter", &json).unwrap();
             assert!(spec.states.iter().any(|s| s.name == "Ready"));
             assert!(spec.states.iter().any(|s| s.name == "Done"));
-            // Should have at least one handler extracted from transitions!
+            // Should have at least one handler extracted from the transition rules
             assert!(!spec.handlers.is_empty());
         }
     }

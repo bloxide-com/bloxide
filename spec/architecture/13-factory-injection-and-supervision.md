@@ -229,9 +229,15 @@ Example: A supervised Worker that handles multiple message types, and has a "poi
 ```rust
 impl MachineSpec for WorkerSpec<R> {
     fn root_transitions() -> &'static [StateRule<Self>] {
-        // pre-Phase 4 syntax — now `[[topology.transitions]]` with `scope = "root"` in blox.toml
-        transitions![
-            WorkerMsg::PoisonPill => reset,
+        // Declared in blox.toml via [[topology.transitions]] with scope = "root"
+        // The codegen emits the StateRule array literal below.
+        &[
+            StateRule {
+                event_tag: WorkerMsg::<R>::POISON_PILL_TAG,
+                matches: |ev| matches!(ev, WorkerMsg::PoisonPill),
+                actions: &[],
+                guard: |_, _, _| Guard::Reset,
+            },
         ]
     }
 }

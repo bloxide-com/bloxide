@@ -130,7 +130,7 @@ bloxide/
   crates/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
-    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[blox_event], etc. (transitions! / root_transitions! removed in Phase 4 — now declarative `[[topology.transitions]]` in blox.toml)
+    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[blox_event], etc. (transition rules now declarative `[[topology.transitions]]` in blox.toml)
     bloxide-spawn/             ← dynamic actor support: SpawnCap, DynamicChannelCap (no_std)
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
@@ -236,14 +236,14 @@ Find the section documenting field annotations. Add:
 
 ---
 
-### 2.2 Document `transitions!` Pattern Classification Rules
+### 2.2 Document Pattern Classification Rules
 
-> **Historical note (Phase 4, July 2026):** The `transitions!` proc-macro was removed in Phase 4. Transition rules are now declared declaratively in `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen` emits raw `StateRule { ... }` struct literals. The pattern-classification rules below described the macro's behavior and are retained as a historical record; the equivalent matching logic now lives in the codegen.
+> **Note:** Transition rules are declared declaratively in `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen` emits raw `StateRule { ... }` struct literals. The pattern-classification rules below describe the matching logic that now lives in the codegen.
 
-**File**: `crates/bloxide-macros/src/lib.rs` *(deleted in Phase 4)*
-**Lines**: In the `transitions!` macro documentation section *(no longer applicable — macro removed)*
+**File**: `crates/bloxide-codegen/src/...`
+**Lines**: In the codegen pattern-matching documentation
 
-**Action**: Add the following section to the `transitions!` macro documentation: *(superseded — see note above)*
+**Action**: Add the following section to the codegen pattern-matching documentation:
 
 ```rust
 /// # Pattern Classification Rules
@@ -493,15 +493,14 @@ fn cancel_timeout<R: BloxRuntime>(ctx: &mut MyCtx<R>, timer_id: TimerId) {
 
 ### Handling Timer Expiration
 
-```rust
-// pre-Phase 4 syntax — now `[[topology.transitions]]` in blox.toml
-transitions! {
-    // Match the timer message by ID
-    MyMsg::Timeout { id } if *id == expected_id => {
-        actions: handle_timeout,
-        guard: |ctx, results, event| Guard::Transition(LeafState::new(State::TimedOut)),
-    }
-}
+```toml
+# In blox.toml — match the timer message by ID
+[[topology.transitions]]
+pattern = "MyMsg::Timeout { id } if *id == expected_id"
+actions = ["handle_timeout"]
+
+  [[topology.transitions.guards]]
+  to = "TimedOut"
 ```
 ```
 

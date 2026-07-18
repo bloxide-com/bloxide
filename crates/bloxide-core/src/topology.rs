@@ -52,8 +52,7 @@ pub trait StateTopology: Copy + Eq + core::fmt::Debug + Send + 'static {
 ///
 /// `bloxide-codegen` auto-wraps state targets in `LeafState::new` when emitting
 /// `StateRule` struct literals from `[[topology.transitions]]` entries, so
-/// user-facing transition syntax is unchanged. (The `transitions!` proc-macro
-/// that previously did this wrapping was removed in Phase 4.)
+/// user-facing transition syntax is unchanged.
 ///
 /// # Construction
 ///
@@ -92,8 +91,6 @@ impl<S: StateTopology> LeafState<S> {
     /// Only for use by `bloxide-codegen` after validating the leaf invariant at
     /// code-gen time (when emitting `StateRule` struct literals from
     /// `[[topology.transitions]]` entries). Not part of the public API.
-    /// (The `transitions!` proc-macro that previously used this was removed in
-    /// Phase 4.)
     #[doc(hidden)]
     #[inline]
     pub fn new_unchecked(state: S) -> Self {

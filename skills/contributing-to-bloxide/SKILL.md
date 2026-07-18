@@ -13,7 +13,7 @@ This guide is for modifying the bloxide framework itself — the HSM engine, pro
 
 ```
 bloxide-core        HSM engine, BloxRuntime, channel traits, TestRuntime     (no_std)
-bloxide-macros      Proc macros: BloxCtx, transitions!                      (host-compiled)
+bloxide-macros      Proc macros: BloxCtx                                 (host-compiled)
 bloxide-codegen     TOML-driven code generator library                        (host-compiled)
 cargo-blox          CLI: cargo blox generate / new / build / check / test / run  (host-compiled)
 bloxide-log         Feature-gated logging macros                              (no_std)
@@ -179,9 +179,7 @@ Proc macros live in `bloxide-macros` (host-compiled, exempt from `no_std`).
 ### Key Macros:
 
 - `#[derive(BloxCtx)]` — generates accessor impls and constructor
-- `transitions!` — builds `&'static [StateRule<S>]` slices
-- `root_transitions!` — builds root-level fallback rules
-- `bloxide-codegen` — TOML-driven code generator for messages, events, topology, and mailbox impls
+- `bloxide-codegen` — TOML-driven code generator for messages, events, topology, and mailbox impls; emits `StateRule` struct literals from `[[topology.transitions]]` entries
 - `cargo-blox` — CLI tool for `cargo blox generate / new / build / check / test / run`
 
 ### Macro Testing

@@ -303,7 +303,7 @@ It also emits `From` impls and `Debug` when requested.
 2. A `StateTopology` impl with `parent`, `is_leaf`, `path`, and `as_index`.
 3. Either:
    - A handler-table macro referencing legacy `StateFns` constants (when `handler_fns` is set), or
-   - Complete `StateFns` constants built from raw `StateRule { ... }` struct literals emitted by `bloxide-codegen` from `[[topology.transitions]]` entries (when `handler_fns` is absent and `transitions` is present). The `transitions!` proc-macro was removed in Phase 4; codegen emits the arrays directly.
+   - Complete `StateFns` constants built from raw `StateRule { ... }` struct literals emitted by `bloxide-codegen` from `[[topology.transitions]]` entries (when `handler_fns` is absent and `transitions` is present). Codegen emits the arrays directly.
 
 From `crates/bloxes/ping/src/generated/topology.rs`:
 

@@ -124,9 +124,8 @@ pub struct TransitionRule<S: MachineSpec, G> {
     ///
     /// Set automatically by `bloxide-codegen` when emitting `StateRule`
     /// struct literals from `[[topology.transitions]]` entries (both
-    /// state-scope and root-scope). The `transitions!` and `root_transitions!`
-    /// proc-macros that previously set this were removed in Phase 4.
-    /// Manually-constructed rules should use the `*_TAG` constant from
+    /// state-scope and root-scope). Manually-constructed rules should use
+    /// the `*_TAG` constant from
     /// the event enum (e.g. `PingEvent::MSG_TAG`), or [`WILDCARD_TAG`] if the
     /// rule matches multiple variants.
     ///
@@ -168,8 +167,7 @@ pub enum Guard<S: MachineSpec> {
     /// Takes a `LeafState<S::State>` so composite states cannot be transition
     /// targets. `bloxide-codegen` wraps targets in `LeafState::new` automatically
     /// when emitting `StateRule` struct literals from `[[topology.transitions]]`
-    /// entries — user-facing syntax is unchanged. (The `transitions!` proc-macro
-    /// that previously did this wrapping was removed in Phase 4.)
+    /// entries — user-facing syntax is unchanged.
     Transition(LeafState<S::State>),
     /// Stay in the current state. No `on_exit` or `on_entry` is called.
     Stay,

@@ -379,7 +379,7 @@ State enum + handler table macro (same as today, but fully generated from transi
 
 The `MachineSpec` impl with transition tables generated from the TOML transitions.
 `bloxide-codegen` emits the transition tables as raw `StateRule { ... }` struct literals
-directly (the `transitions!` proc-macro was removed in Phase 4). Spawn transitions are wrapped in `#[cfg(feature = "dynamic")]`.
+directly. Spawn transitions are wrapped in `#[cfg(feature = "dynamic")]`.
 
 The `MachineSpec` impl is generic over `R: BloxRuntime` (without dynamic) or
 `<R: BloxRuntime, F: SpawnFactory<R>>` (with dynamic). The codegen emits paired impls:
@@ -545,11 +545,11 @@ When any context field or event mailbox has `feature = "dynamic"`, the codegen:
 
 ### 4.3 Declarative transitions (no `handler_fns`)
 
-The current supervisor uses `handler_fns = ["RUNNING_FNS", "SHUTTING_DOWN_FNS"]` to reference hand-written handler tables. The new design uses declarative `[[topology.transitions]]` entries exclusively. The codegen generates the handler tables from the TOML transitions by emitting raw `StateRule { ... }` struct literals directly (the `transitions!` proc-macro was removed in Phase 4; direct emission also enables `#[cfg]` support on individual rules).
+The current supervisor uses `handler_fns = ["RUNNING_FNS", "SHUTTING_DOWN_FNS"]` to reference hand-written handler tables. The new design uses declarative `[[topology.transitions]]` entries exclusively. The codegen generates the handler tables from the TOML transitions by emitting raw `StateRule { ... }` struct literals directly (direct emission also enables `#[cfg]` support on individual rules).
 
 ### 4.4 `#[cfg]` on transition rules
 
-`bloxide-codegen` emits the transition table as a `&[StateRule { ... }, ...]` array directly (the `transitions!` proc-macro was removed in Phase 4). For `#[cfg]` on individual rules, the codegen emits `#[cfg(feature = "dynamic")]` on spawn rules:
+`bloxide-codegen` emits the transition table as a `&[StateRule { ... }, ...]` array directly. For `#[cfg]` on individual rules, the codegen emits `#[cfg(feature = "dynamic")]` on spawn rules:
 
 ```rust
 const RUNNING_FNS: StateFns<Self> = StateFns {

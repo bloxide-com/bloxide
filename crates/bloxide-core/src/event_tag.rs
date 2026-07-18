@@ -7,8 +7,7 @@
 /// Use when a single rule must handle events from multiple variants.
 /// `bloxide-codegen` uses this automatically for wildcard patterns when
 /// emitting `StateRule` struct literals from `[[topology.transitions]]`
-/// entries. (The `transitions!` proc-macro that previously did this was
-/// removed in Phase 4.)
+/// entries.
 pub const WILDCARD_TAG: u8 = u8::MAX;
 
 /// Reserved event tag for lifecycle commands.

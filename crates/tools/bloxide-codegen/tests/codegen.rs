@@ -1074,9 +1074,8 @@ actions = ["reply_pong_action"]
     // StateFns constant generated
     assert!(content.contains("READY_FNS"));
     assert!(content.contains("StateFns"));
-    // Raw StateRule struct literal (no transitions! macro)
+    // Raw StateRule struct literal emitted by codegen
     assert!(content.contains("StateRule"));
-    assert!(!content.contains("transitions!"));
     // Event pattern in matches closure
     assert!(content.contains("PingPongMsg::Ping"));
     // Guard::Stay
@@ -1152,9 +1151,8 @@ target = "stay"
     assert!(content.contains("CounterState::Done"));
     // Guard::Stay for fallback
     assert!(content.contains("Guard::Stay"));
-    // Raw StateRule struct literal (no transitions! macro)
+    // Raw StateRule struct literal emitted by codegen
     assert!(content.contains("StateRule"));
-    assert!(!content.contains("transitions!"));
 }
 
 #[test]
