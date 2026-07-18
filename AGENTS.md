@@ -25,22 +25,37 @@ bloxide/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
     bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[delegatable], #[blox_event], etc.
+    bloxide-messaging/         ← service crate: HasSelfRef<R,M>, HasPeerRef<R,M> for peer/self messaging
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
+    bloxide-supervisor-context/ ← supervisor context struct + traits (split from bloxide-supervisor in Phase 1)
+    bloxide-supervisor-actions/ ← supervisor action functions (split from bloxide-supervisor in Phase 1)
+    bloxide-peers/             ← peer introduction support for wiring actors to peers
     messages/
       ping-pong-messages/      ← PingPongMsg shared by both ping and pong bloxes
       pool-messages/           ← PoolMsg, WorkerMsg, DoWork, WorkDone, etc. shared by pool and worker
       counter-messages/        ← CounterMsg shared by counter blox and minimal wiring demo
+      bhsm-tst-messages/       ← BhsmTstMsg shared by the bhsm-tst HSM topology demo
     actions/
       ping-pong-actions/       ← HasPeerRef, CountsRounds, send_initial_ping, send_pong, etc. (no concrete types)
       pool-actions/            ← WorkerSpawnFn, HasWorkers, HasWorkerFactory, HasCurrentTask, introduce_new_worker, etc.
       counter-actions/         ← CountsTicks behavior trait and increment_count action
+      bhsm-tst-actions/        ← action traits and generic functions for the bhsm-tst HSM topology demo
+    context/
+      blox-ctx-workers/        ← HasWorkers<R> domain context crate
+      blox-ctx-pool-ref/       ← HasPoolRef<R> domain context crate
+      blox-ctx-rounds/         ← CountsRounds delegatable domain context crate
+      blox-ctx-current-timer/  ← HasCurrentTimer delegatable domain context crate
+      blox-ctx-current-task/   ← HasCurrentTask delegatable domain context crate
+      blox-ctx-worker-peers/   ← HasWorkerPeers<R> delegatable domain context crate
+      blox-ctx-ticks/          ← CountsTicks delegatable domain context crate
     bloxes/
       ping/                    ← declarative Ping actor; depends on ping-pong-actions
       pong/                    ← declarative Pong actor; depends on ping-pong-actions
       worker/                  ← declarative Worker actor; depends on pool-actions (no pool-blox dependency)
       pool/                    ← declarative Pool actor; depends on pool-actions (no worker-blox dependency)
       counter/                 ← declarative Counter actor; depends on counter-actions
+      bhsm-tst/                ← declarative Miro Samek HSM test blox (states S/S1/S11/S2/S21/S211); depends on bhsm-tst-actions
     impl/
       embassy-demo-impl/       ← impl crate: PingBehavior (concrete behavior for Ping)
       counter-demo-impl/       ← impl crate: CounterBehavior for tokio-minimal-demo
