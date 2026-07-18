@@ -1,14 +1,11 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Pool action functions and state handler tables.
+//! Pool action functions.
 use blox_ctx_workers::HasWorkers;
-use bloxide_core::{
-    capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions, HasSelfId,
-};
+use bloxide_core::{capability::BloxRuntime, transition::ActionResult, HasSelfId};
 use pool_actions::actions::introduce_new_worker;
 use pool_messages::{AppSpawnRequest, DoWork, PoolMsg, SpawnWorker, WorkerMsg};
 
-pub use crate::generated::topology::PoolState;
-use crate::{PoolCtx, PoolEvent, PoolSpec};
+use crate::{PoolCtx, PoolEvent};
 
 /// Handle a SpawnWorker request: send an AppSpawnRequest to the supervisor
 /// and transition to the Spawning state.
@@ -142,73 +139,4 @@ pub fn log_all_done<R: BloxRuntime>(ctx: &mut PoolCtx<R>) {
         "all {} workers done",
         ctx.worker_refs().len()
     );
-}
-
-impl<R> PoolSpec<R>
-where
-    R: BloxRuntime,
-{
-    pub(crate) const IDLE_FNS: StateFns<Self> = StateFns {
-        on_entry: &[],
-        on_exit: &[],
-        transitions: transitions![
-            PoolMsg::SpawnWorker(_) => {
-                actions [handle_spawn_worker]
-                transition PoolState::Spawning
-            },
-        ],
-    };
-
-    pub(crate) const SPAWNING_FNS: StateFns<Self> = StateFns {
-        on_entry: &[],
-        on_exit: &[],
-        transitions: transitions![
-            PoolEvent::<R>::SpawnReply(_) => {
-                actions [handle_spawned_worker]
-                guard(ctx, _results) {
-                    // If we just kicked off another spawn from the queue, stay in Spawning
-                    ctx.spawn_in_flight => PoolState::Spawning,
-                    // If there are still queued spawns (shouldn't happen without in-flight), keep spawning
-                    !ctx.spawn_queue.is_empty() => PoolState::Spawning,
-                    // If all workers already finished while we were spawning, done
-                    ctx.pending() == 0 && ctx.worker_refs().len() > 0 => PoolState::AllDone,
-                    // Otherwise go active
-                    _ => PoolState::Active,
-                }
-            },
-            PoolMsg::SpawnWorker(_) => {
-                actions [handle_spawn_worker_queued]
-                stay
-            },
-            PoolMsg::WorkDone(_) => {
-                actions [handle_work_done]
-                stay
-            },
-        ],
-    };
-
-    pub(crate) const ACTIVE_FNS: StateFns<Self> = StateFns {
-        on_entry: &[],
-        on_exit: &[],
-        transitions: transitions![
-            PoolMsg::SpawnWorker(_) => {
-                actions [handle_spawn_worker]
-                transition PoolState::Spawning
-            },
-            PoolMsg::WorkDone(_done) => {
-                actions [handle_work_done]
-                guard(ctx, _results) {
-                    // Don't go to AllDone if a spawn is still in-flight
-                    ctx.pending() == 0 && !ctx.spawn_in_flight => PoolState::AllDone,
-                    _ => stay,
-                }
-            },
-        ],
-    };
-
-    pub(crate) const ALL_DONE_FNS: StateFns<Self> = StateFns {
-        on_entry: &[log_all_done],
-        on_exit: &[],
-        transitions: &[],
-    };
 }

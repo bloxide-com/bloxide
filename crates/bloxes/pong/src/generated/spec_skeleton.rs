@@ -8,8 +8,26 @@ use ::bloxide_core::spec::{MachineSpec, StateFns};
 use ::core::marker::PhantomData;
 #[allow(unused_imports)]
 use bloxide_messaging::HasPeerRef;
+#[allow(unused_imports)]
+use ping_pong_messages::PingPongMsg;
 pub struct PongSpec<R: BloxRuntime> {
     _phantom: PhantomData<R>,
+}
+impl<R: BloxRuntime> PongSpec<R> {
+    #[allow(unused_variables)]
+    const READY_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[],
+        on_exit: &[],
+        transitions: &[::bloxide_core::transition::StateRule {
+            event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
+            matches: |__ev| {
+                __ev.msg_payload()
+                    .map_or(false, |__m| ::core::matches!(__m, PingPongMsg::Ping(_)))
+            },
+            actions: &[Self::reply_pong_action],
+            guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
+        }],
+    };
 }
 impl<R: BloxRuntime> MachineSpec for PongSpec<R> {
     type State = PongState;

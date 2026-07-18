@@ -7,8 +7,40 @@ use ::bloxide_core::spec::{MachineSpec, StateFns};
 use ::core::marker::PhantomData;
 #[allow(unused_imports)]
 use blox_ctx_ticks::CountsTicks;
+#[allow(unused_imports)]
+use counter_messages::CounterMsg;
 pub struct CounterSpec<B: CountsTicks + 'static> {
     _phantom: PhantomData<B>,
+}
+impl<B: CountsTicks + 'static> CounterSpec<B> {
+    #[allow(unused_variables)]
+    const READY_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[],
+        on_exit: &[],
+        transitions: &[::bloxide_core::transition::StateRule {
+            event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
+            matches: |__ev| {
+                __ev.msg_payload()
+                    .map_or(false, |__m| ::core::matches!(__m, CounterMsg::Tick(_)))
+            },
+            actions: &[Self::count_tick],
+            guard: |ctx, results, _ev| {
+                if ctx.count() >= B::Count::from(2) {
+                    ::bloxide_core::transition::Guard::Transition(
+                        ::bloxide_core::topology::LeafState::new(CounterState::Done),
+                    )
+                } else {
+                    ::bloxide_core::transition::Guard::Stay
+                }
+            },
+        }],
+    };
+    #[allow(unused_variables)]
+    const DONE_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[],
+        on_exit: &[],
+        transitions: &[],
+    };
 }
 impl<B: CountsTicks + 'static> MachineSpec for CounterSpec<B> {
     type State = CounterState;

@@ -3,7 +3,8 @@
 //!
 //! When `context.feature` is set, emits paired `#[cfg]` variants with different
 //! generics, event types, and mailboxes types. The StateFns are generated as
-//! associated constants inside `impl` blocks using the `transitions!` macro.
+//! associated constants inside `impl` blocks using raw `StateRule { ... }` struct
+//! literals emitted directly from TOML.
 
 use quote::{format_ident, quote, ToTokens};
 
@@ -79,7 +80,7 @@ struct VariantParams {
 }
 
 /// Replace placeholders {R}, {Ctx}, {Event} in a string with variant-specific values.
-fn replace_placeholders(
+pub(crate) fn replace_placeholders(
     s: &str,
     ctx_type_str: &str,
     event_type_str: &str,
@@ -90,145 +91,6 @@ fn replace_placeholders(
     // {R} → first type param (or "R" if no type params)
     let first_param = type_params.first().map(|s| s.as_str()).unwrap_or("R");
     result.replace("{R}", first_param)
-}
-
-/// Insert turbofish `::<P0, P1, ...>` after the first ident in a path string.
-/// E.g. "SupervisorEvent::Child(...)" with params ["R"] → "SupervisorEvent::<R>::Child(...)"
-fn insert_turbofish_in_path(path_str: &str, type_params: &[String]) -> String {
-    if type_params.is_empty() {
-        return path_str.to_string();
-    }
-    // Find the first identifier in the string.
-    let chars: Vec<char> = path_str.chars().collect();
-    let mut i = 0;
-    // Skip whitespace
-    while i < chars.len() && chars[i].is_whitespace() {
-        i += 1;
-    }
-    // Collect first identifier
-    let start = i;
-    while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
-        i += 1;
-    }
-    if i == start {
-        return path_str.to_string();
-    }
-    let first_ident: String = chars[start..i].iter().collect();
-    let turbofish = format!("::<{}>", type_params.join(", "));
-    let rest: String = chars[i..].iter().collect();
-    format!("{}{}{}", first_ident, turbofish, rest)
-}
-
-/// Generate a `transitions!` macro invocation from TOML transitions for a state.
-fn generate_transitions_macro(
-    transitions: &[&crate::schema::TransitionConfig],
-    state_enum_ident: &syn::Ident,
-    ctx_type_str: &str,
-    event_type_str: &str,
-    type_params: &[String],
-) -> anyhow::Result<proc_macro2::TokenStream> {
-    let mut arms = Vec::new();
-
-    for trans in transitions {
-        // Insert turbofish into the event pattern
-        let event_with_turbofish = insert_turbofish_in_path(&trans.event, type_params);
-
-        // Replace placeholders in actions
-        let actions_resolved: Vec<String> = trans
-            .actions
-            .iter()
-            .map(|a| replace_placeholders(a, ctx_type_str, event_type_str, type_params))
-            .collect();
-
-        // Build the arm: Pattern => { body }
-        let pat_ts: proc_macro2::TokenStream = event_with_turbofish.parse().map_err(|e| {
-            anyhow::anyhow!("invalid event pattern '{}': {}", event_with_turbofish, e)
-        })?;
-
-        // Build body
-        let action_tokens: Vec<proc_macro2::TokenStream> = actions_resolved
-            .iter()
-            .map(|a| {
-                a.parse::<proc_macro2::TokenStream>()
-                    .map_err(|e| anyhow::anyhow!("invalid action '{}': {}", a, e))
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-
-        let actions_ts = if action_tokens.is_empty() {
-            quote! {}
-        } else {
-            quote! { actions [#(#action_tokens),*] }
-        };
-
-        // Build guard/target
-        if trans.guards.is_empty() {
-            // Simple target: stay / reset / fail / StateName
-            let target_ts = target_to_token_stream(&trans.target, state_enum_ident);
-            let body = if action_tokens.is_empty() {
-                quote! { #target_ts }
-            } else {
-                quote! { { #actions_ts #target_ts } }
-            };
-            arms.push(quote! { #pat_ts => #body });
-        } else {
-            // Guard chain: guard(ctx, _results) { cond => target, _ => fallback }
-            let fallback_ts = guard_target_to_token_stream(&trans.target, state_enum_ident);
-            let mut guard_arms = Vec::new();
-            for guard in &trans.guards {
-                let cond_ts: proc_macro2::TokenStream = guard.condition.parse().map_err(|e| {
-                    anyhow::anyhow!("invalid guard condition '{}': {}", guard.condition, e)
-                })?;
-                let guard_target_ts = guard_target_to_token_stream(&guard.target, state_enum_ident);
-                guard_arms.push(quote! { #cond_ts => #guard_target_ts });
-            }
-            // Add wildcard fallback
-            guard_arms.push(quote! { _ => #fallback_ts });
-
-            let guard_body = quote! {
-                guard(ctx, _results) {
-                    #(#guard_arms),*
-                }
-            };
-
-            let body = quote! { { #actions_ts #guard_body } };
-            arms.push(quote! { #pat_ts => #body });
-        }
-    }
-
-    Ok(quote! {
-        transitions![#(#arms),*]
-    })
-}
-
-/// Convert a target string to a token stream for a brace body (non-guard).
-/// Uses `transition` keyword for state transitions.
-fn target_to_token_stream(target: &str, state_enum_ident: &syn::Ident) -> proc_macro2::TokenStream {
-    match target {
-        "stay" => quote! { stay },
-        "reset" => quote! { reset },
-        "fail" => quote! { fail },
-        state_name => {
-            let ident = format_ident!("{}", state_name);
-            quote! { transition #state_enum_ident::#ident }
-        }
-    }
-}
-
-/// Convert a target string to a token stream for a guard arm.
-/// Guard arms use bare state expressions (no `transition` keyword).
-fn guard_target_to_token_stream(
-    target: &str,
-    state_enum_ident: &syn::Ident,
-) -> proc_macro2::TokenStream {
-    match target {
-        "stay" => quote! { stay },
-        "reset" => quote! { reset },
-        "fail" => quote! { fail },
-        state_name => {
-            let ident = format_ident!("{}", state_name);
-            quote! { #state_enum_ident::#ident }
-        }
-    }
 }
 
 /// Generate the StateFns associated constants for a variant.
@@ -245,6 +107,7 @@ fn generate_state_fns_impl(
     feature_filter: Option<&str>,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
     use crate::schema::{EntryExitConfig, TransitionConfig};
+    use crate::topology::generate_state_rule;
     use std::collections::HashMap;
 
     // Build lookup maps, filtering by feature
@@ -265,7 +128,25 @@ fn generate_state_fns_impl(
     let entry_by_state: HashMap<String, Vec<&EntryExitConfig>> = {
         let mut map: HashMap<String, Vec<&EntryExitConfig>> = HashMap::new();
         for e in &topology.entry {
-            map.entry(e.state.clone()).or_default().push(e);
+            // Same feature filtering as transitions
+            if match feature_filter {
+                None => e.feature.is_none(),
+                Some(_) => true,
+            } {
+                map.entry(e.state.clone()).or_default().push(e);
+            }
+        }
+        map
+    };
+    let exit_by_state: HashMap<String, Vec<&EntryExitConfig>> = {
+        let mut map: HashMap<String, Vec<&EntryExitConfig>> = HashMap::new();
+        for e in &topology.exit {
+            if match feature_filter {
+                None => e.feature.is_none(),
+                Some(_) => true,
+            } {
+                map.entry(e.state.clone()).or_default().push(e);
+            }
         }
         map
     };
@@ -278,6 +159,10 @@ fn generate_state_fns_impl(
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
         let state_entry = entry_by_state
+            .get(&state.name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let state_exit = exit_by_state
             .get(&state.name)
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
@@ -302,20 +187,51 @@ fn generate_state_fns_impl(
             })
             .unwrap_or_default();
 
-        // transitions! macro
-        let trans_macro = generate_transitions_macro(
-            state_trans,
-            state_enum_ident,
-            ctx_type_str,
-            event_type_str,
-            type_params,
-        )?;
+        // on_exit actions
+        let exit_tokens: Vec<proc_macro2::TokenStream> = state_exit
+            .first()
+            .map(|ee| {
+                ee.actions
+                    .iter()
+                    .map(|a| {
+                        let resolved =
+                            replace_placeholders(a, ctx_type_str, event_type_str, type_params);
+                        resolved
+                            .parse::<proc_macro2::TokenStream>()
+                            .unwrap_or_else(|_| {
+                                let ident = format_ident!("{}", resolved);
+                                quote! { #ident }
+                            })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Transition rules — raw StateRule { ... } literals
+        let trans_tokens: proc_macro2::TokenStream = if state_trans.is_empty() {
+            quote! { &[] }
+        } else {
+            let rules: Vec<proc_macro2::TokenStream> = state_trans
+                .iter()
+                .map(|t| {
+                    generate_state_rule(
+                        t,
+                        state_enum_ident,
+                        ctx_type_str,
+                        event_type_str,
+                        type_params,
+                    )
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            quote! { &[#(#rules),*] }
+        };
 
         consts.push(quote! {
+            #[allow(unused_variables)]
             const #fns_ident: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
                 on_entry: &[#(#entry_tokens),*],
-                on_exit: &[],
-                transitions: #trans_macro,
+                on_exit: &[#(#exit_tokens),*],
+                transitions: #trans_tokens,
             };
         });
     }
@@ -434,11 +350,6 @@ pub fn generate(
         use_stmts.push(quote! { use ::bloxide_core::capability::BloxRuntime; });
     }
     use_stmts.push(quote! { use ::bloxide_core::spec::{MachineSpec, StateFns}; });
-    // The transitions! macro is only used for feature-gated StateFns generation.
-    // Non-feature-gated specs get their StateFns from topology.rs (raw StateRule literals).
-    if has_feature {
-        use_stmts.push(quote! { use ::bloxide_core::transitions; });
-    }
     use_stmts.push(quote! { use crate::#ctx_ident; });
     use_stmts.push(quote! { pub use crate::generated::topology::#state_ident; });
 
@@ -538,6 +449,32 @@ pub fn generate(
     for imp in &topology.spec_imports {
         let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", imp))
             .map_err(|e| anyhow::anyhow!("invalid spec_import '{}': {}", imp, e))?;
+        use_stmts.push(quote! {
+            #[allow(unused_imports)]
+            #use_item
+        });
+    }
+
+    // Add message type imports — the generated matches closures reference
+    // message enum types (e.g. `CounterMsg::Tick(_)`) which must be in scope.
+    // Collect unique crate-level import paths from mailbox message_path fields.
+    let mut msg_import_paths: Vec<String> = Vec::new();
+    if let Some(ref ev) = event {
+        for mb in &ev.mailboxes {
+            if let Some(ref mp) = mb.message_path {
+                // message_path is like "counter_messages::CounterMsg" or
+                // "pool_messages::WorkerCtrl<R>" — strip generics, take
+                // the crate::path part as a single use statement.
+                let base = mp.split('<').next().unwrap_or(mp).trim();
+                if !msg_import_paths.iter().any(|p| p == base) {
+                    msg_import_paths.push(base.to_string());
+                }
+            }
+        }
+    }
+    for path in &msg_import_paths {
+        let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", path))
+            .map_err(|e| anyhow::anyhow!("invalid message import '{}': {}", path, e))?;
         use_stmts.push(quote! {
             #[allow(unused_imports)]
             #use_item
@@ -910,28 +847,21 @@ pub fn generate(
             }
         };
 
-        // StateFns associated constants — only for feature-gated specs.
-        // For non-feature-gated specs, StateFns are generated in topology.rs
-        // as raw StateRule literals. For feature-gated specs, we generate
-        // them here as associated constants inside paired impl blocks
-        // (using the transitions! macro) so feature-gated transitions can be
-        // included/excluded per variant.
-        let state_fns_impl = if has_feature {
-            generate_state_fns_impl(
-                topology,
-                &state_ident,
-                &spec_ident,
-                &ctx_type_str,
-                &event_type_str,
-                &var.event_type_params,
-                spec_impl_generics.to_token_stream(),
-                spec_ty_generics.to_token_stream(),
-                spec_where_clause,
-                var.feature_filter.as_deref(),
-            )?
-        } else {
-            quote! {}
-        };
+        // StateFns associated constants — always generated as associated constants
+        // inside the impl block using raw StateRule literals. This handles both
+        // feature-gated and non-feature-gated specs uniformly.
+        let state_fns_impl = generate_state_fns_impl(
+            topology,
+            &state_ident,
+            &spec_ident,
+            &ctx_type_str,
+            &event_type_str,
+            &var.event_type_params,
+            spec_impl_generics.to_token_stream(),
+            spec_ty_generics.to_token_stream(),
+            spec_where_clause,
+            var.feature_filter.as_deref(),
+        )?;
 
         // MachineSpec impl
         let var_event_ty = &var.event_ty;

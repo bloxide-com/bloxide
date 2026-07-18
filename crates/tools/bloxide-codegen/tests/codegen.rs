@@ -300,8 +300,19 @@ fn test_generate_counter_topology() {
 [actor]
 name = "Counter"
 
+[event]
+name = "CounterEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "CounterMsg"
+message_path = "counter_messages::CounterMsg"
+
+[context]
+name = "CounterCtx"
+generics = "<B: CountsTicks>"
+
 [topology]
-handler_fns = ["READY_FNS", "DONE_FNS"]
 
 [[topology.states]]
 name = "Ready"
@@ -489,25 +500,6 @@ parent = "NonExistent"
 }
 
 #[test]
-fn test_handler_fns_length_mismatch() {
-    let toml = r#"
-[topology]
-handler_fns = ["ONLY_ONE"]
-
-[[topology.states]]
-name = "A"
-
-[[topology.states]]
-name = "B"
-"#;
-
-    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
-    let result = generate_all(&config, "test");
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("handler_fns must list exactly"));
-}
-
 #[test]
 fn test_generate_counter_ctx() {
     let toml = r#"
@@ -1052,6 +1044,18 @@ fn test_declarative_transitions_simple_stay() {
 [actor]
 name = "Pong"
 
+[event]
+name = "PongEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+
+[context]
+name = "PongCtx"
+generics = "<R: BloxRuntime>"
+
 [topology]
 
 [[topology.states]]
@@ -1068,11 +1072,11 @@ actions = ["reply_pong_action"]
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "pong-blox").expect("generate failed");
 
-    let topo_file = files
+    let spec_file = files
         .iter()
-        .find(|(n, _)| n == "topology.rs")
-        .expect("topology.rs missing");
-    let content = &topo_file.1;
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &spec_file.1;
 
     // StateFns constant generated
     assert!(content.contains("READY_FNS"));
@@ -1095,6 +1099,18 @@ fn test_declarative_transitions_with_guard() {
     let toml = r#"
 [actor]
 name = "Counter"
+
+[event]
+name = "CounterEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "CounterMsg"
+message_path = "counter_messages::CounterMsg"
+
+[context]
+name = "CounterCtx"
+generics = "<B: CountsTicks>"
 
 [topology]
 
@@ -1130,11 +1146,11 @@ target = "stay"
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "counter-blox").expect("generate failed");
 
-    let topo_file = files
+    let spec_file = files
         .iter()
-        .find(|(n, _)| n == "topology.rs")
-        .expect("topology.rs missing");
-    let content = &topo_file.1;
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &spec_file.1;
 
     // Guard chain generated as if/else-if/else
     assert!(content.contains("ctx.count() >= 2"));
@@ -1153,6 +1169,18 @@ fn test_declarative_entry_exit() {
     let toml = r#"
 [actor]
 name = "Worker"
+
+[event]
+name = "WorkerEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "WorkerMsg"
+message_path = "pool_messages::WorkerMsg"
+
+[context]
+name = "WorkerCtx"
+generics = "<R: BloxRuntime>"
 
 [topology]
 
@@ -1182,11 +1210,11 @@ actions = ["process_work"]
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "worker-blox").expect("generate failed");
 
-    let topo_file = files
+    let spec_file = files
         .iter()
-        .find(|(n, _)| n == "topology.rs")
-        .expect("topology.rs missing");
-    let content = &topo_file.1;
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &spec_file.1;
 
     // Entry/exit actions in StateFns
     assert!(content.contains("log_waiting"));
@@ -1200,6 +1228,18 @@ fn test_declarative_transition_with_transition_target() {
     let toml = r#"
 [actor]
 name = "Pool"
+
+[event]
+name = "PoolEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PoolMsg"
+message_path = "pool_messages::PoolMsg"
+
+[context]
+name = "PoolCtx"
+generics = "<R: BloxRuntime>"
 
 [topology]
 
@@ -1234,11 +1274,11 @@ target = "AllDone"
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "pool-blox").expect("generate failed");
 
-    let topo_file = files
+    let spec_file = files
         .iter()
-        .find(|(n, _)| n == "topology.rs")
-        .expect("topology.rs missing");
-    let content = &topo_file.1;
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &spec_file.1;
 
     // transition targets (not stay/reset/fail)
     // Guard::Transition with LeafState::new
@@ -1303,6 +1343,18 @@ fn test_declarative_transitions_empty_for_state() {
 [actor]
 name = "Test"
 
+[event]
+name = "TestEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "TestMsg"
+message_path = "test_messages::TestMsg"
+
+[context]
+name = "TestCtx"
+generics = "<R: BloxRuntime>"
+
 [topology]
 
 [[topology.states]]
@@ -1322,11 +1374,11 @@ target = "Done"
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "test-blox").expect("generate failed");
 
-    let topo_file = files
+    let spec_file = files
         .iter()
-        .find(|(n, _)| n == "topology.rs")
-        .expect("topology.rs missing");
-    let content = &topo_file.1;
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &spec_file.1;
 
     // Done state should have empty transitions: &[]
     assert!(content.contains("DONE_FNS"));
@@ -1547,6 +1599,18 @@ fn test_declarative_reset_fail_targets() {
 [actor]
 name = "Test"
 
+[event]
+name = "TestEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "TestMsg"
+message_path = "test_messages::TestMsg"
+
+[context]
+name = "TestCtx"
+generics = "<R: BloxRuntime>"
+
 [topology]
 
 [[topology.states]]
@@ -1571,11 +1635,11 @@ target = "fail"
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "test-blox").expect("generate failed");
 
-    let topo_file = files
+    let spec_file = files
         .iter()
-        .find(|(n, _)| n == "topology.rs")
-        .expect("topology.rs missing");
-    let content = &topo_file.1;
+        .find(|(n, _)| n == "spec_skeleton.rs")
+        .expect("spec_skeleton.rs missing");
+    let content = &spec_file.1;
 
     assert!(content.contains("Guard::Reset"));
     assert!(content.contains("Guard::Fail"));

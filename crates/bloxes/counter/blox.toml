@@ -32,8 +32,6 @@ message = "CounterMsg"
 message_path = "counter_messages::CounterMsg"
 
 [topology]
-# Legacy: hand-written StateFns constants in actions.rs
-handler_fns = ["READY_FNS", "DONE_FNS"]
 
 [[topology.states]]
 name = "Ready"
@@ -42,8 +40,8 @@ initial = true
 [[topology.states]]
 name = "Done"
 terminal = true
+# --- Declarative transitions ---
 
-# --- Declarative transitions (documentation; handler_fns takes precedence) ---
 [[topology.transitions]]
 state = "Ready"
 event = "CounterMsg::Tick(_)"

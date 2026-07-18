@@ -65,8 +65,10 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 
 [topology]
-# Legacy: hand-written StateFns constants in actions.rs
-handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
+spec_imports = [
+    "ping_pong_actions::{increment_round, send_initial_ping}",
+    "crate::{MAX_ROUNDS, PAUSE_AT_ROUND}",
+]
 
 [[topology.states]]
 name = "Operating"
@@ -89,7 +91,7 @@ terminal = true
 name = "Error"
 error = true
 
-# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+# --- Declarative transitions ---
 
 # Operating: composite state, catches Pong to prevent bubbling
 [[topology.transitions]]
@@ -105,7 +107,7 @@ actions = ["increment_round", "Self::log_round", "send_initial_ping"]
 [[topology.transitions]]
 state = "Active"
 event = "PingPongMsg::Pong(_)"
-target = "stay"
+target = "Active"
 actions = ["Self::log_pong_received", "Self::forward_ping"]
 
 [[topology.transitions.guards]]

@@ -3,6 +3,8 @@
 pub use crate::generated::topology::PingState;
 use crate::PingCtx;
 use crate::PingEvent;
+#[allow(unused_imports)]
+use crate::{MAX_ROUNDS, PAUSE_AT_ROUND};
 use ::bloxide_core::capability::BloxRuntime;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use ::core::marker::PhantomData;
@@ -14,12 +16,98 @@ use blox_ctx_rounds::CountsRounds;
 use bloxide_messaging::{HasPeerRef, HasSelfRef};
 #[allow(unused_imports)]
 use bloxide_timer::HasTimerRef;
+#[allow(unused_imports)]
+use ping_pong_actions::{increment_round, send_initial_ping};
+#[allow(unused_imports)]
+use ping_pong_messages::PingPongMsg;
 pub struct PingSpec<R: BloxRuntime, B: HasCurrentTimer + CountsRounds + 'static>
 where
     B: Default,
     B::Round: Into<u32>,
 {
     _phantom: PhantomData<(R, B)>,
+}
+impl<R: BloxRuntime, B: HasCurrentTimer + CountsRounds + 'static> PingSpec<R, B>
+where
+    B: Default,
+    B::Round: Into<u32>,
+{
+    #[allow(unused_variables)]
+    const OPERATING_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[],
+        on_exit: &[],
+        transitions: &[::bloxide_core::transition::StateRule {
+            event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
+            matches: |__ev| {
+                __ev.msg_payload()
+                    .map_or(false, |__m| ::core::matches!(__m, PingPongMsg::Pong(_)))
+            },
+            actions: &[],
+            guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
+        }],
+    };
+    #[allow(unused_variables)]
+    const ACTIVE_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[increment_round, Self::log_round, send_initial_ping],
+        on_exit: &[],
+        transitions: &[::bloxide_core::transition::StateRule {
+            event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
+            matches: |__ev| {
+                __ev.msg_payload()
+                    .map_or(false, |__m| ::core::matches!(__m, PingPongMsg::Pong(_)))
+            },
+            actions: &[Self::log_pong_received, Self::forward_ping],
+            guard: |ctx, results, _ev| {
+                if results.any_failed() {
+                    ::bloxide_core::transition::Guard::Transition(
+                        ::bloxide_core::topology::LeafState::new(PingState::Error),
+                    )
+                } else if ctx.round() >= B::Round::from(MAX_ROUNDS) {
+                    ::bloxide_core::transition::Guard::Transition(
+                        ::bloxide_core::topology::LeafState::new(PingState::Done),
+                    )
+                } else if ctx.round() == B::Round::from(PAUSE_AT_ROUND) {
+                    ::bloxide_core::transition::Guard::Transition(
+                        ::bloxide_core::topology::LeafState::new(PingState::Paused),
+                    )
+                } else {
+                    ::bloxide_core::transition::Guard::Transition(
+                        ::bloxide_core::topology::LeafState::new(PingState::Active),
+                    )
+                }
+            },
+        }],
+    };
+    #[allow(unused_variables)]
+    const PAUSED_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[Self::schedule_pause_timer],
+        on_exit: &[Self::cancel_pause_timer],
+        transitions: &[::bloxide_core::transition::StateRule {
+            event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
+            matches: |__ev| {
+                __ev.msg_payload()
+                    .map_or(false, |__m| ::core::matches!(__m, PingPongMsg::Resume(_)))
+            },
+            actions: &[Self::forward_ping],
+            guard: |ctx, results, _ev| {
+                ::bloxide_core::transition::Guard::Transition(
+                    ::bloxide_core::topology::LeafState::new(PingState::Active),
+                )
+            },
+        }],
+    };
+    #[allow(unused_variables)]
+    const DONE_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[Self::log_done],
+        on_exit: &[],
+        transitions: &[],
+    };
+    #[allow(unused_variables)]
+    const ERROR_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[Self::log_error],
+        on_exit: &[],
+        transitions: &[],
+    };
 }
 impl<R: BloxRuntime, B: HasCurrentTimer + CountsRounds + 'static> MachineSpec for PingSpec<R, B>
 where

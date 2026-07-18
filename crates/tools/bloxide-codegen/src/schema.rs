@@ -80,13 +80,9 @@ pub struct MailboxConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct TopologyConfig {
     pub states: Vec<StateConfig>,
-    /// Legacy: list of handler function names (one per state), used when
-    /// transitions are not declared in TOML. The codegen emits a
-    /// `handler_table` macro that references hand-written `StateFns` constants.
-    pub handler_fns: Option<Vec<String>>,
     /// Declarative transitions grouped by state. When present, the codegen
-    /// emits complete `StateFns` constants with `transitions!` macro
-    /// invocations from TOML — no hand-written actions needed.
+    /// emits complete `StateFns` constants with raw `StateRule` struct literals
+    /// directly from TOML — no hand-written actions needed.
     #[serde(default)]
     pub transitions: Vec<TransitionConfig>,
     /// Entry actions per state.

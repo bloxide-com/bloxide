@@ -12,8 +12,58 @@ use blox_ctx_current_task::HasCurrentTask;
 use blox_ctx_pool_ref::HasPoolRef;
 #[allow(unused_imports)]
 use blox_ctx_worker_peers::HasWorkerPeers;
+#[allow(unused_imports)]
+use pool_messages::WorkerCtrl;
+#[allow(unused_imports)]
+use pool_messages::WorkerMsg;
 pub struct WorkerSpec<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> {
     _phantom: PhantomData<(R, B)>,
+}
+impl<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> WorkerSpec<R, B> {
+    #[allow(unused_variables)]
+    const WAITING_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[Self::log_waiting],
+        on_exit: &[],
+        transitions: &[
+            ::bloxide_core::transition::StateRule {
+                event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
+                matches: |__ev| {
+                    __ev.ctrl_payload()
+                        .map_or(false, |__m| ::core::matches!(__m, WorkerCtrl::AddPeer(_)))
+                },
+                actions: &[Self::handle_ctrl],
+                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
+            },
+            ::bloxide_core::transition::StateRule {
+                event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
+                matches: |__ev| {
+                    __ev.msg_payload()
+                        .map_or(false, |__m| ::core::matches!(__m, WorkerMsg::DoWork(_)))
+                },
+                actions: &[Self::process_work],
+                guard: |ctx, results, _ev| {
+                    ::bloxide_core::transition::Guard::Transition(
+                        ::bloxide_core::topology::LeafState::new(WorkerState::Done),
+                    )
+                },
+            },
+            ::bloxide_core::transition::StateRule {
+                event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
+                matches: |__ev| {
+                    __ev.msg_payload()
+                        .map_or(false, |__m| ::core::matches!(__m, WorkerMsg::PeerResult(_)))
+                },
+                actions: &[],
+                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
+            },
+        ],
+    };
+    #[allow(unused_variables)]
+    const DONE_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+        on_entry: &[Self::log_done, Self::do_broadcast, Self::do_notify_pool],
+        on_exit: &[],
+        transitions: &[],
+    };
 }
 impl<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> MachineSpec
     for WorkerSpec<R, B>

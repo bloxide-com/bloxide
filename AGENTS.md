@@ -24,7 +24,7 @@ bloxide/
   crates/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
-    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], transitions!, #[delegatable], etc.
+    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[delegatable], #[blox_event], etc.
     bloxide-spawn/             ← dynamic actor support: SpawnCap, SpawnCapability, SpawnFactoryFor, ErasedSpawnFactory, SpawnOutput, SpawnPolicy, PeerCtrl, HasPeers, introduce_peers (no_std)
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
@@ -116,7 +116,7 @@ Use this model when you are wiring runtimes, reading macro output, or adding new
 
 Then dive deeper as needed:
 - `spec/architecture/02-hsm-engine.md` — `MachineSpec`, dispatch, Init/start/reset
-- `spec/architecture/05-handler-patterns.md` — transition patterns and `transitions!` macro
+- `spec/architecture/05-handler-patterns.md` — transition patterns and declarative TOML transitions
 - `spec/architecture/08-supervision.md` — supervisor patterns
 - `spec/architecture/11-dynamic-actors.md` — dynamic spawning and factory injection
 
@@ -128,7 +128,7 @@ Then dive deeper as needed:
 | How do actors send messages? | `spec/architecture/03-actor-messaging.md` |
 | How are actors wired at startup? | `spec/architecture/04-static-wiring.md` |
 | What are the named handler and topology patterns? | `spec/architecture/05-handler-patterns.md` |
-| How do actions, logging, and the `transitions!` macro work? | `spec/architecture/06-actions.md` |
+| How do actions, logging, and declarative TOML transitions work? | `spec/architecture/06-actions.md` |
 | How do typed mailboxes and priority ordering work? | `spec/architecture/07-typed-mailboxes.md` |
 | How does supervision work? | `spec/architecture/08-supervision.md` |
 | How is an application wired end to end? | `spec/architecture/09-application.md` |

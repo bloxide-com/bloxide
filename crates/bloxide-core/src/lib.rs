@@ -42,4 +42,4 @@ pub use transition::{ActionResult, ActionResults, Guard, StateRule};
 // Note: TransitionRule is an implementation detail. Use StateRule<S> as the public type.
 
 // Re-export proc macros as canonical public API
-pub use bloxide_macros::{next_actor_id, root_transitions, transitions};
+pub use bloxide_macros::next_actor_id;

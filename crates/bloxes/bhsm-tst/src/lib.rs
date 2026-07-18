@@ -9,10 +9,6 @@ pub mod prelude;
 #[macro_use]
 pub mod generated;
 
-mod ctx;
-mod events;
-mod spec;
+mod actions;
 
-pub use ctx::BhsmTstCtx;
-pub use events::BhsmTstEvent;
-pub use spec::{BhsmTstSpec, BhsmTstState};
+pub use generated::{BhsmTstCtx, BhsmTstEvent, BhsmTstSpec, BhsmTstState};
