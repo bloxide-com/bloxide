@@ -374,7 +374,7 @@ where
 Creates channels, constructs contexts, spawns tasks.
 
 ```rust
-// examples/tokio-demo.rs
+// apps/tokio-demo/src/main.rs
 use bloxide_tokio::prelude::*;
 
 // Create channels

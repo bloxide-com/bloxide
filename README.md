@@ -16,7 +16,7 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 - **Runtime-agnostic actors** — blox code depends only on `bloxide-core`; never imports a runtime
 - **Built-in supervision** — reusable OTP-inspired `SupervisorSpec<R>` and `bloxide-supervisor` primitives manage child actor lifecycle out of the box
 - **Tokio + Embassy runtimes** — `bloxide-tokio` and `bloxide-embassy` (`no_std`) ship ready to use; each provides async channels, supervision, and timer services wired to its executor
-- **Dynamic actors** — spawn new actors at runtime with factory injection and automatic peer introduction (`bloxide-spawn`)
+- **Dynamic actors** — spawn new actors at runtime with factory injection and automatic peer introduction (via `bloxide-supervisor` with the `dynamic` Cargo feature gate)
 
 ---
 
@@ -80,7 +80,6 @@ bloxide/
 │   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, std-gated TestRuntime
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
 │   ├── bloxide-macros/    # proc macros: #[derive(BloxCtx)], transitions!, root_transitions!, #[delegatable]
-│   ├── bloxide-spawn/     # dynamic actor spawning and peer introduction
 │   ├── bloxide-supervisor/ # reusable OTP-style supervisor
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
 │   ├── messages/          # shared message crates (ping-pong, pool, counter)
@@ -157,7 +156,6 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `VirtualClock` |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `ChildGroup`, `ChildPolicy`, `GroupShutdown` |
-| `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | Dynamic actor spawning and peer introduction |
 | `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
 | `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
 

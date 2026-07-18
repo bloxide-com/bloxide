@@ -25,7 +25,6 @@ bloxide/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
     bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[delegatable], #[blox_event], etc.
-    bloxide-spawn/             ← dynamic actor support: SpawnCap, SpawnCapability, SpawnFactoryFor, ErasedSpawnFactory, SpawnOutput, SpawnPolicy, PeerCtrl, HasPeers, introduce_peers (no_std)
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
     messages/
@@ -78,7 +77,7 @@ Bloxide is easiest to understand if you keep three related mental models in your
 This is the framework architecture described in `spec/architecture/00-layered-architecture.md`.
 
 - Layer 1: runtime primitives and bridges
-- Layer 2: standard-library crates such as `bloxide-timer`, `bloxide-supervisor`, `bloxide-spawn`
+- Layer 2: standard-library crates such as `bloxide-timer`, `bloxide-supervisor`
 - Layer 3: blox crates that define `MachineSpec`
 
 Use this model when you are deciding where a new capability belongs.

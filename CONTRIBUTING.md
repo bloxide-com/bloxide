@@ -103,7 +103,7 @@ When adding new functionality, follow the five-layer architecture:
 | Actions | `crates/actions/` | Accessor traits, behavior traits, generic functions |
 | Impl | `crates/impl/` | Concrete behavior implementations |
 | Blox | `crates/bloxes/` | State topology, context, MachineSpec |
-| Binary | `examples/` | Channel creation, context construction, task spawning |
+| Binary | `apps/` | Declarative wiring manifests (system.toml) + generated main.rs |
 
 ## Testing
 
