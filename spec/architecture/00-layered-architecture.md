@@ -71,7 +71,7 @@ bloxide-core (BloxRuntime, StaticChannelCap, DynamicChannelCap, HSM engine)
   [re-exports from] bloxide-macros (proc macros; host-only, no_std safe)
 
 Note: bloxide-macros depends only on syn, quote, proc-macro2 (not bloxide-core).
-bloxide-core re-exports derive macros and transitions! for blox crates.
+bloxide-core re-exports derive macros for blox crates.
 
 bloxide-log (feature-gated logging: log / defmt / no-op)
   No dependency on bloxide-core — standalone crate consumed directly by blox crates.

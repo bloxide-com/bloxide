@@ -4,6 +4,21 @@
 > handlers, transition rules, or state topologies for a blox. For the
 > dispatch algorithm and lifecycle handling, see `02-hsm-engine.md`.
 
+> ⚠️ **Syntax Update (Phase 4, July 2026):** The `transitions!` /
+> `root_transitions!` proc-macros shown throughout this spec have been
+> **REMOVED**. Transition rules are now declared declaratively in
+> `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen` emits
+> raw `StateRule { ... }` struct literals from those entries. The
+> **PATTERNS** described here (guards, reset, stay, transition targets,
+> action-then-guard ordering) are unchanged — only the *syntax* moved
+> from a Rust proc-macro to TOML. The `transitions![...]` code blocks
+> below are retained as **historical / illustrative** syntax: they still
+> show the shape of each pattern, but you should express the same pattern
+> as a `[[topology.transitions]]` entry in `blox.toml`. See
+> `spec/architecture/20-blox-toml-source-of-truth.md` for the current
+> TOML schema and `QUICK_REFERENCE.md` → "Declarative Transitions
+> (blox.toml)" for a worked example.
+
 This document defines named, reusable patterns for event handler rules and blox state topologies. When building a blox, refer to these patterns by name in your spec and implementation. AI agents should use these patterns as the canonical vocabulary for describing blox behavior.
 
 ---
@@ -178,7 +193,7 @@ const SHUTTING_DOWN_FNS: StateFns<Self> = StateFns {
 };
 ```
 
-The `reset` keyword in `transitions!` produces `Guard::Reset`. The full exit chain is guaranteed: `ShuttingDown::on_exit` fires, then `on_init_entry`. The runtime observes `DispatchOutcome::Reset` and emits `ChildLifecycleEvent::Reset` to the parent supervisor (if any).
+The `reset` target in a `[[topology.transitions]]` entry produces `Guard::Reset`. The full exit chain is guaranteed: `ShuttingDown::on_exit` fires, then `on_init_entry`. The runtime observes `DispatchOutcome::Reset` and emits `ChildLifecycleEvent::Reset` to the parent supervisor (if any).
 
 ---
 
@@ -293,9 +308,9 @@ Use when: the blox retries an operation a fixed number of times before giving up
 
 ---
 
-## Macro Quick Reference
+## Declarative Transition Syntax (blox.toml)
 
-The `transitions!` and `root_transitions!` proc macros provide concise syntax. Both support the `reset` keyword, which produces `Guard::Reset`:
+The patterns above are expressed in `blox.toml` as `[[topology.transitions]]` entries. The codegen emits `StateRule` struct literals directly — no proc macro is involved. Both state-level and root-level rules support the `reset` target, which produces `Guard::Reset`:
 
 ```rust
 // Pure Transition
@@ -341,13 +356,13 @@ transitions![
 ]
 ```
 
-In `guard(ctx, results) { }` blocks, `ctx` is `&Ctx` (read-only — no mutation possible).
-In `actions [fn1, fn2]` slices, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.
-The `reset` outcome triggers the full LCA exit chain (leaf → root) followed by `on_init_entry`.
+In `guards = [{ condition = "...", target = "..." }]` entries, the condition expression sees `ctx` as `&Ctx` (read-only — no mutation possible) and `results` as `&ActionResults`.
+In `actions = ["fn1", "fn2"]` lists, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.
+The `reset` target triggers the full LCA exit chain (leaf → root) followed by `on_init_entry`.
 
 ## Related Docs
 
 - **Action functions** → `spec/architecture/06-actions.md`
-- **transitions! macro syntax** → `skills/building-with-bloxide/reference.md`
+- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/20-blox-toml-source-of-truth.md`
 - **Dispatch algorithm and lifecycle** → `spec/architecture/02-hsm-engine.md`
 - **Examples in practice** → `spec/bloxes/ping.md`, `spec/bloxes/pong.md`

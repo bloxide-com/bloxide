@@ -4,6 +4,19 @@
 > understanding the composition model (messages + actions + blox), or learning the
 > portable building-block pattern for bloxide actors.
 
+> ⚠️ **Syntax Update (Phase 4, July 2026):** The `transitions!` /
+> `root_transitions!` proc-macros shown in the "Macro form" section below
+> have been **REMOVED**. Transition rules are now declared declaratively
+> in `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen`
+> emits raw `StateRule { ... }` struct literals from those entries. The
+> **composition model** (messages + actions + blox) and the
+> `TransitionRule` struct shape described here are unchanged — only the
+> *syntax* for producing rules moved from a Rust proc-macro to TOML. The
+> `transitions![...]` code blocks below are retained as **historical /
+> illustrative** syntax. See `spec/architecture/20-blox-toml-source-of-truth.md`
+> for the current TOML schema and `QUICK_REFERENCE.md` → "Declarative
+> Transitions (blox.toml)" for a worked example.
+
 Bloxide uses a composition model inspired by visual block programming: a blox is assembled from three kinds of reusable building blocks — **messages**, **actions**, and **state machine logic**. This keeps each concern in its own crate and ensures the blox itself contains no platform-specific code.
 
 ## Composition Model
@@ -47,7 +60,7 @@ Guards are the `guard` function in a `TransitionRule` — a pure `fn(&Ctx, &Acti
 
 ### Explicit struct form
 
-In practice the `transitions!` macro is always used. The struct form is shown here for reference only — it makes the field types concrete.
+In practice transition rules are declared in `blox.toml` as `[[topology.transitions]]` entries and the codegen emits the struct form. The struct form is shown here for reference only — it makes the field types concrete.
 
 `actions` is a `&'static` slice of `fn` pointers (not closures). `guard` is a `fn` pointer. `event_tag` is always the first field — the engine uses it to pre-filter rules without calling `matches`.
 
@@ -76,17 +89,15 @@ TransitionRule {
 }
 ```
 
-### Macro form (`transitions!` / `root_transitions!`)
+### Declarative form (`[[topology.transitions]]` in `blox.toml`)
 
-The `transitions!` macro builds a `&'static [TransitionRule<S>]`. Actions are specified as a bracketed list of `fn` references — `actions [fn1, fn2]`. The macro does not accept inline closures; action logic lives in named functions defined on the spec `impl` block or in an actions crate.
+Transition rules are declared as `[[topology.transitions]]` entries in `blox.toml`. The codegen (`bloxide-codegen`) builds a `&'static [TransitionRule<S>]` from these entries. Actions are specified as a list of `fn` paths — `actions = ["fn1", "fn2"]`. Inline closures are not accepted; action logic lives in named functions defined on the spec `impl` block or in an actions crate.
 
-Guards are specified as `guard(ctx, results) { match_arm => target, ... }`. The two
-parameters can be any identifiers; `ctx` and `results` are the conventional names.
-The engine calls `guard(ctx, results, event)` — the event is passed implicitly by the macro.
+Guards are specified as `guards = [{ condition = "...", target = "..." }, ...]`. The condition expression sees `ctx` as `&Ctx` and `results` as `&ActionResults`; the engine calls `guard(ctx, results, event)` — the event is passed implicitly by the generated code.
 
-#### Macro arm -> `TransitionRule` field mapping
+#### `[[topology.transitions]]` entry -> `TransitionRule` field mapping
 
-Each `transitions!` arm expands into one `TransitionRule`:
+Each `[[topology.transitions]]` entry expands into one `TransitionRule`:
 
 - Pattern (`MyEvent::Foo(_)`, `MyMsg::Ping(_)`, `_`) -> `event_tag` + `matches`
 - `actions [fn1, fn2]` -> `actions`
@@ -138,7 +149,7 @@ transitions![
 ]
 ```
 
-Both `transitions!` and `root_transitions!` support `reset` as a terminal outcome (in place of a state target or `stay`). When a guard returns `Reset`, the engine fires the full LCA exit chain (leaf → root) then calls `on_init_entry` — identical to the `machine.reset()` code path:
+Both state-level (`[[topology.transitions]]`) and root-level (`MachineSpec::root_transitions()`) rules support `reset` as a terminal outcome (in place of a state target or `stay`). When a guard returns `Reset`, the engine fires the full LCA exit chain (leaf → root) then calls `on_init_entry` — identical to the `machine.reset()` code path:
 
 ```rust
 // State-level — actor self-terminates when a condition is met
@@ -221,4 +232,4 @@ No changes to the blox crates are needed. Cargo's additive feature resolution en
 - **Handler patterns** → `spec/architecture/05-handler-patterns.md`
 - **Action crate pattern** → `spec/architecture/12-action-crate-pattern.md`
 - **Logging macros** → `crates/bloxide-log/src/lib.rs`
-- **transitions! macro** → `skills/building-with-bloxide/reference.md`
+- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/20-blox-toml-source-of-truth.md`

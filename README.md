@@ -79,7 +79,7 @@ bloxide/
 ├── crates/            # framework + layered application crates
 │   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, std-gated TestRuntime
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
-│   ├── bloxide-macros/    # proc macros: #[derive(BloxCtx)], transitions!, root_transitions!, #[delegatable]
+│   ├── bloxide-macros/    # proc macros: #[derive(BloxCtx)], #[delegatable]
 │   ├── bloxide-supervisor/ # reusable OTP-style supervisor
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
 │   ├── messages/          # shared message crates (ping-pong, pool, counter)
@@ -152,7 +152,7 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 | Crate | Path | `no_std` | Purpose |
 |---|---|:---:|---|
 | `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, std-gated `TestRuntime` |
-| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(BloxCtx)]`, `transitions!`, `root_transitions!`, `#[delegatable]` |
+| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(BloxCtx)]`, `#[delegatable]` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `VirtualClock` |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `ChildGroup`, `ChildPolicy`, `GroupShutdown` |
