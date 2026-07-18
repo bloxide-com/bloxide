@@ -301,6 +301,8 @@ pub struct SupervisorCtx<R: BloxRuntime> {
 
 ### Handler Tables
 
+> The `transitions![...]` blocks below show the **pre-Phase 4 syntax**. Transition rules are now declared as `[[topology.transitions]]` entries in `blox.toml` and emitted as raw `StateRule { ... }` struct literals by `bloxide-codegen`. The rule structure (event match, actions, guard, targets) is unchanged.
+
 ```rust
 const RUNNING_FNS: StateFns<Self> = StateFns {
     on_entry: &[start_children::<R, SupervisorCtx<R>>],

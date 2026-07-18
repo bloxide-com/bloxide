@@ -50,8 +50,10 @@ pub trait StateTopology: Copy + Eq + core::fmt::Debug + Send + 'static {
 /// instead of `S::State`, turning attempts to transition to a composite state
 /// into a compile-time or debug-time error rather than silent UB.
 ///
-/// The `transitions!` proc macro auto-wraps state targets in `LeafState::new`,
-/// so user-facing transition syntax is unchanged.
+/// `bloxide-codegen` auto-wraps state targets in `LeafState::new` when emitting
+/// `StateRule` struct literals from `[[topology.transitions]]` entries, so
+/// user-facing transition syntax is unchanged. (The `transitions!` proc-macro
+/// that previously did this wrapping was removed in Phase 4.)
 ///
 /// # Construction
 ///
@@ -87,8 +89,11 @@ impl<S: StateTopology> LeafState<S> {
 
     /// Wrap `state` without checking `is_leaf()`.
     ///
-    /// Only for use by the `transitions!` proc macro after validating the leaf
-    /// invariant at code-gen time. Not part of the public API.
+    /// Only for use by `bloxide-codegen` after validating the leaf invariant at
+    /// code-gen time (when emitting `StateRule` struct literals from
+    /// `[[topology.transitions]]` entries). Not part of the public API.
+    /// (The `transitions!` proc-macro that previously used this was removed in
+    /// Phase 4.)
     #[doc(hidden)]
     #[inline]
     pub fn new_unchecked(state: S) -> Self {

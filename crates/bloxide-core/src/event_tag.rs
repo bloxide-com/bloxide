@@ -4,8 +4,11 @@
 /// fast-reject check — a rule with this tag always proceeds to the `matches`
 /// call regardless of the incoming event's tag.
 ///
-/// Use when a single rule must handle events from multiple variants. The
-/// `transitions!` proc macro uses this automatically for wildcard patterns.
+/// Use when a single rule must handle events from multiple variants.
+/// `bloxide-codegen` uses this automatically for wildcard patterns when
+/// emitting `StateRule` struct literals from `[[topology.transitions]]`
+/// entries. (The `transitions!` proc-macro that previously did this was
+/// removed in Phase 4.)
 pub const WILDCARD_TAG: u8 = u8::MAX;
 
 /// Reserved event tag for lifecycle commands.

@@ -303,7 +303,7 @@ It also emits `From` impls and `Debug` when requested.
 2. A `StateTopology` impl with `parent`, `is_leaf`, `path`, and `as_index`.
 3. Either:
    - A handler-table macro referencing legacy `StateFns` constants (when `handler_fns` is set), or
-   - Complete `StateFns` constants built from `transitions!` macro invocations (when `handler_fns` is absent and `transitions` is present).
+   - Complete `StateFns` constants built from raw `StateRule { ... }` struct literals emitted by `bloxide-codegen` from `[[topology.transitions]]` entries (when `handler_fns` is absent and `transitions` is present). The `transitions!` proc-macro was removed in Phase 4; codegen emits the arrays directly.
 
 From `crates/bloxes/ping/src/generated/topology.rs`:
 
@@ -576,6 +576,6 @@ The only hand-written Rust the UI cannot produce is action function bodies, beha
 
 - `spec/architecture/18-composable-context-crates.md` — how `[[context.uses]]` pulls in reusable context crates.
 - `spec/architecture/19-declarative-wiring.md` — the `system.toml` wiring manifest and handle injection.
-- `spec/architecture/02-hsm-engine.md` — `MachineSpec`, `StateTopology`, and the `transitions!` macro.
+- `spec/architecture/02-hsm-engine.md` — `MachineSpec`, `StateTopology`, and the declarative `[[topology.transitions]]` schema.
 - `spec/architecture/05-handler-patterns.md` — transition patterns and guard semantics.
 - `spec/architecture/12-action-crate-pattern.md` — the relationship between actions crates, impl crates, and bloxes.

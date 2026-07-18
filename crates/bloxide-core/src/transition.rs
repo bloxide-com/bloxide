@@ -122,8 +122,11 @@ pub struct TransitionRule<S: MachineSpec, G> {
     /// variants. [`WILDCARD_TAG`] (255) is the sentinel — rules with this tag
     /// always proceed to `matches` regardless of the event tag.
     ///
-    /// Set automatically by the `transitions!` and `root_transitions!` proc
-    /// macros. Manually-constructed rules should use the `*_TAG` constant from
+    /// Set automatically by `bloxide-codegen` when emitting `StateRule`
+    /// struct literals from `[[topology.transitions]]` entries (both
+    /// state-scope and root-scope). The `transitions!` and `root_transitions!`
+    /// proc-macros that previously set this were removed in Phase 4.
+    /// Manually-constructed rules should use the `*_TAG` constant from
     /// the event enum (e.g. `PingEvent::MSG_TAG`), or [`WILDCARD_TAG`] if the
     /// rule matches multiple variants.
     ///
@@ -163,8 +166,10 @@ pub enum Guard<S: MachineSpec> {
     /// is a self-transition: fires `on_exit` then `on_entry`.
     ///
     /// Takes a `LeafState<S::State>` so composite states cannot be transition
-    /// targets. The `transitions!` proc macro wraps targets in `LeafState::new`
-    /// automatically — user-facing syntax is unchanged.
+    /// targets. `bloxide-codegen` wraps targets in `LeafState::new` automatically
+    /// when emitting `StateRule` struct literals from `[[topology.transitions]]`
+    /// entries — user-facing syntax is unchanged. (The `transitions!` proc-macro
+    /// that previously did this wrapping was removed in Phase 4.)
     Transition(LeafState<S::State>),
     /// Stay in the current state. No `on_exit` or `on_entry` is called.
     Stay,

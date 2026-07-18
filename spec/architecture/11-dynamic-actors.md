@@ -207,7 +207,7 @@ fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionRes
     ActionResult::Ok
 }
 
-// In the transitions! table:
+// In the transitions! table (pre-Phase 4 syntax — now `[[topology.transitions]]` in blox.toml):
 transitions![
     WorkerCtrl(add) => {
         actions [|ctx, ev| {
@@ -595,7 +595,7 @@ fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionRes
     ActionResult::Ok
 }
 
-// In the transitions! table:
+// In the transitions! table (pre-Phase 4 syntax — now `[[topology.transitions]]` in blox.toml):
 transitions![
     WorkerCtrl(_) => {
         actions [|ctx, ev| {

@@ -79,7 +79,7 @@ The runtime notifies the supervisor of lifecycle events (`Started`, `Reset`) aut
 | `[Init]` (engine) | logs "reset" via `blox_log_info!` | — |
 | `Ready` | — | — |
 
-The response message is sent inside the transition action `reply_pong_action`, defined as a method on `PongSpec<R>` in the blox crate. It extracts the `Ping` payload and delegates to the `send_pong` generic function from `ping-pong-actions`. The action is referenced from the `transitions!` block in the spec.
+The response message is sent inside the transition action `reply_pong_action`, defined as a method on `PongSpec<R>` in the blox crate. It extracts the `Ping` payload and delegates to the `send_pong` generic function from `ping-pong-actions`. The action is referenced from the `[[topology.transitions]]` block in the blox's `blox.toml` (pre-Phase 4, this was a `transitions!` macro block in the spec).
 
 ## Acceptance Criteria
 

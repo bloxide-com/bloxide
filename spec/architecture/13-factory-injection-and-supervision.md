@@ -229,6 +229,7 @@ Example: A supervised Worker that handles multiple message types, and has a "poi
 ```rust
 impl MachineSpec for WorkerSpec<R> {
     fn root_transitions() -> &'static [StateRule<Self>] {
+        // pre-Phase 4 syntax — now `[[topology.transitions]]` with `scope = "root"` in blox.toml
         transitions![
             WorkerMsg::PoisonPill => reset,
         ]

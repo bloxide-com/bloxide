@@ -543,13 +543,16 @@ fn report_outcome<S: MachineSpec>(
 
 ## Phase 7: Macro Updates
 
+> **Historical note (Phase 4, July 2026):** The `transitions!` and `root_transitions!` proc-macros were **removed** in Phase 4. Transition rules are now declared declaratively in `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen` emits raw `StateRule { ... }` struct literals. The `fail`/`reset` outcomes described below are still valid — they are expressed as guard outcomes in the TOML-driven codegen, not via a proc-macro. This section is retained as a record of the original design intent.
+
 ### 7.1 transitions! Macro - Add `fail`
 
-**File:** `crates/bloxide-macros/src/transitions.rs`
+**File:** `crates/bloxide-macros/src/transitions.rs` *(deleted in Phase 4)*
 
 Add support for `fail` outcome (in addition to `stay`, `transition`, `reset`):
 
 ```rust
+// pre-Phase 4 syntax — now `[[topology.transitions]]` with guard outcome `fail` in blox.toml
 transitions![
     SomeError(_) => fail,  // Maps to Guard::Fail
     SomeReset(_) => reset, // Maps to Guard::Reset
@@ -562,7 +565,7 @@ Do NOT inject Init into the user's enum. The `MachineState` type handles it impl
 
 ### 7.3 Update root_transitions! Macro
 
-Keep `root_transitions!` for domain events that need global fallback, but lifecycle is always handled by engine at VirtualRoot.
+~~Keep `root_transitions!` for domain events that need global fallback, but lifecycle is always handled by engine at VirtualRoot.~~ *(The `root_transitions!` proc-macro was removed in Phase 4. Root-scope transitions are now declared with `scope = "root"` on `[[topology.transitions]]` entries in `blox.toml`.)*
 
 ---
 
