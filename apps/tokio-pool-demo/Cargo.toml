@@ -9,7 +9,7 @@ publish = false
 bloxide-core       = { workspace = true, features = ["std"] }
 bloxide-tokio      = { workspace = true }
 bloxide-log        = { workspace = true, features = ["log"] }
-bloxide-supervisor = { workspace = true, features = ["std", "dynamic"] }
+bloxide-supervisor = { workspace = true, features = ["std"] }
 pool-blox          = { workspace = true }
 pool-messages      = { workspace = true }
 pool-actions       = { workspace = true }
@@ -19,3 +19,7 @@ tokio              = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-log        = { workspace = true }
+
+[features]
+dynamic = ["bloxide-supervisor/dynamic"]
+default = ["dynamic"]

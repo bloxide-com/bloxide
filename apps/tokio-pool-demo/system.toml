@@ -29,7 +29,14 @@ blox = "pool-blox"
 supervisor = "bloxide-supervisor"
 strategy = "all_for_one"
 children = ["pool"]
-factory = { crate = "tokio_pool_demo_impl", type = "AppSpawnFactory" }
+
+  [supervision.factory]
+  crate = "tokio_pool_demo_impl"
+  type = "AppSpawnFactory"
+  request_type = "AppSpawnRequest<R>"
+
+    [supervision.factory.args]
+    pool_ref = { source = "actor", actor = "pool" }
 
   [supervision.policies]
   pool = { stop = true }
