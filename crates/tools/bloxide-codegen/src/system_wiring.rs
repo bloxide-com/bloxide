@@ -230,6 +230,21 @@ pub fn generate(
         use ::bloxide_core::lifecycle::LifecycleCommand;
     });
 
+    // Feature-gated imports for dynamic feature unification.
+    // When `dynamic` is enabled (e.g. by tokio-pool-demo in the same workspace),
+    // non-dynamic apps need NoSpawnRequest and SupervisorMailboxes for the
+    // 3-stream mailboxes. NoSpawnFactory is referenced via its full path in
+    // generated code, so no use-import is needed for it.
+    let has_supervision = !config.supervision.is_empty();
+    if has_supervision {
+        use_stmts.push(quote! {
+            #[cfg(feature = "dynamic")]
+            use ::bloxide_supervisor::NoSpawnRequest;
+            #[cfg(feature = "dynamic")]
+            use ::bloxide_supervisor::dynamic_mailboxes::SupervisorMailboxes;
+        });
+    }
+
     // Blox crate imports.
     for actor in &config.actors {
         if actor.kind.as_deref() == Some("timer") {
@@ -532,7 +547,7 @@ pub fn generate(
             format_ident!("supervisor_task_{}", idx)
         };
         let control_ref_ident = format_ident!("_sup_control_ref_{}", idx);
-        let notify_ident = format_ident!("_sup_notify_{}", idx);
+        let notify_ident = format_ident!("sup_notify_{}", idx);
         let kill_cap_ident = format_ident!("_sup_kill_cap_{}", idx);
 
         supervisor_stmts.push(quote! {
@@ -597,7 +612,7 @@ pub fn generate(
 
         supervisor_stmts.push(quote! {
             let #control_ref_ident = #group_ident.control_ref();
-            let #notify_ident = #group_ident.notify_sender();
+            let #notify_ident = #group_ident.notify_ref();
             #kill_cap_stmt
             let #sup_id_ident = ::#runtime_crate_ident::next_actor_id!();
             let (children, #sup_notify_rx_ident, #sup_control_rx_ident) = #group_ident.finish();
@@ -613,19 +628,44 @@ pub fn generate(
             syn::parse_str("::bloxide_supervisor::event::SupervisorEvent")
                 .expect("valid supervisor event path");
 
+        let no_spawn_factory_path: syn::Path =
+            syn::parse_str("::bloxide_supervisor::NoSpawnFactory")
+                .expect("valid NoSpawnFactory path");
+
+        // Feature-gated supervisor context + machine construction.
+        // Without `dynamic`: SupervisorSpec<R>, SupervisorCtx::new(children, id, notify)
+        // With `dynamic` (feature unification): SupervisorSpec<R, NoSpawnFactory>,
+        //   SupervisorCtx::new(children, id, notify, NoSpawnFactory)
         supervisor_stmts.push(quote! {
-            let #sup_ctx_ident = #supervisor_ctx_path::new(#sup_id_ident, children);
+            #[cfg(not(feature = "dynamic"))]
+            let #sup_ctx_ident = #supervisor_ctx_path::new(children, #sup_id_ident, #notify_ident);
+            #[cfg(not(feature = "dynamic"))]
             let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident>>::new(#sup_ctx_ident);
+            #[cfg(not(feature = "dynamic"))]
             #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident>::Lifecycle(LifecycleCommand::Start));
+
+            #[cfg(feature = "dynamic")]
+            let #sup_ctx_ident = #supervisor_ctx_path::new(children, #sup_id_ident, #notify_ident, #no_spawn_factory_path);
+            #[cfg(feature = "dynamic")]
+            let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident, #no_spawn_factory_path>>::new(#sup_ctx_ident);
+            #[cfg(feature = "dynamic")]
+            #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident, #no_spawn_factory_path>::Lifecycle(LifecycleCommand::Start));
         });
 
+        // Feature-gated root_task! declaration.
         if is_tokio {
             root_task_decls.push(quote! {
+                #[cfg(not(feature = "dynamic"))]
                 ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
+                #[cfg(feature = "dynamic")]
+                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident, #no_spawn_factory_path>);
             });
         } else {
             root_task_decls.push(quote! {
+                #[cfg(not(feature = "dynamic"))]
                 ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>, std::process::exit(0));
+                #[cfg(feature = "dynamic")]
+                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident, #no_spawn_factory_path>, std::process::exit(0));
             });
         }
     }
@@ -654,12 +694,46 @@ pub fn generate(
             format_ident!("sup_control_rx_{}", idx)
         };
         if is_tokio {
+            // Non-dynamic: tuple mailboxes (child_rx, control_rx)
             supervisor_run_stmts.push(quote! {
+                #[cfg(not(feature = "dynamic"))]
                 #task_ident(#sup_machine_ident, (#sup_notify_rx_ident, #sup_control_rx_ident)).await;
             });
-        } else {
+            // Dynamic (feature unification): create spawn channel + SupervisorMailboxes
             supervisor_run_stmts.push(quote! {
+                #[cfg(feature = "dynamic")]
+                {
+                    let spawn_id = ::#runtime_crate_ident::next_actor_id!();
+                    let (_spawn_ref, spawn_rx) =
+                        <#runtime_ident as ::bloxide_core::capability::DynamicChannelCap>::channel::<NoSpawnRequest>(spawn_id, 1);
+                    let sup_mailboxes = SupervisorMailboxes {
+                        child_rx: #sup_notify_rx_ident,
+                        control_rx: #sup_control_rx_ident,
+                        spawn_rx,
+                    };
+                    #task_ident(#sup_machine_ident, sup_mailboxes).await;
+                }
+            });
+        } else {
+            // Non-dynamic: tuple mailboxes (child_rx, control_rx)
+            supervisor_run_stmts.push(quote! {
+                #[cfg(not(feature = "dynamic"))]
                 spawner.must_spawn(#task_ident(#sup_machine_ident, (#sup_notify_rx_ident, #sup_control_rx_ident)));
+            });
+            // Dynamic (feature unification): create spawn channel + SupervisorMailboxes
+            supervisor_run_stmts.push(quote! {
+                #[cfg(feature = "dynamic")]
+                {
+                    let spawn_id = ::#runtime_crate_ident::next_actor_id!();
+                    let (_spawn_ref, spawn_rx) =
+                        <#runtime_ident as ::bloxide_core::capability::StaticChannelCap>::channel::<NoSpawnRequest, 1>(spawn_id);
+                    let sup_mailboxes = SupervisorMailboxes {
+                        child_rx: #sup_notify_rx_ident,
+                        control_rx: #sup_control_rx_ident,
+                        spawn_rx,
+                    };
+                    spawner.must_spawn(#task_ident(#sup_machine_ident, sup_mailboxes));
+                }
             });
         }
     }
