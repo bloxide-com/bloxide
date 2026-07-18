@@ -21,7 +21,7 @@ impl<B: CountsTicks + 'static> CounterSpec<B> {
             event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
             matches: |__ev| {
                 __ev.msg_payload()
-                    .map_or(false, |__m| ::core::matches!(__m, CounterMsg::Tick(_)))
+                    .is_some_and(|__m| ::core::matches!(__m, CounterMsg::Tick(_)))
             },
             actions: &[Self::count_tick],
             guard: |ctx, results, _ev| {

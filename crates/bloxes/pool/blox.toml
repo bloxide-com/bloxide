@@ -126,11 +126,7 @@ target = "Active"
 actions = ["handle_spawned_worker"]
 
 [[topology.transitions.guards]]
-condition = "ctx.spawn_in_flight"
-target = "Spawning"
-
-[[topology.transitions.guards]]
-condition = "!ctx.spawn_queue.is_empty()"
+condition = "ctx.spawn_in_flight || !ctx.spawn_queue.is_empty()"
 target = "Spawning"
 
 [[topology.transitions.guards]]

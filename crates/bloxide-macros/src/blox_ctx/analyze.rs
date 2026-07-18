@@ -158,6 +158,7 @@ fn analyze_field(field: &Field) -> Result<FieldAnalysis> {
 /// Extract explicit annotation if present.
 /// Returns (primary role, optional mutable accessor).
 /// Returns Ok((None, None)) if no BloxCtx annotation is present.
+#[allow(clippy::type_complexity)]
 fn extract_explicit_annotation(
     field: &Field,
     field_name: &Ident,

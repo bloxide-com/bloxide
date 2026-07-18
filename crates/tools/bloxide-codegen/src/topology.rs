@@ -34,11 +34,11 @@ fn capitalize(s: &str) -> String {
 //
 // **Msg shorthand** — ident ending with "Msg", matching via msg_payload().
 //   Tag: WILDCARD_TAG
-//   Matches: |__ev| __ev.msg_payload().map_or(false, |__m| matches!(__m, <pattern>))
+//   Matches: |__ev| __ev.msg_payload().is_some_and(|__m| matches!(__m, <pattern>))
 //
 // **Ctrl shorthand** — ident ending with "Ctrl", matching via ctrl_payload().
 //   Tag: WILDCARD_TAG
-//   Matches: |__ev| __ev.ctrl_payload().map_or(false, |__m| matches!(__m, <pattern>))
+//   Matches: |__ev| __ev.ctrl_payload().is_some_and(|__m| matches!(__m, <pattern>))
 
 #[derive(Copy, Clone, Debug)]
 enum PatternKind {
@@ -187,7 +187,7 @@ fn generate_matches_closure(
                 .parse()
                 .map_err(|e| anyhow::anyhow!("invalid msg pattern '{}': {}", pat_stripped, e))?;
             Ok(quote! {
-                |__ev| __ev.msg_payload().map_or(false, |__m| ::core::matches!(__m, #pat_ts))
+                |__ev| __ev.msg_payload().is_some_and(|__m| ::core::matches!(__m, #pat_ts))
             })
         }
         PatternKind::CtrlShorthand => {
@@ -197,7 +197,7 @@ fn generate_matches_closure(
                     anyhow::anyhow!("invalid ctrl pattern '{}': {}", pat_stripped, e)
                 })?;
                 Ok(quote! {
-                    |__ev| __ev.ctrl_payload().map_or(false, |__m| ::core::matches!(__m, #pat_ts))
+                    |__ev| __ev.ctrl_payload().is_some_and(|__m| ::core::matches!(__m, #pat_ts))
                 })
             } else {
                 Ok(quote! { |__ev| __ev.ctrl_payload().is_some() })

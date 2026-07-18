@@ -142,6 +142,7 @@ fn generate_has_self_id_impl(
 }
 
 /// Generate accessor trait impl for a single field.
+#[allow(clippy::too_many_arguments)]
 fn generate_accessor_impl(
     struct_name: &syn::Ident,
     impl_generics: &syn::ImplGenerics,
@@ -192,6 +193,7 @@ fn generate_accessor_impl(
 /// Like `generate_accessor_impl` but the method returns `&mut self.#field_name`.
 /// The method name may differ from the field name (e.g. field `children` →
 /// method `children_mut`).
+#[allow(clippy::too_many_arguments)]
 fn generate_accessor_mut_impl(
     struct_name: &syn::Ident,
     impl_generics: &syn::ImplGenerics,

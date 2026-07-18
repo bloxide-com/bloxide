@@ -31,7 +31,7 @@ impl<R: BloxRuntime> PoolSpec<R> {
             event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
             matches: |__ev| {
                 __ev.msg_payload()
-                    .map_or(false, |__m| ::core::matches!(__m, PoolMsg::SpawnWorker(_)))
+                    .is_some_and(|__m| ::core::matches!(__m, PoolMsg::SpawnWorker(_)))
             },
             actions: &[handle_spawn_worker],
             guard: |ctx, results, _ev| {
@@ -51,11 +51,7 @@ impl<R: BloxRuntime> PoolSpec<R> {
                 matches: |__ev| ::core::matches!(__ev, PoolEvent::SpawnReply(_)),
                 actions: &[handle_spawned_worker],
                 guard: |ctx, results, _ev| {
-                    if ctx.spawn_in_flight {
-                        ::bloxide_core::transition::Guard::Transition(
-                            ::bloxide_core::topology::LeafState::new(PoolState::Spawning),
-                        )
-                    } else if !ctx.spawn_queue.is_empty() {
+                    if ctx.spawn_in_flight || !ctx.spawn_queue.is_empty() {
                         ::bloxide_core::transition::Guard::Transition(
                             ::bloxide_core::topology::LeafState::new(PoolState::Spawning),
                         )
@@ -74,7 +70,7 @@ impl<R: BloxRuntime> PoolSpec<R> {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, PoolMsg::SpawnWorker(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, PoolMsg::SpawnWorker(_)))
                 },
                 actions: &[handle_spawn_worker_queued],
                 guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
@@ -83,7 +79,7 @@ impl<R: BloxRuntime> PoolSpec<R> {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, PoolMsg::WorkDone(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, PoolMsg::WorkDone(_)))
                 },
                 actions: &[handle_work_done],
                 guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
@@ -99,7 +95,7 @@ impl<R: BloxRuntime> PoolSpec<R> {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, PoolMsg::SpawnWorker(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, PoolMsg::SpawnWorker(_)))
                 },
                 actions: &[handle_spawn_worker],
                 guard: |ctx, results, _ev| {
@@ -112,7 +108,7 @@ impl<R: BloxRuntime> PoolSpec<R> {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, PoolMsg::WorkDone(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, PoolMsg::WorkDone(_)))
                 },
                 actions: &[handle_work_done],
                 guard: |ctx, results, _ev| {

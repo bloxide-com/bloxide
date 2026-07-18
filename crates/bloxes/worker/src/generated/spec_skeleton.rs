@@ -29,7 +29,7 @@ impl<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> WorkerSpec
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.ctrl_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, WorkerCtrl::AddPeer(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, WorkerCtrl::AddPeer(_)))
                 },
                 actions: &[Self::handle_ctrl],
                 guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
@@ -38,7 +38,7 @@ impl<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> WorkerSpec
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, WorkerMsg::DoWork(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, WorkerMsg::DoWork(_)))
                 },
                 actions: &[Self::process_work],
                 guard: |ctx, results, _ev| {
@@ -51,7 +51,7 @@ impl<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> WorkerSpec
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, WorkerMsg::PeerResult(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, WorkerMsg::PeerResult(_)))
                 },
                 actions: &[],
                 guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,

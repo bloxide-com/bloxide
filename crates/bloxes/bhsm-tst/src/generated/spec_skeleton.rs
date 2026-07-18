@@ -20,7 +20,7 @@ impl BhsmTstSpec {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::H(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::H(_)))
                 },
                 actions: &[],
                 guard: |ctx, results, _ev| {
@@ -33,7 +33,7 @@ impl BhsmTstSpec {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::I(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::I(_)))
                 },
                 actions: &[Self::s_i],
                 guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
@@ -42,7 +42,7 @@ impl BhsmTstSpec {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::K(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::K(_)))
                 },
                 actions: &[],
                 guard: |ctx, results, _ev| {
@@ -55,7 +55,7 @@ impl BhsmTstSpec {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::X(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::X(_)))
                 },
                 actions: &[],
                 guard: |ctx, results, _ev| {
@@ -74,7 +74,7 @@ impl BhsmTstSpec {
             event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
             matches: |__ev| {
                 __ev.msg_payload()
-                    .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::C(_)))
+                    .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::C(_)))
             },
             actions: &[],
             guard: |ctx, results, _ev| {
@@ -93,7 +93,7 @@ impl BhsmTstSpec {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::A(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::A(_)))
                 },
                 actions: &[Self::s11_a],
                 guard: |ctx, results, _ev| {
@@ -106,7 +106,7 @@ impl BhsmTstSpec {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::B(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::B(_)))
                 },
                 actions: &[Self::s11_b],
                 guard: |ctx, results, _ev| {
@@ -119,7 +119,7 @@ impl BhsmTstSpec {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::D(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::D(_)))
                 },
                 actions: &[],
                 guard: |ctx, results, _ev| {
@@ -145,7 +145,7 @@ impl BhsmTstSpec {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::E(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::E(_)))
                 },
                 actions: &[],
                 guard: |ctx, results, _ev| {
@@ -158,7 +158,7 @@ impl BhsmTstSpec {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.msg_payload()
-                        .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::G(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::G(_)))
                 },
                 actions: &[],
                 guard: |ctx, results, _ev| {
@@ -177,7 +177,7 @@ impl BhsmTstSpec {
             event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
             matches: |__ev| {
                 __ev.msg_payload()
-                    .map_or(false, |__m| ::core::matches!(__m, BhsmTstMsg::F(_)))
+                    .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::F(_)))
             },
             actions: &[],
             guard: |ctx, results, _ev| {

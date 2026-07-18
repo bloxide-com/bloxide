@@ -40,7 +40,7 @@ where
             event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
             matches: |__ev| {
                 __ev.msg_payload()
-                    .map_or(false, |__m| ::core::matches!(__m, PingPongMsg::Pong(_)))
+                    .is_some_and(|__m| ::core::matches!(__m, PingPongMsg::Pong(_)))
             },
             actions: &[],
             guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
@@ -54,7 +54,7 @@ where
             event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
             matches: |__ev| {
                 __ev.msg_payload()
-                    .map_or(false, |__m| ::core::matches!(__m, PingPongMsg::Pong(_)))
+                    .is_some_and(|__m| ::core::matches!(__m, PingPongMsg::Pong(_)))
             },
             actions: &[Self::log_pong_received, Self::forward_ping],
             guard: |ctx, results, _ev| {
@@ -86,7 +86,7 @@ where
             event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
             matches: |__ev| {
                 __ev.msg_payload()
-                    .map_or(false, |__m| ::core::matches!(__m, PingPongMsg::Resume(_)))
+                    .is_some_and(|__m| ::core::matches!(__m, PingPongMsg::Resume(_)))
             },
             actions: &[Self::forward_ping],
             guard: |ctx, results, _ev| {
