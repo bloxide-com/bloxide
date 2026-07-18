@@ -80,13 +80,9 @@ pub struct MailboxConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct TopologyConfig {
     pub states: Vec<StateConfig>,
-    /// Legacy: list of handler function names (one per state), used when
-    /// transitions are not declared in TOML. The codegen emits a
-    /// `handler_table` macro that references hand-written `StateFns` constants.
-    pub handler_fns: Option<Vec<String>>,
     /// Declarative transitions grouped by state. When present, the codegen
-    /// emits complete `StateFns` constants with `transitions!` macro
-    /// invocations from TOML — no hand-written actions needed.
+    /// emits complete `StateFns` constants with raw `StateRule` struct literals
+    /// directly from TOML — no hand-written actions needed.
     #[serde(default)]
     pub transitions: Vec<TransitionConfig>,
     /// Entry actions per state.
@@ -95,6 +91,15 @@ pub struct TopologyConfig {
     /// Exit actions per state.
     #[serde(default)]
     pub exit: Vec<EntryExitConfig>,
+    /// Raw `use` statements for the spec_skeleton module. These import the
+    /// action functions referenced in transitions/entry/exit.
+    /// e.g. `["bloxide_supervisor_context::{start_children, stop_all_children, handle_done_or_failed, ...}"]`
+    #[serde(default)]
+    pub spec_imports: Vec<String>,
+    /// Feature-gated raw `use` statements for the spec_skeleton module.
+    /// These imports appear only in the feature variant.
+    #[serde(default)]
+    pub feature_spec_imports: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -160,6 +165,13 @@ pub struct ContextConfig {
     /// Body of `on_init_entry` as a raw string (inserted verbatim).
     #[serde(default)]
     pub on_init: Option<String>,
+    /// Extra impl blocks emitted after the context struct, wrapped with the
+    /// appropriate generics for each variant. Each entry is a raw impl body
+    /// WITHOUT the `impl<...>` header — the codegen wraps it as:
+    /// `impl<VARIANT_GENERICS> <body>`
+    /// where `<body>` is the entry content (e.g. `HasPending for Ctx<R> { ... }`).
+    #[serde(default)]
+    pub extra_impls: Vec<String>,
     #[serde(default)]
     pub fields: Vec<ContextFieldConfig>,
     #[serde(default)]
@@ -237,6 +249,15 @@ pub struct ContextFieldConfig {
     /// `#[cfg(feature = "...")]`.
     #[serde(default)]
     pub feature: Option<String>,
+    /// `#[provides(TraitPath)]` annotation for the BloxCtx derive macro.
+    /// Generates `impl TraitPath for Struct` that returns `&self.field`.
+    /// May include associated type bindings: `"HasSpawnFactory<R>, type Factory = F"`.
+    #[serde(default)]
+    pub provides: Option<String>,
+    /// `#[provides_mut(TraitPath, method_name)]` annotation for BloxCtx.
+    /// Generates `impl TraitPath for Struct` with a mutable accessor.
+    #[serde(default)]
+    pub provides_mut: Option<String>,
 }
 
 /// A `[[context.uses]]` entry — pulls traits and fields from a composable
@@ -515,6 +536,11 @@ pub struct InjectSource {
     /// Mailbox index for multi-mailbox actors (0-based).
     /// When absent, defaults to 0 (the primary mailbox).
     pub mailbox: Option<usize>,
+    /// Index for `source = "self_secondary"` — which additional
+    /// channel ref to use from a multi-mailbox actor's `channels!` call.
+    /// Defaults to 1 (the second channel).
+    #[serde(default)]
+    pub index: Option<usize>,
 }
 
 /// `[actors.spawn_factory]` — dynamic spawn factory reference.
@@ -547,6 +573,45 @@ pub struct SupervisionConfig {
     pub policies: BTreeMap<String, ChildPolicyConfig>,
     /// Optional health-check interval in milliseconds.
     pub health_check_interval_ms: Option<u64>,
+    /// Spawn factory for dynamic actor spawning.
+    ///
+    /// ```toml
+    /// factory = { crate = "tokio_pool_demo_impl", type = "AppSpawnFactory" }
+    /// ```
+    ///
+    /// When present, the wiring codegen:
+    /// 1. Creates a spawn request channel (typed by the factory's `Request` assoc type)
+    /// 2. Wires the tx side to the child actor's `spawn_ref` constructor field
+    /// 3. Wires the rx side to the supervisor's third mailbox (Spawn)
+    /// 4. Constructs the factory struct and passes it to `SupervisorCtx::new` as the 4th arg
+    /// 5. Uses `SupervisorMailboxes` with 3 streams instead of the 2-stream tuple
+    #[serde(default)]
+    pub factory: Option<SupervisionFactoryConfig>,
+}
+
+/// Spawn factory configuration in a `[[supervision]]` entry.
+#[derive(Debug, Deserialize, Clone)]
+pub struct SupervisionFactoryConfig {
+    /// Crate that provides the factory type (e.g. `"tokio_pool_demo_impl"`).
+    #[serde(rename = "crate")]
+    pub crate_name: String,
+    /// Factory type name (e.g. `"AppSpawnFactory"`).
+    pub r#type: String,
+    /// Spawn request message type (e.g. `"AppSpawnRequest<R>"`).
+    /// The `<R>` generic is substituted with the concrete runtime type.
+    /// Used to type the spawn channel.
+    pub request_type: String,
+    /// Constructor arguments for the factory, keyed by the factory's
+    /// constructor field name. Each value is an `InjectSource` that
+    /// resolves to a concrete expression (e.g. `pool_ref` via
+    /// `source = "actor"`).
+    ///
+    /// ```toml
+    /// [supervision.factory.args]
+    /// pool_ref = { source = "actor", actor = "pool" }
+    /// ```
+    #[serde(default)]
+    pub args: BTreeMap<String, InjectSource>,
 }
 
 /// A value in `[supervision.policies]` — restart or stop policy for a child.

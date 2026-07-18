@@ -24,24 +24,38 @@ bloxide/
   crates/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
-    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], transitions!, #[delegatable], etc.
-    bloxide-spawn/             ← dynamic actor support: SpawnCap, SpawnCapability, SpawnFactoryFor, ErasedSpawnFactory, SpawnOutput, SpawnPolicy, PeerCtrl, HasPeers, introduce_peers (no_std)
+    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[delegatable], #[blox_event], etc.
+    bloxide-messaging/         ← service crate: HasSelfRef<R,M>, HasPeerRef<R,M> for peer/self messaging
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
+    bloxide-supervisor-context/ ← supervisor context struct + traits (split from bloxide-supervisor in Phase 1)
+    bloxide-supervisor-actions/ ← supervisor action functions (split from bloxide-supervisor in Phase 1)
+    bloxide-peers/             ← peer introduction support for wiring actors to peers
     messages/
       ping-pong-messages/      ← PingPongMsg shared by both ping and pong bloxes
       pool-messages/           ← PoolMsg, WorkerMsg, DoWork, WorkDone, etc. shared by pool and worker
       counter-messages/        ← CounterMsg shared by counter blox and minimal wiring demo
+      bhsm-tst-messages/       ← BhsmTstMsg shared by the bhsm-tst HSM topology demo
     actions/
       ping-pong-actions/       ← HasPeerRef, CountsRounds, send_initial_ping, send_pong, etc. (no concrete types)
       pool-actions/            ← WorkerSpawnFn, HasWorkers, HasWorkerFactory, HasCurrentTask, introduce_new_worker, etc.
       counter-actions/         ← CountsTicks behavior trait and increment_count action
+      bhsm-tst-actions/        ← action traits and generic functions for the bhsm-tst HSM topology demo
+    context/
+      blox-ctx-workers/        ← HasWorkers<R> domain context crate
+      blox-ctx-pool-ref/       ← HasPoolRef<R> domain context crate
+      blox-ctx-rounds/         ← CountsRounds delegatable domain context crate
+      blox-ctx-current-timer/  ← HasCurrentTimer delegatable domain context crate
+      blox-ctx-current-task/   ← HasCurrentTask delegatable domain context crate
+      blox-ctx-worker-peers/   ← HasWorkerPeers<R> delegatable domain context crate
+      blox-ctx-ticks/          ← CountsTicks delegatable domain context crate
     bloxes/
       ping/                    ← declarative Ping actor; depends on ping-pong-actions
       pong/                    ← declarative Pong actor; depends on ping-pong-actions
       worker/                  ← declarative Worker actor; depends on pool-actions (no pool-blox dependency)
       pool/                    ← declarative Pool actor; depends on pool-actions (no worker-blox dependency)
       counter/                 ← declarative Counter actor; depends on counter-actions
+      bhsm-tst/                ← declarative Miro Samek HSM test blox (states S/S1/S11/S2/S21/S211); depends on bhsm-tst-actions
     impl/
       embassy-demo-impl/       ← impl crate: PingBehavior (concrete behavior for Ping)
       counter-demo-impl/       ← impl crate: CounterBehavior for tokio-minimal-demo
@@ -78,7 +92,7 @@ Bloxide is easiest to understand if you keep three related mental models in your
 This is the framework architecture described in `spec/architecture/00-layered-architecture.md`.
 
 - Layer 1: runtime primitives and bridges
-- Layer 2: standard-library crates such as `bloxide-timer`, `bloxide-supervisor`, `bloxide-spawn`
+- Layer 2: standard-library crates such as `bloxide-timer`, `bloxide-supervisor`
 - Layer 3: blox crates that define `MachineSpec`
 
 Use this model when you are deciding where a new capability belongs.
@@ -116,7 +130,7 @@ Use this model when you are wiring runtimes, reading macro output, or adding new
 
 Then dive deeper as needed:
 - `spec/architecture/02-hsm-engine.md` — `MachineSpec`, dispatch, Init/start/reset
-- `spec/architecture/05-handler-patterns.md` — transition patterns and `transitions!` macro
+- `spec/architecture/05-handler-patterns.md` — transition patterns and declarative TOML transitions
 - `spec/architecture/08-supervision.md` — supervisor patterns
 - `spec/architecture/11-dynamic-actors.md` — dynamic spawning and factory injection
 
@@ -128,7 +142,7 @@ Then dive deeper as needed:
 | How do actors send messages? | `spec/architecture/03-actor-messaging.md` |
 | How are actors wired at startup? | `spec/architecture/04-static-wiring.md` |
 | What are the named handler and topology patterns? | `spec/architecture/05-handler-patterns.md` |
-| How do actions, logging, and the `transitions!` macro work? | `spec/architecture/06-actions.md` |
+| How do actions, logging, and declarative TOML transitions work? | `spec/architecture/06-actions.md` |
 | How do typed mailboxes and priority ordering work? | `spec/architecture/07-typed-mailboxes.md` |
 | How does supervision work? | `spec/architecture/08-supervision.md` |
 | How is an application wired end to end? | `spec/architecture/09-application.md` |
@@ -137,9 +151,7 @@ Then dive deeper as needed:
 | How do dynamic actors, factory injection, and peer introduction work? | `spec/architecture/11-dynamic-actors.md` |
 | How does factory injection interact with supervision? | `spec/architecture/13-factory-injection-and-supervision.md` |
 | How does the unified lifecycle model work? | `spec/architecture/14-unified-lifecycle.md` |
-| How does supervisor-owned spawning work? | `spec/architecture/15-supervisor-owned-spawning.md` |
-| What is the spawn service pattern? | `spec/architecture/16-spawn-service.md` |
-| How is SpawnCap designed? | `spec/architecture/17-spawn-cap-design.md` |
+| How does spawning work? | `spec/architecture/21-spawn-architecture.md` |
 | Spec for the Ping actor | `spec/bloxes/ping.md` |
 | Spec for the Pong actor | `spec/bloxes/pong.md` |
 | Spec for the Counter actor | `spec/bloxes/counter.md` |

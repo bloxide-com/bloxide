@@ -31,14 +31,11 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 
 [topology]
-# Legacy: hand-written StateFns constants in actions.rs
-handler_fns = ["READY_FNS"]
 
 [[topology.states]]
 name = "Ready"
 initial = true
 
-# --- Declarative transitions (documentation; handler_fns takes precedence) ---
 [[topology.transitions]]
 state = "Ready"
 event = "PingPongMsg::Ping(_)"

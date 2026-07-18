@@ -11,23 +11,6 @@ fn blox_toml_path(blox_name: &str) -> std::path::PathBuf {
     Path::new("crates/bloxes").join(blox_name).join("blox.toml")
 }
 
-fn pascal_to_screaming_snake(name: &str) -> String {
-    let mut result = String::new();
-    for (i, ch) in name.chars().enumerate() {
-        if ch.is_uppercase() && i > 0 {
-            result.push('_');
-        }
-        for c in ch.to_uppercase() {
-            result.push(c);
-        }
-    }
-    result
-}
-
-fn handler_fn_name(state_name: &str) -> String {
-    format!("{}_FNS", pascal_to_screaming_snake(state_name))
-}
-
 fn load_toml(path: &Path) -> anyhow::Result<toml::Value> {
     let content =
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
@@ -64,16 +47,6 @@ fn states_array_mut(topology: &mut Table) -> anyhow::Result<&mut Vec<toml::Value
         .get_mut("states")
         .and_then(|v| v.as_array_mut())
         .ok_or_else(|| anyhow::anyhow!("topology.states is not an array"))
-}
-
-fn handler_fns_array_mut(topology: &mut Table) -> anyhow::Result<&mut Vec<toml::Value>> {
-    if !topology.contains_key("handler_fns") {
-        topology.insert("handler_fns".into(), toml::Value::Array(Vec::new()));
-    }
-    topology
-        .get_mut("handler_fns")
-        .and_then(|v| v.as_array_mut())
-        .ok_or_else(|| anyhow::anyhow!("topology.handler_fns is not an array"))
 }
 
 pub fn add_state(
@@ -115,14 +88,6 @@ pub fn add_state(
         t.insert("error".into(), toml::Value::Boolean(true));
     }
     states.push(state_table);
-
-    let topology = topology_table_mut(&mut doc)?;
-    let fns = handler_fns_array_mut(topology)?;
-
-    let fn_name = handler_fn_name(state_name);
-    if !fns.iter().any(|v| v.as_str() == Some(&fn_name)) {
-        fns.push(toml::Value::String(fn_name));
-    }
 
     save_toml(&path, &doc)?;
     println!("Added state '{}' to {}", state_name, blox_name);
@@ -172,12 +137,6 @@ pub fn remove_state(blox_name: &str, state_name: &str) -> anyhow::Result<()> {
             .and_then(|v| v.as_str())
             != Some(state_name)
     });
-
-    let topology = topology_table_mut(&mut doc)?;
-    let fn_name = handler_fn_name(state_name);
-    if let Ok(fns) = handler_fns_array_mut(topology) {
-        fns.retain(|v| v.as_str() != Some(&fn_name));
-    }
 
     save_toml(&path, &doc)?;
     println!("Removed state '{}' from {}", state_name, blox_name);

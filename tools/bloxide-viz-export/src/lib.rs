@@ -836,7 +836,7 @@ mod tests {
 
         // Spawning → Active on SpawnReply
         assert!(pool.handlers.iter().any(|h| h.state == "Spawning"
-            && h.event == "Unknown::SpawnedWorker"
+            && h.event == "PoolEvent::SpawnReply"
             && h.target.display() == "Active"));
 
         // AllDone entry action

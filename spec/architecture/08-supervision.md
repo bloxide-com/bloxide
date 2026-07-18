@@ -301,70 +301,102 @@ pub struct SupervisorCtx<R: BloxRuntime> {
 
 ### Handler Tables
 
-```rust
-const RUNNING_FNS: StateFns<Self> = StateFns {
-    on_entry: &[start_children::<R, SupervisorCtx<R>>],
-    on_exit: &[],
-    transitions: transitions![
-        SupervisorEvent::<R>::Child(ChildLifecycleEvent::Done { .. }) => {
-            actions [handle_done_or_failed_action::<R>]
-            guard(ctx, _results) {
-                ctx.pending == ChildAction::BeginShutdown => SupervisorState::ShuttingDown,
-                _ => stay,
-            }
-        },
-        SupervisorEvent::<R>::Child(ChildLifecycleEvent::Failed { .. }) => {
-            actions [handle_done_or_failed_action::<R>]
-            guard(ctx, _results) {
-                ctx.pending == ChildAction::BeginShutdown => SupervisorState::ShuttingDown,
-                _ => stay,
-            }
-        },
-        SupervisorEvent::<R>::Child(ChildLifecycleEvent::Reset { .. }) => {
-            actions [handle_reset_action::<R>]
-            guard(_ctx, _results) {
-                _ => stay,
-            }
-        },
-        SupervisorEvent::<R>::Child(ChildLifecycleEvent::Started { .. }) => {
-            actions [record_started_action::<R>]
-            stay
-        },
-        SupervisorEvent::<R>::Child(ChildLifecycleEvent::Alive { .. }) => {
-            actions [record_alive_action::<R>]
-            stay
-        },
-        SupervisorEvent::<R>::Control(SupervisorControl::RegisterChild(_)) => {
-            actions [register_child_action::<R>]
-            stay
-        },
-        SupervisorEvent::<R>::Control(SupervisorControl::HealthCheckTick) => {
-            actions [handle_health_check_action::<R>]
-            guard(ctx, _results) {
-                ctx.pending == ChildAction::BeginShutdown => SupervisorState::ShuttingDown,
-                _ => stay,
-            }
-        },
-        SupervisorEvent::<R>::Child(_) => { stay },
-        SupervisorEvent::<R>::Control(_) => { stay },
-    ],
-};
+> The transition rules below are declared as `[[topology.transitions]]` entries in `blox.toml` and emitted as raw `StateRule { ... }` struct literals by `bloxide-codegen`. The rule structure (event match, actions, guard, targets) is shown in TOML form.
 
-const SHUTTING_DOWN_FNS: StateFns<Self> = StateFns {
-    on_entry: &[stop_all_children::<R, SupervisorCtx<R>>],
-    on_exit: &[],
-    transitions: transitions![
-        SupervisorEvent::<R>::Child(ChildLifecycleEvent::Stopped { .. }) => {
-            actions [record_stopped_action::<R>]
-            guard(ctx, _results) {
-                ctx.all_children_stopped() => reset,
-                _ => stay,
-            }
-        },
-        SupervisorEvent::<R>::Child(_) => { stay },
-        SupervisorEvent::<R>::Control(_) => { stay },
-    ],
-};
+```toml
+# RUNNING state
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Done { .. })"
+actions = ["handle_done_or_failed_action::<R>"]
+
+  [[topology.transitions.guards]]
+  condition = "ctx.pending == ChildAction::BeginShutdown"
+  to = "ShuttingDown"
+
+  [[topology.transitions.guards]]
+  to = "stay"
+
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Failed { .. })"
+actions = ["handle_done_or_failed_action::<R>"]
+
+  [[topology.transitions.guards]]
+  condition = "ctx.pending == ChildAction::BeginShutdown"
+  to = "ShuttingDown"
+
+  [[topology.transitions.guards]]
+  to = "stay"
+
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Reset { .. })"
+actions = ["handle_reset_action::<R>"]
+to = "stay"
+
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Started { .. })"
+actions = ["record_started_action::<R>"]
+to = "stay"
+
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Alive { .. })"
+actions = ["record_alive_action::<R>"]
+to = "stay"
+
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Control(SupervisorControl::RegisterChild(_))"
+actions = ["register_child_action::<R>"]
+to = "stay"
+
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Control(SupervisorControl::HealthCheckTick)"
+actions = ["handle_health_check_action::<R>"]
+
+  [[topology.transitions.guards]]
+  condition = "ctx.pending == ChildAction::BeginShutdown"
+  to = "ShuttingDown"
+
+  [[topology.transitions.guards]]
+  to = "stay"
+
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Child(_)"
+to = "stay"
+
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Control(_)"
+to = "stay"
+
+# SHUTTING_DOWN state
+[[topology.transitions]]
+state = "ShuttingDown"
+pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Stopped { .. })"
+actions = ["record_stopped_action::<R>"]
+
+  [[topology.transitions.guards]]
+  condition = "ctx.all_children_stopped()"
+  to = "reset"
+
+  [[topology.transitions.guards]]
+  to = "stay"
+
+[[topology.transitions]]
+state = "ShuttingDown"
+pattern = "SupervisorEvent::<R>::Child(_)"
+to = "stay"
+
+[[topology.transitions]]
+state = "ShuttingDown"
+pattern = "SupervisorEvent::<R>::Control(_)"
+to = "stay"
 ```
 
 ### `MachineSpec` Implementation

@@ -94,6 +94,16 @@ fn toml_value_to_tokens(value: &toml::Value) -> anyhow::Result<proc_macro2::Toke
     }
 }
 
+/// Replace `<R>` or `<R: ...>` in a message type path with the concrete runtime type.
+///
+/// e.g. `"pool_messages::SpawnedWorker<R>"` → `"pool_messages::SpawnedWorker<TokioRuntime>"`
+fn substitute_runtime_generic(path: &str, runtime_name: &str) -> String {
+    // Replace <R> → <RuntimeName>
+    let result = path.replace("<R>", &format!("<{}>", runtime_name));
+    // Also handle <R: BloxRuntime> → <RuntimeName>
+    result.replace("<R: BloxRuntime>", &format!("<{}>", runtime_name))
+}
+
 /// Return the primary mailbox message type and its crate from a blox config.
 fn primary_message(blox_config: &BloxConfig) -> Option<(String, String)> {
     let event = blox_config.event.as_ref()?;
@@ -217,6 +227,12 @@ pub fn generate(
         }
     );
 
+    let runtime_ident_str = if is_tokio {
+        "TokioRuntime".to_string()
+    } else {
+        "EmbassyRuntime".to_string()
+    };
+
     let binary_name = config.system.name.as_deref().unwrap_or("main");
     let done_str = format!("{} complete", binary_name);
     let done_lit = syn::LitStr::new(&done_str, proc_macro2::Span::call_site());
@@ -229,6 +245,39 @@ pub fn generate(
     use_stmts.push(quote! {
         use ::bloxide_core::lifecycle::LifecycleCommand;
     });
+
+    // Feature-gated imports for dynamic feature unification.
+    // When `dynamic` is enabled (e.g. by tokio-pool-demo in the same workspace),
+    // non-dynamic apps need NoSpawnRequest and SupervisorMailboxes for the
+    // 3-stream mailboxes. NoSpawnFactory is referenced via its full path in
+    // generated code, so no use-import is needed for it.
+    let has_supervision = !config.supervision.is_empty();
+    let has_non_factory_supervisor = config.supervision.iter().any(|s| s.factory.is_none());
+    if has_supervision {
+        use_stmts.push(quote! {
+            #[cfg(feature = "dynamic")]
+            use ::bloxide_supervisor::dynamic_mailboxes::SupervisorMailboxes;
+        });
+        if has_non_factory_supervisor {
+            use_stmts.push(quote! {
+                #[cfg(feature = "dynamic")]
+                use ::bloxide_supervisor::NoSpawnRequest;
+            });
+        }
+    }
+
+    // Spawn factory type imports (for supervision entries with factory).
+    for sup in &config.supervision {
+        if let Some(factory) = &sup.factory {
+            let factory_crate_ident = format_ident!("{}", crate_name(&factory.crate_name));
+            let factory_type_ident = format_ident!("{}", factory.r#type);
+            use_stmts.push(quote! {
+                use ::#factory_crate_ident::#factory_type_ident;
+            });
+        }
+    }
+
+    // (DynamicChannelCap is used via full path in generated code, no import needed.)
 
     // Blox crate imports.
     for actor in &config.actors {
@@ -333,22 +382,196 @@ pub fn generate(
         if actor.kind.as_deref() == Some("timer") {
             continue;
         }
-        let ref_ident = format_ident!("{}_ref", actor.name);
-        let mbox_ident = format_ident!("{}_mbox", actor.name);
         let id_ident = format_ident!("{}_id", actor.name);
+        let mbox_ident = format_ident!("{}_mbox", actor.name);
 
         let blox_config = blox_configs.get(&actor.blox).unwrap();
-        let (_msg_crate, msg_type) = primary_message(blox_config)
-            .ok_or_else(|| anyhow::anyhow!("actor '{}' has no mailbox message type", actor.name))?;
-        let msg_ident = format_ident!("{}", msg_type);
+        let event = blox_config.event.as_ref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "actor '{}' blox '{}' has no event config",
+                actor.name,
+                actor.blox
+            )
+        })?;
+
+        // Collect all non-feature-gated mailboxes (or all if no feature filtering).
+        // For the pool demo, both mailboxes are always present.
+        let mailboxes: Vec<_> = event
+            .mailboxes
+            .iter()
+            .filter(|m| m.feature.is_none())
+            .collect();
+
+        if mailboxes.is_empty() {
+            anyhow::bail!("actor '{}' has no mailboxes", actor.name);
+        }
+
         let capacity = actor.channel_capacity.unwrap_or(16);
         let capacity_lit = proc_macro2::Literal::usize_unsuffixed(capacity);
 
+        // Build ref names: primary is {actor}_ref, secondaries are looked up
+        // from inject entries with source = "self_secondary".
+        let primary_ref_ident = format_ident!("{}_ref", actor.name);
+        let mut ref_idents = vec![primary_ref_ident.clone()];
+        let mut msg_type_tokens = Vec::new();
+
+        // Primary mailbox message type.
+        let primary = &mailboxes[0];
+        let primary_path = primary.message_path.as_deref().unwrap_or(&primary.message);
+        let primary_msg = substitute_runtime_generic(primary_path, &runtime_ident_str);
+        let primary_msg_tokens: proc_macro2::TokenStream = syn::parse_str(&primary_msg)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to parse message type '{}' for actor '{}': {}",
+                    primary_msg, actor.name, e
+                )
+            });
+        msg_type_tokens.push(quote! { #primary_msg_tokens(#capacity_lit) });
+
+        // Secondary mailboxes.
+        for (i, mbox) in mailboxes.iter().enumerate().skip(1) {
+            // Find the inject field that references this secondary mailbox.
+            let secondary_field = actor
+                .inject
+                .iter()
+                .find(|(_, src)| {
+                    src.source == "self_secondary"
+                        && src.index.unwrap_or(1) == i
+                })
+                .map(|(name, _)| name.clone())
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "actor '{}' has mailbox {} but no inject entry with source = 'self_secondary' and index = {}",
+                        actor.name,
+                        i,
+                        i
+                    )
+                })?;
+            let ref_ident = format_ident!("{}", secondary_field);
+            ref_idents.push(ref_ident);
+
+            let path = mbox.message_path.as_deref().unwrap_or(&mbox.message);
+            let msg = substitute_runtime_generic(path, &runtime_ident_str);
+            let msg_tokens: proc_macro2::TokenStream = syn::parse_str(&msg).unwrap_or_else(|e| {
+                panic!(
+                    "failed to parse secondary message type '{}' for actor '{}': {}",
+                    msg, actor.name, e
+                )
+            });
+            let cap_lit = proc_macro2::Literal::usize_unsuffixed(capacity);
+            msg_type_tokens.push(quote! { #msg_tokens(#cap_lit) });
+        }
+
+        // Generate the channels! call with all message types.
+        // Single mailbox: let ((ref,), mbox) = channels! { Msg(cap), };
+        // Multi mailbox:  let ((ref1, ref2), mbox) = channels! { Msg1(cap), Msg2(cap), };
         channel_stmts.push(quote! {
-            let ((#ref_ident,), #mbox_ident) = ::#runtime_crate_ident::channels! {
-                #msg_ident(#capacity_lit),
+            let ((#(#ref_idents),*), #mbox_ident) = ::#runtime_crate_ident::channels! {
+                #(#msg_type_tokens),*,
             };
-            let #id_ident = #ref_ident.id();
+            let #id_ident = #primary_ref_ident.id();
+        });
+    }
+
+    // ── Spawn channel creation (supervisor spawn factory) ───────────────────
+    // When a supervision entry has a factory, create the spawn request channel.
+    // The tx side (`spawn_ref`) is injected into child actors that use
+    // `source = "supervisor_spawn"`. The rx side (`spawn_rx`) is passed to
+    // the supervisor's SupervisorMailboxes as the third stream.
+    let mut spawn_channel_stmts = Vec::new();
+    for (idx, sup) in config.supervision.iter().enumerate() {
+        let factory = match &sup.factory {
+            Some(f) => f,
+            None => continue,
+        };
+
+        let spawn_id_ident = if config.supervision.len() == 1 {
+            format_ident!("spawn_id")
+        } else {
+            format_ident!("spawn_id_{}", idx)
+        };
+        let spawn_rx_ident = if config.supervision.len() == 1 {
+            format_ident!("spawn_rx")
+        } else {
+            format_ident!("spawn_rx_{}", idx)
+        };
+
+        // The spawn request type, with <R> substituted by the concrete runtime.
+        let request_type = substitute_runtime_generic(&factory.request_type, &runtime_ident_str);
+        let request_type_tokens: proc_macro2::TokenStream = syn::parse_str(&request_type)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "failed to parse spawn request type '{}': {}",
+                    request_type, e
+                )
+            });
+
+        let capacity_lit = proc_macro2::Literal::usize_unsuffixed(16);
+
+        if is_tokio {
+            spawn_channel_stmts.push(quote! {
+                let #spawn_id_ident = ::#runtime_crate_ident::next_actor_id!();
+                let (spawn_ref, #spawn_rx_ident) =
+                    <#runtime_ident as ::bloxide_core::capability::DynamicChannelCap>
+                        ::channel::<#request_type_tokens>(#spawn_id_ident, #capacity_lit);
+            });
+        } else {
+            spawn_channel_stmts.push(quote! {
+                let #spawn_id_ident = ::#runtime_crate_ident::next_actor_id!();
+                let (spawn_ref, #spawn_rx_ident) =
+                    <#runtime_ident as ::bloxide_core::capability::StaticChannelCap>
+                        ::channel::<#request_type_tokens, 1>(#spawn_id_ident);
+            });
+        }
+    }
+
+    // ── Factory construction ───────────────────────────────────────────────
+    // Construct the factory struct, resolving its constructor args from inject sources.
+    let mut factory_stmts = Vec::new();
+    for (idx, sup) in config.supervision.iter().enumerate() {
+        let factory = match &sup.factory {
+            Some(f) => f,
+            None => continue,
+        };
+
+        let factory_ident = if config.supervision.len() == 1 {
+            format_ident!("factory")
+        } else {
+            format_ident!("factory_{}", idx)
+        };
+        let factory_type_ident = format_ident!("{}", factory.r#type);
+
+        // Resolve constructor args from the factory.args inject entries.
+        // The factory constructor is `Type::new(arg1, arg2, ...)`.
+        // We resolve each arg the same way as actor inject sources.
+        let mut factory_args = Vec::new();
+        for (_field_name, source) in &factory.args {
+            if source.source == "actor" {
+                let src_actor = source.actor.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "supervision factory arg '{}' source = 'actor' missing actor name",
+                        _field_name
+                    )
+                })?;
+                let ref_ident = format_ident!("{}_ref", src_actor);
+                factory_args.push(quote! { #ref_ident.clone() });
+            } else if source.source == "self" {
+                // Not meaningful for factory args, but handle gracefully.
+                anyhow::bail!(
+                    "supervision factory arg '{}' source = 'self' is not supported",
+                    _field_name
+                );
+            } else {
+                anyhow::bail!(
+                    "supervision factory arg '{}' has unsupported source '{}'",
+                    _field_name,
+                    source.source
+                );
+            }
+        }
+
+        factory_stmts.push(quote! {
+            let #factory_ident = #factory_type_ident::new(#(#factory_args),*);
         });
     }
 
@@ -434,6 +657,15 @@ pub fn generate(
                 if source.source == "self" {
                     let ref_ident = format_ident!("{}_ref", actor.name);
                     ctor_args.push(quote! { #ref_ident.clone() });
+                } else if source.source == "self_secondary" {
+                    // The ref was already created by the multi-mailbox channels! call
+                    // and named after this inject field name.
+                    let ref_ident = format_ident!("{}", field.name);
+                    ctor_args.push(quote! { #ref_ident.clone() });
+                } else if source.source == "supervisor_spawn" {
+                    // The spawn_ref is created in the supervisor spawn channel section.
+                    // It will be named `spawn_ref`.
+                    ctor_args.push(quote! { spawn_ref.clone() });
                 } else if source.source == "factory" {
                     let factory_crate = source.crate_name.as_deref().ok_or_else(|| {
                         anyhow::anyhow!(
@@ -532,12 +764,21 @@ pub fn generate(
             format_ident!("supervisor_task_{}", idx)
         };
         let control_ref_ident = format_ident!("_sup_control_ref_{}", idx);
-        let notify_ident = format_ident!("_sup_notify_{}", idx);
+        let notify_ident = format_ident!("sup_notify_{}", idx);
         let kill_cap_ident = format_ident!("_sup_kill_cap_{}", idx);
+
+        // Map strategy to GroupShutdown.
+        // "one_for_one" / "one_for_all" / "rest_for_one" → WhenAnyDone (shut down on first failure)
+        // "all_for_one" → WhenAllDone (wait for all children, including dynamic spawns, to finish)
+        let shutdown_strategy = if sup.strategy == "all_for_one" {
+            quote! { GroupShutdown::WhenAllDone }
+        } else {
+            quote! { GroupShutdown::WhenAnyDone }
+        };
 
         supervisor_stmts.push(quote! {
             let mut #group_ident = ChildGroupBuilder::new(
-                GroupShutdown::WhenAnyDone,
+                #shutdown_strategy,
             );
         });
 
@@ -597,7 +838,7 @@ pub fn generate(
 
         supervisor_stmts.push(quote! {
             let #control_ref_ident = #group_ident.control_ref();
-            let #notify_ident = #group_ident.notify_sender();
+            let #notify_ident = #group_ident.notify_ref();
             #kill_cap_stmt
             let #sup_id_ident = ::#runtime_crate_ident::next_actor_id!();
             let (children, #sup_notify_rx_ident, #sup_control_rx_ident) = #group_ident.finish();
@@ -613,26 +854,106 @@ pub fn generate(
             syn::parse_str("::bloxide_supervisor::event::SupervisorEvent")
                 .expect("valid supervisor event path");
 
-        supervisor_stmts.push(quote! {
-            let #sup_ctx_ident = #supervisor_ctx_path::new(#sup_id_ident, children);
-            let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident>>::new(#sup_ctx_ident);
-            #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident>::Lifecycle(LifecycleCommand::Start));
-        });
+        let no_spawn_factory_path: syn::Path =
+            syn::parse_str("::bloxide_supervisor::NoSpawnFactory")
+                .expect("valid NoSpawnFactory path");
 
-        if is_tokio {
-            root_task_decls.push(quote! {
-                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
+        // Determine the factory type for this supervision entry.
+        // When `sup.factory` is present, use the concrete factory type.
+        // Otherwise, use NoSpawnFactory (the default for non-spawning supervisors).
+        let has_factory = sup.factory.is_some();
+        let factory_type_ident = if let Some(factory) = &sup.factory {
+            format_ident!("{}", factory.r#type)
+        } else {
+            // Will use no_spawn_factory_path instead
+            format_ident!("__unused__")
+        };
+        let factory_ident = if config.supervision.len() == 1 {
+            format_ident!("factory")
+        } else {
+            format_ident!("factory_{}", idx)
+        };
+
+        // Feature-gated supervisor context + machine construction.
+        // Without `dynamic`: SupervisorSpec<R>, SupervisorCtx::new(children, id, notify)
+        // With `dynamic` (feature unification):
+        //   - If factory present: SupervisorSpec<R, FactoryType>,
+        //     SupervisorCtx::new(children, id, notify, factory)
+        //   - If no factory: SupervisorSpec<R, NoSpawnFactory>,
+        //     SupervisorCtx::new(children, id, notify, NoSpawnFactory)
+        if has_factory {
+            supervisor_stmts.push(quote! {
+                #[cfg(not(feature = "dynamic"))]
+                let #sup_ctx_ident = #supervisor_ctx_path::new(children, #sup_id_ident, #notify_ident);
+                #[cfg(not(feature = "dynamic"))]
+                let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident>>::new(#sup_ctx_ident);
+                #[cfg(not(feature = "dynamic"))]
+                #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident>::Lifecycle(LifecycleCommand::Start));
+
+                #[cfg(feature = "dynamic")]
+                let #sup_ctx_ident = #supervisor_ctx_path::new(children, #sup_id_ident, #notify_ident, #factory_ident);
+                #[cfg(feature = "dynamic")]
+                let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident, #factory_type_ident>>::new(#sup_ctx_ident);
+                #[cfg(feature = "dynamic")]
+                #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident, #factory_type_ident>::Lifecycle(LifecycleCommand::Start));
             });
         } else {
-            root_task_decls.push(quote! {
-                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>, std::process::exit(0));
+            supervisor_stmts.push(quote! {
+                #[cfg(not(feature = "dynamic"))]
+                let #sup_ctx_ident = #supervisor_ctx_path::new(children, #sup_id_ident, #notify_ident);
+                #[cfg(not(feature = "dynamic"))]
+                let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident>>::new(#sup_ctx_ident);
+                #[cfg(not(feature = "dynamic"))]
+                #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident>::Lifecycle(LifecycleCommand::Start));
+
+                #[cfg(feature = "dynamic")]
+                let #sup_ctx_ident = #supervisor_ctx_path::new(children, #sup_id_ident, #notify_ident, #no_spawn_factory_path);
+                #[cfg(feature = "dynamic")]
+                let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident, #no_spawn_factory_path>>::new(#sup_ctx_ident);
+                #[cfg(feature = "dynamic")]
+                #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident, #no_spawn_factory_path>::Lifecycle(LifecycleCommand::Start));
             });
+        }
+
+        // Feature-gated root_task! declaration.
+        if is_tokio {
+            if has_factory {
+                root_task_decls.push(quote! {
+                    #[cfg(not(feature = "dynamic"))]
+                    ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
+                    #[cfg(feature = "dynamic")]
+                    ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident, #factory_type_ident>);
+                });
+            } else {
+                root_task_decls.push(quote! {
+                    #[cfg(not(feature = "dynamic"))]
+                    ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
+                    #[cfg(feature = "dynamic")]
+                    ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident, #no_spawn_factory_path>);
+                });
+            }
+        } else {
+            if has_factory {
+                root_task_decls.push(quote! {
+                    #[cfg(not(feature = "dynamic"))]
+                    ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>, std::process::exit(0));
+                    #[cfg(feature = "dynamic")]
+                    ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident, #factory_type_ident>, std::process::exit(0));
+                });
+            } else {
+                root_task_decls.push(quote! {
+                    #[cfg(not(feature = "dynamic"))]
+                    ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>, std::process::exit(0));
+                    #[cfg(feature = "dynamic")]
+                    ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident, #no_spawn_factory_path>, std::process::exit(0));
+                });
+            }
         }
     }
 
     // ── Supervisor run statements ───────────────────────────────────────────
     let mut supervisor_run_stmts = Vec::new();
-    for (idx, _sup) in config.supervision.iter().enumerate() {
+    for (idx, sup) in config.supervision.iter().enumerate() {
         let task_ident = if config.supervision.len() == 1 {
             format_ident!("supervisor_task")
         } else {
@@ -653,14 +974,86 @@ pub fn generate(
         } else {
             format_ident!("sup_control_rx_{}", idx)
         };
+        let spawn_rx_ident = if config.supervision.len() == 1 {
+            format_ident!("spawn_rx")
+        } else {
+            format_ident!("spawn_rx_{}", idx)
+        };
+
+        let has_factory = sup.factory.is_some();
+
         if is_tokio {
+            // Non-dynamic: tuple mailboxes (child_rx, control_rx)
             supervisor_run_stmts.push(quote! {
+                #[cfg(not(feature = "dynamic"))]
                 #task_ident(#sup_machine_ident, (#sup_notify_rx_ident, #sup_control_rx_ident)).await;
             });
+            if has_factory {
+                // Dynamic with real factory: use the spawn_rx created earlier.
+                supervisor_run_stmts.push(quote! {
+                    #[cfg(feature = "dynamic")]
+                    {
+                        let sup_mailboxes = SupervisorMailboxes {
+                            child_rx: #sup_notify_rx_ident,
+                            control_rx: #sup_control_rx_ident,
+                            spawn_rx: #spawn_rx_ident,
+                        };
+                        #task_ident(#sup_machine_ident, sup_mailboxes).await;
+                    }
+                });
+            } else {
+                // Dynamic (feature unification, no factory): create dummy spawn channel.
+                supervisor_run_stmts.push(quote! {
+                    #[cfg(feature = "dynamic")]
+                    {
+                        let spawn_id = ::#runtime_crate_ident::next_actor_id!();
+                        let (_spawn_ref, spawn_rx) =
+                            <#runtime_ident as ::bloxide_core::capability::DynamicChannelCap>::channel::<NoSpawnRequest>(spawn_id, 1);
+                        let sup_mailboxes = SupervisorMailboxes {
+                            child_rx: #sup_notify_rx_ident,
+                            control_rx: #sup_control_rx_ident,
+                            spawn_rx,
+                        };
+                        #task_ident(#sup_machine_ident, sup_mailboxes).await;
+                    }
+                });
+            }
         } else {
+            // Non-dynamic: tuple mailboxes (child_rx, control_rx)
             supervisor_run_stmts.push(quote! {
+                #[cfg(not(feature = "dynamic"))]
                 spawner.must_spawn(#task_ident(#sup_machine_ident, (#sup_notify_rx_ident, #sup_control_rx_ident)));
             });
+            if has_factory {
+                // Dynamic with real factory: use the spawn_rx created earlier.
+                supervisor_run_stmts.push(quote! {
+                    #[cfg(feature = "dynamic")]
+                    {
+                        let sup_mailboxes = SupervisorMailboxes {
+                            child_rx: #sup_notify_rx_ident,
+                            control_rx: #sup_control_rx_ident,
+                            spawn_rx: #spawn_rx_ident,
+                        };
+                        spawner.must_spawn(#task_ident(#sup_machine_ident, sup_mailboxes));
+                    }
+                });
+            } else {
+                // Dynamic (feature unification, no factory): create dummy spawn channel.
+                supervisor_run_stmts.push(quote! {
+                    #[cfg(feature = "dynamic")]
+                    {
+                        let spawn_id = ::#runtime_crate_ident::next_actor_id!();
+                        let (_spawn_ref, spawn_rx) =
+                            <#runtime_ident as ::bloxide_core::capability::StaticChannelCap>::channel::<NoSpawnRequest, 1>(spawn_id);
+                        let sup_mailboxes = SupervisorMailboxes {
+                            child_rx: #sup_notify_rx_ident,
+                            control_rx: #sup_control_rx_ident,
+                            spawn_rx,
+                        };
+                        spawner.must_spawn(#task_ident(#sup_machine_ident, sup_mailboxes));
+                    }
+                });
+            }
         }
     }
 
@@ -726,6 +1119,8 @@ pub fn generate(
 
                 #(#timer_stmts)*
                 #(#channel_stmts)*
+                #(#spawn_channel_stmts)*
+                #(#factory_stmts)*
                 #(#ctx_stmts)*
                 #(#machine_stmts)*
                 #(#supervisor_stmts)*
@@ -746,6 +1141,8 @@ pub fn generate(
             fn setup(spawner: ::embassy_executor::Spawner) {
                 #(#timer_stmts)*
                 #(#channel_stmts)*
+                #(#spawn_channel_stmts)*
+                #(#factory_stmts)*
                 #(#ctx_stmts)*
                 #(#machine_stmts)*
                 #(#supervisor_stmts)*

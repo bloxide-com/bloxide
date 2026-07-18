@@ -19,7 +19,7 @@ message_path = "pool_messages::SpawnedWorker<R>"
 [context]
 name = "PoolCtx"
 generics = "<R: BloxRuntime>"
-on_init = "ctx.worker_refs_mut().clear(); ctx.worker_ctrls_mut().clear(); ctx.set_pending(0);"
+on_init = "ctx.worker_refs_mut().clear(); ctx.worker_ctrls_mut().clear(); ctx.set_pending(0); ctx.spawn_queue.clear(); ctx.spawn_in_flight = false;"
 imports = [
     "pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg, AppSpawnRequest, SpawnedWorker}",
     "alloc::vec::Vec",
@@ -77,9 +77,23 @@ name = "pending_task_id"
 ty = "u32"
 role = "state"
 
+# True when a spawn request has been sent but the SpawnReply hasn't arrived yet.
+# Prevents premature AllDone transition while workers are still being spawned.
+[[context.fields]]
+name = "spawn_in_flight"
+ty = "bool"
+role = "state"
+
+# Queue of task_ids waiting to be spawned (buffered while in Spawning state)
+[[context.fields]]
+name = "spawn_queue"
+ty = "Vec<u32>"
+role = "state"
+
 [topology]
-# Legacy: hand-written StateFns constants in actions.rs
-handler_fns = ["IDLE_FNS", "SPAWNING_FNS", "ACTIVE_FNS", "ALL_DONE_FNS"]
+spec_imports = [
+    "crate::actions::{handle_spawn_worker, handle_spawn_worker_queued, handle_spawned_worker, handle_work_done, log_all_done}",
+]
 
 [[topology.states]]
 name = "Idle"
@@ -95,7 +109,7 @@ name = "Active"
 name = "AllDone"
 terminal = true
 
-# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+# --- Declarative transitions ---
 
 # Idle: SpawnWorker → Spawning
 [[topology.transitions]]
@@ -104,12 +118,34 @@ event = "PoolMsg::SpawnWorker(_)"
 target = "Spawning"
 actions = ["handle_spawn_worker"]
 
-# Spawning: SpawnedWorker reply → Active
+# Spawning: SpawnedWorker reply → Active (or stay Spawning if more spawns in-flight/queued, or AllDone if all workers already finished)
 [[topology.transitions]]
 state = "Spawning"
-event = "SpawnedWorker(_)"
+event = "PoolEvent::SpawnReply(_)"
 target = "Active"
 actions = ["handle_spawned_worker"]
+
+[[topology.transitions.guards]]
+condition = "ctx.spawn_in_flight || !ctx.spawn_queue.is_empty()"
+target = "Spawning"
+
+[[topology.transitions.guards]]
+condition = "ctx.pending() == 0 && !ctx.worker_refs().is_empty()"
+target = "AllDone"
+
+# Spawning: buffer additional SpawnWorker requests while waiting for reply
+[[topology.transitions]]
+state = "Spawning"
+event = "PoolMsg::SpawnWorker(_)"
+target = "stay"
+actions = ["handle_spawn_worker_queued"]
+
+# Spawning: handle WorkDone while waiting for spawn reply
+[[topology.transitions]]
+state = "Spawning"
+event = "PoolMsg::WorkDone(_)"
+target = "stay"
+actions = ["handle_work_done"]
 
 # Active: SpawnWorker → Spawning (async spawn)
 [[topology.transitions]]
@@ -126,7 +162,7 @@ target = "stay"
 actions = ["handle_work_done"]
 
 [[topology.transitions.guards]]
-condition = "ctx.pending() == 0"
+condition = "ctx.pending() == 0 && !ctx.spawn_in_flight"
 target = "AllDone"
 
 # AllDone: entry logs completion

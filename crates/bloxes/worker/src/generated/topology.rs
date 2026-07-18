@@ -42,6 +42,6 @@ impl ::bloxide_core::topology::StateTopology for WorkerState {
 #[macro_export]
 macro_rules! worker_state_handler_table {
     ($ty:ty) => {
-        & [& < $ty > ::WAITING_FNS, & < $ty > ::DONE_FNS]
+        &[&<$ty>::WAITING_FNS, &<$ty>::DONE_FNS]
     };
 }

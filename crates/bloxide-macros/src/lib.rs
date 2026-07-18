@@ -15,9 +15,6 @@
 //!   generate channel creation code for any number of mailboxes via
 //!   `DynamicChannelCap`.
 //!
-//! - `transitions!(ARMS)` / `root_transitions!(ARMS)` — build typed transition
-//!   rule slices with automatic event-tag extraction.
-//!
 //! - `#[delegatable]` — keep a trait definition unchanged and emit a companion
 //!   `macro_rules! __delegate_TraitName` macro that generates forwarding impls.
 //!
@@ -34,7 +31,6 @@ mod dyn_channels;
 mod event_tag;
 mod mailboxes_impls;
 mod state_topology;
-mod transitions;
 
 mod blox_event_new;
 mod blox_mailboxes;
@@ -113,27 +109,6 @@ pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
 ///
 /// # Attributes
 ///
-/// ## Enum-level: `#[handler_fns(...)]`
-///
-/// Specifies handler function names for each state variant. Auto-generates a companion
-/// macro `{snake_case_state_enum_name}_handler_table!(Self)` for constructing the
-/// `HANDLER_TABLE` const array.
-///
-/// Example:
-/// ```ignore
-/// #[derive(StateTopology)]
-/// #[handler_fns(on_entry_state_a, on_exit_state_a, on_entry_state_b)]
-/// enum State {
-///     StateA,
-///     StateB,
-/// }
-///
-/// // Generated macro (call in impl MachineSpec):
-/// // fn state_handler_table() -> &'static [StateFns<Self>] {
-/// //     &state_handler_table!(Self)
-/// // }
-/// ```
-///
 /// ## Variant attributes
 ///
 /// - `#[composite]` — marks a state as having children (not a leaf).
@@ -164,7 +139,7 @@ pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
 /// - `is_leaf()` returning `true` for non-composite states
 /// - `path()` returning a statically-allocated root-first ancestor slice
 /// - `as_index()` returning the `repr(u8)` discriminant as `usize`
-#[proc_macro_derive(StateTopology, attributes(composite, parent, handler_fns))]
+#[proc_macro_derive(StateTopology, attributes(composite, parent))]
 pub fn derive_state_topology(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     match state_topology::derive_state_topology_inner(&input) {
@@ -323,59 +298,6 @@ pub fn next_actor_id(_input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn dyn_channels(input: TokenStream) -> TokenStream {
     dyn_channels::dyn_channels_inner(input)
-}
-
-// ── transitions!(ARMS) and root_transitions!(ARMS) ────────────────────────────
-//
-// NOTE: These macros are marked for removal. The bloxide-codegen now emits
-// raw `StateRule { ... }` struct literals directly from TOML, bypassing the
-// transitions! macro entirely. The macros remain for hand-written bloxes
-// that have not yet migrated to declarative TOML transitions. Once all
-// bloxes migrate, both the macro and its 792-line implementation in
-// `transitions.rs` should be deleted.
-
-/// Build a `&'static [StateRule<S>]` from transition rule arms.
-///
-/// This proc-macro version automatically extracts the `event_tag` from
-/// each arm's pattern, enabling the engine to skip non-matching rules
-/// without a function pointer call.
-///
-/// # Pattern Classification Rules
-///
-/// The macro inspects pattern syntax to determine how to match events:
-///
-/// | Pattern Syntax | Generated Match | Use Case |
-/// |----------------|-----------------|----------|
-/// | `_Msg(Ping { .. })` | `event.msg_payload()` | Match message payloads from `Event::Msg(Envelope<T>)` |
-/// | `_Ctrl(Stop)` | `event.ctrl_payload()` | Match control payloads from `Event::Ctrl(T)` |
-/// | `Event::Msg(Envelope(Ping { .. }))` | Direct pattern match | Full explicit path |
-/// | `Ping { .. }` (no suffix) | Direct struct pattern | Custom event types |
-///
-/// ## Important Naming Convention
-///
-/// For the shorthand patterns to work:
-/// - Message events must have variants ending in `Msg` (e.g., `PingMsg`, `PongMsg`)
-/// - Control events must have variants ending in `Ctrl` (e.g., `StopCtrl`, `ResetCtrl`)
-///
-/// **Common Pitfall**: If your event enum uses `PingMessage` instead of `PingMsg`,
-/// the shorthand won't work. Either rename your variant or use the full path syntax.
-#[proc_macro]
-pub fn transitions(input: TokenStream) -> TokenStream {
-    transitions::transitions_inner(input, false)
-}
-
-/// Build a `&'static [StateRule<S>]` from root-level transition rule arms.
-///
-/// Root rules use the same `StateRule<S>` type as state-level rules —
-/// `root_transitions()` returns `&'static [StateRule<Self>]`. There is no
-/// separate `RootRule` type; both macros generate identical `StateRule` items.
-///
-/// This proc-macro version automatically extracts the `event_tag` from
-/// each arm's pattern, enabling the engine to skip non-matching rules
-/// without a function pointer call.
-#[proc_macro]
-pub fn root_transitions(input: TokenStream) -> TokenStream {
-    transitions::transitions_inner(input, true)
 }
 
 // ── #[delegatable] attribute ────────────────────────────────────────────────

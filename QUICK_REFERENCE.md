@@ -170,14 +170,18 @@ fn cancel_timeout<R: BloxRuntime>(ctx: &mut MyCtx<R>, timer_id: TimerId) {
 
 ### Handling Timer Expiration
 
-```rust
-transitions! {
-    // Match the timer message by ID
-    MyMsg::Timeout { id } if *id == expected_id => {
-        actions: handle_timeout,
-        guard: |ctx, results, event| Guard::Transition(LeafState::new(State::TimedOut)),
-    }
-}
+```toml
+# In blox.toml — declare a transition that matches the timer message by ID.
+# The codegen emits a `matches` closure that filters on the timer id; the
+# guard inspects context to decide the next state.
+[[topology.transitions]]
+state = "Active"
+event = "MyMsg::Timeout { id }"
+actions = ["handle_timeout"]
+guards = [
+  { condition = "*id == ctx.expected_id", target = "TimedOut" },
+  { condition = "_", target = "stay" },
+]
 ```
 
 ### Spawn a Child Actor
@@ -251,25 +255,41 @@ This means supervisors can safely send `Start` multiple times without state corr
 | `#[delegates(Trait)]` | Delegates trait impl to field | Binary injects behavior |
 | `#[ctor]` | Marks for constructor injection | Custom initialization |
 
-### `transitions!` Syntax
+### Declarative Transitions (`blox.toml`)
 
-```rust
-transitions![
-    EventPattern => {
-        actions [action_fn1, action_fn2]  // Called in order, results in ActionResults
-        guard(ctx, results) {
-            condition1 => NextState1,
-            condition2 => NextState2,
-            _ => stay,  // or `Transition(CurrentState::Leaf)`
-        }
-    },
-    // Multiple patterns for same state:
-    EventPattern1 | EventPattern2 => {
-        actions [...]
-        guard(ctx, results) { ... }
-    },
-],
+Transition rules are declared in `blox.toml` under `[[topology.transitions]]`. The codegen (`bloxide-codegen`) emits raw `StateRule { event_tag, matches, actions, guard }` struct literals from these entries — no proc macro is involved.
+
+```toml
+# One [[topology.transitions]] entry per transition rule.
+# `state`     — which state's handler table owns this rule.
+# `event`     — event pattern, e.g. "PingPongMsg::Ping(_)" or "MyMsg::A(_) | MyMsg::B(_)".
+# `target`    — fallback target when no guard matches: a state name, "stay", "reset", or "fail".
+# `actions`   — ordered list of action fn paths (called in order, results collected into ActionResults).
+# `guards`    — optional list of { condition, target } pairs; evaluated in order; first match wins.
+#               `target` is the same vocabulary as the top-level `target` field.
+# `feature`   — optional feature gate; the rule is emitted only under #[cfg(feature = "...")].
+
+[[topology.transitions]]
+state = "Active"
+event = "PingPongMsg::Pong(_)"
+actions = ["log_pong_received", "forward_ping"]
+guards = [
+  { condition = "results.any_failed()", target = "Error" },
+  { condition = "ctx.round() >= MAX_ROUNDS", target = "Done" },
+  { condition = "ctx.round() == PAUSE_AT_ROUND", target = "Paused" },
+  { condition = "_", target = "Active" },  # default / self-transition
+]
+
+# Multiple patterns for the same state are expressed as separate
+# [[topology.transitions]] entries with the same `state`.
 ```
+
+**Event pattern classification** (handled by the codegen, not the user):
+- `Enum::Variant(...)` → full-event match closure
+- `*Msg` suffix (e.g. `PingPongMsg::Ping(_)`) → `msg_payload()` closure
+- `*Ctrl` suffix (e.g. `WorkerCtrl::AddPeer(_)`) → `ctrl_payload()` closure
+
+**Target vocabulary**: `"StateName"` → `Guard::Transition(LeafState::new(...))`; `"stay"` → `Guard::Stay`; `"reset"` → `Guard::Reset`; `"fail"` → `Guard::Fail`.
 
 ---
 

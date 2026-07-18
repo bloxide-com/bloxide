@@ -18,8 +18,6 @@ message = "WorkerMsg"
 message_path = "pool_messages::WorkerMsg"
 
 [topology]
-# Legacy: hand-written StateFns constants in actions.rs
-handler_fns = ["WAITING_FNS", "DONE_FNS"]
 
 [[topology.states]]
 name = "Waiting"
@@ -67,7 +65,7 @@ name = "behavior"
 ty = "B"
 delegates = ["HasWorkerPeers<R>", "HasCurrentTask"]
 
-# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+# --- Declarative transitions ---
 
 # Waiting: entry logs; handles ctrl (AddPeer/RemovePeer), DoWork → Done, PeerResult stays
 [[topology.entry]]

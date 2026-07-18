@@ -27,7 +27,7 @@ Output goes to `./bloxide-viz-output/` by default (or `[output-dir]` if provided
 2. **Parses** `src/spec.rs` with `syn` to extract:
    - State topology (variants, composite/parent attributes)
    - `StateFns` constants (on_entry, on_exit, transitions)
-   - `transitions!` macro invocations
+   - `[[topology.transitions]]` entries (parsed from `blox.toml`)
 3. **Reads** `src/events.rs` for event/message definitions and `src/ctx.rs` for context fields.
 4. **Writes** a JSON file per blox.
 
@@ -37,6 +37,6 @@ Open the [bloxide-visualizer](../bloxide-visualizer/) in a browser, click **Impo
 
 ## Known Limitations
 
-- Actions inside `transitions!` blocks are parsed heuristically; complex guard chains may not fully resolve to their correct targets.
+- Actions inside `[[topology.transitions]]` blocks are parsed heuristically; complex guard chains may not fully resolve to their correct targets.
 - Messages from external `*-messages` crates are referenced but not deeply parsed yet.
 - Action functions from `*-actions` crates are not yet extracted.

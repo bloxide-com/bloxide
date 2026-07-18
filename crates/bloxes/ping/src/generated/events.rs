@@ -49,9 +49,7 @@ impl PingEvent {
         }
     }
     /// Returns the message payload if this event matches this variant.
-    pub fn msg_payload(
-        &self,
-    ) -> ::core::option::Option<&ping_pong_messages::PingPongMsg> {
+    pub fn msg_payload(&self) -> ::core::option::Option<&ping_pong_messages::PingPongMsg> {
         match self {
             PingEvent::Msg(ref e) => ::core::option::Option::Some(&e.1),
             _ => ::core::option::Option::None,

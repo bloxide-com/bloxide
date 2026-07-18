@@ -86,56 +86,72 @@ parent = "Operating"
 
 Run `cargo blox generate` to produce `src/generated/topology.rs`, then use `pub use crate::generated::topology::PingState;`.
 
-### `transitions!` — Transition Rules
+### `[[topology.transitions]]` — Transition Rules
 
-```rust
-transitions![
-    // Message pattern → actions + guard
-    PingPongMsg::Pong(pong) => {
-        actions [Self::log_pong, Self::forward_ping]
-        guard(ctx, results) {
-            results.any_failed()    => PingState::Error,
-            ctx.round() >= MAX      => PingState::Done,
-            _                       => stay,
-        }
-    },
-    
-    // Multiple patterns
-    WorkerCtrl::AddPeer(_) | WorkerCtrl::RemovePeer(_) => {
-        actions [Self::handle_ctrl]
-        stay
-    },
-    
-    // Simple transition
-    PoolMsg::SpawnWorker(_) => {
-        actions [Self::spawn_worker]
-        transition PoolState::Active
-    },
-    
-    // Guard only
-    CounterMsg::Tick(_) => {
-        actions [Self::count_tick]
-        guard(ctx, _results) {
-            ctx.count() >= MAX => CounterState::Done,
-            _                  => stay,
-        }
-    },
-]
+Declare transition rules in `blox.toml`. The codegen emits `StateRule` struct literals from these entries:
+
+```toml
+# Message pattern → actions + guard
+[[topology.transitions]]
+pattern = "PingPongMsg::Pong(pong)"
+actions = ["log_pong", "forward_ping"]
+
+  [[topology.transitions.guards]]
+  condition = "results.any_failed()"
+  to = "Error"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round() >= MAX"
+  to = "Done"
+
+  [[topology.transitions.guards]]
+  to = "stay"
+
+# Multiple patterns — one entry per pattern
+[[topology.transitions]]
+pattern = "WorkerCtrl::AddPeer(_)"
+actions = ["handle_ctrl"]
+to = "stay"
+
+[[topology.transitions]]
+pattern = "WorkerCtrl::RemovePeer(_)"
+actions = ["handle_ctrl"]
+to = "stay"
+
+# Simple transition
+[[topology.transitions]]
+pattern = "PoolMsg::SpawnWorker(_)"
+actions = ["spawn_worker"]
+to = "Active"
+
+# Guard only
+[[topology.transitions]]
+pattern = "CounterMsg::Tick(_)"
+actions = ["count_tick"]
+
+  [[topology.transitions.guards]]
+  condition = "ctx.count() >= MAX"
+  to = "Done"
+
+  [[topology.transitions.guards]]
+  to = "stay"
 ```
 
-**Body options:**
-- `transition State` — change state
-- `stay` — absorb event, keep state
-- `reset` — exit to Init
-- `guard(ctx, results) { ... }` — conditional decision
+**Target options:**
+- `to = "StateName"` — change state
+- `to = "stay"` — absorb event, keep state
+- `to = "reset"` — exit to Init
+- `[[topology.transitions.guards]]` — conditional decision (each guard has `condition` and `to`; the final guard without a `condition` is the fallback)
 
 ## StateFns Structure
+
+The codegen emits `StateFns` constants from the TOML entries:
 
 ```rust
 const ACTIVE_FNS: StateFns<Self> = StateFns {
     on_entry: &[increment_round, send_ping],  // fn(&mut Ctx)
     on_exit: &[cancel_timer],                  // fn(&mut Ctx)
-    transitions: transitions![...],            // &'static [StateRule<Self>]
+    transitions: &[StateRule { ... }, ...],    // &'static [StateRule<Self>]
 };
 ```
 

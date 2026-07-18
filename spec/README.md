@@ -37,7 +37,7 @@ spec/
     03-actor-messaging.md            ← ActorRef, Envelope, message flow, rules
     04-static-wiring.md              ← initialization order, channels!/actor_task! macros
     05-handler-patterns.md           ← TransitionRule patterns and topology patterns
-    06-actions.md                    ← actions composition model, bloxide-log crate, transitions! macro
+    06-actions.md                    ← actions composition model, bloxide-log crate, declarative transitions
     07-typed-mailboxes.md            ← Mailboxes trait, priority ordering
     08-supervision.md                ← lifecycle messages, ChildPolicy, GroupShutdown, SupervisedRunLoop
     09-application.md                ← wiring patterns, prelude imports, setup() example

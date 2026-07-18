@@ -21,7 +21,7 @@ A context trait is a contract about *what data a context has*. An action functio
 
 ```
 bloxide-core          ← engine (required by all bloxes)
-  HasSelfId, ActorId, ActorRef, BloxRuntime, MachineSpec, StateFns, transitions!
+  HasSelfId, ActorId, ActorRef, BloxRuntime, MachineSpec, StateFns, StateRule
 
 service crates        ← infrastructure capabilities (optional)
   bloxide-messaging   ← HasSelfRef<R, M>, HasPeerRef<R, M>
@@ -51,7 +51,7 @@ Only what *every* blox needs, no exceptions:
 - `HasSelfId` + `self_id: ActorId` field pattern
 - `ActorId`, `ActorRef`, `BloxRuntime`
 - `MachineSpec`, `StateFns`, `StateTopology`
-- `transitions!` macro
+- `StateRule`, `TransitionRule` (transition rules are declared in `blox.toml` via `[[topology.transitions]]` and emitted by `bloxide-codegen`)
 - `ActionResult`, `StateRule`
 
 ### Service-level crates

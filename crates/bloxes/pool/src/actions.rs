@@ -1,14 +1,11 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Pool action functions and state handler tables.
+//! Pool action functions.
 use blox_ctx_workers::HasWorkers;
-use bloxide_core::{
-    capability::BloxRuntime, spec::StateFns, transition::ActionResult, transitions, HasSelfId,
-};
+use bloxide_core::{capability::BloxRuntime, transition::ActionResult, HasSelfId};
 use pool_actions::actions::introduce_new_worker;
 use pool_messages::{AppSpawnRequest, DoWork, PoolMsg, SpawnWorker, WorkerMsg};
 
-pub use crate::generated::topology::PoolState;
-use crate::{PoolCtx, PoolEvent, PoolSpec};
+use crate::{PoolCtx, PoolEvent};
 
 /// Handle a SpawnWorker request: send an AppSpawnRequest to the supervisor
 /// and transition to the Spawning state.
@@ -19,6 +16,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
     if let Some(PoolMsg::SpawnWorker(SpawnWorker { task_id })) = ev.msg_payload() {
         bloxide_log::blox_log_info!(ctx.self_id(), "spawning worker for task_id={}", task_id);
         ctx.pending_task_id = *task_id;
+        ctx.spawn_in_flight = true;
         let req = AppSpawnRequest::Worker {
             task_id: *task_id,
             reply_to: ctx.spawn_reply_ref.clone(),
@@ -30,18 +28,39 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
                 "spawn mailbox full, dropping task_id={}",
                 task_id
             );
+            ctx.spawn_in_flight = false;
         }
     }
     ActionResult::Ok
 }
 
+/// Buffer a SpawnWorker request while already in Spawning state.
+/// The task_id is queued and will be processed after the current spawn reply arrives.
+pub fn handle_spawn_worker_queued<R: BloxRuntime>(
+    ctx: &mut PoolCtx<R>,
+    ev: &PoolEvent<R>,
+) -> ActionResult {
+    if let Some(PoolMsg::SpawnWorker(SpawnWorker { task_id })) = ev.msg_payload() {
+        bloxide_log::blox_log_debug!(
+            ctx.self_id(),
+            "queuing spawn request for task_id={} (already spawning)",
+            task_id
+        );
+        ctx.spawn_queue.push(*task_id);
+    }
+    ActionResult::Ok
+}
+
 /// Handle a SpawnedWorker reply: store the worker refs, introduce peers,
-/// send DoWork, and transition to Active.
+/// send DoWork, and transition to Active (or back to Spawning if queue is non-empty).
 pub fn handle_spawned_worker<R: BloxRuntime>(
     ctx: &mut PoolCtx<R>,
     ev: &PoolEvent<R>,
 ) -> ActionResult {
     if let Some(spawned) = ev.spawn_reply_payload() {
+        // Spawn reply received — clear the in-flight flag.
+        ctx.spawn_in_flight = false;
+
         let task_id = ctx.pending_task_id;
         bloxide_log::blox_log_info!(
             ctx.self_id(),
@@ -67,6 +86,31 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
             );
             if ctx.pending() > 0 {
                 ctx.set_pending(ctx.pending() - 1);
+            }
+        }
+
+        // If there are queued spawn requests, start the next one immediately (FIFO).
+        if !ctx.spawn_queue.is_empty() {
+            let next_task_id = ctx.spawn_queue.remove(0);
+            bloxide_log::blox_log_info!(
+                ctx.self_id(),
+                "processing queued spawn for task_id={}",
+                next_task_id
+            );
+            ctx.pending_task_id = next_task_id;
+            ctx.spawn_in_flight = true;
+            let req = AppSpawnRequest::Worker {
+                task_id: next_task_id,
+                reply_to: ctx.spawn_reply_ref.clone(),
+            };
+            let self_id = ctx.self_id();
+            if ctx.spawn_ref.try_send(self_id, req).is_err() {
+                bloxide_log::blox_log_warn!(
+                    self_id,
+                    "spawn mailbox full, dropping queued task_id={}",
+                    next_task_id
+                );
+                ctx.spawn_in_flight = false;
             }
         }
     }
@@ -95,55 +139,4 @@ pub fn log_all_done<R: BloxRuntime>(ctx: &mut PoolCtx<R>) {
         "all {} workers done",
         ctx.worker_refs().len()
     );
-}
-
-impl<R> PoolSpec<R>
-where
-    R: BloxRuntime,
-{
-    pub(crate) const IDLE_FNS: StateFns<Self> = StateFns {
-        on_entry: &[],
-        on_exit: &[],
-        transitions: transitions![
-            PoolMsg::SpawnWorker(_) => {
-                actions [handle_spawn_worker]
-                transition PoolState::Spawning
-            },
-        ],
-    };
-
-    pub(crate) const SPAWNING_FNS: StateFns<Self> = StateFns {
-        on_entry: &[],
-        on_exit: &[],
-        transitions: transitions![
-            PoolEvent::<R>::SpawnReply(_) => {
-                actions [handle_spawned_worker]
-                transition PoolState::Active
-            },
-        ],
-    };
-
-    pub(crate) const ACTIVE_FNS: StateFns<Self> = StateFns {
-        on_entry: &[],
-        on_exit: &[],
-        transitions: transitions![
-            PoolMsg::SpawnWorker(_) => {
-                actions [handle_spawn_worker]
-                transition PoolState::Spawning
-            },
-            PoolMsg::WorkDone(_done) => {
-                actions [handle_work_done]
-                guard(ctx, _results) {
-                    ctx.pending() == 0 => PoolState::AllDone,
-                    _ => stay,
-                }
-            },
-        ],
-    };
-
-    pub(crate) const ALL_DONE_FNS: StateFns<Self> = StateFns {
-        on_entry: &[log_all_done],
-        on_exit: &[],
-        transitions: &[],
-    };
 }

@@ -1,23 +1,20 @@
 // Copyright 2025 Bloxide, all rights reserved
-/// Convenience re-exports for blox authors using the bloxide-codegen workflow.
-///
-/// Covers the types needed to implement a `MachineSpec` with `#[derive(BloxCtx)]`,
-/// `blox.toml`-generated state topology and events, and `transitions!`.
+//! Convenience re-exports for blox authors using the bloxide-codegen workflow.
+//!
+//! Covers the types needed to implement a `MachineSpec` with `#[derive(BloxCtx)]`,
+//! `blox.toml`-generated state topology and events.
 /// Import with `use bloxide_core::prelude::*;`.
 pub use crate::{
     // Engine types (StateMachine for tests, DispatchOutcome for assertions)
     engine::{DispatchOutcome, StateMachine},
     // Mailbox types
     mailboxes::{Mailboxes, NoMailboxes},
-    root_transitions,
     // Spec trait + handler table entry type
     spec::{MachineSpec, StateFns},
     // Topology types (StateTopology for path queries; LeafState for manual rules)
     topology::{LeafState, StateTopology},
-    // Transition types (needed by transitions! macro output + action functions)
+    // Transition types (needed by action functions + StateRule literals)
     transition::{ActionFn, ActionResult, Guard, StateRule},
-    // Declarative transition macros
-    transitions,
     // Identity and messaging
     ActorId,
     ActorRef,

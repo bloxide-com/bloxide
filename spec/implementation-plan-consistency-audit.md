@@ -130,7 +130,7 @@ bloxide/
   crates/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
-    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], transitions!, #[blox_event], etc.
+    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[blox_event], etc. (transition rules now declarative `[[topology.transitions]]` in blox.toml)
     bloxide-spawn/             ← dynamic actor support: SpawnCap, DynamicChannelCap (no_std)
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
@@ -236,12 +236,14 @@ Find the section documenting field annotations. Add:
 
 ---
 
-### 2.2 Document `transitions!` Pattern Classification Rules
+### 2.2 Document Pattern Classification Rules
 
-**File**: `crates/bloxide-macros/src/lib.rs`
-**Lines**: In the `transitions!` macro documentation section
+> **Note:** Transition rules are declared declaratively in `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen` emits raw `StateRule { ... }` struct literals. The pattern-classification rules below describe the matching logic that now lives in the codegen.
 
-**Action**: Add the following section to the `transitions!` macro documentation:
+**File**: `crates/bloxide-codegen/src/...`
+**Lines**: In the codegen pattern-matching documentation
+
+**Action**: Add the following section to the codegen pattern-matching documentation:
 
 ```rust
 /// # Pattern Classification Rules
@@ -491,14 +493,14 @@ fn cancel_timeout<R: BloxRuntime>(ctx: &mut MyCtx<R>, timer_id: TimerId) {
 
 ### Handling Timer Expiration
 
-```rust
-transitions! {
-    // Match the timer message by ID
-    MyMsg::Timeout { id } if *id == expected_id => {
-        actions: handle_timeout,
-        guard: |ctx, results, event| Guard::Transition(LeafState::new(State::TimedOut)),
-    }
-}
+```toml
+# In blox.toml — match the timer message by ID
+[[topology.transitions]]
+pattern = "MyMsg::Timeout { id } if *id == expected_id"
+actions = ["handle_timeout"]
+
+  [[topology.transitions.guards]]
+  to = "TimedOut"
 ```
 ```
 

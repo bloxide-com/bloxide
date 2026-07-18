@@ -4,6 +4,17 @@
 > handlers, transition rules, or state topologies for a blox. For the
 > dispatch algorithm and lifecycle handling, see `02-hsm-engine.md`.
 
+> ⚠️ **Syntax Update (Phase 4, July 2026):** Transition rules are
+> declared declaratively in `blox.toml` via `[[topology.transitions]]`,
+> and `bloxide-codegen` emits raw `StateRule { ... }` struct literals
+> from those entries. The **PATTERNS** described here (guards, reset,
+> stay, transition targets, action-then-guard ordering) are unchanged —
+> only the *syntax* moved from a Rust proc-macro to TOML. The code
+> blocks below show the TOML syntax for each pattern. See
+> `spec/architecture/20-blox-toml-source-of-truth.md` for the current
+> TOML schema and `QUICK_REFERENCE.md` → "Declarative Transitions
+> (blox.toml)" for a worked example.
+
 This document defines named, reusable patterns for event handler rules and blox state topologies. When building a blox, refer to these patterns by name in your spec and implementation. AI agents should use these patterns as the canonical vocabulary for describing blox behavior.
 
 ---
@@ -35,10 +46,10 @@ These patterns describe a single `TransitionRule` within a state's `transitions`
 
 No side effects. The event itself is the complete signal.
 
-```rust
-transitions![
-    MyEvent::Foo(_) => { transition MyState::Bar }
-]
+```toml
+[[topology.transitions]]
+pattern = "MyEvent::Foo(_)"
+to = "Bar"
 ```
 
 Use when: the event variant alone determines the next state, with no context inspection needed.
@@ -51,10 +62,10 @@ Use when: the event variant alone determines the next state, with no context ins
 
 Match and absorb the event. Prevents bubbling to the parent state.
 
-```rust
-transitions![
-    MyEvent::Foo(_) => stay,
-]
+```toml
+[[topology.transitions]]
+pattern = "MyEvent::Foo(_)"
+to = "stay"
 ```
 
 Use when: a parent composite state should silence an event that a child state doesn't handle.
@@ -67,13 +78,11 @@ Use when: a parent composite state should silence an event that a child state do
 
 Side effects with no state change. The event is handled locally.
 
-```rust
-transitions![
-    PingPongMsg::Ping(ping) => {
-        actions [Self::reply_pong_action]
-        stay
-    },
-]
+```toml
+[[topology.transitions]]
+pattern = "PingPongMsg::Ping(ping)"
+actions = ["reply_pong_action"]
+to = "stay"
 ```
 
 Use when: an event triggers side effects but no state change (e.g., fire-and-forget response).
@@ -86,18 +95,25 @@ Use when: an event triggers side effects but no state change (e.g., fire-and-for
 
 Side effects followed by a conditional transition. The most common pattern.
 
-```rust
-transitions![
-    PingPongMsg::Pong(pong) => {
-        actions [Self::log_pong_received, Self::forward_ping]
-        guard(ctx, results) {
-            results.any_failed()                          => PingState::Error,
-            ctx.round() >= B::Round::from(MAX_ROUNDS)     => PingState::Done,
-            ctx.round() == B::Round::from(PAUSE_AT_ROUND) => PingState::Paused,
-            _                                             => PingState::Active,
-        }
-    },
-]
+```toml
+[[topology.transitions]]
+pattern = "PingPongMsg::Pong(pong)"
+actions = ["log_pong_received", "forward_ping"]
+
+  [[topology.transitions.guards]]
+  condition = "results.any_failed()"
+  to = "Error"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round() >= B::Round::from(MAX_ROUNDS)"
+  to = "Done"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round() == B::Round::from(PAUSE_AT_ROUND)"
+  to = "Paused"
+
+  [[topology.transitions.guards]]
+  to = "Active"
 ```
 
 Use when: context is updated or messages are sent, and the resulting context (or action results) determines the next state.
@@ -110,15 +126,16 @@ Use when: context is updated or messages are sent, and the resulting context (or
 
 No side effects. The guard reads context to decide the transition.
 
-```rust
-transitions![
-    MyEvent::Tick(_) => {
-        guard(ctx, _results) {
-            ctx.deadline_elapsed => MyState::Timeout,
-            _                    => stay,
-        }
-    },
-]
+```toml
+[[topology.transitions]]
+pattern = "MyEvent::Tick(_)"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.deadline_elapsed"
+  to = "Timeout"
+
+  [[topology.transitions.guards]]
+  to = "stay"
 ```
 
 Use when: context state (not the event) determines the transition, and the event is merely a trigger.
@@ -160,25 +177,27 @@ fn root_transitions() -> &'static [StateRule<Self>] { &[] }
 
 Since `Guard::Reset` is available in any transition rule, actors can self-terminate directly from a state handler without root rules. When a guard returns `Reset`, the engine fires `on_exit` for every state from the current leaf up to the topmost ancestor (full LCA exit chain), then calls `on_init_entry`. This is the same code path used by `DispatchOutcome::Reset`.
 
-```rust
-// Supervisor's ShuttingDown state: reset when all children have shut down
-const SHUTTING_DOWN_FNS: StateFns<Self> = StateFns {
-    on_entry: &[stop_all_children::<R, SupervisorCtx<R>>],
-    on_exit: &[],
-    transitions: transitions![
-        SupervisorEvent::Child(ChildLifecycleEvent::Reset { .. }) => {
-            actions [record_child_reset::<R, Self>]
-            guard(ctx, _results) {
-                ctx.all_children_reset() => reset,
-                _                        => stay,
-            }
-        },
-        SupervisorEvent::Child(_) => stay,
-    ],
-};
+```toml
+# Supervisor's ShuttingDown state: reset when all children have shut down
+[[topology.transitions]]
+state = "ShuttingDown"
+pattern = "SupervisorEvent::Child(ChildLifecycleEvent::Reset { .. })"
+actions = ["record_child_reset"]
+
+  [[topology.transitions.guards]]
+  condition = "ctx.all_children_reset()"
+  to = "reset"
+
+  [[topology.transitions.guards]]
+  to = "stay"
+
+[[topology.transitions]]
+state = "ShuttingDown"
+pattern = "SupervisorEvent::Child(_)"
+to = "stay"
 ```
 
-The `reset` keyword in `transitions!` produces `Guard::Reset`. The full exit chain is guaranteed: `ShuttingDown::on_exit` fires, then `on_init_entry`. The runtime observes `DispatchOutcome::Reset` and emits `ChildLifecycleEvent::Reset` to the parent supervisor (if any).
+The `reset` target in a `[[topology.transitions]]` entry produces `Guard::Reset`. The full exit chain is guaranteed: `ShuttingDown::on_exit` fires, then `on_init_entry`. The runtime observes `DispatchOutcome::Reset` and emits `ChildLifecycleEvent::Reset` to the parent supervisor (if any).
 
 ---
 
@@ -273,81 +292,86 @@ trigger the reset code path when the supervisor is ready.
 
 Self-transition with a counter guard. The `Active` state increments a counter in `on_entry` (since entry fires on every self-transition). The rule guards on the counter.
 
-```rust
-// State on_entry increments ctx.attempts (via action crate function)
-const ACTIVE_FNS: StateFns<Self> = StateFns {
-    on_entry: &[increment_attempts, send_request],
-    on_exit: &[],
-    transitions: transitions![
-        MyMsg::Timeout(_) => {
-            guard(ctx, _results) {
-                ctx.attempts >= MAX_ATTEMPTS => MyState::Failed,
-                _                            => MyState::Active,  // self-transition
-            }
-        },
-    ],
-};
+```toml
+# State on_entry increments ctx.attempts (via action crate function)
+[[topology.transitions]]
+state = "Active"
+pattern = "MyMsg::Timeout(_)"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.attempts >= MAX_ATTEMPTS"
+  to = "Failed"
+
+  [[topology.transitions.guards]]
+  to = "Active"  # self-transition
 ```
 
 Use when: the blox retries an operation a fixed number of times before giving up.
 
 ---
 
-## Macro Quick Reference
+## Declarative Transition Syntax (blox.toml)
 
-The `transitions!` and `root_transitions!` proc macros provide concise syntax. Both support the `reset` keyword, which produces `Guard::Reset`:
+The patterns above are expressed in `blox.toml` as `[[topology.transitions]]` entries. The codegen emits `StateRule` struct literals directly — no proc macro is involved. Both state-level and root-level rules support the `reset` target, which produces `Guard::Reset`:
 
-```rust
-// Pure Transition
-transitions![MyEvent::Foo(_) => { transition MyState::Bar }]
+```toml
+# Pure Transition
+[[topology.transitions]]
+pattern = "MyEvent::Foo(_)"
+to = "Bar"
 
-// Sink (Absorb)
-transitions![MyEvent::Foo(_) => stay,]
+# Sink (Absorb)
+[[topology.transitions]]
+pattern = "MyEvent::Foo(_)"
+to = "stay"
 
-// Action-Then-Stay
-transitions![
-    MyMsg::Ping(ping) => {
-        actions [Self::reply_pong_action]
-        stay
-    },
-]
+# Action-Then-Stay
+[[topology.transitions]]
+pattern = "MyMsg::Ping(ping)"
+actions = ["reply_pong_action"]
+to = "stay"
 
-// Action-Then-Guard
-transitions![
-    MyMsg::Pong(pong) => {
-        actions [Self::log_pong, Self::forward_ping]
-        guard(ctx, results) {
-            results.any_failed() => MyState::Error,
-            ctx.round() >= MAX   => MyState::Done,
-            _                    => MyState::Active,
-        }
-    },
-]
+# Action-Then-Guard
+[[topology.transitions]]
+pattern = "MyMsg::Pong(pong)"
+actions = ["log_pong", "forward_ping"]
 
-// Reset (self-terminate) — available in both transitions! and root_transitions!
-transitions![
-    MyEvent::Shutdown(_) => reset,
-]
+  [[topology.transitions.guards]]
+  condition = "results.any_failed()"
+  to = "Error"
 
-// Action-Then-Reset-Guard
-transitions![
-    MyEvent::ChildDone(_) => {
-        actions [Self::record_child_done]
-        guard(ctx, _results) {
-            ctx.all_done() => reset,
-            _              => stay,
-        }
-    },
-]
+  [[topology.transitions.guards]]
+  condition = "ctx.round() >= MAX"
+  to = "Done"
+
+  [[topology.transitions.guards]]
+  to = "Active"
+
+# Reset (self-terminate) — available in both state-scope and root-scope rules
+[[topology.transitions]]
+pattern = "MyEvent::Shutdown(_)"
+to = "reset"
+
+# Action-Then-Reset-Guard
+[[topology.transitions]]
+pattern = "MyEvent::ChildDone(_)"
+actions = ["record_child_done"]
+
+  [[topology.transitions.guards]]
+  condition = "ctx.all_done()"
+  to = "reset"
+
+  [[topology.transitions.guards]]
+  to = "stay"
 ```
 
-In `guard(ctx, results) { }` blocks, `ctx` is `&Ctx` (read-only — no mutation possible).
-In `actions [fn1, fn2]` slices, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.
-The `reset` outcome triggers the full LCA exit chain (leaf → root) followed by `on_init_entry`.
+In `guards = [{ condition = "...", target = "..." }]` entries, the condition expression sees `ctx` as `&Ctx` (read-only — no mutation possible) and `results` as `&ActionResults`.
+In `actions = ["fn1", "fn2"]` lists, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.
+The `reset` target triggers the full LCA exit chain (leaf → root) followed by `on_init_entry`.
 
 ## Related Docs
 
 - **Action functions** → `spec/architecture/06-actions.md`
-- **transitions! macro syntax** → `skills/building-with-bloxide/reference.md`
+- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/20-blox-toml-source-of-truth.md`
 - **Dispatch algorithm and lifecycle** → `spec/architecture/02-hsm-engine.md`
 - **Examples in practice** → `spec/bloxes/ping.md`, `spec/bloxes/pong.md`

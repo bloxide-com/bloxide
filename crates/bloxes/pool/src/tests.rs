@@ -285,4 +285,147 @@ mod pool_tests {
             "worker ref should still be stored even though DoWork was dropped"
         );
     }
+
+    // ── Spawn queue tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn spawn_worker_while_spawning_is_queued() {
+        let mut h = PoolHarness::new();
+        h.start();
+
+        // First SpawnWorker → Spawning
+        h.dispatch_spawn_worker(0);
+        assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
+
+        // Additional SpawnWorkers while in Spawning should be queued (stay in Spawning)
+        h.dispatch_spawn_worker(1);
+        h.dispatch_spawn_worker(2);
+        assert_eq!(
+            h.current_state(),
+            MachineState::State(PoolState::Spawning),
+            "pool should stay in Spawning when buffering additional spawn requests"
+        );
+        assert_eq!(
+            h.machine.ctx().spawn_queue.len(),
+            2,
+            "two spawn requests should be queued"
+        );
+    }
+
+    #[test]
+    fn queued_spawns_are_processed_after_spawn_reply() {
+        let mut h = PoolHarness::new();
+        h.start();
+
+        // Send 3 SpawnWorker requests: first transitions to Spawning, other 2 are queued
+        h.dispatch_spawn_worker(0);
+        h.dispatch_spawn_worker(1);
+        h.dispatch_spawn_worker(2);
+        assert_eq!(h.machine.ctx().spawn_queue.len(), 2);
+
+        // First SpawnReply (for task_id=0): pops queued task_id=1, stays in Spawning
+        let (dr1, cr1) = dummy_worker_refs(1);
+        h.dispatch_spawned_worker(1, dr1, cr1);
+        assert_eq!(
+            h.current_state(),
+            MachineState::State(PoolState::Spawning),
+            "should stay in Spawning because queue still has task_id=2"
+        );
+        assert_eq!(h.machine.ctx().spawn_queue.len(), 1);
+        assert_eq!(h.pending(), 1);
+
+        // Second SpawnReply (for task_id=1): pops queued task_id=2, stays in Spawning
+        let (dr2, cr2) = dummy_worker_refs(2);
+        h.dispatch_spawned_worker(2, dr2, cr2);
+        assert_eq!(
+            h.current_state(),
+            MachineState::State(PoolState::Spawning),
+            "should stay in Spawning because task_id=2 spawn is in-flight"
+        );
+        assert_eq!(h.machine.ctx().spawn_queue.len(), 0);
+        assert_eq!(h.pending(), 2);
+
+        // Third SpawnReply (for task_id=2): queue empty, no in-flight spawn → Active
+        let (dr3, cr3) = dummy_worker_refs(3);
+        h.dispatch_spawned_worker(3, dr3, cr3);
+        assert_eq!(
+            h.current_state(),
+            MachineState::State(PoolState::Active),
+            "should transition to Active after all queued spawns are processed"
+        );
+        assert_eq!(h.machine.ctx().spawn_queue.len(), 0);
+        assert_eq!(h.pending(), 3);
+    }
+
+    #[test]
+    fn work_done_in_spawning_state_stays_in_spawning() {
+        let mut h = PoolHarness::new();
+        h.start();
+
+        // Spawn 2 workers: first goes to Spawning, second is queued
+        h.dispatch_spawn_worker(0);
+        h.dispatch_spawn_worker(1);
+
+        // First worker is spawned
+        let (dr1, cr1) = dummy_worker_refs(1);
+        h.dispatch_spawned_worker(1, dr1, cr1);
+        assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
+        assert_eq!(h.pending(), 1);
+
+        // First worker finishes while pool is still Spawning (second spawn in-flight)
+        h.dispatch_work_done(1, 0, 0);
+        assert_eq!(
+            h.current_state(),
+            MachineState::State(PoolState::Spawning),
+            "WorkDone in Spawning should stay in Spawning"
+        );
+        assert_eq!(h.pending(), 0);
+    }
+
+    #[test]
+    fn full_three_worker_flow_with_queue() {
+        let mut h = PoolHarness::new();
+        h.start();
+
+        // Send all 3 SpawnWorker messages at once
+        h.dispatch_spawn_worker(0);
+        h.dispatch_spawn_worker(1);
+        h.dispatch_spawn_worker(2);
+        assert_eq!(h.machine.ctx().spawn_queue.len(), 2);
+
+        // Worker 1 spawned (for task_id=0), queued task_id=1 starts
+        let (dr1, cr1) = dummy_worker_refs(1);
+        h.dispatch_spawned_worker(1, dr1, cr1);
+        assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
+        assert_eq!(h.pending(), 1);
+
+        // Worker 1 finishes while Spawning
+        h.dispatch_work_done(1, 0, 0);
+        assert_eq!(h.pending(), 0);
+
+        // Worker 2 spawned (for task_id=1), queued task_id=2 starts
+        let (dr2, cr2) = dummy_worker_refs(2);
+        h.dispatch_spawned_worker(2, dr2, cr2);
+        assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
+        assert_eq!(h.pending(), 1);
+
+        // Worker 2 finishes while Spawning
+        h.dispatch_work_done(2, 1, 2);
+        assert_eq!(h.pending(), 0);
+
+        // Worker 3 spawned (for task_id=2), queue empty → Active
+        let (dr3, cr3) = dummy_worker_refs(3);
+        h.dispatch_spawned_worker(3, dr3, cr3);
+        assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
+        assert_eq!(h.pending(), 1);
+
+        // Worker 3 finishes → AllDone
+        h.dispatch_work_done(3, 2, 4);
+        assert_eq!(h.current_state(), MachineState::State(PoolState::AllDone));
+        assert_eq!(
+            h.machine.ctx().worker_refs.len(),
+            3,
+            "all 3 worker refs should be stored"
+        );
+    }
 }

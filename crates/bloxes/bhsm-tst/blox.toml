@@ -2,6 +2,14 @@
 [actor]
 name = "BhsmTst"
 
+[context]
+name = "BhsmTstCtx"
+generics = ""
+
+[[context.fields]]
+name = "self_id"
+ty = "ActorId"
+
 [event]
 name = "BhsmTstEvent"
 
@@ -11,9 +19,6 @@ message = "BhsmTstMsg"
 message_path = "bhsm_tst_messages::BhsmTstMsg"
 
 [topology]
-# Legacy: hand-written StateFns constants in spec.rs
-handler_fns = ["S_FNS", "S1_FNS", "S11_FNS", "S2_FNS", "S21_FNS", "S211_FNS", "ERROR_FNS", "DONE_FNS"]
-
 [[topology.states]]
 name = "S"
 composite = true
@@ -43,11 +48,13 @@ parent = "S21"
 
 [[topology.states]]
 name = "Error"
+error = true
 
 [[topology.states]]
 name = "Done"
+terminal = true
 
-# --- Declarative transitions (documentation; handler_fns takes precedence) ---
+# --- Declarative transitions ---
 
 # S: entry/exit trace, H→S11, I→stay, K→Error, X→Done
 [[topology.entry]]

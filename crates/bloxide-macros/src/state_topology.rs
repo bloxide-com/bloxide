@@ -19,36 +19,6 @@ fn has_composite_attr(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| a.path().is_ident("composite"))
 }
 
-/// Parse `#[handler_fns(FN1, FN2, ...)]` from the enum-level attributes.
-/// Returns `Some(Vec<Ident>)` if the attribute is present, `None` otherwise.
-fn parse_handler_fns_attr(attrs: &[syn::Attribute]) -> syn::Result<Option<Vec<Ident>>> {
-    for attr in attrs {
-        if attr.path().is_ident("handler_fns") {
-            let idents: syn::punctuated::Punctuated<Ident, syn::Token![,]> =
-                attr.parse_args_with(syn::punctuated::Punctuated::parse_terminated)?;
-            return Ok(Some(idents.into_iter().collect()));
-        }
-    }
-    Ok(None)
-}
-
-/// Convert an enum name like `PingState` to a snake_case macro name like `ping_state`.
-fn to_snake_case_ident(s: &str, span: Span) -> Ident {
-    let mut out = String::with_capacity(s.len() + 4);
-    let chars: Vec<char> = s.chars().collect();
-    for (i, &c) in chars.iter().enumerate() {
-        if c.is_uppercase() && i > 0 {
-            let prev_lower = chars[i - 1].is_lowercase() || chars[i - 1].is_ascii_digit();
-            let next_lower = chars.get(i + 1).is_some_and(|c| c.is_lowercase());
-            if prev_lower || (chars[i - 1].is_uppercase() && next_lower) {
-                out.push('_');
-            }
-        }
-        out.push(c.to_ascii_lowercase());
-    }
-    Ident::new(&out, span)
-}
-
 pub(crate) fn derive_state_topology_inner(input: &DeriveInput) -> syn::Result<TokenStream2> {
     let enum_name = &input.ident;
 
@@ -69,9 +39,6 @@ pub(crate) fn derive_state_topology_inner(input: &DeriveInput) -> syn::Result<To
         ));
     }
 
-    // Parse optional #[handler_fns(FN1, FN2, ...)] enum-level attribute
-    let handler_fns = parse_handler_fns_attr(&input.attrs)?;
-
     let variants = match &input.data {
         syn::Data::Enum(e) => &e.variants,
         _ => {
@@ -83,20 +50,6 @@ pub(crate) fn derive_state_topology_inner(input: &DeriveInput) -> syn::Result<To
     };
 
     let state_count = variants.len();
-
-    // Validate handler_fns length matches variant count if provided
-    if let Some(ref fns) = handler_fns {
-        if fns.len() != state_count {
-            return Err(Error::new_spanned(
-                input,
-                format!(
-                    "#[handler_fns(...)] must list exactly {} entries (one per variant), got {}",
-                    state_count,
-                    fns.len()
-                ),
-            ));
-        }
-    }
 
     // Build variant info: name, index, parent_name, is_composite
     struct VariantInfo {
@@ -304,31 +257,5 @@ pub(crate) fn derive_state_topology_inner(input: &DeriveInput) -> syn::Result<To
         }
     };
 
-    // If #[handler_fns(FN1, FN2, ...)] was provided, emit a helper macro
-    // `{snake_case_enum}_handler_table!(SpecType)` that generates the
-    // correctly-ordered HANDLER_TABLE slice.
-    //
-    // Usage in MachineSpec impl:
-    //   const HANDLER_TABLE: &'static [&'static StateFns<Self>] =
-    //       ping_state_handler_table!(Self);
-    let helper_macro = if let Some(ref fns) = handler_fns {
-        let macro_name = to_snake_case_ident(&enum_name.to_string(), Span::call_site());
-        let macro_name = Ident::new(&format!("{}_handler_table", macro_name), Span::call_site());
-        quote! {
-            #[doc(hidden)]
-            #[macro_export]
-            macro_rules! #macro_name {
-                ($ty:ty) => {
-                    &[ #( &<$ty>::#fns ),* ]
-                };
-            }
-        }
-    } else {
-        quote! {}
-    };
-
-    Ok(quote! {
-        #topology_impl
-        #helper_macro
-    })
+    Ok(topology_impl)
 }

@@ -1,5 +1,10 @@
-// Copyright 2025 Bloxide, all rights reserved
+// Copyright 2025 Bloxide, all rights reserved.
 //! Generate MachineSpec skeleton from actor, topology, context, and event config.
+//!
+//! When `context.feature` is set, emits paired `#[cfg]` variants with different
+//! generics, event types, and mailboxes types. The StateFns are generated as
+//! associated constants inside `impl` blocks using raw `StateRule { ... }` struct
+//! literals emitted directly from TOML.
 
 use quote::{format_ident, quote, ToTokens};
 
@@ -51,6 +56,193 @@ fn behavior_type_idents(context: &ContextConfig) -> Vec<syn::Ident> {
     idents
 }
 
+/// Parameters for a single variant of the spec skeleton.
+struct VariantParams {
+    /// The cfg attribute string (e.g. "not(feature = \"dynamic\")" or "feature = \"dynamic\"").
+    /// None when no feature-gating.
+    cfg_attr: Option<String>,
+    /// The spec generics for this variant (e.g. `<R: BloxRuntime>` or `<R: BloxRuntime, F: SpawnFactory<R> + 'static>`).
+    spec_generics: syn::Generics,
+    /// The ctx type for this variant (e.g. `SupervisorCtx<R>` or `SupervisorCtx<R, F>`).
+    ctx_ty: proc_macro2::TokenStream,
+    /// The event type for this variant (e.g. `SupervisorEvent<R>` or `SupervisorEvent<R, F>`).
+    event_ty: proc_macro2::TokenStream,
+    /// The mailboxes type for this variant.
+    mailboxes_ty: proc_macro2::TokenStream,
+    /// The event type params as a list of idents (e.g. `["R"]` or `["R", "F"]`).
+    event_type_params: Vec<String>,
+    /// The ctx type params as a list of idents (e.g. `["R"]` or `["R", "F"]`).
+    ctx_type_params: Vec<String>,
+    /// Feature filter: None = non-feature transitions, Some(feat) = feature transitions.
+    feature_filter: Option<String>,
+    /// Extra imports specific to this variant (raw use paths).
+    extra_imports: Vec<String>,
+}
+
+/// Replace placeholders {R}, {Ctx}, {Event} in a string with variant-specific values.
+pub(crate) fn replace_placeholders(
+    s: &str,
+    ctx_type_str: &str,
+    event_type_str: &str,
+    type_params: &[String],
+) -> String {
+    let result = s.replace("{Ctx}", ctx_type_str);
+    let result = result.replace("{Event}", event_type_str);
+    // {R} → first type param (or "R" if no type params)
+    let first_param = type_params.first().map(|s| s.as_str()).unwrap_or("R");
+    result.replace("{R}", first_param)
+}
+
+/// Generate the StateFns associated constants for a variant.
+fn generate_state_fns_impl(
+    topology: &TopologyConfig,
+    state_enum_ident: &syn::Ident,
+    spec_ident: &syn::Ident,
+    ctx_type_str: &str,
+    event_type_str: &str,
+    type_params: &[String],
+    spec_impl_generics: proc_macro2::TokenStream,
+    spec_ty_generics: proc_macro2::TokenStream,
+    spec_where_clause: Option<&syn::WhereClause>,
+    feature_filter: Option<&str>,
+) -> anyhow::Result<proc_macro2::TokenStream> {
+    use crate::schema::{EntryExitConfig, TransitionConfig};
+    use crate::topology::generate_state_rule;
+    use std::collections::HashMap;
+
+    // Build lookup maps, filtering by feature
+    let trans_by_state: HashMap<String, Vec<&TransitionConfig>> = {
+        let mut map: HashMap<String, Vec<&TransitionConfig>> = HashMap::new();
+        for t in &topology.transitions {
+            // Non-feature variant: include transitions with no `feature` attribute.
+            // Feature variant: include ALL transitions (both gated and non-gated).
+            if match feature_filter {
+                None => t.feature.is_none(),
+                Some(_) => true,
+            } {
+                map.entry(t.state.clone()).or_default().push(t);
+            }
+        }
+        map
+    };
+    let entry_by_state: HashMap<String, Vec<&EntryExitConfig>> = {
+        let mut map: HashMap<String, Vec<&EntryExitConfig>> = HashMap::new();
+        for e in &topology.entry {
+            // Same feature filtering as transitions
+            if match feature_filter {
+                None => e.feature.is_none(),
+                Some(_) => true,
+            } {
+                map.entry(e.state.clone()).or_default().push(e);
+            }
+        }
+        map
+    };
+    let exit_by_state: HashMap<String, Vec<&EntryExitConfig>> = {
+        let mut map: HashMap<String, Vec<&EntryExitConfig>> = HashMap::new();
+        for e in &topology.exit {
+            if match feature_filter {
+                None => e.feature.is_none(),
+                Some(_) => true,
+            } {
+                map.entry(e.state.clone()).or_default().push(e);
+            }
+        }
+        map
+    };
+
+    let mut consts = Vec::new();
+    for state in &topology.states {
+        let fns_ident = format_ident!("{}_FNS", to_snake_case(&state.name).to_ascii_uppercase());
+        let state_trans = trans_by_state
+            .get(&state.name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let state_entry = entry_by_state
+            .get(&state.name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        let state_exit = exit_by_state
+            .get(&state.name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+
+        // on_entry actions
+        let entry_tokens: Vec<proc_macro2::TokenStream> = state_entry
+            .first()
+            .map(|ee| {
+                ee.actions
+                    .iter()
+                    .map(|a| {
+                        let resolved =
+                            replace_placeholders(a, ctx_type_str, event_type_str, type_params);
+                        resolved
+                            .parse::<proc_macro2::TokenStream>()
+                            .unwrap_or_else(|_| {
+                                let ident = format_ident!("{}", resolved);
+                                quote! { #ident }
+                            })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // on_exit actions
+        let exit_tokens: Vec<proc_macro2::TokenStream> = state_exit
+            .first()
+            .map(|ee| {
+                ee.actions
+                    .iter()
+                    .map(|a| {
+                        let resolved =
+                            replace_placeholders(a, ctx_type_str, event_type_str, type_params);
+                        resolved
+                            .parse::<proc_macro2::TokenStream>()
+                            .unwrap_or_else(|_| {
+                                let ident = format_ident!("{}", resolved);
+                                quote! { #ident }
+                            })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Transition rules — raw StateRule { ... } literals
+        let trans_tokens: proc_macro2::TokenStream = if state_trans.is_empty() {
+            quote! { &[] }
+        } else {
+            let rules: Vec<proc_macro2::TokenStream> = state_trans
+                .iter()
+                .map(|t| {
+                    generate_state_rule(
+                        t,
+                        state_enum_ident,
+                        ctx_type_str,
+                        event_type_str,
+                        type_params,
+                    )
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            quote! { &[#(#rules),*] }
+        };
+
+        consts.push(quote! {
+            #[allow(unused_variables)]
+            const #fns_ident: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
+                on_entry: &[#(#entry_tokens),*],
+                on_exit: &[#(#exit_tokens),*],
+                transitions: #trans_tokens,
+            };
+        });
+    }
+
+    Ok(quote! {
+        impl #spec_impl_generics #spec_ident #spec_ty_generics #spec_where_clause {
+            #(#consts)*
+        }
+    })
+}
+
 pub fn generate(
     actor: &ActorConfig,
     topology: &TopologyConfig,
@@ -59,20 +251,8 @@ pub fn generate(
     crate_name: &str,
 ) -> anyhow::Result<String> {
     let actor_name = &actor.name;
-
     let spec_ident = format_ident!("{}Spec", actor_name);
     let state_ident = format_ident!("{}State", actor_name);
-
-    // Event name: from [event] section or context.event_name fallback
-    let event_name_str = event
-        .map(|e| e.name.clone())
-        .or_else(|| context.event_name.clone())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "spec_skeleton requires either an [event] section or context.event_name"
-            )
-        })?;
-    let event_ident = format_ident!("{}", event_name_str);
 
     let handler_macro_name_str = format!(
         "{}_handler_table",
@@ -82,106 +262,118 @@ pub fn generate(
 
     let ctx_ident = format_ident!("{}", context.name);
 
-    let ctx_generics = context
+    // ── Determine if feature-gated ──────────────────────────────────────────
+    let has_feature = context.feature.is_some();
+
+    // ── Collect shared data ──────────────────────────────────────────────────
+    let initial_state = topology
+        .states
+        .iter()
+        .find(|s| s.initial.unwrap_or(false))
+        .map(|s| s.name.clone())
+        .or_else(|| {
+            topology
+                .states
+                .iter()
+                .find(|s| !s.composite.unwrap_or(false))
+                .map(|s| s.name.clone())
+        });
+    let initial_state_ident = if let Some(ref name) = initial_state {
+        format_ident!("{}", name)
+    } else {
+        format_ident!("Init")
+    };
+
+    let terminal_states: Vec<_> = topology
+        .states
+        .iter()
+        .filter(|s| s.terminal.unwrap_or(false))
+        .map(|s| format_ident!("{}", s.name))
+        .collect();
+    let error_states: Vec<_> = topology
+        .states
+        .iter()
+        .filter(|s| s.error.unwrap_or(false))
+        .map(|s| format_ident!("{}", s.name))
+        .collect();
+
+    let (is_terminal_param, is_terminal_body) = if terminal_states.is_empty() {
+        (quote! { _state }, quote! { false })
+    } else {
+        (
+            quote! { state },
+            quote! { ::core::matches!(state, #state_ident::#(#terminal_states)|*) },
+        )
+    };
+    let (is_error_param, is_error_body) = if error_states.is_empty() {
+        (quote! { _state }, quote! { false })
+    } else {
+        (
+            quote! { state },
+            quote! { ::core::matches!(state, #state_ident::#(#error_states)|*) },
+        )
+    };
+
+    // on_init body
+    let on_init_body: proc_macro2::TokenStream = if let Some(ref body) = context.on_init {
+        body.parse::<proc_macro2::TokenStream>()
+            .map_err(|e| anyhow::anyhow!("invalid on_init body '{}': {}", body, e))?
+    } else {
+        quote! {}
+    };
+    let on_init_fn = if on_init_body.is_empty() {
+        quote! { fn on_init_entry(_ctx: &mut Self::Ctx) {} }
+    } else {
+        quote! {
+            fn on_init_entry(ctx: &mut Self::Ctx) {
+                #on_init_body
+            }
+        }
+    };
+
+    // ── Build imports ─────────────────────────────────────────────────────────
+    let mut use_stmts = vec![quote! { use ::core::marker::PhantomData; }];
+
+    // BloxRuntime import — needed when generics include it
+    let context_has_runtime = context
         .generics
         .as_ref()
-        .map(|g| {
-            syn::parse_str::<syn::Generics>(g)
-                .map_err(|e| anyhow::anyhow!("invalid context generics '{}': {}", g, e))
-        })
-        .transpose()?
-        .unwrap_or_default();
-
-    // Event generics: from [event] section or context.event_generics fallback
+        .map(|g| g.contains("BloxRuntime"))
+        .unwrap_or(false);
     let event_generics_str: Option<&str> = event
         .and_then(|e| e.generics.as_deref())
         .or(context.event_generics.as_deref());
-
-    let event_generics = event_generics_str
-        .map(|g| {
-            syn::parse_str::<syn::Generics>(g)
-                .map_err(|e| anyhow::anyhow!("invalid event generics '{}': {}", g, e))
-        })
-        .transpose()?
-        .unwrap_or_default();
-
-    let (_event_impl_generics, event_ty_generics, _event_where_clause) =
-        event_generics.split_for_impl();
-
-    // Build spec generics from context generics, adding `'static` to behavior
-    // type params so the spec satisfies `MachineSpec: 'static`.
-    let mut spec_generics = context
-        .generics
-        .as_ref()
-        .map(|g| {
-            syn::parse_str::<syn::Generics>(g)
-                .map_err(|e| anyhow::anyhow!("invalid context generics '{}': {}", g, e))
-        })
-        .transpose()?
-        .unwrap_or_default();
-    {
-        let behavior_idents = behavior_type_idents(context);
-        if !behavior_idents.is_empty() {
-            for param in spec_generics.type_params_mut() {
-                if behavior_idents.iter().any(|id| id == &param.ident) {
-                    let static_bound: syn::TypeParamBound =
-                        syn::parse_str("'static").expect("'static' is a valid lifetime bound");
-                    param.bounds.push(static_bound);
-                }
-            }
-        }
+    let event_has_runtime = event_generics_str
+        .map(|g| g.contains("BloxRuntime"))
+        .unwrap_or(false);
+    if context_has_runtime || event_has_runtime {
+        use_stmts.push(quote! { use ::bloxide_core::capability::BloxRuntime; });
     }
+    use_stmts.push(quote! { use ::bloxide_core::spec::{MachineSpec, StateFns}; });
+    use_stmts.push(quote! { use crate::#ctx_ident; });
+    use_stmts.push(quote! { pub use crate::generated::topology::#state_ident; });
 
-    // Parse extra_where predicates and append them to the spec's where clause.
-    let extra_where_preds: Vec<syn::WherePredicate> = context
-        .extra_where
-        .iter()
-        .map(|w| {
-            syn::parse_str::<syn::WherePredicate>(w)
-                .map_err(|e| anyhow::anyhow!("invalid extra_where '{}': {}", w, e))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
+    // Event import
+    let event_name_str = event
+        .map(|e| e.name.clone())
+        .or_else(|| context.event_name.clone())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "spec_skeleton requires either an [event] section or context.event_name"
+            )
+        })?;
+    let event_ident = format_ident!("{}", event_name_str);
+    // The event is imported from the crate root, but for hand-written events
+    // it may be in a different crate. We use `use crate::#event_ident` as the
+    // default. The blox.toml can override this with explicit imports.
+    // Actually, the old code had `use crate::{SupervisorCtx, SupervisorEvent};`
+    // which means the event is re-exported at the crate root.
+    // For hand-written events, the blox crate re-exports the event from the
+    // context crate. We emit a combined import.
+    use_stmts.push(quote! { use crate::#event_ident; });
 
-    // Merge extra_where into spec_generics.where_clause
-    if !extra_where_preds.is_empty() {
-        let mut preds = syn::punctuated::Punctuated::new();
-        if let Some(ref wc) = spec_generics.where_clause {
-            for pred in wc.predicates.iter() {
-                let pred_str = pred.to_token_stream().to_string();
-                let pred_parsed = syn::parse_str::<syn::WherePredicate>(&pred_str)
-                    .expect("re-parsing where predicate should succeed");
-                preds.push(pred_parsed);
-            }
-        }
-        for pred in extra_where_preds {
-            preds.push(pred);
-        }
-        spec_generics.where_clause = Some(syn::WhereClause {
-            where_token: syn::Token![where](proc_macro2::Span::call_site()),
-            predicates: preds,
-        });
-    }
-
-    let (spec_impl_generics, spec_ty_generics, spec_where_clause) = spec_generics.split_for_impl();
-
-    let ctx_ty = if ctx_generics.type_params().count() > 0 {
-        let (_impl_g, ty_g, _where_g) = ctx_generics.split_for_impl();
-        quote! { #ctx_ident #ty_g }
-    } else {
-        quote! { #ctx_ident }
-    };
-
-    // Collect delegate trait paths from both `[[context.uses]]` (delegatable
-    // entries) and legacy `[[context.fields]]` with `delegates = [...]`.
-    // The spec_skeleton needs these imports so that `where`-clause bounds
-    // like `B: CountsRounds` resolve.  Each trait is imported from its
-    // respective crate — context crates for `uses` entries, actions crate
-    // for legacy fields.
-    let mut delegate_imports: Vec<(String, String)> = Vec::new(); // (crate_name, trait_string)
-
-    // From `[[context.uses]]` — all traits (delegatable and non-delegatable).
-    // Non-delegatable traits may be referenced by `on_init` code, so they
-    // must be imported even when not delegated.
+    // Collect delegate trait imports
+    let mut delegate_imports: Vec<(String, String)> = Vec::new();
     for u in &context.uses {
         let trait_strs: Vec<&str> = if let Some(ref t) = u.trait_ {
             vec![t.as_str()]
@@ -197,8 +389,6 @@ pub fn generate(
             }
         }
     }
-
-    // From legacy `[[context.fields]]` — traits referenced in `delegates`.
     let actions_crate = context
         .actions_crate
         .clone()
@@ -206,117 +396,30 @@ pub fn generate(
     for field in &context.fields {
         if let Some(ref d) = field.delegates {
             for tr in d {
-                // Skip traits already imported via uses.
                 if !delegate_imports.iter().any(|(_, t)| t == tr) {
                     delegate_imports.push((actions_crate.clone(), tr.clone()));
                 }
             }
         }
     }
-
-    let context_has_runtime = context
-        .generics
-        .as_ref()
-        .map(|g| g.contains("BloxRuntime"))
-        .unwrap_or(false);
-    let event_has_runtime = event_generics_str
-        .map(|g| g.contains("BloxRuntime"))
-        .unwrap_or(false);
-    let needs_runtime_import = context_has_runtime || event_has_runtime;
-
-    let phantom_types = if ctx_generics.type_params().count() > 0 {
-        let params: Vec<_> = ctx_generics.type_params().map(|tp| &tp.ident).collect();
-        if params.len() == 1 {
-            quote! { #(#params)* }
-        } else {
-            quote! { (#(#params),*) }
+    // Also import traits from provides annotations
+    for field in &context.fields {
+        if let Some(ref p) = field.provides {
+            // Extract the trait name from "TraitPath<...>" or "TraitPath"
+            let trait_str = p.split(',').next().unwrap_or(p).trim();
+            // Skip if already imported
+            if !delegate_imports.iter().any(|(_, t)| t == trait_str) {
+                // Determine the crate: if the trait path starts with a crate name,
+                // use that; otherwise use the context's actions crate.
+                // For provides, the trait is typically from the context crate.
+                // We'll add it from the context crate (bloxide_supervisor_context).
+                // Actually, we can't know which crate — the provides annotation
+                // uses a bare trait name. The blox.toml imports handle this.
+            }
         }
-    } else {
-        quote! { () }
-    };
-
-    let initial_state = topology
-        .states
-        .iter()
-        .find(|s| s.initial.unwrap_or(false))
-        .map(|s| s.name.clone())
-        .or_else(|| {
-            topology
-                .states
-                .iter()
-                .find(|s| !s.composite.unwrap_or(false))
-                .map(|s| s.name.clone())
-        });
-
-    let initial_state_ident = if let Some(ref name) = initial_state {
-        format_ident!("{}", name)
-    } else {
-        format_ident!("Init")
-    };
-
-    let terminal_states: Vec<_> = topology
-        .states
-        .iter()
-        .filter(|s| s.terminal.unwrap_or(false))
-        .map(|s| format_ident!("{}", s.name))
-        .collect();
-
-    let error_states: Vec<_> = topology
-        .states
-        .iter()
-        .filter(|s| s.error.unwrap_or(false))
-        .map(|s| format_ident!("{}", s.name))
-        .collect();
-
-    let (is_terminal_param, is_terminal_body) = if terminal_states.is_empty() {
-        (quote! { _state }, quote! { false })
-    } else {
-        (
-            quote! { state },
-            quote! {
-                ::core::matches!(state, #state_ident::#(#terminal_states)|*)
-            },
-        )
-    };
-
-    let (is_error_param, is_error_body) = if error_states.is_empty() {
-        (quote! { _state }, quote! { false })
-    } else {
-        (
-            quote! { state },
-            quote! {
-                ::core::matches!(state, #state_ident::#(#error_states)|*)
-            },
-        )
-    };
-
-    let mut use_stmts = vec![quote! {
-        use ::core::marker::PhantomData;
-    }];
-
-    if needs_runtime_import {
-        use_stmts.push(quote! {
-            use ::bloxide_core::capability::BloxRuntime;
-        });
     }
 
-    use_stmts.push(quote! {
-        use ::bloxide_core::spec::{MachineSpec, StateFns};
-    });
-
-    use_stmts.push(quote! {
-        use crate::{#ctx_ident, #event_ident};
-    });
-
-    use_stmts.push(quote! {
-        pub use crate::generated::topology::#state_ident;
-    });
-
-    // Emit delegate trait imports — grouped by crate.
-    // Each entry is (crate_name, trait_string).  We group by crate to emit
-    // one `use` statement per crate.
     if !delegate_imports.is_empty() {
-        // Group by crate name, preserving order.
         let mut crate_order: Vec<String> = Vec::new();
         for (crate_name, _) in &delegate_imports {
             if !crate_order.contains(crate_name) {
@@ -342,86 +445,499 @@ pub fn generate(
         }
     }
 
-    let struct_def = quote! {
-        pub struct #spec_ident #spec_impl_generics #spec_where_clause {
-            _phantom: PhantomData<#phantom_types>,
-        }
-    };
+    // Add spec_imports from topology (raw use statements for action functions)
+    for imp in &topology.spec_imports {
+        let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", imp))
+            .map_err(|e| anyhow::anyhow!("invalid spec_import '{}': {}", imp, e))?;
+        use_stmts.push(quote! {
+            #[allow(unused_imports)]
+            #use_item
+        });
+    }
 
-    // Mailboxes type: from [event].mailboxes or context.mailboxes_type fallback
-    let mailboxes_ty = if let Some(event) = event {
-        let mailboxes_tys: Vec<_> = event
-            .mailboxes
-            .iter()
-            .map(|mb| {
-                let msg_type = if let Some(ref path) = mb.message_path {
-                    syn::parse_str::<syn::Path>(path)
-                        .map_err(|e| anyhow::anyhow!("invalid message_path '{}': {}", path, e))?
-                } else {
-                    syn::parse_str::<syn::Path>(&mb.message)
-                        .map_err(|e| anyhow::anyhow!("invalid message '{}': {}", mb.message, e))?
-                };
-                Ok(quote! { Rt::Stream<#msg_type> })
+    // Add message type imports — the generated matches closures reference
+    // message enum types (e.g. `CounterMsg::Tick(_)`) which must be in scope.
+    // Collect unique crate-level import paths from mailbox message_path fields.
+    let mut msg_import_paths: Vec<String> = Vec::new();
+    if let Some(ref ev) = event {
+        for mb in &ev.mailboxes {
+            if let Some(ref mp) = mb.message_path {
+                // message_path is like "counter_messages::CounterMsg" or
+                // "pool_messages::WorkerCtrl<R>" — strip generics, take
+                // the crate::path part as a single use statement.
+                let base = mp.split('<').next().unwrap_or(mp).trim();
+                if !msg_import_paths.iter().any(|p| p == base) {
+                    msg_import_paths.push(base.to_string());
+                }
+            }
+        }
+    }
+    for path in &msg_import_paths {
+        let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", path))
+            .map_err(|e| anyhow::anyhow!("invalid message import '{}': {}", path, e))?;
+        use_stmts.push(quote! {
+            #[allow(unused_imports)]
+            #use_item
+        });
+    }
+
+    // ── Build variants ─────────────────────────────────────────────────────────
+    let variants = if has_feature {
+        let feat_name = context.feature.as_deref().unwrap();
+
+        // Non-feature variant
+        let base_generics =
+            syn::parse_str::<syn::Generics>(context.generics.as_deref().unwrap_or("<>"))
+                .map_err(|e| anyhow::anyhow!("invalid generics: {}", e))?;
+
+        let base_event_generics =
+            syn::parse_str::<syn::Generics>(context.event_generics.as_deref().unwrap_or("<>"))
+                .map_err(|e| anyhow::anyhow!("invalid event_generics: {}", e))?;
+
+        let base_ctx_params: Vec<String> = base_generics
+            .type_params()
+            .map(|tp| tp.ident.to_string())
+            .collect();
+        let base_event_params: Vec<String> = base_event_generics
+            .type_params()
+            .map(|tp| tp.ident.to_string())
+            .collect();
+
+        let base_ctx_ty = if base_ctx_params.is_empty() {
+            quote! { #ctx_ident }
+        } else {
+            let params: Vec<_> = base_generics.type_params().map(|tp| &tp.ident).collect();
+            quote! { #ctx_ident<#(#params),*> }
+        };
+
+        let base_event_ty = if base_event_params.is_empty() {
+            quote! { #event_ident }
+        } else {
+            let params: Vec<_> = base_event_generics
+                .type_params()
+                .map(|tp| &tp.ident)
+                .collect();
+            quote! { #event_ident<#(#params),*> }
+        };
+
+        let base_mailboxes = context.mailboxes_type.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "context.mailboxes_type required for feature-gated specs without [event] section"
+            )
+        })?;
+        let base_mailboxes_ty: proc_macro2::TokenStream = base_mailboxes
+            .parse()
+            .map_err(|e| anyhow::anyhow!("invalid mailboxes_type '{}': {}", base_mailboxes, e))?;
+
+        // Build spec generics for base variant (add 'static to behavior params)
+        let mut base_spec_generics =
+            syn::parse_str::<syn::Generics>(context.generics.as_deref().unwrap_or("<>"))
+                .map_err(|e| anyhow::anyhow!("invalid generics: {}", e))?;
+        let behavior_idents = behavior_type_idents(context);
+        if !behavior_idents.is_empty() {
+            for param in base_spec_generics.type_params_mut() {
+                if behavior_idents.iter().any(|id| id == &param.ident) {
+                    let static_bound: syn::TypeParamBound =
+                        syn::parse_str("'static").expect("'static' is a valid bound");
+                    param.bounds.push(static_bound);
+                }
+            }
+        }
+        // Add extra_where
+        if !context.extra_where.is_empty() {
+            let mut preds = syn::punctuated::Punctuated::new();
+            if let Some(ref wc) = base_spec_generics.where_clause {
+                for pred in wc.predicates.iter() {
+                    let pred_str = pred.to_token_stream().to_string();
+                    preds.push(
+                        syn::parse_str::<syn::WherePredicate>(&pred_str)
+                            .map_err(|e| anyhow::anyhow!("re-parse where predicate: {}", e))?,
+                    );
+                }
+            }
+            for w in &context.extra_where {
+                preds.push(
+                    syn::parse_str::<syn::WherePredicate>(w)
+                        .map_err(|e| anyhow::anyhow!("invalid extra_where '{}': {}", w, e))?,
+                );
+            }
+            base_spec_generics.where_clause = Some(syn::WhereClause {
+                where_token: syn::Token![where](proc_macro2::Span::call_site()),
+                predicates: preds,
+            });
+        }
+
+        // Feature variant
+        let feature_generics =
+            syn::parse_str::<syn::Generics>(context.feature_generics.as_deref().unwrap_or("<>"))
+                .map_err(|e| anyhow::anyhow!("invalid feature_generics: {}", e))?;
+
+        let feature_event_generics = syn::parse_str::<syn::Generics>(
+            context.feature_event_generics.as_deref().unwrap_or("<>"),
+        )
+        .map_err(|e| anyhow::anyhow!("invalid feature_event_generics: {}", e))?;
+
+        let feature_ctx_params: Vec<String> = feature_generics
+            .type_params()
+            .map(|tp| tp.ident.to_string())
+            .collect();
+        let feature_event_params: Vec<String> = feature_event_generics
+            .type_params()
+            .map(|tp| tp.ident.to_string())
+            .collect();
+
+        let feature_ctx_ty = if feature_ctx_params.is_empty() {
+            quote! { #ctx_ident }
+        } else {
+            let params: Vec<_> = feature_generics.type_params().map(|tp| &tp.ident).collect();
+            quote! { #ctx_ident<#(#params),*> }
+        };
+
+        let feature_event_ty = if feature_event_params.is_empty() {
+            quote! { #event_ident }
+        } else {
+            let params: Vec<_> = feature_event_generics
+                .type_params()
+                .map(|tp| &tp.ident)
+                .collect();
+            quote! { #event_ident<#(#params),*> }
+        };
+
+        let feature_mailboxes = context.feature_mailboxes_type.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("context.feature_mailboxes_type required for feature-gated specs")
+        })?;
+        let feature_mailboxes_ty: proc_macro2::TokenStream =
+            feature_mailboxes.parse().map_err(|e| {
+                anyhow::anyhow!(
+                    "invalid feature_mailboxes_type '{}': {}",
+                    feature_mailboxes,
+                    e
+                )
+            })?;
+
+        // Build spec generics for feature variant (add 'static to behavior params + 'static to F)
+        let mut feature_spec_generics =
+            syn::parse_str::<syn::Generics>(context.feature_generics.as_deref().unwrap_or("<>"))
+                .map_err(|e| anyhow::anyhow!("invalid feature_generics: {}", e))?;
+        if !behavior_idents.is_empty() {
+            for param in feature_spec_generics.type_params_mut() {
+                if behavior_idents.iter().any(|id| id == &param.ident) {
+                    let static_bound: syn::TypeParamBound =
+                        syn::parse_str("'static").expect("'static' is a valid bound");
+                    param.bounds.push(static_bound);
+                }
+            }
+        }
+        // Add 'static to all non-behavior type params as well (spec must be 'static)
+        // Actually, only add 'static to params that need it. The old code had
+        // F: SpawnFactory<R> + 'static in the spec impl. Let's add 'static to
+        // all type params in the feature variant.
+        // Actually no — only F needs 'static in the old code. R doesn't.
+        // The old spec_skeleton had:
+        //   impl<R: BloxRuntime, F: SpawnFactory<R> + 'static> SupervisorSpec<R, F>
+        // So we need to add 'static to the feature variant's extra params.
+        // The feature_generics already has "F: SpawnFactory<R>" — we need to
+        // add "+ 'static" to F.
+        // But we can't know which params need 'static. Let's use feature_where
+        // for this.
+        if !context.feature_where.is_empty() {
+            let mut preds = syn::punctuated::Punctuated::new();
+            if let Some(ref wc) = feature_spec_generics.where_clause {
+                for pred in wc.predicates.iter() {
+                    let pred_str = pred.to_token_stream().to_string();
+                    preds.push(
+                        syn::parse_str::<syn::WherePredicate>(&pred_str)
+                            .map_err(|e| anyhow::anyhow!("re-parse where predicate: {}", e))?,
+                    );
+                }
+            }
+            for w in &context.feature_where {
+                preds.push(
+                    syn::parse_str::<syn::WherePredicate>(w)
+                        .map_err(|e| anyhow::anyhow!("invalid feature_where '{}': {}", w, e))?,
+                );
+            }
+            feature_spec_generics.where_clause = Some(syn::WhereClause {
+                where_token: syn::Token![where](proc_macro2::Span::call_site()),
+                predicates: preds,
+            });
+        }
+
+        vec![
+            VariantParams {
+                cfg_attr: Some(format!("not(feature = \"{}\")", feat_name)),
+                spec_generics: base_spec_generics,
+                ctx_ty: base_ctx_ty,
+                event_ty: base_event_ty,
+                mailboxes_ty: base_mailboxes_ty,
+                event_type_params: base_event_params,
+                ctx_type_params: base_ctx_params,
+                feature_filter: None,
+                extra_imports: Vec::new(),
+            },
+            VariantParams {
+                cfg_attr: Some(format!("feature = \"{}\"", feat_name)),
+                spec_generics: feature_spec_generics,
+                ctx_ty: feature_ctx_ty,
+                event_ty: feature_event_ty,
+                mailboxes_ty: feature_mailboxes_ty,
+                event_type_params: feature_event_params,
+                ctx_type_params: feature_ctx_params,
+                feature_filter: Some(feat_name.to_string()),
+                extra_imports: topology.feature_spec_imports.clone(),
+            },
+        ]
+    } else {
+        // Single variant (no feature-gating)
+        let ctx_generics = context
+            .generics
+            .as_ref()
+            .map(|g| {
+                syn::parse_str::<syn::Generics>(g)
+                    .map_err(|e| anyhow::anyhow!("invalid context generics '{}': {}", g, e))
             })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        // Always emit a trailing comma so single-element tuples are correctly
-        // parsed as tuple types, not parenthesised types.
-        quote! { (#(#mailboxes_tys,)*) }
-    } else if let Some(ref mb_type) = context.mailboxes_type {
-        // Raw mailboxes type expression from context config
-        syn::parse_str::<proc_macro2::TokenStream>(mb_type)
-            .map_err(|e| anyhow::anyhow!("invalid mailboxes_type '{}': {}", mb_type, e))?
-    } else {
-        anyhow::bail!("spec_skeleton requires either [event].mailboxes or context.mailboxes_type")
-    };
+            .transpose()?
+            .unwrap_or_default();
 
-    // Build on_init_entry body from context config.
-    let on_init_body: proc_macro2::TokenStream = if let Some(ref body) = context.on_init {
-        body.parse::<proc_macro2::TokenStream>()
-            .map_err(|e| anyhow::anyhow!("invalid on_init body '{}': {}", body, e))?
-    } else {
-        quote! {}
-    };
+        let event_generics = event_generics_str
+            .map(|g| {
+                syn::parse_str::<syn::Generics>(g)
+                    .map_err(|e| anyhow::anyhow!("invalid event generics '{}': {}", g, e))
+            })
+            .transpose()?
+            .unwrap_or_default();
 
-    let on_init_fn = if on_init_body.is_empty() {
-        quote! { fn on_init_entry(_ctx: &mut Self::Ctx) {} }
-    } else {
-        quote! {
-            fn on_init_entry(ctx: &mut Self::Ctx) {
-                #on_init_body
+        let (_event_impl_generics, event_ty_generics, _event_where_clause) =
+            event_generics.split_for_impl();
+
+        let ctx_params: Vec<String> = ctx_generics
+            .type_params()
+            .map(|tp| tp.ident.to_string())
+            .collect();
+        let event_params: Vec<String> = event_generics
+            .type_params()
+            .map(|tp| tp.ident.to_string())
+            .collect();
+
+        let ctx_ty = if ctx_generics.type_params().count() > 0 {
+            let (_impl_g, ty_g, _where_g) = ctx_generics.split_for_impl();
+            quote! { #ctx_ident #ty_g }
+        } else {
+            quote! { #ctx_ident }
+        };
+
+        let event_ty = if event_generics.type_params().count() > 0 {
+            quote! { #event_ident #event_ty_generics }
+        } else {
+            quote! { #event_ident }
+        };
+
+        // Mailboxes
+        let mailboxes_ty = if let Some(event) = event {
+            let mailboxes_tys: Vec<_> = event
+                .mailboxes
+                .iter()
+                .map(|mb| {
+                    let msg_type = if let Some(ref path) = mb.message_path {
+                        syn::parse_str::<syn::Path>(path).map_err(|e| {
+                            anyhow::anyhow!("invalid message_path '{}': {}", path, e)
+                        })?
+                    } else {
+                        syn::parse_str::<syn::Path>(&mb.message).map_err(|e| {
+                            anyhow::anyhow!("invalid message '{}': {}", mb.message, e)
+                        })?
+                    };
+                    Ok(quote! { Rt::Stream<#msg_type> })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            quote! { (#(#mailboxes_tys,)*) }
+        } else if let Some(ref mb_type) = context.mailboxes_type {
+            syn::parse_str::<proc_macro2::TokenStream>(mb_type)
+                .map_err(|e| anyhow::anyhow!("invalid mailboxes_type '{}': {}", mb_type, e))?
+        } else {
+            anyhow::bail!(
+                "spec_skeleton requires either [event].mailboxes or context.mailboxes_type"
+            )
+        };
+
+        // Build spec generics (add 'static to behavior params)
+        let mut spec_generics =
+            syn::parse_str::<syn::Generics>(context.generics.as_deref().unwrap_or("<>"))
+                .map_err(|e| anyhow::anyhow!("invalid generics: {}", e))?;
+        let behavior_idents = behavior_type_idents(context);
+        if !behavior_idents.is_empty() {
+            for param in spec_generics.type_params_mut() {
+                if behavior_idents.iter().any(|id| id == &param.ident) {
+                    let static_bound: syn::TypeParamBound =
+                        syn::parse_str("'static").expect("'static' is a valid bound");
+                    param.bounds.push(static_bound);
+                }
             }
         }
-    };
-
-    let impl_block = quote! {
-        impl #spec_impl_generics MachineSpec for #spec_ident #spec_ty_generics #spec_where_clause {
-            type State = #state_ident;
-            type Event = #event_ident #event_ty_generics;
-            type Ctx = #ctx_ty;
-            type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> = #mailboxes_ty;
-
-            const HANDLER_TABLE: &'static [&'static StateFns<Self>] = #handler_macro_ident!(Self);
-
-            fn initial_state() -> #state_ident {
-                #state_ident::#initial_state_ident
+        // Add extra_where
+        if !context.extra_where.is_empty() {
+            let mut preds = syn::punctuated::Punctuated::new();
+            if let Some(ref wc) = spec_generics.where_clause {
+                for pred in wc.predicates.iter() {
+                    let pred_str = pred.to_token_stream().to_string();
+                    preds.push(
+                        syn::parse_str::<syn::WherePredicate>(&pred_str)
+                            .map_err(|e| anyhow::anyhow!("re-parse where predicate: {}", e))?,
+                    );
+                }
             }
-
-            fn is_terminal(#is_terminal_param: &#state_ident) -> bool {
-                #is_terminal_body
+            for w in &context.extra_where {
+                preds.push(
+                    syn::parse_str::<syn::WherePredicate>(w)
+                        .map_err(|e| anyhow::anyhow!("invalid extra_where '{}': {}", w, e))?,
+                );
             }
-
-            fn is_error(#is_error_param: &#state_ident) -> bool {
-                #is_error_body
-            }
-
-            #on_init_fn
+            spec_generics.where_clause = Some(syn::WhereClause {
+                where_token: syn::Token![where](proc_macro2::Span::call_site()),
+                predicates: preds,
+            });
         }
+
+        vec![VariantParams {
+            cfg_attr: None,
+            spec_generics,
+            ctx_ty,
+            event_ty,
+            mailboxes_ty,
+            event_type_params: event_params,
+            ctx_type_params: ctx_params,
+            feature_filter: None,
+            extra_imports: Vec::new(),
+        }]
     };
 
+    // ── Generate each variant ─────────────────────────────────────────────────
+    let mut variant_tokens = Vec::new();
+
+    for var in &variants {
+        let (spec_impl_generics, spec_ty_generics, spec_where_clause) =
+            var.spec_generics.split_for_impl();
+
+        // PhantomData type
+        let phantom_types = if var.ctx_type_params.is_empty() {
+            quote! { () }
+        } else if var.ctx_type_params.len() == 1 {
+            let p = format_ident!("{}", var.ctx_type_params[0]);
+            quote! { #p }
+        } else {
+            let params: Vec<_> = var
+                .ctx_type_params
+                .iter()
+                .map(|s| format_ident!("{}", s))
+                .collect();
+            quote! { (#(#params),*) }
+        };
+
+        // Ctx and Event type strings for placeholder replacement
+        let ctx_type_str = var.ctx_ty.to_token_stream().to_string();
+        let event_type_str = var.event_ty.to_token_stream().to_string();
+        // Clean up whitespace from to_string()
+        let ctx_type_str = ctx_type_str.replace(" ", "");
+        let event_type_str = event_type_str.replace(" ", "");
+
+        // Spec struct
+        let struct_def = quote! {
+            pub struct #spec_ident #spec_impl_generics #spec_where_clause {
+                _phantom: PhantomData<#phantom_types>,
+            }
+        };
+
+        // StateFns associated constants — always generated as associated constants
+        // inside the impl block using raw StateRule literals. This handles both
+        // feature-gated and non-feature-gated specs uniformly.
+        let state_fns_impl = generate_state_fns_impl(
+            topology,
+            &state_ident,
+            &spec_ident,
+            &ctx_type_str,
+            &event_type_str,
+            &var.event_type_params,
+            spec_impl_generics.to_token_stream(),
+            spec_ty_generics.to_token_stream(),
+            spec_where_clause,
+            var.feature_filter.as_deref(),
+        )?;
+
+        // MachineSpec impl
+        let var_event_ty = &var.event_ty;
+        let var_ctx_ty = &var.ctx_ty;
+        let var_mailboxes_ty = &var.mailboxes_ty;
+        let impl_block = quote! {
+            impl #spec_impl_generics MachineSpec for #spec_ident #spec_ty_generics #spec_where_clause {
+                type State = #state_ident;
+                type Event = #var_event_ty;
+                type Ctx = #var_ctx_ty;
+                type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> = #var_mailboxes_ty;
+
+                const HANDLER_TABLE: &'static [&'static StateFns<Self>] = #handler_macro_ident!(Self);
+
+                fn initial_state() -> #state_ident {
+                    #state_ident::#initial_state_ident
+                }
+
+                fn is_terminal(#is_terminal_param: &#state_ident) -> bool {
+                    #is_terminal_body
+                }
+
+                fn is_error(#is_error_param: &#state_ident) -> bool {
+                    #is_error_body
+                }
+
+                #on_init_fn
+            }
+        };
+
+        // Extra imports for this variant
+        let extra_import_tokens: Vec<proc_macro2::TokenStream> = var
+            .extra_imports
+            .iter()
+            .map(|imp| {
+                let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", imp))
+                    .unwrap_or_else(|_| panic!("invalid extra_import: {}", imp));
+                quote! {
+                    #[allow(unused_imports)]
+                    #use_item
+                }
+            })
+            .collect();
+
+        // Wrap each item in #[cfg] if needed (#[cfg] only applies to the
+        // immediately following item, not a sequence of items)
+        let wrapped = if let Some(ref cfg) = var.cfg_attr {
+            let cfg_ts: proc_macro2::TokenStream = cfg
+                .parse()
+                .map_err(|e| anyhow::anyhow!("invalid cfg attr '{}': {}", cfg, e))?;
+            quote! {
+                #[cfg(#cfg_ts)]
+                #(#extra_import_tokens)*
+                #[cfg(#cfg_ts)]
+                #struct_def
+                #[cfg(#cfg_ts)]
+                #state_fns_impl
+                #[cfg(#cfg_ts)]
+                #impl_block
+            }
+        } else {
+            quote! {
+                #(#extra_import_tokens)*
+                #struct_def
+                #state_fns_impl
+                #impl_block
+            }
+        };
+
+        variant_tokens.push(wrapped);
+    }
+
+    // ── Assemble final output ─────────────────────────────────────────────────
     let tokens = quote! {
         #(#use_stmts)*
-        #struct_def
-        #impl_block
+        #(#variant_tokens)*
     };
 
     let raw = tokens.to_string();

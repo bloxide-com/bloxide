@@ -149,7 +149,7 @@ A blox crate defines:
 1. **State topology** via `blox.toml` + `cargo blox generate`
 2. **Context struct** via `#[derive(BloxCtx)]`
 3. **Event enum** via `blox.toml` + `cargo blox generate`
-4. **`MachineSpec`** with `StateFns` tables and `transitions!` macro
+4. **`MachineSpec`** with `StateFns` tables generated from `[[topology.transitions]]` entries in `blox.toml`
 
 ### Context Struct
 
@@ -269,24 +269,28 @@ use crate::generated::topology::ping_state_handler_table;
 
 ### Transition Rules
 
-Use the `transitions!` macro:
+Declare transition rules in `blox.toml` via `[[topology.transitions]]` entries (codegen emits `StateRule` struct literals):
 
-```rust
-const ACTIVE_FNS: StateFns<Self> = StateFns {
-    on_entry: &[increment_round, send_initial_ping],
-    on_exit: &[],
-    transitions: transitions![
-        PingPongMsg::Pong(_) => {
-            actions [Self::log_pong, Self::forward_ping]
-            guard(ctx, results) {
-                results.any_failed()                      => PingState::Error,
-                ctx.round() >= MAX_ROUNDS                 => PingState::Done,
-                ctx.round() == PAUSE_AT_ROUND             => PingState::Paused,
-                _                                         => PingState::Active,
-            }
-        },
-    ],
-};
+```toml
+[[topology.transitions]]
+state = "Active"
+pattern = "PingPongMsg::Pong(_)"
+actions = ["log_pong", "forward_ping"]
+
+  [[topology.transitions.guards]]
+  condition = "results.any_failed()"
+  to = "Error"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round() >= MAX_ROUNDS"
+  to = "Done"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round() == PAUSE_AT_ROUND"
+  to = "Paused"
+
+  [[topology.transitions.guards]]
+  to = "Active"
 ```
 
 **Pattern forms:**
@@ -374,7 +378,7 @@ where
 Creates channels, constructs contexts, spawns tasks.
 
 ```rust
-// examples/tokio-demo.rs
+// apps/tokio-demo/src/main.rs
 use bloxide_tokio::prelude::*;
 
 // Create channels
