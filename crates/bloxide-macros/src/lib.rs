@@ -96,7 +96,7 @@ mod blox_messages;
 ///
 /// `fn new(...)` takes annotated or convention-detected constructor fields as
 /// parameters and zero-initializes plain state fields via `Default::default()`.
-#[proc_macro_derive(BloxCtx, attributes(provides, delegates, blox_ctx))]
+#[proc_macro_derive(BloxCtx, attributes(provides, provides_mut, delegates, blox_ctx))]
 pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     match blox_ctx::derive_blox_ctx_inner(&input) {

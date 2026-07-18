@@ -4,28 +4,78 @@ use bloxide_core::lifecycle::ChildLifecycleEvent;
 use bloxide_core::{capability::BloxRuntime, messaging::ActorRef, ActorId};
 use bloxide_macros::BloxCtx;
 #[allow(unused_imports)]
-use bloxide_supervisor_context::{ChildAction, ChildGroup, HasChildGroup, SpawnFactory};
+use bloxide_supervisor_context::{
+    ChildAction, ChildGroup, HasChildGroup, HasChildGroupMut, HasChildNotify, HasPending,
+    HasSpawnFactory, SpawnFactory,
+};
+
+// ── Non-dynamic variant ─────────────────────────────────────────────────────
 
 #[cfg(not(feature = "dynamic"))]
 #[derive(BloxCtx)]
 pub struct SupervisorCtx<R: BloxRuntime> {
-    #[blox_ctx(skip)]
+    #[provides(HasChildGroup<R>)]
+    #[provides_mut(HasChildGroupMut<R>, children_mut)]
     pub children: ChildGroup<R>,
     pub self_id: ActorId,
-    #[blox_ctx(skip)]
+    #[provides(HasChildNotify<R>)]
     pub child_notify: ActorRef<ChildLifecycleEvent, R>,
     pub pending: ChildAction,
 }
 
+#[cfg(not(feature = "dynamic"))]
+impl<R: BloxRuntime> HasPending for SupervisorCtx<R> {
+    fn pending(&self) -> ChildAction {
+        self.pending
+    }
+
+    fn set_pending(&mut self, action: ChildAction) {
+        self.pending = action;
+    }
+}
+
+#[cfg(not(feature = "dynamic"))]
+impl<R: BloxRuntime> SupervisorCtx<R> {
+    /// Returns `true` when every child in the group has stopped.
+    ///
+    /// Used by the `ShuttingDown` state's transition guard to decide
+    /// when to reset the supervisor.
+    pub fn all_children_stopped(&self) -> bool {
+        self.children.all_stopped()
+    }
+}
+
+// ── Dynamic variant ─────────────────────────────────────────────────────────
+
 #[cfg(feature = "dynamic")]
 #[derive(BloxCtx)]
 pub struct SupervisorCtx<R: BloxRuntime, F: SpawnFactory<R>> {
-    #[blox_ctx(skip)]
+    #[provides(HasChildGroup<R>)]
+    #[provides_mut(HasChildGroupMut<R>, children_mut)]
     pub children: ChildGroup<R>,
     pub self_id: ActorId,
-    #[blox_ctx(skip)]
+    #[provides(HasChildNotify<R>)]
     pub child_notify: ActorRef<ChildLifecycleEvent, R>,
     pub pending: ChildAction,
-    #[blox_ctx(skip)]
+    #[provides(HasSpawnFactory<R>, type Factory = F)]
     pub spawn_factory: F,
+}
+
+#[cfg(feature = "dynamic")]
+impl<R: BloxRuntime, F: SpawnFactory<R>> HasPending for SupervisorCtx<R, F> {
+    fn pending(&self) -> ChildAction {
+        self.pending
+    }
+
+    fn set_pending(&mut self, action: ChildAction) {
+        self.pending = action;
+    }
+}
+
+#[cfg(feature = "dynamic")]
+impl<R: BloxRuntime, F: SpawnFactory<R>> SupervisorCtx<R, F> {
+    /// Returns `true` when every child in the group has stopped.
+    pub fn all_children_stopped(&self) -> bool {
+        self.children.all_stopped()
+    }
 }

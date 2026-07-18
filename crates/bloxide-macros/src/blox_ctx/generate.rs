@@ -30,7 +30,7 @@ pub fn generate(analysis: &ContextAnalysis) -> syn::Result<TokenStream> {
 
     // Generate accessor trait impls.
     for field in &analysis.fields {
-        if let FieldRole::Accessor(trait_tokens) = &field.role {
+        if let FieldRole::Accessor(trait_tokens, assoc_types) = &field.role {
             output.extend(generate_accessor_impl(
                 struct_name,
                 &impl_generics,
@@ -39,6 +39,19 @@ pub fn generate(analysis: &ContextAnalysis) -> syn::Result<TokenStream> {
                 &field.name,
                 &field.ty,
                 trait_tokens,
+                assoc_types,
+            ));
+        }
+        if let Some((trait_tokens, method_name)) = &field.mut_accessor {
+            output.extend(generate_accessor_mut_impl(
+                struct_name,
+                &impl_generics,
+                &ty_generics,
+                where_clause,
+                &field.name,
+                &field.ty,
+                trait_tokens,
+                method_name,
             ));
         }
     }
@@ -137,14 +150,24 @@ fn generate_accessor_impl(
     field_name: &syn::Ident,
     field_type: &syn::Type,
     trait_tokens: &TokenStream,
+    assoc_types: &[super::analyze::AssocTypeBinding],
 ) -> TokenStream {
     // Fn pointers (Type::BareFn) are Copy — return by value instead of by reference.
     let returns_by_value = matches!(field_type, syn::Type::BareFn(_));
+    let assoc_type_items = assoc_types
+        .iter()
+        .map(|b| {
+            let name = &b.name;
+            let ty = &b.ty;
+            quote! { type #name = #ty; }
+        })
+        .collect::<Vec<_>>();
     if returns_by_value {
         quote! {
             impl #impl_generics #trait_tokens
                 for #struct_name #ty_generics #where_clause
             {
+                #(#assoc_type_items)*
                 fn #field_name(&self) -> #field_type {
                     self.#field_name
                 }
@@ -155,9 +178,36 @@ fn generate_accessor_impl(
             impl #impl_generics #trait_tokens
                 for #struct_name #ty_generics #where_clause
             {
+                #(#assoc_type_items)*
                 fn #field_name(&self) -> &#field_type {
                     &self.#field_name
                 }
+            }
+        }
+    }
+}
+
+/// Generate mutable accessor trait impl for a single field.
+///
+/// Like `generate_accessor_impl` but the method returns `&mut self.#field_name`.
+/// The method name may differ from the field name (e.g. field `children` →
+/// method `children_mut`).
+fn generate_accessor_mut_impl(
+    struct_name: &syn::Ident,
+    impl_generics: &syn::ImplGenerics,
+    ty_generics: &syn::TypeGenerics,
+    where_clause: Option<&syn::WhereClause>,
+    field_name: &syn::Ident,
+    field_type: &syn::Type,
+    trait_tokens: &TokenStream,
+    method_name: &syn::Ident,
+) -> TokenStream {
+    quote! {
+        impl #impl_generics #trait_tokens
+            for #struct_name #ty_generics #where_clause
+        {
+            fn #method_name(&mut self) -> &mut #field_type {
+                &mut self.#field_name
             }
         }
     }

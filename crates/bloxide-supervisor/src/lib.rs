@@ -3,9 +3,6 @@
 
 extern crate alloc;
 
-// Hand-written trait impls for generated SupervisorCtx
-pub mod ctx_impls;
-
 // Custom Mailboxes for dynamic feature
 #[cfg(feature = "dynamic")]
 pub mod dynamic_mailboxes;
