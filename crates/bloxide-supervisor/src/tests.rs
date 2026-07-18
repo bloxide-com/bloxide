@@ -12,7 +12,7 @@ use crate::{
     control::{RegisterChild, SupervisorControl},
     event::SupervisorEvent,
     registry::{ChildAction, ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy},
-    NoSpawnFactory, SupervisorCtx, SupervisorSpec, SupervisorState,
+    SupervisorCtx, SupervisorSpec, SupervisorState,
 };
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::test_utils::{TestReceiver, TestRuntime};
@@ -20,13 +20,20 @@ use bloxide_core::{
     capability::DynamicChannelCap, engine::DispatchOutcome, engine::MachineState, StateMachine,
 };
 
+// The supervisor's generic arity depends on the `dynamic` feature:
+//   - Without dynamic: SupervisorSpec<R>, SupervisorCtx::new(group, id, notify)
+//   - With dynamic:    SupervisorSpec<R, F>, SupervisorCtx::new(group, id, notify, factory)
+// These aliases and the helper functions below abstract over both shapes so
+// the test bodies remain identical regardless of feature flags.
+#[cfg(not(feature = "dynamic"))]
+type Spec = SupervisorSpec<TestRuntime>;
+#[cfg(feature = "dynamic")]
+type Spec = SupervisorSpec<TestRuntime, crate::NoSpawnFactory>;
+
 fn make_supervisor(
     shutdown: GroupShutdown,
     policies: &[ChildPolicy],
-) -> (
-    StateMachine<SupervisorSpec<TestRuntime, NoSpawnFactory>>,
-    Vec<TestReceiver<LifecycleCommand>>,
-) {
+) -> (StateMachine<Spec>, Vec<TestReceiver<LifecycleCommand>>) {
     let mut group = ChildGroup::new(shutdown);
     let mut receivers = Vec::new();
     for (i, policy) in policies.iter().enumerate() {
@@ -36,7 +43,10 @@ fn make_supervisor(
         receivers.push(rx);
     }
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
-    let ctx = SupervisorCtx::new(group, 100, notify_ref, NoSpawnFactory);
+    #[cfg(not(feature = "dynamic"))]
+    let ctx = SupervisorCtx::new(group, 100, notify_ref);
+    #[cfg(feature = "dynamic")]
+    let ctx = SupervisorCtx::new(group, 100, notify_ref, crate::NoSpawnFactory);
     (StateMachine::new(ctx), receivers)
 }
 
@@ -44,10 +54,7 @@ fn make_supervisor_with_strategy(
     shutdown: GroupShutdown,
     policies: &[ChildPolicy],
     strategy: RestartStrategy,
-) -> (
-    StateMachine<SupervisorSpec<TestRuntime, NoSpawnFactory>>,
-    Vec<TestReceiver<LifecycleCommand>>,
-) {
+) -> (StateMachine<Spec>, Vec<TestReceiver<LifecycleCommand>>) {
     let mut group = ChildGroup::new(shutdown).with_restart_strategy(strategy);
     let mut receivers = Vec::new();
     for (i, policy) in policies.iter().enumerate() {
@@ -57,24 +64,33 @@ fn make_supervisor_with_strategy(
         receivers.push(rx);
     }
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
-    let ctx = SupervisorCtx::new(group, 100, notify_ref, NoSpawnFactory);
+    #[cfg(not(feature = "dynamic"))]
+    let ctx = SupervisorCtx::new(group, 100, notify_ref);
+    #[cfg(feature = "dynamic")]
+    let ctx = SupervisorCtx::new(group, 100, notify_ref, crate::NoSpawnFactory);
     (StateMachine::new(ctx), receivers)
 }
 
 fn dispatch_child_event(
-    machine: &mut StateMachine<SupervisorSpec<TestRuntime, NoSpawnFactory>>,
+    machine: &mut StateMachine<Spec>,
     event: ChildLifecycleEvent,
 ) -> DispatchOutcome<SupervisorState> {
-    machine.dispatch(SupervisorEvent::<TestRuntime, NoSpawnFactory>::Child(event))
+    #[cfg(not(feature = "dynamic"))]
+    let ev = SupervisorEvent::<TestRuntime>::Child(event);
+    #[cfg(feature = "dynamic")]
+    let ev = SupervisorEvent::<TestRuntime, crate::NoSpawnFactory>::Child(event);
+    machine.dispatch(ev)
 }
 
 fn dispatch_control_event(
-    machine: &mut StateMachine<SupervisorSpec<TestRuntime, NoSpawnFactory>>,
+    machine: &mut StateMachine<Spec>,
     event: SupervisorControl<TestRuntime>,
 ) -> DispatchOutcome<SupervisorState> {
-    machine.dispatch(SupervisorEvent::<TestRuntime, NoSpawnFactory>::Control(
-        event,
-    ))
+    #[cfg(not(feature = "dynamic"))]
+    let ev = SupervisorEvent::<TestRuntime>::Control(event);
+    #[cfg(feature = "dynamic")]
+    let ev = SupervisorEvent::<TestRuntime, crate::NoSpawnFactory>::Control(event);
+    machine.dispatch(ev)
 }
 
 fn drain_start_commands(receivers: &mut [TestReceiver<LifecycleCommand>]) {
