@@ -22,5 +22,7 @@ pub struct PoolCtx<R: BloxRuntime> {
     #[blox_ctx(skip)]
     pub spawn_reply_ref: ActorRef<SpawnedWorker<R>, R>,
     pub pending_task_id: u32,
+    pub spawn_in_flight: bool,
+    pub spawn_queue: Vec<u32>,
 }
 impl_has_workers!(PoolCtx<R>);

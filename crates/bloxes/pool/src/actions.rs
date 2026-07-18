@@ -19,6 +19,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
     if let Some(PoolMsg::SpawnWorker(SpawnWorker { task_id })) = ev.msg_payload() {
         bloxide_log::blox_log_info!(ctx.self_id(), "spawning worker for task_id={}", task_id);
         ctx.pending_task_id = *task_id;
+        ctx.spawn_in_flight = true;
         let req = AppSpawnRequest::Worker {
             task_id: *task_id,
             reply_to: ctx.spawn_reply_ref.clone(),
@@ -30,18 +31,39 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
                 "spawn mailbox full, dropping task_id={}",
                 task_id
             );
+            ctx.spawn_in_flight = false;
         }
     }
     ActionResult::Ok
 }
 
+/// Buffer a SpawnWorker request while already in Spawning state.
+/// The task_id is queued and will be processed after the current spawn reply arrives.
+pub fn handle_spawn_worker_queued<R: BloxRuntime>(
+    ctx: &mut PoolCtx<R>,
+    ev: &PoolEvent<R>,
+) -> ActionResult {
+    if let Some(PoolMsg::SpawnWorker(SpawnWorker { task_id })) = ev.msg_payload() {
+        bloxide_log::blox_log_debug!(
+            ctx.self_id(),
+            "queuing spawn request for task_id={} (already spawning)",
+            task_id
+        );
+        ctx.spawn_queue.push(*task_id);
+    }
+    ActionResult::Ok
+}
+
 /// Handle a SpawnedWorker reply: store the worker refs, introduce peers,
-/// send DoWork, and transition to Active.
+/// send DoWork, and transition to Active (or back to Spawning if queue is non-empty).
 pub fn handle_spawned_worker<R: BloxRuntime>(
     ctx: &mut PoolCtx<R>,
     ev: &PoolEvent<R>,
 ) -> ActionResult {
     if let Some(spawned) = ev.spawn_reply_payload() {
+        // Spawn reply received — clear the in-flight flag.
+        ctx.spawn_in_flight = false;
+
         let task_id = ctx.pending_task_id;
         bloxide_log::blox_log_info!(
             ctx.self_id(),
@@ -67,6 +89,31 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
             );
             if ctx.pending() > 0 {
                 ctx.set_pending(ctx.pending() - 1);
+            }
+        }
+
+        // If there are queued spawn requests, start the next one immediately (FIFO).
+        if !ctx.spawn_queue.is_empty() {
+            let next_task_id = ctx.spawn_queue.remove(0);
+            bloxide_log::blox_log_info!(
+                ctx.self_id(),
+                "processing queued spawn for task_id={}",
+                next_task_id
+            );
+            ctx.pending_task_id = next_task_id;
+            ctx.spawn_in_flight = true;
+            let req = AppSpawnRequest::Worker {
+                task_id: next_task_id,
+                reply_to: ctx.spawn_reply_ref.clone(),
+            };
+            let self_id = ctx.self_id();
+            if ctx.spawn_ref.try_send(self_id, req).is_err() {
+                bloxide_log::blox_log_warn!(
+                    self_id,
+                    "spawn mailbox full, dropping queued task_id={}",
+                    next_task_id
+                );
+                ctx.spawn_in_flight = false;
             }
         }
     }
@@ -118,7 +165,24 @@ where
         transitions: transitions![
             PoolEvent::<R>::SpawnReply(_) => {
                 actions [handle_spawned_worker]
-                transition PoolState::Active
+                guard(ctx, _results) {
+                    // If we just kicked off another spawn from the queue, stay in Spawning
+                    ctx.spawn_in_flight => PoolState::Spawning,
+                    // If there are still queued spawns (shouldn't happen without in-flight), keep spawning
+                    !ctx.spawn_queue.is_empty() => PoolState::Spawning,
+                    // If all workers already finished while we were spawning, done
+                    ctx.pending() == 0 && ctx.worker_refs().len() > 0 => PoolState::AllDone,
+                    // Otherwise go active
+                    _ => PoolState::Active,
+                }
+            },
+            PoolMsg::SpawnWorker(_) => {
+                actions [handle_spawn_worker_queued]
+                stay
+            },
+            PoolMsg::WorkDone(_) => {
+                actions [handle_work_done]
+                stay
             },
         ],
     };
@@ -134,7 +198,8 @@ where
             PoolMsg::WorkDone(_done) => {
                 actions [handle_work_done]
                 guard(ctx, _results) {
-                    ctx.pending() == 0 => PoolState::AllDone,
+                    // Don't go to AllDone if a spawn is still in-flight
+                    ctx.pending() == 0 && !ctx.spawn_in_flight => PoolState::AllDone,
                     _ => stay,
                 }
             },

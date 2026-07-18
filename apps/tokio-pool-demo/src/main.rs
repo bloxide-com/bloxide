@@ -39,7 +39,8 @@ async fn main() {
         <TokioRuntime as DynamicChannelCap>::channel::<AppSpawnRequest<TokioRuntime>>(spawn_id, 16);
 
     // Build the supervisor's child group and wire the pool as a supervised child.
-    let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+    // WhenAllDone: supervisor waits for pool AND all dynamically spawned workers to finish.
+    let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAllDone);
 
     let factory = AppSpawnFactory::new(pool_ref.clone());
 

@@ -550,9 +550,18 @@ pub fn generate(
         let notify_ident = format_ident!("sup_notify_{}", idx);
         let kill_cap_ident = format_ident!("_sup_kill_cap_{}", idx);
 
+        // Map strategy to GroupShutdown.
+        // "one_for_one" / "one_for_all" / "rest_for_one" → WhenAnyDone (shut down on first failure)
+        // "all_for_one" → WhenAllDone (wait for all children, including dynamic spawns, to finish)
+        let shutdown_strategy = if sup.strategy == "all_for_one" {
+            quote! { GroupShutdown::WhenAllDone }
+        } else {
+            quote! { GroupShutdown::WhenAnyDone }
+        };
+
         supervisor_stmts.push(quote! {
             let mut #group_ident = ChildGroupBuilder::new(
-                GroupShutdown::WhenAnyDone,
+                #shutdown_strategy,
             );
         });
 

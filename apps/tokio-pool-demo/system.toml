@@ -9,7 +9,8 @@ blox = "pool-blox"
 
   [actors.inject]
   self_ref = { source = "self" }
-  worker_factory = { source = "factory", crate = "tokio_pool_demo_impl", function = "spawn_worker_tokio" }
+  spawn_ref = { source = "supervisor_spawn" }
+  spawn_reply_ref = { source = "self_secondary", index = 1 }
 
   # Bootstrap: send 3 SpawnWorker messages to trigger Idle→Active→AllDone
   [[actors.bootstrap]]
@@ -26,8 +27,9 @@ blox = "pool-blox"
 
 [[supervision]]
 supervisor = "bloxide-supervisor"
-strategy = "one_for_one"
+strategy = "all_for_one"
 children = ["pool"]
+factory = { crate = "tokio_pool_demo_impl", type = "AppSpawnFactory" }
 
   [supervision.policies]
   pool = { stop = true }

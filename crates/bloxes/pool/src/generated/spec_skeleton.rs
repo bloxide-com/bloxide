@@ -35,5 +35,7 @@ impl<R: BloxRuntime> MachineSpec for PoolSpec<R> {
         ctx.worker_refs_mut().clear();
         ctx.worker_ctrls_mut().clear();
         ctx.set_pending(0);
+        ctx.spawn_queue.clear();
+        ctx.spawn_in_flight = false;
     }
 }
