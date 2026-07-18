@@ -136,9 +136,7 @@ Then dive deeper as needed:
 | How do dynamic actors, factory injection, and peer introduction work? | `spec/architecture/11-dynamic-actors.md` |
 | How does factory injection interact with supervision? | `spec/architecture/13-factory-injection-and-supervision.md` |
 | How does the unified lifecycle model work? | `spec/architecture/14-unified-lifecycle.md` |
-| How does supervisor-owned spawning work? | `spec/architecture/15-supervisor-owned-spawning.md` |
-| What is the spawn service pattern? | `spec/architecture/16-spawn-service.md` |
-| How is SpawnCap designed? | `spec/architecture/17-spawn-cap-design.md` |
+| How does spawning work? | `spec/architecture/21-spawn-architecture.md` |
 | Spec for the Ping actor | `spec/bloxes/ping.md` |
 | Spec for the Pong actor | `spec/bloxes/pong.md` |
 | Spec for the Counter actor | `spec/bloxes/counter.md` |

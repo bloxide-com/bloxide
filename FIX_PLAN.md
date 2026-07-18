@@ -98,8 +98,7 @@ No backwards compatibility is required for any fix.
 **Step 1: Read and understand the planned design.**
 - Read `spec/plans/extensible-child-factory.md` for the factory redesign vision.
 - Read `spec/architecture/11-dynamic-actors.md` for `introduce_peers` and peer management.
-- Read `spec/architecture/16-spawn-service.md` for the spawn service pattern.
-- Read `spec/architecture/17-spawn-cap-design.md` for SpawnCap design.
+- Read `spec/architecture/21-spawn-architecture.md` for the unified spawn architecture (supersedes the old spawn-service and SpawnCap designs).
 
 **Step 2: Implement the following types in `crates/bloxide-spawn/src/`:**
 
