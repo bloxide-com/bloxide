@@ -326,6 +326,13 @@ pub fn dyn_channels(input: TokenStream) -> TokenStream {
 }
 
 // ── transitions!(ARMS) and root_transitions!(ARMS) ────────────────────────────
+//
+// NOTE: These macros are marked for removal. The bloxide-codegen now emits
+// raw `StateRule { ... }` struct literals directly from TOML, bypassing the
+// transitions! macro entirely. The macros remain for hand-written bloxes
+// that have not yet migrated to declarative TOML transitions. Once all
+// bloxes migrate, both the macro and its 792-line implementation in
+// `transitions.rs` should be deleted.
 
 /// Build a `&'static [StateRule<S>]` from transition rule arms.
 ///

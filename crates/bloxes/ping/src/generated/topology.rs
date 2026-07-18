@@ -33,8 +33,14 @@ impl ::bloxide_core::topology::StateTopology for PingState {
     }
     fn path(self) -> &'static [Self] {
         static __PATH_OPERATING: [PingState; 1usize] = [PingState::Operating];
-        static __PATH_ACTIVE: [PingState; 2usize] = [PingState::Operating, PingState::Active];
-        static __PATH_PAUSED: [PingState; 2usize] = [PingState::Operating, PingState::Paused];
+        static __PATH_ACTIVE: [PingState; 2usize] = [
+            PingState::Operating,
+            PingState::Active,
+        ];
+        static __PATH_PAUSED: [PingState; 2usize] = [
+            PingState::Operating,
+            PingState::Paused,
+        ];
         static __PATH_DONE: [PingState; 1usize] = [PingState::Done];
         static __PATH_ERROR: [PingState; 1usize] = [PingState::Error];
         match self {
@@ -60,12 +66,7 @@ impl ::bloxide_core::topology::StateTopology for PingState {
 #[macro_export]
 macro_rules! ping_state_handler_table {
     ($ty:ty) => {
-        &[
-            &<$ty>::OPERATING_FNS,
-            &<$ty>::ACTIVE_FNS,
-            &<$ty>::PAUSED_FNS,
-            &<$ty>::DONE_FNS,
-            &<$ty>::ERROR_FNS,
-        ]
+        & [& < $ty > ::OPERATING_FNS, & < $ty > ::ACTIVE_FNS, & < $ty > ::PAUSED_FNS, & <
+        $ty > ::DONE_FNS, & < $ty > ::ERROR_FNS]
     };
 }

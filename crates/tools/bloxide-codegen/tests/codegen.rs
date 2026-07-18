@@ -1076,12 +1076,13 @@ actions = ["reply_pong_action"]
     // StateFns constant generated
     assert!(content.contains("READY_FNS"));
     assert!(content.contains("StateFns"));
-    // transitions! macro invocation
-    assert!(content.contains("transitions!"));
-    // Event pattern
-    assert!(content.contains("PingPongMsg::Ping(_)"));
-    // stay keyword
-    assert!(content.contains("stay"));
+    // Raw StateRule struct literal (no transitions! macro)
+    assert!(content.contains("StateRule"));
+    assert!(!content.contains("transitions!"));
+    // Event pattern in matches closure
+    assert!(content.contains("PingPongMsg::Ping"));
+    // Guard::Stay
+    assert!(content.contains("Guard::Stay"));
     // Action function
     assert!(content.contains("reply_pong_action"));
     // Handler table array
@@ -1134,15 +1135,16 @@ target = "stay"
         .expect("topology.rs missing");
     let content = &topo_file.1;
 
-    // Guard chain generated
-    assert!(content.contains("guard(ctx, results)"));
+    // Guard chain generated as if/else-if/else
     assert!(content.contains("ctx.count() >= 2"));
     assert!(content.contains("ctx.count() < 2"));
-    // State targets
+    // State targets in Guard::Transition
     assert!(content.contains("CounterState::Done"));
-    assert!(content.contains("stay"));
-    // transitions! macro
-    assert!(content.contains("transitions!"));
+    // Guard::Stay for fallback
+    assert!(content.contains("Guard::Stay"));
+    // Raw StateRule struct literal (no transitions! macro)
+    assert!(content.contains("StateRule"));
+    assert!(!content.contains("transitions!"));
 }
 
 #[test]
@@ -1238,8 +1240,8 @@ target = "AllDone"
     let content = &topo_file.1;
 
     // transition targets (not stay/reset/fail)
-    // prettyplease may insert newlines between tokens, so check for both parts
-    assert!(content.contains("transition"));
+    // Guard::Transition with LeafState::new
+    assert!(content.contains("Guard::Transition"));
     assert!(content.contains("PoolState::Active"));
     assert!(content.contains("PoolState::AllDone"));
 }
@@ -1574,8 +1576,8 @@ target = "fail"
         .expect("topology.rs missing");
     let content = &topo_file.1;
 
-    assert!(content.contains("reset"));
-    assert!(content.contains("fail"));
+    assert!(content.contains("Guard::Reset"));
+    assert!(content.contains("Guard::Fail"));
 }
 
 // ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ pub mod schema;
 pub mod spec_skeleton;
 pub mod system_wiring;
 mod topology;
+pub mod util;
 pub mod wiring;
 
 use schema::{BloxConfig, SystemConfig};
@@ -47,14 +48,23 @@ pub fn generate_all(
         files.push(("ctx.rs".to_string(), code));
     }
 
-    if let (Some(actor), Some(topology), Some(event), Some(context)) = (
-        &config.actor,
-        &config.topology,
-        &config.event,
-        &config.context,
-    ) {
-        let code = spec_skeleton::generate(actor, topology, context, event, crate_name)?;
-        files.push(("spec_skeleton.rs".to_string(), code));
+    // spec_skeleton requires actor + topology + context, plus event info.
+    // Event info can come from an [event] section OR from the context config
+    // (event_name/event_generics fields — used when the event enum is
+    // hand-written in a separate crate).
+    if let (Some(actor), Some(topology), Some(context)) =
+        (&config.actor, &config.topology, &config.context)
+    {
+        if context.event_name.is_some() || config.event.is_some() {
+            let code = spec_skeleton::generate(
+                actor,
+                topology,
+                context,
+                config.event.as_ref(),
+                crate_name,
+            )?;
+            files.push(("spec_skeleton.rs".to_string(), code));
+        }
     }
 
     if let Some(wiring) = &config.wiring {
@@ -90,6 +100,11 @@ fn generate_mod_rs(files: &[(String, String)]) -> String {
             continue;
         }
         let stem = filename.strip_suffix(".rs").unwrap_or(filename);
+        // topology.rs emits #[macro_export] macros (e.g. *_handler_table!).
+        // #[macro_use] makes them available to sibling modules (spec_skeleton.rs).
+        if stem == "topology" {
+            lines.push("#[macro_use]".to_string());
+        }
         lines.push(format!("pub mod {stem};"));
         lines.push(format!("#[allow(unused_imports)] pub use {stem}::*;"));
     }

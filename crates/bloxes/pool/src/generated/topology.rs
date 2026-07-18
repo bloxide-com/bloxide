@@ -54,11 +54,7 @@ impl ::bloxide_core::topology::StateTopology for PoolState {
 #[macro_export]
 macro_rules! pool_state_handler_table {
     ($ty:ty) => {
-        &[
-            &<$ty>::IDLE_FNS,
-            &<$ty>::SPAWNING_FNS,
-            &<$ty>::ACTIVE_FNS,
-            &<$ty>::ALL_DONE_FNS,
-        ]
+        & [& < $ty > ::IDLE_FNS, & < $ty > ::SPAWNING_FNS, & < $ty > ::ACTIVE_FNS, & <
+        $ty > ::ALL_DONE_FNS]
     };
 }

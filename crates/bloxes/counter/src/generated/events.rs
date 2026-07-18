@@ -12,7 +12,8 @@ impl ::core::convert::From<Envelope<counter_messages::CounterMsg>> for CounterEv
         CounterEvent::Msg(envelope)
     }
 }
-impl ::core::convert::From<::bloxide_core::lifecycle::LifecycleCommand> for CounterEvent {
+impl ::core::convert::From<::bloxide_core::lifecycle::LifecycleCommand>
+for CounterEvent {
     fn from(cmd: ::bloxide_core::lifecycle::LifecycleCommand) -> Self {
         CounterEvent::Lifecycle(cmd)
     }
@@ -40,7 +41,9 @@ impl CounterEvent {
     /// Event tag for this variant, used for fast dispatch filtering.
     pub const MSG_TAG: u8 = 0u8;
     /// Returns the envelope if this event matches this variant.
-    pub fn msg_envelope(&self) -> ::core::option::Option<&Envelope<counter_messages::CounterMsg>> {
+    pub fn msg_envelope(
+        &self,
+    ) -> ::core::option::Option<&Envelope<counter_messages::CounterMsg>> {
         match self {
             CounterEvent::Msg(ref e) => ::core::option::Option::Some(e),
             _ => ::core::option::Option::None,

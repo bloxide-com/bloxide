@@ -42,6 +42,6 @@ impl ::bloxide_core::topology::StateTopology for CounterState {
 #[macro_export]
 macro_rules! counter_state_handler_table {
     ($ty:ty) => {
-        &[&<$ty>::READY_FNS, &<$ty>::DONE_FNS]
+        & [& < $ty > ::READY_FNS, & < $ty > ::DONE_FNS]
     };
 }

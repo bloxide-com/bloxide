@@ -36,6 +36,6 @@ impl ::bloxide_core::topology::StateTopology for PongState {
 #[macro_export]
 macro_rules! pong_state_handler_table {
     ($ty:ty) => {
-        &[&<$ty>::READY_FNS]
+        & [& < $ty > ::READY_FNS]
     };
 }

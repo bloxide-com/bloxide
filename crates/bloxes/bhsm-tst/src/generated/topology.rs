@@ -43,11 +43,17 @@ impl ::bloxide_core::topology::StateTopology for BhsmTstState {
     fn path(self) -> &'static [Self] {
         static __PATH_S: [BhsmTstState; 1usize] = [BhsmTstState::S];
         static __PATH_S1: [BhsmTstState; 2usize] = [BhsmTstState::S, BhsmTstState::S1];
-        static __PATH_S11: [BhsmTstState; 3usize] =
-            [BhsmTstState::S, BhsmTstState::S1, BhsmTstState::S11];
+        static __PATH_S11: [BhsmTstState; 3usize] = [
+            BhsmTstState::S,
+            BhsmTstState::S1,
+            BhsmTstState::S11,
+        ];
         static __PATH_S2: [BhsmTstState; 2usize] = [BhsmTstState::S, BhsmTstState::S2];
-        static __PATH_S21: [BhsmTstState; 3usize] =
-            [BhsmTstState::S, BhsmTstState::S2, BhsmTstState::S21];
+        static __PATH_S21: [BhsmTstState; 3usize] = [
+            BhsmTstState::S,
+            BhsmTstState::S2,
+            BhsmTstState::S21,
+        ];
         static __PATH_S211: [BhsmTstState; 4usize] = [
             BhsmTstState::S,
             BhsmTstState::S2,
@@ -85,15 +91,8 @@ impl ::bloxide_core::topology::StateTopology for BhsmTstState {
 #[macro_export]
 macro_rules! bhsm_tst_state_handler_table {
     ($ty:ty) => {
-        &[
-            &<$ty>::S_FNS,
-            &<$ty>::S1_FNS,
-            &<$ty>::S11_FNS,
-            &<$ty>::S2_FNS,
-            &<$ty>::S21_FNS,
-            &<$ty>::S211_FNS,
-            &<$ty>::ERROR_FNS,
-            &<$ty>::DONE_FNS,
-        ]
+        & [& < $ty > ::S_FNS, & < $ty > ::S1_FNS, & < $ty > ::S11_FNS, & < $ty >
+        ::S2_FNS, & < $ty > ::S21_FNS, & < $ty > ::S211_FNS, & < $ty > ::ERROR_FNS, & <
+        $ty > ::DONE_FNS]
     };
 }

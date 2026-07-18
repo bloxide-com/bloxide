@@ -46,6 +46,15 @@ pub struct MessageFieldConfig {
 pub struct EventConfig {
     pub name: String,
     pub generics: Option<String>, // e.g. "<R: BloxRuntime>"
+    /// Feature name for paired `#[cfg]` event enum generation.
+    /// When set, any mailbox with `feature = "<name>"` is emitted only in
+    /// the feature-gated variant.  The non-feature variant uses `generics`;
+    /// the feature variant uses `feature_generics`.
+    #[serde(default)]
+    pub feature: Option<String>,
+    /// Generics for the feature-gated variant (e.g. `"<R, F: SpawnFactory<R>>"`).
+    #[serde(default)]
+    pub feature_generics: Option<String>,
     #[serde(default)]
     pub debug: Option<bool>, // default true; deprecated — use `derives` instead
     /// Custom derive trait paths to apply to the generated event enum.
@@ -61,6 +70,11 @@ pub struct MailboxConfig {
     pub variant: String,
     pub message: String,
     pub message_path: Option<String>,
+    /// Feature gate for this mailbox. When set, the mailbox variant (and its
+    /// associated From/EventTag/accessor impls) is emitted only under
+    /// `#[cfg(feature = "...")]`. When `None`, the mailbox is always emitted.
+    #[serde(default)]
+    pub feature: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -98,6 +112,10 @@ pub struct TransitionConfig {
     /// When present, `target` is the fallback (the `_` arm).
     #[serde(default)]
     pub guards: Vec<GuardConfig>,
+    /// Feature gate for this transition. When set, the transition is emitted
+    /// only under `#[cfg(feature = "...")]`.
+    #[serde(default)]
+    pub feature: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -114,6 +132,10 @@ pub struct EntryExitConfig {
     pub state: String,
     /// Action functions to call.
     pub actions: Vec<String>,
+    /// Feature gate for this entry/exit. When set, the entry/exit is emitted
+    /// only under `#[cfg(feature = "...")]`.
+    #[serde(default)]
+    pub feature: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -149,6 +171,57 @@ pub struct ContextConfig {
     /// See `spec/architecture/18-composable-context-crates.md`.
     #[serde(default)]
     pub uses: Vec<ContextUse>,
+
+    // ── Feature-gating (paired `#[cfg]` generation) ───────────────────────
+    //
+    // When `feature` is set, the codegen emits TWO variants of the context
+    // struct (and the spec_skeleton): one under `#[cfg(not(feature = "..."))]`
+    // and one under `#[cfg(feature = "...")]`.
+    //
+    // Fields/uses with `feature = "<name>"` appear only in the feature variant.
+    // The non-feature variant uses `generics`; the feature variant uses
+    // `feature_generics`.
+    /// Feature name for paired generation (e.g. `"dynamic"`).
+    #[serde(default)]
+    pub feature: Option<String>,
+    /// Generics for the feature-gated variant (e.g. `"<R: BloxRuntime, F: SpawnFactory<R>>"`).
+    #[serde(default)]
+    pub feature_generics: Option<String>,
+    /// Extra `where`-clause predicates for the feature-gated variant.
+    #[serde(default)]
+    pub feature_where: Vec<String>,
+    /// Extra imports for the feature-gated variant (raw `use` statements).
+    #[serde(default)]
+    pub feature_imports: Vec<String>,
+
+    // ── Event type info (when no `[event]` section is present) ─────────────
+    //
+    // When the event enum is hand-written (not generated), the context config
+    // provides the event type name and generics so the spec_skeleton can
+    // reference them.
+    /// Event type name (e.g. `"SupervisorEvent"`).  Required when there is
+    /// no `[event]` section but a spec_skeleton is needed.
+    #[serde(default)]
+    pub event_name: Option<String>,
+    /// Event generics for the non-feature variant (e.g. `"<R>"`).
+    #[serde(default)]
+    pub event_generics: Option<String>,
+    /// Event generics for the feature-gated variant (e.g. `"<R, F>"`).
+    #[serde(default)]
+    pub feature_event_generics: Option<String>,
+
+    // ── Mailboxes type (when no `[event]` section is present) ─────────────
+    //
+    // When the event enum is hand-written, the Mailboxes associated type
+    // must be specified as a raw type expression.
+    /// Mailboxes type for the non-feature variant, as a raw string.
+    /// e.g. `"(Rt::Stream<ChildLifecycleEvent>, Rt::Stream<SupervisorControl<R>>)"`.
+    #[serde(default)]
+    pub mailboxes_type: Option<String>,
+    /// Mailboxes type for the feature-gated variant, as a raw string.
+    /// e.g. `"crate::dynamic_mailboxes::SupervisorMailboxes<R, Rt, F>"`.
+    #[serde(default)]
+    pub feature_mailboxes_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -160,6 +233,10 @@ pub struct ContextFieldConfig {
     /// `"state"`, or `"delegate"`. When absent, the codegen infers the role
     /// from naming conventions (the legacy behaviour).
     pub role: Option<String>,
+    /// Feature gate for this field. When set, the field is emitted only under
+    /// `#[cfg(feature = "...")]`.
+    #[serde(default)]
+    pub feature: Option<String>,
 }
 
 /// A `[[context.uses]]` entry — pulls traits and fields from a composable
@@ -236,6 +313,12 @@ pub struct ContextUse {
     /// Sub-fields for multi-field traits.
     #[serde(default)]
     pub fields: Vec<ContextUseField>,
+
+    /// Feature gate for this entire `uses` entry. When set, the entry's
+    /// trait imports, fields, and impl_macro call are emitted only under
+    /// `#[cfg(feature = "...")]`.
+    #[serde(default)]
+    pub feature: Option<String>,
 }
 
 /// A `[[context.uses.fields]]` entry — a field contributed by a multi-field
@@ -246,6 +329,10 @@ pub struct ContextUseField {
     pub ty: String,
     /// Field role: `"state"` (zero-initialized) or `"ctor"` (constructor param).
     pub role: Option<String>,
+    /// Feature gate for this sub-field. When set, the field is emitted only
+    /// under `#[cfg(feature = "...")]`.
+    #[serde(default)]
+    pub feature: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
