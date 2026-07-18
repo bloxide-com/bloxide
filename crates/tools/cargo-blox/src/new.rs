@@ -159,7 +159,6 @@ ty = "ActorId"
     blox_toml.push_str(
         r#"
 [topology]
-handler_fns = []
 "#,
     );
 

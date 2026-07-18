@@ -109,27 +109,6 @@ pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
 ///
 /// # Attributes
 ///
-/// ## Enum-level: `#[handler_fns(...)]`
-///
-/// Specifies handler function names for each state variant. Auto-generates a companion
-/// macro `{snake_case_state_enum_name}_handler_table!(Self)` for constructing the
-/// `HANDLER_TABLE` const array.
-///
-/// Example:
-/// ```ignore
-/// #[derive(StateTopology)]
-/// #[handler_fns(on_entry_state_a, on_exit_state_a, on_entry_state_b)]
-/// enum State {
-///     StateA,
-///     StateB,
-/// }
-///
-/// // Generated macro (call in impl MachineSpec):
-/// // fn state_handler_table() -> &'static [StateFns<Self>] {
-/// //     &state_handler_table!(Self)
-/// // }
-/// ```
-///
 /// ## Variant attributes
 ///
 /// - `#[composite]` — marks a state as having children (not a leaf).
@@ -160,7 +139,7 @@ pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
 /// - `is_leaf()` returning `true` for non-composite states
 /// - `path()` returning a statically-allocated root-first ancestor slice
 /// - `as_index()` returning the `repr(u8)` discriminant as `usize`
-#[proc_macro_derive(StateTopology, attributes(composite, parent, handler_fns))]
+#[proc_macro_derive(StateTopology, attributes(composite, parent))]
 pub fn derive_state_topology(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     match state_topology::derive_state_topology_inner(&input) {

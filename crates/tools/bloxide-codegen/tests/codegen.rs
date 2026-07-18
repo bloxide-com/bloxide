@@ -365,7 +365,6 @@ fn test_generate_composite_topology() {
 name = "Ping"
 
 [topology]
-handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
 
 [[topology.states]]
 name = "Operating"
@@ -439,7 +438,6 @@ message = "TestMsg"
 message_path = "test_messages::TestMsg"
 
 [topology]
-handler_fns = ["STATE_A_FNS"]
 
 [[topology.states]]
 name = "StateA"
@@ -825,7 +823,6 @@ trait = "CountsTicks"
 delegatable = true
 
 [topology]
-handler_fns = ["READY_FNS", "DONE_FNS"]
 
 [[topology.states]]
 name = "Ready"
@@ -879,7 +876,6 @@ ty = "B"
 delegates = ["CountsTicks"]
 
 [topology]
-handler_fns = ["READY_FNS", "DONE_FNS"]
 
 [[topology.states]]
 name = "Ready"
@@ -945,7 +941,6 @@ ty = "B"
 delegates = ["HasCurrentTimer", "CountsRounds"]
 
 [topology]
-handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
 
 [[topology.states]]
 name = "Operating"
@@ -997,7 +992,6 @@ fn test_state_flags_in_topology() {
 name = "Test"
 
 [topology]
-handler_fns = ["READY_FNS", "DONE_FNS", "ERROR_FNS"]
 
 [[topology.states]]
 name = "Ready"
@@ -1025,7 +1019,6 @@ fn test_no_context_no_spec_skeleton() {
 name = "Minimal"
 
 [topology]
-handler_fns = ["IDLE_FNS"]
 
 [[topology.states]]
 name = "Idle"
@@ -2277,7 +2270,6 @@ name = "self_id"
 ty = "ActorId"
 
 [topology]
-handler_fns = ["IDLE_FNS", "ACTIVE_FNS"]
 
 [[topology.states]]
 name = "Idle"
