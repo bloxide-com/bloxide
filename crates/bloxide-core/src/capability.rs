@@ -84,6 +84,14 @@ pub trait BloxRuntime: Clone + Send + 'static {
         sender: &Self::Sender<M>,
         envelope: Envelope<M>,
     ) -> Result<(), Self::TrySendError>;
+
+    /// Kill capability. `NoKill` for static runtimes, `Kill` for dynamic.
+    /// Determines the `Handle` type stored in `ChildEntry::task_handle` —
+    /// `()` (ZST) for `NoKill`, `R::TaskHandle` for `Kill`.
+    ///
+    /// Each runtime impl specifies this explicitly (no default — associated
+    /// type defaults are unstable on stable Rust).
+    type Kill: KillCapability<Self>;
 }
 
 /// Channel creation for runtimes with compile-time-fixed capacity.
@@ -122,19 +130,46 @@ pub trait DynamicChannelCap: BloxRuntime {
 /// Extends `DynamicChannelCap` (which provides `alloc_actor_id` and `channel`).
 /// Blox crates that need dynamic spawning declare `R: SpawnCap`.
 /// Embassy does NOT implement this trait — use static wiring for Embassy.
+///
+/// The associated `TaskHandle` type is returned by `spawn` and consumed by
+/// `kill`. For Tokio it is `JoinHandle<()>`; for TestRuntime it is `()`.
+/// This is a concrete, by-value type — no `Arc<dyn>`, no dynamic dispatch.
 pub trait SpawnCap: DynamicChannelCap {
-    /// Spawn a future as an independent task.
-    fn spawn(future: impl Future<Output = ()> + Send + 'static);
+    /// Handle to a spawned task. Consumed by [`kill`](Self::kill).
+    type TaskHandle: Send + 'static;
+
+    /// Spawn a future as an independent task and return a handle for external abort.
+    fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle;
+
+    /// Abort a spawned task immediately. No callbacks fire — the task is dropped in-place.
+    /// The handle is consumed and cannot be reused.
+    fn kill(handle: Self::TaskHandle);
 }
 
-/// Capability to terminate actors and free allocated resources for dynamic actors based on policy.
+/// Type-level kill capability for a runtime.
 ///
-/// Kill bypasses dispatch for immediate termination; used for policy-driven cleanup
-/// or when actors are unresponsive.
+/// `NoKill` — no external task abort (Embassy, static-only). `Handle = ()` (ZST).
+/// `Kill`   — external abort via `SpawnCap::kill(handle)` (Tokio, dynamic).
 ///
-/// Use `Arc<dyn KillCap>` for object-safe usage - the Arc provides clone functionality.
-pub trait KillCap: Send + Sync + 'static {
-    /// Kill the actor immediately. Runtime aborts the task and drops channels.
-    /// No callbacks fire on the actor - it's just gone.
-    fn kill(&self, actor_id: ActorId);
+/// This is a type-level enum, not a trait object. The runtime picks the
+/// variant; the supervisor is monomorphized for whichever it is.
+pub trait KillCapability<R: BloxRuntime> {
+    type Handle: Send + 'static;
+    fn kill(handle: Self::Handle);
+}
+
+/// No kill capability — static runtimes (Embassy). `Handle = ()` (ZST).
+pub struct NoKill;
+impl<R: BloxRuntime> KillCapability<R> for NoKill {
+    type Handle = ();
+    fn kill(_: ()) {}
+}
+
+/// Kill capability via `SpawnCap::kill`. Used by dynamic runtimes (Tokio).
+pub struct Kill;
+impl<R: BloxRuntime + SpawnCap> KillCapability<R> for Kill {
+    type Handle = R::TaskHandle;
+    fn kill(handle: R::TaskHandle) {
+        R::kill(handle);
+    }
 }

@@ -3,8 +3,7 @@
 name = "Supervisor"
 
 # ── Context struct ───────────────────────────────────────────────────────────
-# The supervisor context is feature-gated: the non-dynamic variant has
-# R: BloxRuntime only; the dynamic variant adds F: SpawnFactory<R>.
+# Single unified variant — no dynamic/non-dynamic split.
 # The event enum is hand-written in bloxide-supervisor-context (not generated)
 # because it uses inner types (ChildLifecycleEvent, not Envelope<...>) and
 # has a generic SupervisorControl<R> that the codegen's Envelope-based pattern
@@ -13,9 +12,6 @@ name = "Supervisor"
 [context]
 name = "SupervisorCtx"
 generics = "<R: BloxRuntime>"
-feature = "dynamic"
-feature_generics = "<R: BloxRuntime, F: SpawnFactory<R>>"
-feature_where = ["F: 'static"]
 on_init = "ctx.children.clear_counters(); ctx.pending = ChildAction::default();"
 
 # Explicit imports — only non-framework crates. Framework types (ActorId,
@@ -25,13 +21,8 @@ imports = [
     "bloxide_supervisor_context::{ChildAction, ChildGroup, HasChildGroup, HasChildGroupMut, HasChildNotify, HasPending}",
 ]
 
-# Dynamic-only imports
-feature_imports = [
-    "bloxide_supervisor_context::{HasSpawnFactory, SpawnFactory}",
-]
-
 # Extra impl blocks emitted after the struct. {ctx} is replaced with the
-# actual ctx type for each variant (SupervisorCtx<R> or SupervisorCtx<R, F>).
+# actual ctx type (SupervisorCtx<R>).
 extra_impls = [
     "HasPending for {ctx} { fn pending(&self) -> ChildAction { self.pending } fn set_pending(&mut self, action: ChildAction) { self.pending = action; } }",
     "{ctx} { pub fn all_children_stopped(&self) -> bool { self.children.all_stopped() } }",
@@ -40,11 +31,9 @@ extra_impls = [
 # Event type info (hand-written event enum in bloxide-supervisor-context)
 event_name = "SupervisorEvent"
 event_generics = "<R>"
-feature_event_generics = "<R, F>"
 
 # Mailboxes type (hand-written, not derived from [event].mailboxes)
 mailboxes_type = "(Rt::Stream<bloxide_core::lifecycle::ChildLifecycleEvent>, Rt::Stream<bloxide_supervisor_context::SupervisorControl<R>>)"
-feature_mailboxes_type = "crate::dynamic_mailboxes::SupervisorMailboxes<R, Rt, F>"
 
 # ── Context fields ───────────────────────────────────────────────────────────
 
@@ -71,29 +60,17 @@ name = "pending"
 ty = "ChildAction"
 role = "state"
 
-# Dynamic feature only: spawn factory
-[[context.fields]]
-name = "spawn_factory"
-ty = "F"
-role = "ctor"
-provides = "HasSpawnFactory<R>, type Factory = F"
-feature = "dynamic"
-
 # ── Topology ─────────────────────────────────────────────────────────────────
-# 2 states, 13 transitions, 2 entry actions. Fully declarative — no handler_fns.
+# 2 states, 12 transitions, 2 entry actions. Fully declarative — no handler_fns.
 
 [topology]
 spec_imports = [
-    "bloxide_supervisor_actions::{start_children, stop_all_children, handle_done_or_failed, handle_reset, record_started, record_alive, record_stopped, register_child, handle_health_check}",
+    "bloxide_supervisor_actions::{start_children, stop_all_children, handle_done_or_failed, handle_reset, record_started, record_alive, record_stopped, register_child, handle_health_check, handle_register_dynamic_child}",
     "bloxide_supervisor_context::{ChildAction, SupervisorControl}",
     "bloxide_core::lifecycle::ChildLifecycleEvent",
 ]
-feature_spec_imports = [
-    "bloxide_supervisor_actions::handle_spawn_request",
-    "bloxide_supervisor_context::SpawnFactory",
-]
 
-# Running state — lifecycle handling (always present)
+# Running state — lifecycle handling
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(ChildLifecycleEvent::Done { .. })"
@@ -134,18 +111,16 @@ actions = ["register_child::<{R}, {Ctx}, {Event}>"]
 
 [[topology.transitions]]
 state = "Running"
+event = "SupervisorEvent::Control(SupervisorControl::RegisterDynamicChild(_))"
+target = "stay"
+actions = ["handle_register_dynamic_child::<{R}, {Ctx}, {Event}>"]
+
+[[topology.transitions]]
+state = "Running"
 event = "SupervisorEvent::Control(SupervisorControl::HealthCheckTick)"
 target = "stay"
 actions = ["handle_health_check::<{R}, {Ctx}, {Event}>"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
-
-# Running state — spawn handling (dynamic feature only)
-[[topology.transitions]]
-state = "Running"
-event = "SupervisorEvent::Spawn(_)"
-target = "stay"
-actions = ["handle_spawn_request::<{R}, {Ctx}, F>"]
-feature = "dynamic"
 
 # Running state — catch-alls
 [[topology.transitions]]

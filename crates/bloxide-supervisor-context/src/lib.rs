@@ -7,13 +7,10 @@ pub mod event;
 pub mod registry;
 pub mod spawn;
 
-pub use control::{RegisterChild, SupervisorControl};
+pub use control::{RegisterChild, RegisterDynamicChild, SupervisorControl, SupervisorRegistrar};
 pub use event::{SupervisorEvent, SupervisorEventLike};
 pub use registry::{
     ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup, HasChildGroupMut,
     HasPending, RestartStrategy,
 };
-pub use spawn::{
-    HasChildNotify, HasSpawnFactory, NoSpawnFactory, NoSpawnRequest, SpawnFactory, SpawnOutput,
-    SpawnPolicy,
-};
+pub use spawn::{spawn_supervised_child, HasChildNotify};

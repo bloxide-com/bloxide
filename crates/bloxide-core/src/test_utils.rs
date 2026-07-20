@@ -135,6 +135,7 @@ impl BloxRuntime for TestRuntime {
     type Sender<M: Send + 'static> = TestSender<M>;
     type Receiver<M: Send + 'static> = TestReceiver<M>;
     type Stream<M: Send + 'static> = TestReceiver<M>;
+    type Kill = crate::capability::Kill;
 
     fn to_stream<M: Send + 'static>(rx: Self::Receiver<M>) -> Self::Stream<M> {
         rx
@@ -224,8 +225,14 @@ mod spawn_helpers {
     }
 
     impl SpawnCap for TestRuntime {
-        fn spawn(future: impl Future<Output = ()> + Send + 'static) {
+        type TaskHandle = ();
+
+        fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle {
             SPAWNED.with(|s| s.borrow_mut().push(Box::pin(future)));
+        }
+
+        fn kill(_handle: Self::TaskHandle) {
+            // No-op: TestRuntime doesn't run real tasks
         }
     }
 

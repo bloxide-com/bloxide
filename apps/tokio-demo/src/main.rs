@@ -66,7 +66,6 @@ async fn main() {
     );
     let _sup_control_ref_0 = group.control_ref();
     let sup_notify_0 = group.notify_ref();
-    let _sup_kill_cap_0 = group.kill_cap().clone();
     let sup_id = ::bloxide_tokio::next_actor_id!();
     let (children, sup_notify_rx, sup_control_rx) = group.finish();
     #[cfg(not(feature = "dynamic"))]

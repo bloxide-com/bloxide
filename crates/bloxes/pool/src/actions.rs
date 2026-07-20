@@ -20,6 +20,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
         let req = AppSpawnRequest::Worker {
             task_id: *task_id,
             reply_to: ctx.spawn_reply_ref.clone(),
+            pool_ref: ctx.self_ref.clone(),
         };
         let self_id = ctx.self_id();
         if ctx.spawn_ref.try_send(self_id, req).is_err() {
@@ -102,6 +103,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
             let req = AppSpawnRequest::Worker {
                 task_id: next_task_id,
                 reply_to: ctx.spawn_reply_ref.clone(),
+                pool_ref: ctx.self_ref.clone(),
             };
             let self_id = ctx.self_id();
             if ctx.spawn_ref.try_send(self_id, req).is_err() {

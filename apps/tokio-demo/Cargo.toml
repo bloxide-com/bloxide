@@ -20,7 +20,3 @@ tokio              = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-log        = { workspace = true }
-
-[features]
-dynamic = ["bloxide-supervisor/dynamic"]
-default = ["dynamic"]

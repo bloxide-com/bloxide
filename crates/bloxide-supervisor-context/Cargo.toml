@@ -3,7 +3,7 @@
 name = "bloxide-supervisor-context"
 version.workspace = true
 edition.workspace = true
-description = "Context types for bloxide supervisor — ChildGroup, SpawnFactory, policies"
+description = "Context types for bloxide supervisor — ChildGroup, policies, events"
 repository.workspace = true
 license.workspace = true
 

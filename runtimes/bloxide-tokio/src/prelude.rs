@@ -6,8 +6,8 @@
 /// framework types needed in a wiring binary.
 pub use crate::{
     run_actor, run_actor_auto_start, run_actor_to_completion, run_root,
-    spawn_dynamic_supervised_child, ChildGroupBuilder, SpawnCap, TokioRuntime, TokioSender,
-    TokioStream,
+    run_supervised_actor_with_kill, spawn_dynamic_supervised_child, ChildGroupBuilder, SpawnCap,
+    TokioRuntime, TokioSender, TokioStream,
 };
 pub use bloxide_core::prelude::*;
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};

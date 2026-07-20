@@ -1,20 +1,25 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Concrete runtime-specific worker factory for the Tokio pool demo.
+//! Concrete runtime-specific worker spawn function for the Tokio pool demo.
 //!
 //! This crate is the impl layer for `tokio-pool-demo`. It is the only place
 //! that knows about concrete worker context/spec types and task spawning.
+//!
+//! Per spec 22 Step 5, the old `AppSpawnFactory` struct was replaced with a
+//! stateless `fn spawn_worker`. All state comes from the `AppSpawnRequest`
+//! message — no captured struct fields.
 
 extern crate alloc;
 use alloc::vec::Vec;
 
 use bloxide_core::{
     capability::{BloxRuntime, DynamicChannelCap, SpawnCap},
+    child_management::{ChildPolicy, KillCommand},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::ActorRef,
+    spawn::SpawnOutput,
     StateMachine,
 };
-use bloxide_supervisor_context::{SpawnFactory, SpawnOutput, SpawnPolicy};
-use bloxide_tokio::{run_supervised_actor, TokioRuntime};
+use bloxide_tokio::{run_supervised_actor_with_kill, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasWorkerPeers};
 use pool_messages::{AppSpawnRequest, PoolMsg, SpawnedWorker, WorkerCtrl, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
@@ -60,73 +65,73 @@ impl<R: BloxRuntime> HasWorkerPeers<R> for WorkerBehavior<R> {
     }
 }
 
-/// Concrete spawn factory for the Tokio pool demo.
-/// Creates worker actors and reports lifecycle events to the supervisor.
-pub struct AppSpawnFactory {
-    pool_ref: ActorRef<PoolMsg, TokioRuntime>,
-}
+/// Spawn function for the Tokio pool demo.
+///
+/// Creates a worker actor and returns the handles the supervisor needs.
+/// This is a plain function (not a trait impl) — the wiring layer passes
+/// it to `spawn_child()` as a `SpawnFn<R, AppSpawnRequest<R>>`.
+///
+/// All state comes from the request — `pool_ref` is in the message, not
+/// captured from a struct field.
+pub fn spawn_worker(
+    req: AppSpawnRequest<TokioRuntime>,
+    notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
+) -> SpawnOutput<TokioRuntime> {
+    match req {
+        AppSpawnRequest::Worker {
+            task_id: _,
+            reply_to,
+            pool_ref,
+        } => {
+            let worker_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
+            let (ctrl_ref, ctrl_rx) =
+                <TokioRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TokioRuntime>>(
+                    worker_id, 16,
+                );
+            let (domain_ref, domain_rx) =
+                <TokioRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
+            let (lifecycle_ref, lifecycle_rx) =
+                <TokioRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(
+                    worker_id, 4,
+                );
+            let (kill_ref, kill_rx) =
+                <TokioRuntime as DynamicChannelCap>::channel::<KillCommand>(worker_id, 4);
 
-impl AppSpawnFactory {
-    pub fn new(pool_ref: ActorRef<PoolMsg, TokioRuntime>) -> Self {
-        Self { pool_ref }
-    }
-}
-
-impl SpawnFactory<TokioRuntime> for AppSpawnFactory {
-    type Request = AppSpawnRequest<TokioRuntime>;
-
-    fn spawn(
-        &self,
-        req: Self::Request,
-        notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
-    ) -> SpawnOutput<TokioRuntime> {
-        match req {
-            AppSpawnRequest::Worker {
-                task_id: _,
-                reply_to,
-            } => {
-                let worker_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
-                let (ctrl_ref, ctrl_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
-                    WorkerCtrl<TokioRuntime>,
-                >(worker_id, 16);
-                let (domain_ref, domain_rx) =
-                    <TokioRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
-                let (lifecycle_ref, lifecycle_rx) =
-                    <TokioRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(worker_id, 4);
-
-                let behavior = WorkerBehavior::<TokioRuntime>::default();
-                let worker_ctx = WorkerCtx::new(self.pool_ref.clone(), worker_id, behavior);
-                let machine =
-                    StateMachine::<WorkerSpec<TokioRuntime, WorkerBehavior<TokioRuntime>>>::new(
-                        worker_ctx,
-                    );
-
-                let notify_sender = notify.sender();
-                <TokioRuntime as SpawnCap>::spawn(async move {
-                    run_supervised_actor(
-                        machine,
-                        (ctrl_rx, domain_rx),
-                        lifecycle_rx,
-                        worker_id,
-                        notify_sender,
-                    )
-                    .await;
-                });
-
-                let _ = reply_to.try_send(
-                    worker_id,
-                    SpawnedWorker {
-                        child_id: worker_id,
-                        domain_ref: domain_ref.clone(),
-                        ctrl_ref: ctrl_ref.clone(),
-                    },
+            let behavior = WorkerBehavior::<TokioRuntime>::default();
+            let worker_ctx = WorkerCtx::new(pool_ref, worker_id, behavior);
+            let machine =
+                StateMachine::<WorkerSpec<TokioRuntime, WorkerBehavior<TokioRuntime>>>::new(
+                    worker_ctx,
                 );
 
-                SpawnOutput {
+            let notify_sender = notify.sender();
+            let task_handle = <TokioRuntime as SpawnCap>::spawn(async move {
+                run_supervised_actor_with_kill(
+                    machine,
+                    (ctrl_rx, domain_rx),
+                    lifecycle_rx,
+                    kill_rx,
+                    worker_id,
+                    notify_sender,
+                )
+                .await
+            });
+
+            let _ = reply_to.try_send(
+                worker_id,
+                SpawnedWorker {
                     child_id: worker_id,
-                    lifecycle_ref,
-                    policy: Some(SpawnPolicy::Stop),
-                }
+                    domain_ref: domain_ref.clone(),
+                    ctrl_ref: ctrl_ref.clone(),
+                },
+            );
+
+            SpawnOutput {
+                child_id: worker_id,
+                lifecycle_ref,
+                kill_ref,
+                task_handle,
+                policy: ChildPolicy::Stop,
             }
         }
     }

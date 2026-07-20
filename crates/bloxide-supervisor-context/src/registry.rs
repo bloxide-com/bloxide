@@ -1,44 +1,20 @@
 // Copyright 2025 Bloxide, all rights reserved
-use alloc::sync::Arc;
+//! `ChildGroup` — the standard supervisor's child tracking data structure.
+//!
+//! `ChildPolicy`, `GroupShutdown`, `RestartStrategy`, and `KillCommand` have
+//! been moved to `bloxide_core::child_management` (they are not
+//! supervisor-specific). They are re-exported here for convenience.
+
 use alloc::vec::Vec;
 use bloxide_core::{
-    capability::{BloxRuntime, KillCap},
+    capability::BloxRuntime,
+    lifecycle::LifecycleCommand,
     messaging::{ActorId, ActorRef},
 };
 
-use bloxide_core::lifecycle::LifecycleCommand;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum ChildPolicy {
-    /// Restart the child up to `max` times. `max` is the number of restart
-    /// *attempts* allowed: after the `max`-th restart the next failure triggers
-    /// group shutdown. `Restart { max: 0 }` means no restarts — equivalent to `Stop`.
-    Restart { max: usize },
-    /// Send Stop command for clean shutdown (callbacks run).
-    Stop,
-    /// Immediately kill the child without callbacks (policy-driven cleanup for dynamic actors).
-    /// Only available if KillCap is provided to ChildGroup.
-    Kill,
-}
-
-/// Group-level restart strategy determining which children are restarted
-/// when a child fails. Inspired by Erlang/OTP supervisor strategies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RestartStrategy {
-    /// Restart only the failed child (default, current behavior).
-    #[default]
-    OneForOne,
-    /// Restart all children when any child fails.
-    OneForAll,
-    /// Restart the failed child and all children declared after it.
-    RestForOne,
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum GroupShutdown {
-    WhenAnyDone,
-    WhenAllDone,
-}
+// Re-export the moved types so downstream code can still import them from
+// `bloxide_supervisor_context` if desired.
+pub use bloxide_core::child_management::{ChildPolicy, GroupShutdown, KillCommand, RestartStrategy};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum ChildAction {
@@ -74,9 +50,6 @@ pub struct ChildGroup<R: BloxRuntime> {
     shutdown: GroupShutdown,
     restart_strategy: RestartStrategy,
     stopped_count: usize,
-    /// Optional KillCap for policy-driven cleanup of dynamic actors.
-    /// None for Embassy (no task abort), Some for Tokio.
-    kill_cap: Option<Arc<dyn KillCap>>,
 }
 
 /// Accessor trait for the child group — same pattern as the old `HasChildren`
@@ -103,18 +76,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
             shutdown,
             restart_strategy: RestartStrategy::default(),
             stopped_count: 0,
-            kill_cap: None,
-        }
-    }
-
-    /// Create a new ChildGroup with KillCap support for dynamic actor cleanup.
-    pub fn with_kill_cap(shutdown: GroupShutdown, kill_cap: Arc<dyn KillCap>) -> Self {
-        Self {
-            children: Vec::new(),
-            shutdown,
-            restart_strategy: RestartStrategy::default(),
-            stopped_count: 0,
-            kill_cap: Some(kill_cap),
         }
     }
 
@@ -122,11 +83,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
     pub fn with_restart_strategy(mut self, strategy: RestartStrategy) -> Self {
         self.restart_strategy = strategy;
         self
-    }
-
-    /// Set the KillCap after construction (for builders that need deferred setup).
-    pub fn set_kill_cap(&mut self, kill_cap: Arc<dyn KillCap>) {
-        self.kill_cap = Some(kill_cap);
     }
 
     pub fn add(
@@ -195,29 +151,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
     }
 
-    /// Kill a child immediately using KillCap (no callbacks, no Stop command).
-    /// Returns true if the child was killed, false if KillCap unavailable or child not found.
-    pub fn kill_child(&mut self, child_id: ActorId) -> bool {
-        let Some(kill_cap) = &self.kill_cap else {
-            bloxide_log::blox_log_warn!(0, "KillCap not available for child {}", child_id);
-            return false;
-        };
-
-        let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) else {
-            return false;
-        };
-
-        if entry.phase == ChildPhase::Killed || entry.stopped {
-            return false; // Already killed or stopped
-        }
-
-        kill_cap.kill(child_id);
-        entry.phase = ChildPhase::Killed;
-        entry.stopped = true;
-        self.stopped_count += 1;
-        true
-    }
-
     pub fn handle_done_or_failed(&mut self, child_id: ActorId, from: ActorId) -> ChildAction {
         let idx = match self.children.iter().position(|e| e.id == child_id) {
             Some(idx) => idx,
@@ -240,13 +173,13 @@ impl<R: BloxRuntime> ChildGroup<R> {
             return ChildAction::Continue;
         }
 
-        // Handle Kill policy - immediately kill the child
+        // Handle Kill policy - the KillCommand mailbox + task_handle ripcord
+        // will be added to ChildEntry in a later step. For now, Kill policy
+        // is treated as Stop (clean shutdown).
         if policy == ChildPolicy::Kill {
-            let killed = self.kill_child(child_id);
-            if killed {
-                return self.check_shutdown();
-            }
-            // Fall through if kill failed (no KillCap)
+            // TODO (spec 22 Step 2/6): send KillCommand on kill_ref and
+            // call R::Kill::kill(task_handle). For now, fall through to
+            // permanent-done behavior.
         }
 
         if let ChildPolicy::Restart { max } = policy {

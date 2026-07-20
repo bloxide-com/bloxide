@@ -10,17 +10,15 @@ use ::core::marker::PhantomData;
 use bloxide_core::lifecycle::ChildLifecycleEvent;
 #[allow(unused_imports)]
 use bloxide_supervisor_actions::{
-    handle_done_or_failed, handle_health_check, handle_reset, record_alive, record_started,
-    record_stopped, register_child, start_children, stop_all_children,
+    handle_done_or_failed, handle_health_check, handle_register_dynamic_child, handle_reset,
+    record_alive, record_started, record_stopped, register_child, start_children,
+    stop_all_children,
 };
 #[allow(unused_imports)]
 use bloxide_supervisor_context::{ChildAction, SupervisorControl};
-#[cfg(not(feature = "dynamic"))]
-#[cfg(not(feature = "dynamic"))]
 pub struct SupervisorSpec<R: BloxRuntime> {
     _phantom: PhantomData<R>,
 }
-#[cfg(not(feature = "dynamic"))]
 impl<R: BloxRuntime> SupervisorSpec<R> {
     #[allow(unused_variables)]
     const RUNNING_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
@@ -114,6 +112,19 @@ impl<R: BloxRuntime> SupervisorSpec<R> {
                 matches: |__ev| {
                     ::core::matches!(
                         __ev,
+                        SupervisorEvent::Control(SupervisorControl::RegisterDynamicChild(_))
+                    )
+                },
+                actions: &[
+                    handle_register_dynamic_child::<R, SupervisorCtx<R>, SupervisorEvent<R>>,
+                ],
+                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
+            },
+            ::bloxide_core::transition::StateRule {
+                event_tag: SupervisorEvent::<R>::CONTROL_TAG,
+                matches: |__ev| {
+                    ::core::matches!(
+                        __ev,
                         SupervisorEvent::Control(SupervisorControl::HealthCheckTick)
                     )
                 },
@@ -180,7 +191,6 @@ impl<R: BloxRuntime> SupervisorSpec<R> {
             ],
         };
 }
-#[cfg(not(feature = "dynamic"))]
 impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
     type State = SupervisorState;
     type Event = SupervisorEvent<R>;
@@ -189,213 +199,6 @@ impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
         Rt::Stream<bloxide_core::lifecycle::ChildLifecycleEvent>,
         Rt::Stream<bloxide_supervisor_context::SupervisorControl<R>>,
     );
-    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = supervisor_state_handler_table!(Self);
-    fn initial_state() -> SupervisorState {
-        SupervisorState::Running
-    }
-    fn is_terminal(_state: &SupervisorState) -> bool {
-        false
-    }
-    fn is_error(_state: &SupervisorState) -> bool {
-        false
-    }
-    fn on_init_entry(ctx: &mut Self::Ctx) {
-        ctx.children.clear_counters();
-        ctx.pending = ChildAction::default();
-    }
-}
-#[cfg(feature = "dynamic")]
-#[allow(unused_imports)]
-use bloxide_supervisor_actions::handle_spawn_request;
-#[allow(unused_imports)]
-use bloxide_supervisor_context::SpawnFactory;
-#[cfg(feature = "dynamic")]
-pub struct SupervisorSpec<R: BloxRuntime, F: SpawnFactory<R>>
-where
-    F: 'static,
-{
-    _phantom: PhantomData<(R, F)>,
-}
-#[cfg(feature = "dynamic")]
-impl<R: BloxRuntime, F: SpawnFactory<R>> SupervisorSpec<R, F>
-where
-    F: 'static,
-{
-    #[allow(unused_variables)]
-    const RUNNING_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
-        on_entry: &[start_children::<R, SupervisorCtx<R, F>>],
-        on_exit: &[],
-        transitions: &[
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::CHILD_TAG,
-                matches: |__ev| {
-                    ::core::matches!(
-                        __ev,
-                        SupervisorEvent::Child(ChildLifecycleEvent::Done { .. })
-                    )
-                },
-                actions: &[handle_done_or_failed::<R, SupervisorCtx<R, F>, SupervisorEvent<R, F>>],
-                guard: |ctx, results, _ev| {
-                    if ctx.pending == ChildAction::BeginShutdown {
-                        ::bloxide_core::transition::Guard::Transition(
-                            ::bloxide_core::topology::LeafState::new(SupervisorState::ShuttingDown),
-                        )
-                    } else {
-                        ::bloxide_core::transition::Guard::Stay
-                    }
-                },
-            },
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::CHILD_TAG,
-                matches: |__ev| {
-                    ::core::matches!(
-                        __ev,
-                        SupervisorEvent::Child(ChildLifecycleEvent::Failed { .. })
-                    )
-                },
-                actions: &[handle_done_or_failed::<R, SupervisorCtx<R, F>, SupervisorEvent<R, F>>],
-                guard: |ctx, results, _ev| {
-                    if ctx.pending == ChildAction::BeginShutdown {
-                        ::bloxide_core::transition::Guard::Transition(
-                            ::bloxide_core::topology::LeafState::new(SupervisorState::ShuttingDown),
-                        )
-                    } else {
-                        ::bloxide_core::transition::Guard::Stay
-                    }
-                },
-            },
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::CHILD_TAG,
-                matches: |__ev| {
-                    ::core::matches!(
-                        __ev,
-                        SupervisorEvent::Child(ChildLifecycleEvent::Reset { .. })
-                    )
-                },
-                actions: &[handle_reset::<R, SupervisorCtx<R, F>, SupervisorEvent<R, F>>],
-                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
-            },
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::CHILD_TAG,
-                matches: |__ev| {
-                    ::core::matches!(
-                        __ev,
-                        SupervisorEvent::Child(ChildLifecycleEvent::Started { .. })
-                    )
-                },
-                actions: &[record_started::<R, SupervisorCtx<R, F>, SupervisorEvent<R, F>>],
-                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
-            },
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::CHILD_TAG,
-                matches: |__ev| {
-                    ::core::matches!(
-                        __ev,
-                        SupervisorEvent::Child(ChildLifecycleEvent::Alive { .. })
-                    )
-                },
-                actions: &[record_alive::<R, SupervisorCtx<R, F>, SupervisorEvent<R, F>>],
-                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
-            },
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::CONTROL_TAG,
-                matches: |__ev| {
-                    ::core::matches!(
-                        __ev,
-                        SupervisorEvent::Control(SupervisorControl::RegisterChild(_))
-                    )
-                },
-                actions: &[register_child::<R, SupervisorCtx<R, F>, SupervisorEvent<R, F>>],
-                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
-            },
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::CONTROL_TAG,
-                matches: |__ev| {
-                    ::core::matches!(
-                        __ev,
-                        SupervisorEvent::Control(SupervisorControl::HealthCheckTick)
-                    )
-                },
-                actions: &[handle_health_check::<R, SupervisorCtx<R, F>, SupervisorEvent<R, F>>],
-                guard: |ctx, results, _ev| {
-                    if ctx.pending == ChildAction::BeginShutdown {
-                        ::bloxide_core::transition::Guard::Transition(
-                            ::bloxide_core::topology::LeafState::new(SupervisorState::ShuttingDown),
-                        )
-                    } else {
-                        ::bloxide_core::transition::Guard::Stay
-                    }
-                },
-            },
-            #[cfg(feature = "dynamic")]
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::SPAWN_TAG,
-                matches: |__ev| ::core::matches!(__ev, SupervisorEvent::Spawn(_)),
-                actions: &[handle_spawn_request::<R, SupervisorCtx<R, F>, F>],
-                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
-            },
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::CHILD_TAG,
-                matches: |__ev| ::core::matches!(__ev, SupervisorEvent::Child(_)),
-                actions: &[],
-                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
-            },
-            ::bloxide_core::transition::StateRule {
-                event_tag: SupervisorEvent::<R, F>::CONTROL_TAG,
-                matches: |__ev| ::core::matches!(__ev, SupervisorEvent::Control(_)),
-                actions: &[],
-                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
-            },
-        ],
-    };
-    #[allow(unused_variables)]
-    const SHUTTING_DOWN_FNS: ::bloxide_core::spec::StateFns<Self> =
-        ::bloxide_core::spec::StateFns {
-            on_entry: &[stop_all_children::<R, SupervisorCtx<R, F>>],
-            on_exit: &[],
-            transitions: &[
-                ::bloxide_core::transition::StateRule {
-                    event_tag: SupervisorEvent::<R, F>::CHILD_TAG,
-                    matches: |__ev| {
-                        ::core::matches!(
-                            __ev,
-                            SupervisorEvent::Child(ChildLifecycleEvent::Stopped { .. })
-                        )
-                    },
-                    actions: &[record_stopped::<R, SupervisorCtx<R, F>, SupervisorEvent<R, F>>],
-                    guard: |ctx, results, _ev| {
-                        if ctx.all_children_stopped() {
-                            ::bloxide_core::transition::Guard::Reset
-                        } else {
-                            ::bloxide_core::transition::Guard::Stay
-                        }
-                    },
-                },
-                ::bloxide_core::transition::StateRule {
-                    event_tag: SupervisorEvent::<R, F>::CHILD_TAG,
-                    matches: |__ev| ::core::matches!(__ev, SupervisorEvent::Child(_)),
-                    actions: &[],
-                    guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
-                },
-                ::bloxide_core::transition::StateRule {
-                    event_tag: SupervisorEvent::<R, F>::CONTROL_TAG,
-                    matches: |__ev| ::core::matches!(__ev, SupervisorEvent::Control(_)),
-                    actions: &[],
-                    guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
-                },
-            ],
-        };
-}
-#[cfg(feature = "dynamic")]
-impl<R: BloxRuntime, F: SpawnFactory<R>> MachineSpec for SupervisorSpec<R, F>
-where
-    F: 'static,
-{
-    type State = SupervisorState;
-    type Event = SupervisorEvent<R, F>;
-    type Ctx = SupervisorCtx<R, F>;
-    type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> =
-        crate::dynamic_mailboxes::SupervisorMailboxes<R, Rt, F>;
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = supervisor_state_handler_table!(Self);
     fn initial_state() -> SupervisorState {
         SupervisorState::Running

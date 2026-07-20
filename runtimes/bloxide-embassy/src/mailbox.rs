@@ -3,7 +3,7 @@ use crate::channel::{EmbassySender, EmbassyStream, EmbassyTrySendError};
 use crate::EmbassyRuntime;
 use alloc::boxed::Box;
 use bloxide_core::{
-    capability::{BloxRuntime, StaticChannelCap},
+    capability::{BloxRuntime, NoKill, StaticChannelCap},
     messaging::{ActorId, ActorRef, Envelope},
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -18,6 +18,7 @@ impl BloxRuntime for EmbassyRuntime {
     type Sender<M: Send + 'static> = EmbassySender<M>;
     type Receiver<M: Send + 'static> = EmbassyStream<M>;
     type Stream<M: Send + 'static> = EmbassyStream<M>;
+    type Kill = NoKill;
 
     fn to_stream<M: Send + 'static>(rx: Self::Receiver<M>) -> Self::Stream<M> {
         rx

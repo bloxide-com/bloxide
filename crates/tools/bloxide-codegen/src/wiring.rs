@@ -237,7 +237,6 @@ pub fn generate(config: &WiringConfig, _crate_name: &str) -> anyhow::Result<Stri
         supervisor_stmts.push(quote! {
             let _sup_control_ref = group.control_ref();
             let _sup_notify = group.notify_sender();
-            let _sup_kill_cap = group.kill_cap().clone();
             let sup_id = ::#runtime_crate_ident::next_actor_id!();
             let (children, sup_notify_rx, sup_control_rx) = group.finish();
         });

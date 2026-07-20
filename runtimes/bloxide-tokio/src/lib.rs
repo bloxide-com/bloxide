@@ -11,7 +11,6 @@ pub use bloxide_macros::dyn_channels as __dyn_channels_proc_macro;
 pub use bloxide_macros::next_actor_id as __next_actor_id_proc_macro;
 
 pub mod channel;
-pub mod kill;
 pub mod mailbox;
 pub mod prelude;
 pub mod spawn;
@@ -20,8 +19,10 @@ pub mod timer;
 
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{TokioSender, TokioStream, TokioTrySendError};
-pub use kill::TokioKillCap;
-pub use supervision::{run_supervised_actor, spawn_dynamic_supervised_child, ChildGroupBuilder};
+pub use supervision::{
+    run_supervised_actor, run_supervised_actor_with_kill, spawn_dynamic_supervised_child,
+    ChildGroupBuilder,
+};
 
 // ── TokioRuntime ──────────────────────────────────────────────────────────────
 
@@ -157,8 +158,7 @@ macro_rules! spawn_timer {
 macro_rules! spawn_child {
     ($builder:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
         let (lc_rx, sup_notify) = $builder.add_child($id, $policy);
-        let handle = tokio::spawn($task_fn($machine, $mbox, lc_rx, $id, sup_notify));
-        $builder.kill_cap().register($id, handle);
+        let _handle = tokio::spawn($task_fn($machine, $mbox, lc_rx, $id, sup_notify));
     }};
 }
 
@@ -170,12 +170,11 @@ macro_rules! spawn_child {
 /// call style for ergonomic dynamic supervision wiring.
 #[macro_export]
 macro_rules! spawn_child_dynamic {
-    ($from:expr, $control_ref:expr, $notify_sender:expr, $kill_cap:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
+    ($from:expr, $control_ref:expr, $notify_sender:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
         $crate::spawn_dynamic_supervised_child(
             $from,
             &$control_ref,
             &$notify_sender,
-            &$kill_cap,
             $id,
             $policy,
             move |lc_rx, sup_notify, actor_id| {

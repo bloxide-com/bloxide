@@ -6,7 +6,13 @@ use bloxide_core::SpawnCap;
 use crate::TokioRuntime;
 
 impl SpawnCap for TokioRuntime {
-    fn spawn(future: impl Future<Output = ()> + Send + 'static) {
-        tokio::spawn(future);
+    type TaskHandle = tokio::task::JoinHandle<()>;
+
+    fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle {
+        tokio::spawn(future)
+    }
+
+    fn kill(handle: Self::TaskHandle) {
+        handle.abort();
     }
 }

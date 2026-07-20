@@ -3,10 +3,6 @@
 
 extern crate alloc;
 
-// Custom Mailboxes for dynamic feature
-#[cfg(feature = "dynamic")]
-pub mod dynamic_mailboxes;
-
 // Generated state machine code
 pub mod generated;
 
@@ -17,8 +13,9 @@ mod tests;
 // Re-export types from bloxide-supervisor-context for backward compat
 pub use bloxide_supervisor_context::{
     ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup, HasChildGroupMut,
-    HasChildNotify, HasPending, NoSpawnFactory, NoSpawnRequest, RegisterChild, RestartStrategy,
-    SupervisorControl, SupervisorEvent, SupervisorEventLike,
+    HasChildNotify, HasPending, RegisterChild, RegisterDynamicChild, RestartStrategy,
+    SupervisorControl, SupervisorEvent, SupervisorEventLike, SupervisorRegistrar,
+    spawn_supervised_child,
 };
 
 // Re-export from generated
@@ -26,7 +23,9 @@ pub use generated::{SupervisorCtx, SupervisorSpec, SupervisorState};
 
 // Re-export action functions from bloxide-supervisor-actions
 pub use bloxide_supervisor_actions::{
-    handle_done_or_failed, handle_health_check, record_stopped, start_children, stop_all_children,
+    handle_done_or_failed, handle_health_check, handle_register_dynamic_child, handle_reset,
+    record_alive, record_started, record_stopped, register_child, start_children,
+    stop_all_children,
 };
 
 // Backward-compat module aliases so existing `bloxide_supervisor::registry::*`
@@ -39,7 +38,7 @@ pub mod registry {
     };
 }
 pub mod control {
-    pub use bloxide_supervisor_context::{RegisterChild, SupervisorControl};
+    pub use bloxide_supervisor_context::{RegisterChild, RegisterDynamicChild, SupervisorControl};
 }
 pub mod event {
     pub use bloxide_supervisor_context::{SupervisorEvent, SupervisorEventLike};

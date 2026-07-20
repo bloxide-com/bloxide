@@ -43,6 +43,8 @@ pub enum AppSpawnRequest<R: BloxRuntime> {
         task_id: u32,
         /// Reply channel: the factory sends `SpawnedWorker` here.
         reply_to: ActorRef<SpawnedWorker<R>, R>,
+        /// Pool ref the worker needs to send results back.
+        pool_ref: ActorRef<PoolMsg, R>,
     },
 }
 

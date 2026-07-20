@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap},
+    capability::{BloxRuntime, DynamicChannelCap, Kill},
     messaging::{ActorId, ActorRef, Envelope},
 };
 use tokio::sync::mpsc;
@@ -29,6 +29,7 @@ impl BloxRuntime for TokioRuntime {
     type Sender<M: Send + 'static> = TokioSender<M>;
     type Receiver<M: Send + 'static> = TokioStream<M>;
     type Stream<M: Send + 'static> = TokioStream<M>;
+    type Kill = Kill;
 
     fn to_stream<M: Send + 'static>(rx: Self::Receiver<M>) -> Self::Stream<M> {
         rx
