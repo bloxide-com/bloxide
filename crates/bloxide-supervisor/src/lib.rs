@@ -3,6 +3,9 @@
 
 extern crate alloc;
 
+// Hand-written action functions (concrete, take &SupervisorEvent<R> directly)
+pub mod actions;
+
 // Generated state machine code
 pub mod generated;
 
@@ -12,17 +15,16 @@ mod tests;
 
 // Re-export types from bloxide-supervisor-context for backward compat
 pub use bloxide_supervisor_context::{
-    ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup, HasChildGroupMut,
-    HasChildNotify, HasPending, RegisterChild, RegisterDynamicChild, RestartStrategy,
-    SupervisorControl, SupervisorEvent, SupervisorEventLike, SupervisorRegistrar,
-    spawn_supervised_child,
+    spawn_supervised_child, ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup,
+    HasChildGroupMut, HasChildNotify, HasPending, RegisterChild, RegisterDynamicChild,
+    RestartStrategy, SupervisorControl, SupervisorRegistrar,
 };
 
-// Re-export from generated
-pub use generated::{SupervisorCtx, SupervisorSpec, SupervisorState};
+// Re-export from generated (SupervisorEvent now codegen-generated, not hand-written)
+pub use generated::{SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState};
 
-// Re-export action functions from bloxide-supervisor-actions
-pub use bloxide_supervisor_actions::{
+// Re-export action functions from the local actions module
+pub use actions::{
     handle_done_or_failed, handle_health_check, handle_register_dynamic_child, handle_reset,
     record_alive, record_started, record_stopped, register_child, start_children,
     stop_all_children,
@@ -41,7 +43,7 @@ pub mod control {
     pub use bloxide_supervisor_context::{RegisterChild, RegisterDynamicChild, SupervisorControl};
 }
 pub mod event {
-    pub use bloxide_supervisor_context::{SupervisorEvent, SupervisorEventLike};
+    pub use crate::generated::SupervisorEvent;
 }
 pub mod supervisor {
     pub use crate::generated::{SupervisorCtx, SupervisorSpec, SupervisorState};

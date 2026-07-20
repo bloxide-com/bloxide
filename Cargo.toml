@@ -13,7 +13,6 @@ members = [
     "crates/bloxide-macros",
     "crates/bloxide-supervisor",
     "crates/bloxide-supervisor-context",
-    "crates/bloxide-supervisor-actions",
     "crates/bloxide-peers",
     "crates/bloxide-timer",
     "crates/bloxide-messaging",
@@ -69,7 +68,6 @@ bloxide-log = { path = "crates/bloxide-log" }
 bloxide-macros = { path = "crates/bloxide-macros" }
 bloxide-supervisor = { path = "crates/bloxide-supervisor" }
 bloxide-supervisor-context = { path = "crates/bloxide-supervisor-context" }
-bloxide-supervisor-actions = { path = "crates/bloxide-supervisor-actions" }
 bloxide-peers = { path = "crates/bloxide-peers" }
 bloxide-timer = { path = "crates/bloxide-timer" }
 bloxide-messaging = { path = "crates/bloxide-messaging" }

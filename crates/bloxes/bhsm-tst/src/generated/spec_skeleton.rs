@@ -3,6 +3,8 @@
 pub use crate::generated::topology::BhsmTstState;
 use crate::BhsmTstCtx;
 use crate::BhsmTstEvent;
+#[allow(unused_imports)]
+use ::bloxide_core::messaging::Envelope;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use ::core::marker::PhantomData;
 #[allow(unused_imports)]

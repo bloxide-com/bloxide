@@ -9,6 +9,8 @@ pub use crate::generated::topology::PoolState;
 use crate::PoolCtx;
 use crate::PoolEvent;
 use ::bloxide_core::capability::BloxRuntime;
+#[allow(unused_imports)]
+use ::bloxide_core::messaging::Envelope;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use ::core::marker::PhantomData;
 #[allow(unused_imports)]

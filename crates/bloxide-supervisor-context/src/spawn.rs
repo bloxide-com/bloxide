@@ -46,6 +46,10 @@ where
     Req: Send + Clone + 'static,
 {
     bloxide_core::spawn::spawn_child::<R, Req, SupervisorRegistrar>(
-        spawn_fn, req, control_ref, notify_ref, from,
+        spawn_fn,
+        req,
+        control_ref,
+        notify_ref,
+        from,
     )
 }

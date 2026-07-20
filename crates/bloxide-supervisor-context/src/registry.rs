@@ -14,7 +14,9 @@ use bloxide_core::{
 
 // Re-export the moved types so downstream code can still import them from
 // `bloxide_supervisor_context` if desired.
-pub use bloxide_core::child_management::{ChildPolicy, GroupShutdown, KillCommand, RestartStrategy};
+pub use bloxide_core::child_management::{
+    ChildPolicy, GroupShutdown, KillCommand, RestartStrategy,
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum ChildAction {
@@ -164,9 +166,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
         if matches!(
             phase,
-            ChildPhase::AwaitingReset
-                | ChildPhase::PermanentlyDone
-                | ChildPhase::Stopped
+            ChildPhase::AwaitingReset | ChildPhase::PermanentlyDone | ChildPhase::Stopped
         ) {
             return ChildAction::Continue;
         }

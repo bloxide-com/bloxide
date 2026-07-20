@@ -10,25 +10,17 @@ use alloc::vec::Vec;
 
 use crate::{
     control::{RegisterChild, SupervisorControl},
-    event::SupervisorEvent,
     registry::{ChildAction, ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy},
-    SupervisorCtx, SupervisorSpec, SupervisorState,
+    SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState,
 };
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
+use bloxide_core::messaging::Envelope;
 use bloxide_core::test_utils::{TestReceiver, TestRuntime};
 use bloxide_core::{
     capability::DynamicChannelCap, engine::DispatchOutcome, engine::MachineState, StateMachine,
 };
 
-// The supervisor's generic arity depends on the `dynamic` feature:
-//   - Without dynamic: SupervisorSpec<R>, SupervisorCtx::new(group, id, notify)
-//   - With dynamic:    SupervisorSpec<R, F>, SupervisorCtx::new(group, id, notify, factory)
-// These aliases and the helper functions below abstract over both shapes so
-// the test bodies remain identical regardless of feature flags.
-#[cfg(not(feature = "dynamic"))]
 type Spec = SupervisorSpec<TestRuntime>;
-#[cfg(feature = "dynamic")]
-type Spec = SupervisorSpec<TestRuntime, crate::NoSpawnFactory>;
 
 fn make_supervisor(
     shutdown: GroupShutdown,
@@ -43,10 +35,7 @@ fn make_supervisor(
         receivers.push(rx);
     }
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
-    #[cfg(not(feature = "dynamic"))]
     let ctx = SupervisorCtx::new(group, 100, notify_ref);
-    #[cfg(feature = "dynamic")]
-    let ctx = SupervisorCtx::new(group, 100, notify_ref, crate::NoSpawnFactory);
     (StateMachine::new(ctx), receivers)
 }
 
@@ -64,10 +53,7 @@ fn make_supervisor_with_strategy(
         receivers.push(rx);
     }
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
-    #[cfg(not(feature = "dynamic"))]
     let ctx = SupervisorCtx::new(group, 100, notify_ref);
-    #[cfg(feature = "dynamic")]
-    let ctx = SupervisorCtx::new(group, 100, notify_ref, crate::NoSpawnFactory);
     (StateMachine::new(ctx), receivers)
 }
 
@@ -75,10 +61,7 @@ fn dispatch_child_event(
     machine: &mut StateMachine<Spec>,
     event: ChildLifecycleEvent,
 ) -> DispatchOutcome<SupervisorState> {
-    #[cfg(not(feature = "dynamic"))]
-    let ev = SupervisorEvent::<TestRuntime>::Child(event);
-    #[cfg(feature = "dynamic")]
-    let ev = SupervisorEvent::<TestRuntime, crate::NoSpawnFactory>::Child(event);
+    let ev = SupervisorEvent::<TestRuntime>::Child(Envelope(0, event));
     machine.dispatch(ev)
 }
 
@@ -86,10 +69,7 @@ fn dispatch_control_event(
     machine: &mut StateMachine<Spec>,
     event: SupervisorControl<TestRuntime>,
 ) -> DispatchOutcome<SupervisorState> {
-    #[cfg(not(feature = "dynamic"))]
-    let ev = SupervisorEvent::<TestRuntime>::Control(event);
-    #[cfg(feature = "dynamic")]
-    let ev = SupervisorEvent::<TestRuntime, crate::NoSpawnFactory>::Control(event);
+    let ev = SupervisorEvent::<TestRuntime>::Control(Envelope(0, event));
     machine.dispatch(ev)
 }
 

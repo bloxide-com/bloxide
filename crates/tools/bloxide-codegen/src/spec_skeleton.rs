@@ -455,6 +455,16 @@ pub fn generate(
         });
     }
 
+    // Envelope is needed when FullEvent patterns match on Envelope-wrapped
+    // variants (e.g. `SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))`).
+    // Always import it when there's an [event] section — it's harmless if unused.
+    if event.is_some() {
+        use_stmts.push(quote! {
+            #[allow(unused_imports)]
+            use ::bloxide_core::messaging::Envelope;
+        });
+    }
+
     // Add message type imports — the generated matches closures reference
     // message enum types (e.g. `CounterMsg::Tick(_)`) which must be in scope.
     // Collect unique crate-level import paths from mailbox message_path fields.

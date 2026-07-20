@@ -84,16 +84,13 @@ pub fn spawn_worker(
             pool_ref,
         } => {
             let worker_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
-            let (ctrl_ref, ctrl_rx) =
-                <TokioRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TokioRuntime>>(
-                    worker_id, 16,
-                );
+            let (ctrl_ref, ctrl_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
+                WorkerCtrl<TokioRuntime>,
+            >(worker_id, 16);
             let (domain_ref, domain_rx) =
                 <TokioRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
             let (lifecycle_ref, lifecycle_rx) =
-                <TokioRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(
-                    worker_id, 4,
-                );
+                <TokioRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(worker_id, 4);
             let (kill_ref, kill_rx) =
                 <TokioRuntime as DynamicChannelCap>::channel::<KillCommand>(worker_id, 4);
 

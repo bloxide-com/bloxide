@@ -6,6 +6,8 @@ use crate::PingEvent;
 #[allow(unused_imports)]
 use crate::{MAX_ROUNDS, PAUSE_AT_ROUND};
 use ::bloxide_core::capability::BloxRuntime;
+#[allow(unused_imports)]
+use ::bloxide_core::messaging::Envelope;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use ::core::marker::PhantomData;
 #[allow(unused_imports)]

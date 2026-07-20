@@ -549,7 +549,8 @@ pub fn generate(
                         "actor '{}' inject field '{}' uses source = 'supervisor_spawn' \
                          which was removed in spawn-architecture-v2. \
                          Use source = \"actor\" with actor = \"supervisor\" instead.",
-                        actor.name, field.name
+                        actor.name,
+                        field.name
                     );
                 } else if source.source == "factory" {
                     let factory_crate = source.crate_name.as_deref().ok_or_else(|| {

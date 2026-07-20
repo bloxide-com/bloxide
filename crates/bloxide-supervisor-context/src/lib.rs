@@ -3,12 +3,10 @@
 extern crate alloc;
 
 pub mod control;
-pub mod event;
 pub mod registry;
 pub mod spawn;
 
 pub use control::{RegisterChild, RegisterDynamicChild, SupervisorControl, SupervisorRegistrar};
-pub use event::{SupervisorEvent, SupervisorEventLike};
 pub use registry::{
     ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup, HasChildGroupMut,
     HasPending, RestartStrategy,

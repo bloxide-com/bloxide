@@ -79,10 +79,7 @@ where
 /// enum (e.g., `SpawnRequest<R>` in pool-messages). The runtime helper
 /// is generic over `Req` so it doesn't depend on any specific app's
 /// messages crate.
-pub type SpawnFn<R, Req> = fn(
-    req: Req,
-    notify: ActorRef<ChildLifecycleEvent, R>,
-) -> SpawnOutput<R>;
+pub type SpawnFn<R, Req> = fn(req: Req, notify: ActorRef<ChildLifecycleEvent, R>) -> SpawnOutput<R>;
 
 /// A blox that manages spawned children implements this to define how
 /// `SpawnOutput` is wrapped into its own control-plane message type.
