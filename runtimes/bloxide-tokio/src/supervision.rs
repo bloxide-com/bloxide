@@ -147,10 +147,12 @@ fn report_outcome<S: MachineSpec>(
 /// Kill uses a dual mechanism:
 ///   1. Self-termination (fast path): the task breaks out of the select
 ///      loop and returns. Works when the kill mailbox is actively polled.
-///   2. External abort (ripcord): the `TaskHandle` from `R::spawn()` is
-///      stored in `ChildEntry` in the supervisor. When the child is
-///      unresponsive (not polling the kill mailbox), the supervisor calls
-///      `R::Kill::kill(handle)` — e.g., `JoinHandle::abort()` on Tokio.
+///   2. External abort (ripcord): the `AbortHandle` from
+///      `SpawnCap::abort_handle()` is stored in `ChildEntry` in the
+///      supervisor. When the child is unresponsive (not polling the kill
+///      mailbox), the supervisor calls `R::Kill::kill(handle)` — which
+///      calls `SpawnCap::abort(handle)`, i.e. `AbortHandle::abort()` on
+///      Tokio.
 ///
 /// This function handles only the self-termination path. The external
 /// abort is handled by `ChildGroup::handle_done_or_failed` in the
@@ -458,5 +460,99 @@ mod tests {
         // After abort, the task is aborted. We can't directly observe abort
         // from inside, but the key assertion is that abort() didn't panic
         // and the handle was consumed.
+    }
+
+    /// Integration test: the supervisor's ripcord path actually aborts an
+    /// unresponsive child task.
+    ///
+    /// This exercises the full kill path:
+    ///   1. Spawn an **unresponsive** child task (stuck in a long sleep, never
+    ///      polls its kill mailbox)
+    ///   2. Create a `ChildGroup<TokioRuntime>` with `ChildPolicy::Kill`
+    ///   3. Register the child via `add_dynamic` with the real `AbortHandle`
+    ///      and `kill_ref`
+    ///   4. Call `handle_done_or_failed` — this calls `R::Kill::kill(handle)`
+    ///      which calls `SpawnCap::abort(handle)` which calls
+    ///      `AbortHandle::abort()`
+    ///   5. Verify the task was actually aborted via a `Drop` guard that sets
+    ///      an `AtomicBool` when the future is dropped (aborted mid-flight)
+    ///
+    /// This is the test that was impossible with the old `TaskHandle` approach
+    /// because `JoinHandle<()>` is not `Clone` and couldn't be extracted from
+    /// `&Event` by the action function.
+    #[tokio::test]
+    async fn ripcord_aborts_unresponsive_child() {
+        use bloxide_core::SpawnCap;
+        use bloxide_supervisor::registry::{ChildGroup, ChildPolicy, GroupShutdown};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        // --- Set up channels for the child ---
+        let child_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
+        let (lifecycle_ref, _lifecycle_rx) =
+            <TokioRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(child_id, 4);
+        let (kill_ref, _kill_rx) =
+            <TokioRuntime as DynamicChannelCap>::channel::<KillCommand>(child_id, 4);
+
+        // --- Spawn an unresponsive child task ---
+        // The task enters a 100s sleep and never polls the kill mailbox.
+        // A `Drop` guard sets `dropped = true` when the future is cancelled
+        // (aborted mid-flight), proving the ripcord worked.
+        let dropped = Arc::new(AtomicBool::new(false));
+        let dropped_clone = dropped.clone();
+
+        let task_handle = <TokioRuntime as SpawnCap>::spawn(async move {
+            // Drop guard — fires when the future is aborted (dropped mid-poll).
+            struct DropGuard(Arc<AtomicBool>);
+            impl Drop for DropGuard {
+                fn drop(&mut self) {
+                    self.0.store(true, Ordering::SeqCst);
+                }
+            }
+            let _guard = DropGuard(dropped_clone);
+
+            // Simulate being stuck — never yields to the kill mailbox.
+            sleep(Duration::from_secs(100)).await;
+        });
+
+        // Wait for the task to start.
+        sleep(Duration::from_millis(50)).await;
+        assert!(
+            !dropped.load(Ordering::SeqCst),
+            "task should still be running before ripcord"
+        );
+
+        // --- Derive the cloneable AbortHandle from the JoinHandle ---
+        let abort_handle = <TokioRuntime as SpawnCap>::abort_handle(task_handle);
+
+        // --- Register the child in the ChildGroup with Kill policy ---
+        let mut group = ChildGroup::<TokioRuntime>::new(GroupShutdown::WhenAllDone);
+        group.add_dynamic(
+            child_id,
+            lifecycle_ref,
+            kill_ref,
+            abort_handle,
+            ChildPolicy::Kill,
+        );
+
+        // --- Trigger the ripcord via handle_done_or_failed ---
+        let from = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
+        let action = group.handle_done_or_failed(child_id, from);
+
+        // Kill policy always begins shutdown (the child is permanently done).
+        assert_eq!(
+            action,
+            bloxide_supervisor::registry::ChildAction::BeginShutdown,
+            "Kill policy should trigger shutdown"
+        );
+
+        // --- Verify the task was actually aborted ---
+        // The Drop guard fires when the task's future is dropped by abort().
+        // If the ripcord didn't work, this would hang for 100 seconds.
+        sleep(Duration::from_millis(100)).await;
+        assert!(
+            dropped.load(Ordering::SeqCst),
+            "unresponsive child task should have been aborted by the ripcord (Drop guard fired)"
+        );
     }
 }
