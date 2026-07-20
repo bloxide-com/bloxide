@@ -47,9 +47,10 @@ struct ChildEntry<R: BloxRuntime> {
     /// Kill capability mailbox (send side). `None` for static children
     /// registered via `RegisterChild` (no kill capability).
     kill_ref: Option<ActorRef<KillCommand, R>>,
-    /// Task handle for external abort. `None` for static children.
-    /// Consumed by `R::Kill::kill(handle)` when the kill policy fires.
-    task_handle: Option<<R::Kill as KillCapability<R>>::Handle>,
+    /// Cloneable abort handle for external task abort. `None` for static
+    /// children. Consumed by `R::Kill::kill(handle)` when the kill policy fires.
+    /// This is `R::AbortHandle` (Clone), not `R::TaskHandle` (not Clone).
+    abort_handle: Option<<R::Kill as KillCapability<R>>::Handle>,
 }
 
 pub struct ChildGroup<R: BloxRuntime> {
@@ -108,22 +109,25 @@ impl<R: BloxRuntime> ChildGroup<R> {
             phase: ChildPhase::Init,
             awaiting_alive: false,
             kill_ref: None,
-            task_handle: None,
+            abort_handle: None,
         });
     }
 
     /// Register a dynamically spawned child that has a kill capability.
     ///
-    /// Stores the `kill_ref` so the supervisor can send `KillCommand::Kill`
-    /// when `ChildPolicy::Kill` fires. The `task_handle` ripcord is not
-    /// available through this path — the action function receives `&Event`
-    /// and `JoinHandle<()>` is not `Clone`, so the handle cannot be moved
-    /// out. The kill mailbox (fast path) is fully functional.
+    /// Stores the `kill_ref` (for the kill mailbox fast path) and the
+    /// `abort_handle` (for the external abort ripcord) so the supervisor can
+    /// immediately kill the child when `ChildPolicy::Kill` fires.
+    ///
+    /// The `abort_handle` is `Clone` (it's `R::AbortHandle`), so the action
+    /// function can clone it from `&Event` — unlike the old `task_handle`
+    /// (`R::TaskHandle` = `JoinHandle<()>`) which was not `Clone`.
     pub fn add_dynamic(
         &mut self,
         id: ActorId,
         lifecycle_ref: ActorRef<LifecycleCommand, R>,
         kill_ref: ActorRef<KillCommand, R>,
+        abort_handle: <R::Kill as KillCapability<R>>::Handle,
         policy: ChildPolicy,
     ) {
         self.children.push(ChildEntry {
@@ -136,7 +140,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             phase: ChildPhase::Init,
             awaiting_alive: false,
             kill_ref: Some(kill_ref),
-            task_handle: None,
+            abort_handle: Some(abort_handle),
         });
     }
 
@@ -208,12 +212,12 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
 
         // Handle Kill policy: send KillCommand on kill_ref (fast path) and
-        // call R::Kill::kill(task_handle) (the ripcord). This immediately
+        // call R::Kill::kill(abort_handle) (the ripcord). This immediately
         // terminates the child — no callbacks fire, no graceful shutdown.
         if policy == ChildPolicy::Kill {
-            // Take the task_handle out — kill() consumes it by value.
-            let task_handle = self.children[idx].task_handle.take();
-            if let Some(handle) = task_handle {
+            // Take the abort_handle out — kill() consumes it by value.
+            let abort_handle = self.children[idx].abort_handle.take();
+            if let Some(handle) = abort_handle {
                 R::Kill::kill(handle);
             }
 

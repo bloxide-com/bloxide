@@ -109,7 +109,13 @@ where
 ///
 /// Called when the supervisor receives a `SupervisorControl::RegisterDynamicChild`
 /// from the `spawn_child` helper. Registers the child in the child group
-/// (storing the `kill_ref` for the kill mailbox) and sends a Start command.
+/// (storing the `kill_ref` for the kill mailbox and the `abort_handle` for
+/// the external abort ripcord) and sends a Start command.
+///
+/// The `abort_handle` is `Clone` (it's `R::AbortHandle`), so we can clone it
+/// from `&Event` — the HSM engine passes `&Event` to action functions, not
+/// `&mut Event`. This is the key advantage of `AbortHandle` over `TaskHandle`
+/// (`JoinHandle<()>` is not `Clone`).
 pub fn handle_register_dynamic_child<R>(
     ctx: &mut SupervisorCtx<R>,
     ev: &SupervisorEvent<R>,
@@ -125,6 +131,7 @@ where
             child_id,
             reg.lifecycle_ref.clone(),
             reg.kill_ref.clone(),
+            reg.abort_handle.clone(),
             reg.policy,
         );
         ctx.children_mut().start_child(child_id, from);

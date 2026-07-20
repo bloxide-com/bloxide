@@ -76,7 +76,7 @@ mod pool_tests {
                     child_id: worker_id,
                     lifecycle_ref,
                     kill_ref,
-                    task_handle: (),
+                    abort_handle: (),
                     policy: ChildPolicy::Stop,
                 }
             }

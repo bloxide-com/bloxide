@@ -22,9 +22,11 @@ use core::fmt;
 /// (domain_ref, ctrl_ref, etc.) go back to the requester via the spawn
 /// request's reply-to channel, not through here.
 ///
-/// The `task_handle` IS here — the spawn function gets it from `R::spawn()`
-/// and passes it to the managing blox so it can call `R::Kill::kill(handle)`
-/// as the ripcord for unresponsive children. For `NoKill` runtimes this is `()`.
+/// The `abort_handle` IS here — the spawn function gets a `TaskHandle` from
+/// `R::spawn()`, converts it to a cloneable `AbortHandle` via
+/// `R::abort_handle()`, and passes it here so the managing blox can call
+/// `R::Kill::kill(handle)` as the ripcord for unresponsive children. For
+/// `NoKill` runtimes this is `()`.
 pub struct SpawnOutput<R: BloxRuntime> {
     /// The allocated actor ID for the new child.
     pub child_id: ActorId,
@@ -33,24 +35,23 @@ pub struct SpawnOutput<R: BloxRuntime> {
     /// Kill capability mailbox (send side). The managing blox sends `KillCommand`
     /// here; the child's task receives it and self-terminates (fast path).
     pub kill_ref: ActorRef<KillCommand, R>,
-    /// Task handle for external abort (the ripcord). The managing blox calls
-    /// `R::Kill::kill(handle)` when the child is unresponsive. `()` for
-    /// `NoKill` runtimes, `R::TaskHandle` for `Kill` runtimes.
-    pub task_handle: <R::Kill as KillCapability<R>>::Handle,
+    /// Cloneable abort handle for external task abort (the ripcord). The
+    /// managing blox calls `R::Kill::kill(handle)` when the child is
+    /// unresponsive. `()` for `NoKill` runtimes, `R::AbortHandle` for `Kill`
+    /// runtimes. Must be `Clone` so action functions can extract it from
+    /// `&Event` (the HSM engine passes `&Event`, not `&mut Event`).
+    pub abort_handle: <R::Kill as KillCapability<R>>::Handle,
     /// Supervision policy for this child.
     pub policy: ChildPolicy,
 }
 
-impl<R: BloxRuntime> Clone for SpawnOutput<R>
-where
-    <R::Kill as KillCapability<R>>::Handle: Clone,
-{
+impl<R: BloxRuntime> Clone for SpawnOutput<R> {
     fn clone(&self) -> Self {
         Self {
             child_id: self.child_id,
             lifecycle_ref: self.lifecycle_ref.clone(),
             kill_ref: self.kill_ref.clone(),
-            task_handle: self.task_handle.clone(),
+            abort_handle: self.abort_handle.clone(),
             policy: self.policy,
         }
     }

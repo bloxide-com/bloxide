@@ -428,7 +428,7 @@ mod tests {
         );
     }
 
-    /// Spawn a task via `SpawnCap::spawn`, kill it via `SpawnCap::kill`,
+    /// Spawn a task via `SpawnCap::spawn`, derive an `AbortHandle`, abort it,
     /// and verify the task is aborted.
     #[tokio::test]
     async fn spawn_cap_kill_aborts_task() {
@@ -450,11 +450,13 @@ mod tests {
         sleep(Duration::from_millis(50)).await;
         assert!(alive.load(Ordering::SeqCst), "task should have started");
 
-        <TokioRuntime as SpawnCap>::kill(handle);
+        // Derive a cloneable AbortHandle and abort the task.
+        let abort_handle = <TokioRuntime as SpawnCap>::abort_handle(handle);
+        <TokioRuntime as SpawnCap>::abort(abort_handle);
         sleep(Duration::from_millis(50)).await;
 
-        // After kill, the task is aborted. We can't directly observe abort
-        // from inside, but the JoinHandle should report cancelled.
-        // The key assertion is that kill() didn't panic and the handle was consumed.
+        // After abort, the task is aborted. We can't directly observe abort
+        // from inside, but the key assertion is that abort() didn't panic
+        // and the handle was consumed.
     }
 }

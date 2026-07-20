@@ -38,22 +38,42 @@ impl<R: BloxRuntime> fmt::Debug for RegisterChild<R> {
 /// Register a dynamically spawned child. Has a kill capability mailbox.
 /// Used by the spawn helper when SpawnCap is available.
 ///
-/// The `kill_ref` and `task_handle` fields are for the kill capability —
+/// The `kill_ref` and `abort_handle` fields are for the kill capability —
 /// see spec/architecture/22-spawn-architecture-v2.md §4.7.
 ///
-/// This type does NOT implement `Clone` because `task_handle`
-/// (`JoinHandle<()>` on Tokio) is not `Clone`. Messages are sent by value
-/// via `try_send`, so `Clone` is not required by the messaging system.
+/// This type implements `Clone` because `abort_handle` is `Clone`
+/// (it's `R::AbortHandle`, which requires `Clone` on the `SpawnCap` trait).
+/// This allows the supervisor's action function to clone the `abort_handle`
+/// from `&Event` (the HSM engine passes `&Event`, not `&mut Event`).
+//
+// NOTE: Manual `Clone` impl (not `#[derive(Clone)]`) because the derive
+// macro generates `R: Clone` bounds that don't imply
+// `<R::Kill as KillCapability<R>>::Handle: Clone`. The manual impl uses
+// `R: BloxRuntime` which implies `R::Kill: KillCapability<R>` which implies
+// `Handle: Clone`.
 pub struct RegisterDynamicChild<R: BloxRuntime> {
     pub id: ActorId,
     pub lifecycle_ref: ActorRef<LifecycleCommand, R>,
     /// Kill capability mailbox (send side). The supervisor sends `KillCommand`
     /// here; the child's task receives it and self-terminates.
     pub kill_ref: ActorRef<KillCommand, R>,
-    /// Task handle for external abort (the ripcord). Stored by value.
-    /// `()` for NoKill runtimes, `R::TaskHandle` for Kill runtimes.
-    pub task_handle: <R::Kill as KillCapability<R>>::Handle,
+    /// Cloneable abort handle for external task abort (the ripcord).
+    /// `()` for NoKill runtimes, `R::AbortHandle` for Kill runtimes.
+    /// Must be `Clone` so the action function can extract it from `&Event`.
+    pub abort_handle: <R::Kill as KillCapability<R>>::Handle,
     pub policy: ChildPolicy,
+}
+
+impl<R: BloxRuntime> Clone for RegisterDynamicChild<R> {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id,
+            lifecycle_ref: self.lifecycle_ref.clone(),
+            kill_ref: self.kill_ref.clone(),
+            abort_handle: self.abort_handle.clone(),
+            policy: self.policy,
+        }
+    }
 }
 
 impl<R: BloxRuntime> fmt::Debug for RegisterDynamicChild<R> {
@@ -71,8 +91,9 @@ impl<R: BloxRuntime> fmt::Debug for RegisterDynamicChild<R> {
 /// The spawn helper calls `spawn_child()` (in `bloxide-core`) which sends
 /// `RegisterDynamicChild` on the control mailbox after the child is created.
 ///
-/// Does NOT derive `Clone` because `RegisterDynamicChild` contains a
-/// `task_handle` that is not `Clone` on Tokio.
+/// Implements `Clone` because all variants are `Clone` (`RegisterDynamicChild`
+/// uses `abort_handle` which is `Clone`). Manual impl (not `#[derive]`) to
+/// avoid the derive macro generating `R: Clone` bounds.
 pub enum SupervisorControl<R: BloxRuntime> {
     /// Register a static child (wired at startup, no kill capability).
     RegisterChild(RegisterChild<R>),
@@ -80,6 +101,16 @@ pub enum SupervisorControl<R: BloxRuntime> {
     RegisterDynamicChild(RegisterDynamicChild<R>),
     /// Trigger one health-check round.
     HealthCheckTick,
+}
+
+impl<R: BloxRuntime> Clone for SupervisorControl<R> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::RegisterChild(r) => Self::RegisterChild(r.clone()),
+            Self::RegisterDynamicChild(r) => Self::RegisterDynamicChild(r.clone()),
+            Self::HealthCheckTick => Self::HealthCheckTick,
+        }
+    }
 }
 
 impl<R: BloxRuntime> fmt::Debug for SupervisorControl<R> {
@@ -109,7 +140,7 @@ impl<R: BloxRuntime> bloxide_core::spawn::ChildRegistrar<R> for SupervisorRegist
             id: output.child_id,
             lifecycle_ref: output.lifecycle_ref,
             kill_ref: output.kill_ref,
-            task_handle: output.task_handle,
+            abort_handle: output.abort_handle,
             policy: output.policy,
         })
     }

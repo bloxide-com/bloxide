@@ -86,8 +86,8 @@ pub trait BloxRuntime: Clone + Send + 'static {
     ) -> Result<(), Self::TrySendError>;
 
     /// Kill capability. `NoKill` for static runtimes, `Kill` for dynamic.
-    /// Determines the `Handle` type stored in `ChildEntry::task_handle` —
-    /// `()` (ZST) for `NoKill`, `R::TaskHandle` for `Kill`.
+    /// Determines the `Handle` type stored in `ChildEntry::abort_handle` —
+    /// `()` (ZST) for `NoKill`, `R::AbortHandle` for `Kill`.
     ///
     /// Each runtime impl specifies this explicitly (no default — associated
     /// type defaults are unstable on stable Rust).
@@ -131,30 +131,53 @@ pub trait DynamicChannelCap: BloxRuntime {
 /// Blox crates that need dynamic spawning declare `R: SpawnCap`.
 /// Embassy does NOT implement this trait — use static wiring for Embassy.
 ///
-/// The associated `TaskHandle` type is returned by `spawn` and consumed by
-/// `kill`. For Tokio it is `JoinHandle<()>`; for TestRuntime it is `()`.
-/// This is a concrete, by-value type — no `Arc<dyn>`, no dynamic dispatch.
+/// The associated `TaskHandle` type is returned by `spawn` and is used to
+/// produce an `AbortHandle` (the cloneable ripcord). For Tokio,
+/// `TaskHandle = JoinHandle<()>` and `AbortHandle = tokio::task::AbortHandle`.
+/// For a future Embassy task-pool runtime, `AbortHandle` would be `()` (no
+/// external abort — the kill mailbox is sufficient) or whatever Embassy
+/// provides if [issue #3197](https://github.com/embassy-rs/embassy/issues/3197)
+/// is implemented.
+///
+/// All types are concrete, by-value — no `Arc<dyn>`, no dynamic dispatch.
 pub trait SpawnCap: DynamicChannelCap {
-    /// Handle to a spawned task. Consumed by [`kill`](Self::kill).
+    /// Handle to a spawned task. Used to derive an [`AbortHandle`](Self::AbortHandle).
+    /// Consumed by [`abort_handle`](Self::abort_handle).
     type TaskHandle: Send + 'static;
 
-    /// Spawn a future as an independent task and return a handle for external abort.
+    /// Cloneable handle for external task abort. Must be `Clone` so it can
+    /// be extracted from `&Event` in action functions (the HSM engine passes
+    /// `&Event`, not `&mut Event`). `()` for runtimes without external abort.
+    type AbortHandle: Clone + Send + 'static;
+
+    /// Spawn a future as an independent task and return a handle.
     fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle;
 
-    /// Abort a spawned task immediately. No callbacks fire — the task is dropped in-place.
-    /// The handle is consumed and cannot be reused.
-    fn kill(handle: Self::TaskHandle);
+    /// Derive a cloneable abort handle from a task handle.
+    /// The task handle is consumed; the task continues running (drop does not abort).
+    fn abort_handle(handle: Self::TaskHandle) -> Self::AbortHandle;
+
+    /// Abort a spawned task immediately via its abort handle. No callbacks fire —
+    /// the task is dropped in-place. The handle is consumed and cannot be reused.
+    fn abort(handle: Self::AbortHandle);
 }
 
 /// Type-level kill capability for a runtime.
 ///
 /// `NoKill` — no external task abort (Embassy, static-only). `Handle = ()` (ZST).
-/// `Kill`   — external abort via `SpawnCap::kill(handle)` (Tokio, dynamic).
+/// `Kill`   — external abort via `SpawnCap::abort(handle)` (Tokio, dynamic).
 ///
 /// This is a type-level enum, not a trait object. The runtime picks the
 /// variant; the supervisor is monomorphized for whichever it is.
+///
+/// The `Handle` type is the cloneable `AbortHandle` from `SpawnCap`, NOT the
+/// `TaskHandle`. This is because the handle must be `Clone` so it can be
+/// extracted from `&Event` in action functions (the HSM engine passes `&Event`,
+/// not `&mut Event`). The spawn function calls `SpawnCap::abort_handle()` to
+/// convert the non-Clone `TaskHandle` into the Clone `AbortHandle` before
+/// placing it in `RegisterDynamicChild`.
 pub trait KillCapability<R: BloxRuntime> {
-    type Handle: Send + 'static;
+    type Handle: Clone + Send + 'static;
     fn kill(handle: Self::Handle);
 }
 
@@ -165,11 +188,11 @@ impl<R: BloxRuntime> KillCapability<R> for NoKill {
     fn kill(_: ()) {}
 }
 
-/// Kill capability via `SpawnCap::kill`. Used by dynamic runtimes (Tokio).
+/// Kill capability via `SpawnCap::abort`. Used by dynamic runtimes (Tokio).
 pub struct Kill;
 impl<R: BloxRuntime + SpawnCap> KillCapability<R> for Kill {
-    type Handle = R::TaskHandle;
-    fn kill(handle: R::TaskHandle) {
-        R::kill(handle);
+    type Handle = R::AbortHandle;
+    fn kill(handle: R::AbortHandle) {
+        R::abort(handle);
     }
 }

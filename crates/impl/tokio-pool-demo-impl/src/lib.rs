@@ -114,6 +114,11 @@ pub fn spawn_worker(
                 .await
             });
 
+            // Convert the JoinHandle (not Clone) into an AbortHandle (Clone)
+            // so it can be stored in RegisterDynamicChild and cloned from
+            // &Event by the supervisor's action function.
+            let abort_handle = <TokioRuntime as SpawnCap>::abort_handle(task_handle);
+
             let _ = reply_to.try_send(
                 worker_id,
                 SpawnedWorker {
@@ -127,7 +132,7 @@ pub fn spawn_worker(
                 child_id: worker_id,
                 lifecycle_ref,
                 kill_ref,
-                task_handle,
+                abort_handle,
                 policy: ChildPolicy::Stop,
             }
         }
