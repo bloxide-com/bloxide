@@ -556,12 +556,14 @@ pub enum SupervisorEvent<R: BloxRuntime> {
 
 pub enum SupervisorControl<R: BloxRuntime> {
     RegisterChild(RegisterChild<R>),
+    RegisterDynamicChild(RegisterDynamicChild<R>),
     HealthCheckTick,
 }
 ```
 
 `Child` variants arrive from the runtime's supervised run loop. `Control` variants come from supervisor wiring/control-plane senders and enable:
-- dynamic registration of supervised children at runtime (`RegisterChild`)
+- static registration of supervised children (`RegisterChild`)
+- dynamic registration of supervised children with abort/kill capability (`RegisterDynamicChild` — carries the `abort_ref` and `abort_handle` needed by `ChildPolicy::Abort` and `ChildPolicy::Kill`)
 - periodic health checks (`HealthCheckTick`)
 
 ## Wiring a Supervised Group (Embassy)

@@ -279,7 +279,7 @@ mod ping_tests {
     }
 
     #[test]
-    fn terminate_resets_to_init() {
+    fn terminate_resets_to_initial_state() {
         let mut h = PingHarness::new();
 
         run_through_pause(&mut h);
@@ -293,20 +293,16 @@ mod ping_tests {
 
         h.terminate();
 
+        // In the four-level lifecycle model, Reset goes directly to
+        // initial_state() (Active) — not Init. The machine is immediately
+        // operational with a fresh round counter.
         assert_eq!(
             h.current_state(),
-            MachineState::Init,
-            "machine must be in Init after reset"
+            MachineState::State(PingState::Active),
+            "machine must be in Active (initial_state) after reset"
         );
 
         assert_eq!(h.ctx().round(), 0);
-
-        h.send_pong();
-        assert_eq!(
-            h.current_state(),
-            MachineState::Init,
-            "non-Start events must be dropped in Init"
-        );
     }
 
     #[test]

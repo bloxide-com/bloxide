@@ -10,9 +10,52 @@ The engine lives in `bloxide-core`. It implements hierarchical state machine (HS
 
 Neither `VirtualRoot` nor `Init` appear in the user's `State` enum. Both are engine-managed:
 
-- **VirtualRoot** is implicit. Top-level user states return `None` from `parent()`. The engine prepends VirtualRoot when building state paths for LCA computation — VirtualRoot contains the lifecycle handler table (`root_transitions()` from `MachineSpec`) and intercepts `LifecycleCommand` variants *before* user-declared states see them. If `root_transitions()` returns `&[]`, all lifecycle commands are handled by the engine's default rules: `Start` → exit Init, enter `initial_state()`; `Reset` → full LCA exit chain to Init; `Stop` → exit to Init, then signal task termination; `Ping` → respond with `ChildLifecycleEvent::Alive`..
+- **VirtualRoot** is implicit. Top-level user states return `None` from `parent()`. The engine prepends VirtualRoot when building state paths for LCA computation — VirtualRoot contains the lifecycle handler table (`root_transitions()` from `MachineSpec`) and intercepts `LifecycleCommand` variants *before* user-declared states see them. If `root_transitions()` returns `&[]`, all lifecycle commands are handled by the engine's default rules: `Start` → exit Init, enter `initial_state()`; `Reset` → full exit chain, then entry chain for `initial_state()` (immediately operational, no `on_init_entry`, returns `Started`); `Stop` → full exit chain to Init, fire `on_init_entry`, returns `Stopped`; `Ping` → respond with `ChildLifecycleEvent::Alive`. `Abort` and `Kill` are not lifecycle commands — see [Four-Level Lifecycle](#four-level-lifecycle-reset--stop--abort--kill) below.
 
-- **Init** is implicit. Construction is **silent** — no callbacks fire. The machine starts in `Init` and waits for a `LifecycleCommand::Start` event to be dispatched. `on_init_entry` fires when the machine re-enters `Init` after a Reset — it is for resetting domain state (counters, timers, etc.) only. All non-lifecycle events dispatched while in `Init` are **silently dropped**. Lifecycle commands are handled at VirtualRoot level, so the machine in Init still processes Start/Reset/Stop/Ping via the engine's lifecycle handler.
+- **Init** is implicit. Construction is **silent** — no callbacks fire. The machine starts in `Init` and waits for a `LifecycleCommand::Start` event to be dispatched. `on_init_entry` fires **only** when the machine re-enters `Init` via `LifecycleCommand::Stop` — it is for resetting domain state (counters, timers, etc.) only. It does **not** fire on `Reset` (which goes directly to `initial_state()`) or on `Guard::Fail` (which goes to `error_state()`). All non-lifecycle events dispatched while in `Init` are **silently dropped**. Lifecycle commands are handled at VirtualRoot level, so the machine in Init still processes Start/Reset/Stop/Ping via the engine's lifecycle handler.
+
+## Four-Level Lifecycle: `reset → stop → abort → kill`
+
+Bloxide has four distinct lifecycle levels, ordered from gentlest to most forceful:
+
+| Level | Mechanism | Through dispatch? | Exit callbacks? | `on_init_entry`? | End state | `DispatchOutcome` | Restartable? |
+|-------|-----------|-------------------|-----------------|------------------|-----------|-------------------|--------------|
+| **Reset** | `LifecycleCommand::Reset` | ✅ | ✅ Full exit chain | ❌ (skips Init) | `initial_state()` — immediately operational | `Started(initial)` | ✅ immediately |
+| **Stop** | `LifecycleCommand::Stop` | ✅ | ✅ Full exit chain | ✅ (cleanup) | `Init` — suspended | `Stopped` | ✅ via `Start` |
+| **Abort** | `AbortCommand::Abort { child_id }` | ❌ (run loop breaks) | ❌ None | ❌ | Task ends (cooperative) | `Aborted` | ✅ via respawning |
+| **Kill** | `R::Kill::kill(abort_handle)` | ❌ (runtime ripcord) | ❌ None | ❌ | Task gone — permanently dead | (nothing) | ❌ permanently |
+
+### Reset
+
+`LifecycleCommand::Reset` goes through `dispatch()`. The engine:
+1. Runs `on_exit` for every state from the current leaf up to the root (full exit chain)
+2. Runs `on_entry` for the `initial_state()` path (root-to-leaf)
+3. Sets current state to `initial_state()`
+4. Returns `DispatchOutcome::Started(initial_state)`
+
+**Reset skips Init entirely.** No `on_init_entry` or `on_init_exit` fires. The `on_entry` callbacks for `initial_state()` are responsible for resetting domain state. The actor is immediately operational — the supervisor does not need to send `Start` separately.
+
+### Stop
+
+`LifecycleCommand::Stop` goes through `dispatch()`. The engine:
+1. Runs `on_exit` for every state from the current leaf up to the root
+2. Calls `on_init_entry(&mut Ctx)` — for resource cleanup / domain state reset
+3. Sets current state to `Init`
+4. Returns `DispatchOutcome::Stopped`
+
+The actor sits suspended in `Init`. To resume, the supervisor sends `Start`, which calls `on_init_exit` and enters `initial_state()`.
+
+### Abort
+
+`AbortCommand::Abort { child_id }` is sent on a dedicated **abort mailbox** (separate from the lifecycle mailbox). The actor's run loop polls it alongside lifecycle and domain mailboxes. When `AbortCommand::Abort` is received, the run loop breaks — the task ends cooperatively. No `dispatch()` is called, no exit callbacks fire, no `on_init_entry` fires.
+
+The runtime synthesizes `DispatchOutcome::Aborted` and sends `ChildLifecycleEvent::Aborted` to the supervisor. The task is ended but was not externally destroyed — restarting requires respawning a new task.
+
+### Kill
+
+`R::Kill::kill(abort_handle)` is the external ripcord. It immediately aborts the task in place — works even on stuck/deadlocked actors that aren't polling any mailbox. No callbacks, no dispatch, no mailbox. The task is permanently dead.
+
+The supervisor receives no `DispatchOutcome` for a killed actor; it learns the actor is gone through the runtime's task-completion signal.
 
 ## State Hierarchy Concept
 
@@ -70,7 +113,9 @@ pub trait MachineSpec: Sized + 'static {
     // First operational leaf state entered after start():
     fn initial_state() -> Self::State;
 
-    // Called when machine re-enters Init after reset() — domain-state reset only:
+    // Called ONLY when the machine enters Init via LifecycleCommand::Stop.
+    // Does NOT fire on Reset (goes to initial_state()) or Fail (goes to error_state()).
+    // Domain-state cleanup only:
     fn on_init_entry(ctx: &mut Self::Ctx);
 
     // Optional: called when leaving Init (just before entering initial_state()):
@@ -83,6 +128,8 @@ pub trait MachineSpec: Sized + 'static {
     // is_error takes precedence over is_terminal — if both return true, only Failed is emitted:
     fn is_error(_state: &Self::State) -> bool { false }
 
+    /// The error state to enter on Guard::Fail. Default: same as initial_state().
+    fn error_state() -> Self::State { Self::initial_state() }
 
     // Root-level rules for domain events that bubble past all user-declared states.
     // Empty for most actors — unhandled events are silently dropped.
@@ -133,13 +180,18 @@ impl<S: MachineSpec> StateMachine<S> {
     /// Dispatch an event (domain or lifecycle). All events, including
     /// LifecycleCommand variants (Start, Reset, Stop, Ping), flow through
     /// this method. VirtualRoot intercepts lifecycle commands before user states.
+    /// Abort and Kill do NOT go through dispatch() — they are handled by the run loop.
     /// 
     /// Lifecycle outcomes:
     /// - Start (from Init) → Started(initial_state)
     /// - Start (already operational) → HandledNoTransition (idempotent)
-    /// - Reset → Reset (full LCA exit chain, task stays alive)
-    /// - Stop → Reset + task exit signal
+    /// - Reset → Started(initial_state) (full exit chain, then entry chain for initial_state(); no on_init_entry)
+    /// - Stop → Stopped (full exit chain to Init, fires on_init_entry, task stays alive)
     /// - Ping → HandledNoTransition (emits Alive event)
+    /// 
+    /// Non-dispatch lifecycle (handled by run loop, not dispatch()):
+    /// - Abort → Aborted (cooperative self-termination via AbortCommand, task ends)
+    /// - Kill → (ripcord: R::Kill::kill(abort_handle), immediate task abort, no callbacks, no DispatchOutcome)
     pub fn dispatch(&mut self, event: S::Event) -> DispatchOutcome<S::State>;
 
     /// Shared reference to the machine context.
@@ -165,20 +217,22 @@ pub enum DispatchOutcome<State> {
     HandledNoTransition,
     /// Transition occurred to a user state.
     Transition(MachineState<State>),
-    /// Left Init via Start command.
+    /// Left Init via Start command, or Reset to initial_state().
     Started(MachineState<State>),
     /// Transitioned to terminal state.
     Done(MachineState<State>),
-    /// Actor reset to Init via Guard::Reset.
-    Reset,
-    /// Actor failed to Init via Guard::Fail or entered error state.
+    /// Actor failed via Guard::Fail or entered error state.
     Failed,
     /// Actor stopped to Init via LifecycleCommand::Stop.
     Stopped,
+    /// Actor aborted cooperatively via AbortCommand (Kill produces no DispatchOutcome).
+    Aborted,
     /// Actor responded to Ping.
     Alive,
 }
 ```
+
+> **Note:** The `Reset` variant has been removed. `Reset` now returns `Started(initial_state)` — the actor is immediately operational, not suspended in Init.
 
 ### Lifecycle Command Handling at VirtualRoot
 
@@ -188,21 +242,22 @@ Lifecycle commands are detected via `event.as_lifecycle_command()` and handled *
 |---------|----------|-----------------|
 | `Start` | If in Init: exit Init, enter `initial_state()` | `Started(MachineState::State(state))` |
 | `Start` | If already operational: no-op (idempotent) | `HandledNoTransition` |
-| `Reset` | Full LCA exit chain → enter `initial_state()` (immediately operational) | `Started(MachineState::State(state))` |
-| `Stop` | Full LCA exit chain → Init (suspended, can be restarted) | `Stopped` |
+| `Reset` | Full exit chain → enter `initial_state()` (immediately operational, skips Init) | `Started(MachineState::State(state))` |
+| `Stop` | Full exit chain → Init (suspended, can be restarted via Start) | `Stopped` |
 | `Ping` | Respond with health notification | `Alive` |
-| `Kill` | Task aborted immediately (permanently dead) | `Failed` |
+
+`Abort` and `Kill` are not `LifecycleCommand` variants — they bypass dispatch entirely (see [Four-Level Lifecycle](#four-level-lifecycle-reset--stop--abort--kill) above).
 
 The runtime inspects `DispatchOutcome` after every call to generate `ChildLifecycleEvent` for the supervisor:
-- `Started(s)` or `Transition(s)` where `is_error(&s)` → emits `ChildLifecycleEvent::Failed` (`is_error` takes precedence over `is_terminal`)
-- `Started(s)` or `Transition(s)` where `is_terminal(&s)` → emits `ChildLifecycleEvent::Done`
+- `Started(s)` where `is_error(&s)` → emits `ChildLifecycleEvent::Failed` (`is_error` takes precedence over `is_terminal`)
+- `Started(s)` where `is_terminal(&s)` → emits `ChildLifecycleEvent::Done`
+- `Started(s)` → emits `ChildLifecycleEvent::Started` (covers both Start and Reset)
 - `Done(s)` → emits `ChildLifecycleEvent::Done`
 - `Failed` → emits `ChildLifecycleEvent::Failed`
-- `Started(s)` → emits `ChildLifecycleEvent::Started`
-- `Reset` → emits `ChildLifecycleEvent::Reset`
 - `Stopped` → emits `ChildLifecycleEvent::Stopped`
+- `Aborted` → emits `ChildLifecycleEvent::Aborted`
 - `Alive` → emits `ChildLifecycleEvent::Alive`
-- `NoRuleMatched`, `HandledNoTransition` → no supervisor notification
+- `NoRuleMatched`, `HandledNoTransition`, `Transition` → no supervisor notification (not forwarded)
 
 ### `StateFns` — handler table for one state
 
@@ -237,17 +292,32 @@ pub type StateRule<S> = TransitionRule<S, Guard<S>>;
 pub enum Guard<S: MachineSpec> {
     Transition(LeafState<S::State>),
     Stay,
-    Reset,  // exits entire operational chain and re-enters Init
+    /// Self-reset: go directly to initial_state(), skipping Init entirely.
+    /// Fires full exit chain + entry chain for initial_state().
+    /// Does NOT call on_init_entry. Returns Started.
+    Reset,
+    /// Go to error_state(), report Failed to supervisor.
+    /// Fires full exit chain + entry chain for error_state().
+    /// Does NOT call on_init_entry. Returns Failed.
+    Fail,
 }
 ```
 
 > `LeafState<S::State>` is a newtype that `debug_assert!`s the target is a leaf state at construction. The codegen emits `LeafState::new(...)` directly from TOML `to = "StateName"` entries in `[[topology.transitions]]` — no proc macro is involved.
 
+### Guard::Reset vs Guard::Fail
+
+Both are actor-returned guards (from handler tables), not supervisor-sent commands:
+
+- **`Guard::Reset`** — goes directly to `initial_state()`. Full exit chain fires, then entry chain for `initial_state()`. Returns `DispatchOutcome::Started`. Skips Init. Used when the actor wants to self-restart cleanly.
+
+- **`Guard::Fail`** — goes to `error_state()` (defaults to `initial_state()`). Full exit chain fires, then entry chain for `error_state()`. Returns `DispatchOutcome::Failed`. Skips Init. Does NOT fire `on_init_entry`. Used for error propagation — the supervisor sees `Failed` and applies its `ChildPolicy`.
+
 ### Root Rules
 
-Root rules use the same `StateRule<S>` type as state-level rules — `root_transitions()` returns `&'static [StateRule<Self>]`. Both state-level and root-level rules have access to `Transition`, `Stay`, and `Reset` via `Guard<S>`. There is no separate `RootRule` type in the codebase. State-level rules are generated by `bloxide-codegen` from `[[topology.transitions]]` entries in `blox.toml`; root-level rules are still expressed via the hand-written `MachineSpec::root_transitions()` trait method (defaulting to `&[]`), since the TOML schema has no `root_transitions` key.
+Root rules use the same `StateRule<S>` type as state-level rules — `root_transitions()` returns `&'static [StateRule<Self>]`. Both state-level and root-level rules have access to `Transition`, `Stay`, `Reset`, and `Fail` via `Guard<S>`. There is no separate `RootRule` type in the codebase. State-level rules are generated by `bloxide-codegen` from `[[topology.transitions]]` entries in `blox.toml`; root-level rules are still expressed via the hand-written `MachineSpec::root_transitions()` trait method (defaulting to `&[]`), since the TOML schema has no `root_transitions` key.
 
-Root rules are evaluated when an event bubbles past all user-declared ancestor states. Most actors leave `root_transitions()` at its default `&[]` — unhandled events are silently dropped. Since `Guard::Reset` is available in any transition rule (state-level or root-level), actors can self-terminate from any handler without needing root rules.
+Root rules are evaluated when an event bubbles past all user-declared ancestor states. Most actors leave `root_transitions()` at its default `&[]` — unhandled events are silently dropped. Since `Guard::Reset` and `Guard::Fail` are available in any transition rule (state-level or root-level), actors can self-reset or self-fail from any handler without needing root rules.
 
 ## Operational Dispatch Algorithm
 
@@ -270,7 +340,8 @@ flowchart TD
     J --> K{guard?}
     K -->|"Transition(target)"| L[change_state]
     K -->|Stay| M([Return DispatchOutcome::HandledNoTransition])
-    K -->|Reset| R["enter_init():\nexit all states leaf-first\non_init_entry()\nReturn DispatchOutcome::Reset"]
+    K -->|Reset| R["transition_to_state(initial_state()):\nexit chain + entry chain\nReturn DispatchOutcome::Started(initial)"]
+    K -->|Fail| RF["transition_to_state(error_state()):\nexit chain + entry chain\nReturn DispatchOutcome::Failed"]
 
     D -->|"None (no parent)"| N["Iterate root_transitions() in order"]
     N --> O{"root rule matches?"}
@@ -280,6 +351,7 @@ flowchart TD
     Q -->|"Transition(target)"| L
     Q -->|Stay| M
     Q -->|Reset| R
+    Q -->|Fail| RF
 
     L --> TRANS([Return DispatchOutcome::Transition])
 ```
@@ -351,39 +423,44 @@ let machine = StateMachine::new(ctx);
 **Init semantics:**
 - `new(ctx)` — machine enters Init silently. No `on_init_entry` fires.
 - `dispatch(LifecycleCommand::Start)` — exits Init, enters `initial_state()`. Returns `Started(state)`. If already operational, returns `HandledNoTransition` (idempotent).
-- `dispatch(LifecycleCommand::Reset)` — exits all operational states leaf-first, calls `on_init_entry`, sets phase to Init. Returns `Reset`.
+- `dispatch(LifecycleCommand::Reset)` — exits all operational states leaf-first, enters `initial_state()` directly (skips Init). Returns `Started(state)`. No `on_init_entry` fires.
+- `dispatch(LifecycleCommand::Stop)` — exits all operational states leaf-first, calls `on_init_entry`, sets phase to `Init`. Returns `Stopped`.
 
 ## Reset Semantics
 
-Both `dispatch(LifecycleCommand::Reset)` (runtime-initiated) and `Guard::Reset` (returned by any transition guard) invoke the same `enter_init()` engine method. The engine:
+`dispatch(LifecycleCommand::Reset)` (runtime-initiated) and `Guard::Reset` (returned by any transition guard) both go directly to `initial_state()`. The engine:
 
 1. Exits the current leaf state (`on_exit` for each action in the slice)
-2. Exits every ancestor up to the virtual root (`on_exit` for each)
-3. Calls `on_init_entry` — for domain-state reset only (counters, cancel timers, etc.)
-4. Sets phase to `Init`
-5. Returns `DispatchOutcome::Reset`
+2. Exits every ancestor up to the root (`on_exit` for each)
+3. Enters `initial_state()` by running `on_entry` for each state in the path (root-to-leaf)
+4. Sets current state to `initial_state()`
+5. Returns `DispatchOutcome::Started(initial_state)`
 
-**The full LCA exit chain is absolute.** Neither `dispatch(LifecycleCommand::Reset)` nor `Guard::Reset` skips any `on_exit` handler — every state from the current leaf up to the topmost ancestor fires its exit actions before `on_init_entry` runs.
+**Reset skips Init entirely.** No `on_init_entry` or `on_init_exit` fires. The `on_entry` callbacks for `initial_state()` are responsible for resetting domain state. The actor is immediately operational — the supervisor sees `Started` and does not need to send `Start`.
 
 **Two paths to Reset, identical behavior:**
 
-- **Runtime-initiated**: the runtime dispatches `LifecycleCommand::Reset` in response to a supervisor command. This is how supervisors reset children.
-- **Self-initiated**: a transition guard at any level (state or root) returns `Guard::Reset`. This is how actors self-terminate in response to domain events (e.g., a supervisor resetting itself after all children have shut down).
+- **Runtime-initiated**: the runtime dispatches `LifecycleCommand::Reset` in response to a supervisor command. This is how supervisors restart children.
+- **Self-initiated**: a transition guard at any level (state or root) returns `Guard::Reset`. This is how actors self-restart in response to domain events (e.g., a supervisor resetting itself after all children have shut down).
 
 **Reset is valid from any operational state.** `on_exit` handlers must be safe to call unconditionally.
 
-Example — Reset while in `Paused` (child of `Operating`):
+Example — Reset while in `Paused` (child of `Operating`), where `initial_state()` is `Active`:
 
 ```
 current_state = Paused
 source_path = [Operating, Paused]
+target_path = [Operating, Active]   (assuming Active is also under Operating)
 
 Reset exits:
   Paused.on_exit      ← must handle "timer may not be running"
-  Operating.on_exit   ← must handle "counter may be 0"
-Then:
-  on_init_entry()     ← resets round counter; no supervisor notification needed
+  (Operating.on_exit does NOT fire — it's the LCA)
+
+Reset enters:
+  Active.on_entry     ← resets round counter, sends initial ping
 ```
+
+If `initial_state()` is in a different subtree (LCA = None), the full exit AND entry chains fire.
 
 ## `is_terminal` and Done Detection
 
@@ -395,7 +472,7 @@ fn is_terminal(state: &PingState) -> bool {
 }
 ```
 
-The runtime checks `is_terminal` after `DispatchOutcome::Started(s)` and `DispatchOutcome::Transition(s)`. If it returns `true`, the runtime emits `ChildLifecycleEvent::Done { child_id }` to the supervisor. The actor itself does nothing special in `Done::on_entry` — no supervisor notification required.
+The runtime checks `is_terminal` after `DispatchOutcome::Started(s)`. If it returns `true`, the runtime emits `ChildLifecycleEvent::Done { child_id }` to the supervisor. The actor itself does nothing special in `Done::on_entry` — no supervisor notification required.
 
 ## Topology Invariants
 
@@ -429,4 +506,5 @@ fn test_topology_no_cycles() {
 - **MachineSpec trait** → `crates/bloxide-core/src/spec.rs`
 - **Handler patterns** → `spec/architecture/05-handler-patterns.md`
 - **Declarative transitions (blox.toml)** → `skills/building-with-bloxide/reference.md` → `[[topology.transitions]]`
-- **Init/Start/Reset flow** → This file → "Init, Start, and Reset"
+- **Four-level lifecycle** → This file → [Four-Level Lifecycle](#four-level-lifecycle-reset--stop--abort--kill)
+- **Supervision policies** → `spec/architecture/08-supervision.md`

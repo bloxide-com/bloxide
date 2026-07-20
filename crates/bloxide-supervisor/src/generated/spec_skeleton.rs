@@ -26,7 +26,7 @@ pub struct SupervisorSpec<R: BloxRuntime> {
 impl<R: BloxRuntime> SupervisorSpec<R> {
     #[allow(unused_variables)]
     const RUNNING_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
-        on_entry: &[start_children::<R, SupervisorCtx<R>>],
+        on_entry: &[start_children::<R>],
         on_exit: &[],
         transitions: &[
             ::bloxide_core::transition::StateRule {
@@ -172,7 +172,7 @@ impl<R: BloxRuntime> SupervisorSpec<R> {
     #[allow(unused_variables)]
     const SHUTTING_DOWN_FNS: ::bloxide_core::spec::StateFns<Self> =
         ::bloxide_core::spec::StateFns {
-            on_entry: &[stop_all_children::<R, SupervisorCtx<R>>],
+            on_entry: &[stop_all_children::<R>],
             on_exit: &[],
             transitions: &[
                 ::bloxide_core::transition::StateRule {

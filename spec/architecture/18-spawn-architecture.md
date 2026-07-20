@@ -620,7 +620,7 @@ children — the `Option` encodes "this child has an abort mailbox" vs "this chi
 
 `handle_done_or_failed` evaluates the child's `ChildPolicy` — four variants:
 
-- **`ChildPolicy::Abort`** (ripcord): Takes the `abort_handle`, calls `R::Kill::kill(handle)`.
+- **`ChildPolicy::Kill`** (ripcord): Takes the `abort_handle`, calls `R::Kill::kill(handle)`.
   External abort — works even if the child is stuck. No callbacks fire. Marks permanently done.
 - **`ChildPolicy::Abort`** (cooperative): Sends `AbortCommand::Abort` on the child's
   `abort_ref`. The child self-terminates via its select loop and reports `Aborted`.
@@ -634,7 +634,7 @@ children — the `Option` encodes "this child has an abort mailbox" vs "this chi
 // In ChildGroup::handle_done_or_failed (simplified)
 
 match policy {
-    ChildPolicy::Abort => {
+    ChildPolicy::Kill => {
         // Ripcord: external abort. Works even if the child is stuck and
         // never polls the abort mailbox. For NoKill runtimes this is a no-op
         // (kill(()) does nothing). For Kill runtimes this calls AbortHandle::abort().

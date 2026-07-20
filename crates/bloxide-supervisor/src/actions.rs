@@ -9,9 +9,7 @@ use bloxide_core::{
     accessor::HasSelfId, lifecycle::ChildLifecycleEvent, messaging::Envelope,
     transition::ActionResult,
 };
-use bloxide_supervisor_context::{
-    ChildAction, HasChildGroup, HasChildGroupMut, HasPending, SupervisorControl,
-};
+use bloxide_supervisor_context::{ChildAction, SupervisorControl};
 
 use crate::{SupervisorCtx, SupervisorEvent};
 
@@ -21,27 +19,28 @@ use crate::{SupervisorCtx, SupervisorEvent};
 /// model, `Guard::Reset` goes directly to `initial_state()` (Running) — it
 /// does NOT fire `on_init_entry`. So counters must be cleared here, in the
 /// Running on_entry, which fires both on initial Start and on Reset.
-pub fn start_children<R, C>(ctx: &mut C)
+pub fn start_children<R>(ctx: &mut SupervisorCtx<R>)
 where
     R: bloxide_core::capability::BloxRuntime,
-    C: HasSelfId + HasChildGroup<R> + HasChildGroupMut<R> + HasPending,
 {
-    ctx.children_mut().clear_counters();
-    ctx.set_pending(ChildAction::default());
-    ctx.children().start_all(ctx.self_id());
+    ctx.children.clear_counters();
+    ctx.pending = ChildAction::default();
+    ctx.children.start_all(ctx.self_id);
 }
 
 /// Stop all children in the group.
-pub fn stop_all_children<R, C>(ctx: &mut C)
+pub fn stop_all_children<R>(ctx: &mut SupervisorCtx<R>)
 where
     R: bloxide_core::capability::BloxRuntime,
-    C: HasSelfId + HasChildGroup<R>,
 {
-    ctx.children().stop_all(ctx.self_id());
+    ctx.children.stop_all(ctx.self_id);
 }
 
 /// Handle a Done or Failed child lifecycle event.
-pub fn handle_done_or_failed<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
+pub fn handle_done_or_failed<R>(
+    ctx: &mut SupervisorCtx<R>,
+    ev: &SupervisorEvent<R>,
+) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
@@ -49,8 +48,8 @@ where
     | SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { child_id })) = ev
     {
         let from = ctx.self_id();
-        let action = ctx.children_mut().handle_done_or_failed(*child_id, from);
-        ctx.set_pending(action);
+        let action = ctx.children.handle_done_or_failed(*child_id, from);
+        ctx.pending = action;
     }
     ActionResult::Ok
 }
@@ -65,7 +64,7 @@ where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Started { child_id })) = ev {
-        ctx.children_mut().handle_started(*child_id);
+        ctx.children.handle_started(*child_id);
     }
     ActionResult::Ok
 }
@@ -76,7 +75,7 @@ where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { child_id })) = ev {
-        ctx.children_mut().record_stopped(*child_id);
+        ctx.children.record_stopped(*child_id);
     }
     ActionResult::Ok
 }
@@ -90,7 +89,7 @@ where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { child_id })) = ev {
-        ctx.children_mut().record_aborted(*child_id);
+        ctx.children.record_aborted(*child_id);
     }
     ActionResult::Ok
 }
@@ -101,7 +100,7 @@ where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Alive { child_id })) = ev {
-        ctx.children_mut().handle_alive(*child_id);
+        ctx.children.handle_alive(*child_id);
     }
     ActionResult::Ok
 }
@@ -114,8 +113,8 @@ where
     if let SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterChild(child))) = ev {
         let from = ctx.self_id();
         let (id, lifecycle_ref, policy) = (child.id, child.lifecycle_ref.clone(), child.policy);
-        ctx.children_mut().add(id, lifecycle_ref, policy);
-        ctx.children_mut().start_child(id, from);
+        ctx.children.add(id, lifecycle_ref, policy);
+        ctx.children.start_child(id, from);
     }
     ActionResult::Ok
 }
@@ -137,27 +136,30 @@ where
     {
         let from = ctx.self_id();
         let child_id = reg.id;
-        ctx.children_mut().add_dynamic(
+        ctx.children.add_dynamic(
             child_id,
             reg.lifecycle_ref.clone(),
             reg.abort_ref.clone(),
             reg.abort_handle.clone(),
             reg.policy,
         );
-        ctx.children_mut().start_child(child_id, from);
+        ctx.children.start_child(child_id, from);
     }
     ActionResult::Ok
 }
 
 /// Handle a health-check tick.
-pub fn handle_health_check<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
+pub fn handle_health_check<R>(
+    ctx: &mut SupervisorCtx<R>,
+    ev: &SupervisorEvent<R>,
+) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let SupervisorEvent::Control(Envelope(_, SupervisorControl::HealthCheckTick)) = ev {
         let from = ctx.self_id();
-        let action = ctx.children_mut().health_check_tick(from);
-        ctx.set_pending(action);
+        let action = ctx.children.health_check_tick(from);
+        ctx.pending = action;
     }
     ActionResult::Ok
 }
