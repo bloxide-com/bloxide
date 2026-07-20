@@ -12,62 +12,81 @@ Lifecycle control is handled entirely by the **runtime** — actors never see li
 
 ## Core Principle: Actor Lifecycle Commands
 
-Actors have three lifecycle commands with distinct semantics:
+Bloxide has a **four-level lifecycle model** (`reset → stop → abort → kill`), ordered from gentlest to most forceful. Two of the four levels are `LifecycleCommand` variants handled through the normal dispatch pipeline (`Reset`, `Stop`); the cooperative level (`Abort`) is delivered on a dedicated abort mailbox, and the final forceful level (`Kill`) is a runtime capability that bypasses dispatch entirely.
 
-| Command | Target State | Effect | Can Restart? |
-|---------|--------------|--------|--------------|
-| `Reset` | User-defined initial operational state | Actor immediately running again | Yes (already running) |
-| `Stop` | Init | Actor suspended, callbacks ran | Yes (send `Start` to resume) |
-| `Kill` | Destroyed (task aborted) | Permanently dead, no callbacks | No (permanently dead) |
+| Command / Capability | Target State | Through dispatch? | Callbacks | Can Restart? |
+|---------|--------------|-------------------|-----------|--------------|
+| `Reset` | User-defined initial operational state (`initial_state()`) | Yes | Full exit chain + entry chain for `initial_state()` (no `on_init_entry`) | Yes (already running) |
+| `Stop` | Init | Yes | Full exit chain + `on_init_entry` | Yes (send `Start` to resume) |
+| `Abort` (`AbortCommand`) | Task ends cooperatively | No (run loop breaks) | None | Yes (respawn the task) |
+| `Kill` (`KillCapability::kill`) | Destroyed (task aborted in place) | No (runtime ripcord) | None | No (permanently dead) |
+
+> For the full engine-level treatment of the four-level model (including how `Guard::Reset` and the `DispatchOutcome` variants map to these levels), see `02-hsm-engine.md` → "Four-Level Lifecycle" and `14-unified-lifecycle.md`.
 
 ### Reset — Immediate Restart
 
-`Reset` sends the actor through its exit chain (all `on_exit` callbacks fire), then enters the **user-defined initial operational state** (defined by `MachineSpec::initial_state()`). The actor is immediately running again — no separate `Start` command is needed.
+`Reset` sends the actor through its exit chain (all `on_exit` callbacks fire), then enters the **user-defined initial operational state** (defined by `MachineSpec::initial_state()`). **Reset skips Init entirely** — no `on_init_entry` or `on_init_exit` fires. The `on_entry` callbacks for `initial_state()` are responsible for resetting domain state. The actor is immediately running again — no separate `Start` command is needed. The runtime reports `DispatchOutcome::Started(initial_state)`, which the supervisor sees as `ChildLifecycleEvent::Started`.
 
 Use for: restart cycles where the actor should continue operating.
 
 ### Stop — Graceful Shutdown
 
-`Stop` sends the actor through its exit chain (all `on_exit` callbacks fire) and leaves the actor in **Init**. The task stays alive but suspended. Send `Start` to resume operation from `initial_state()`.
+`Stop` sends the actor through its exit chain (all `on_exit` callbacks fire), calls `on_init_entry` (for resource cleanup), and leaves the actor in **Init**. The task stays alive but suspended. Send `Start` to resume operation from `initial_state()`.
 
 Use for:
 - Graceful shutdown (callbacks run, clean exit)
 - Pausing an actor with intent to resume later
 - Dynamic actors you may want to restart
 
-### Kill — Permanent Termination
+### Abort — Cooperative Self-Termination
 
-`Kill` immediately aborts the actor's task. No callbacks run. The actor is permanently dead — its ID will never be valid again.
+`Abort` is sent as an `AbortCommand::Abort { child_id }` on a dedicated **abort mailbox** (separate from the lifecycle mailbox). The actor's run loop polls it alongside lifecycle and domain mailboxes; when an `AbortCommand` is received, the run loop breaks and the task ends cooperatively. No `dispatch()` is called, no exit callbacks fire, no `on_init_entry` fires.
+
+The runtime synthesizes `DispatchOutcome::Aborted` and sends `ChildLifecycleEvent::Aborted` to the supervisor. The task is ended but was not externally destroyed — restarting requires respawning a new task. `ChildPolicy::Abort` sends `AbortCommand` on the child's `abort_ref`; the supervisor records the child as permanently done via `record_aborted()`.
+
+Use for:
+- Supervisor-initiated shutdown where you want the task to end but `Stop` does not fit (e.g. the actor is already in `Init`)
+- Cases where you want the task gone but need the supervisor to observe the outcome (`Kill` produces no `DispatchOutcome`)
+
+### Kill — Permanent Termination (Ripcord)
+
+`KillCapability::kill(handle)` is the external ripcord. It calls `R::Kill::kill(handle)` (which invokes `SpawnCap::abort(handle)` on dynamic runtimes) and destroys the task in place — works even on stuck/deadlocked actors that aren't polling any mailbox. No callbacks, no dispatch, no mailbox. The task is permanently dead; its ID will never be valid again.
+
+The supervisor receives no `DispatchOutcome` for a killed actor (it learns the actor is gone through the runtime's task-completion signal). `ChildPolicy::Kill` invokes the ripcord directly via the stored `abort_handle`.
 
 **Kill has two purposes:**
 
-1. **Unresponsive actors** — stuck in infinite loops, deadlocks, or blocking calls; cannot process `Stop` or `Reset` commands. Kill forces termination when cooperation is not possible.
+1. **Unresponsive actors** — stuck in infinite loops, deadlocks, or blocking calls; cannot process `Stop`, `Reset`, or `Abort`. Kill forces termination when cooperation is not possible. (When the actor *can* still yield to its run loop, prefer `Abort`.)
 
-2. **Cleanup stopped actors** — an actor was stopped (in Init), but you want to free its resources immediately rather than keep it suspended.
+2. **Cleanup** — freeing resources for an actor that has already been stopped or aborted, when you want the task handle gone immediately.
 
-**For dynamic actors**, the pattern is:
+**For dynamic actors**, the cooperative shutdown ladder is:
 ```
-Stop → actor goes to Init (suspended)
+Stop → actor goes to Init (suspended, callbacks ran)
   ├─ Start → actor resumes operation from initial_state()
-  └─ Kill → resources freed, parent removes ActorRef from Vec
+  └─ Abort → task ends cooperatively (ChildLifecycleEvent::Aborted)
+                └─ Kill → if Abort is not serviced in time, ripcord the task
 ```
 
-**For static actors**, Kill is primarily for unresponsive actors:
+**For static actors**, `Kill` is primarily for unresponsive actors:
 - Kill → actor permanently dead
 - No replacement possible (static actors are created at wiring time)
 
 **Actors have zero knowledge of their supervisor.** No `supervisor_ref` in context, no lifecycle messages in event enums, no root rules for Reset/Stop/Ping.
-## KillCapability: Policy-Driven Actor Cleanup
+## KillCapability: The Kill Ripcord
 
-`KillCapability` is a **runtime capability** for terminating actors immediately, bypassing the normal dispatch lifecycle. It is used for unresponsive actors or cleanup of stopped dynamic actors whose resources should be freed.
+`KillCapability` is the **runtime capability** behind the `Kill` level of the four-level lifecycle model. It terminates an actor's task immediately by calling `R::Kill::kill(handle)` (which invokes `SpawnCap::abort(handle)` on dynamic runtimes), bypassing the normal dispatch lifecycle. It is used for unresponsive actors that cannot service `Stop`/`Reset`/`Abort`, or for cleanup when the task handle must be freed immediately.
 
-### KillCapability vs. Lifecycle Commands
+In the four-level model, `KillCapability` is **only** invoked by `ChildPolicy::Kill`. The cooperative `Abort` path uses `AbortCommand` on the abort mailbox instead (see [Abort — Cooperative Self-Termination](#abort--cooperative-self-termination) above).
+
+### KillCapability vs. Lifecycle Commands and Abort
 
 | Command/Cap | Path | Callbacks | When Used |
 |---|---|---|---|
-| `Reset` | dispatch(VirtualRoot) → exit chain | `on_exit` (all states), `on_init_entry` | Restart cycle |
-| `Stop` | dispatch(VirtualRoot) → exit chain | `on_exit` (all states) | Clean shutdown |
-| `KillCapability::kill` | Runtime abort (bypasses dispatch) | **None** | Unresponsive actors, resource cleanup |
+| `Reset` | dispatch(VirtualRoot) → exit + entry chain for `initial_state()` | `on_exit` (all states), `on_entry` for `initial_state()` (no `on_init_entry`) | Restart cycle |
+| `Stop` | dispatch(VirtualRoot) → exit chain → Init | `on_exit` (all states), `on_init_entry` | Clean shutdown, suspend |
+| `Abort` (`AbortCommand`) | abort mailbox → run loop breaks (no dispatch) | **None** | Cooperative task termination |
+| `KillCapability::kill` | Runtime abort (bypasses dispatch and mailboxes) | **None** | Unresponsive actors, resource cleanup (ripcord) |
 
 ### KillCapability Trait Definition
 
@@ -83,15 +102,16 @@ The runtime provides two implementations:
 - `NoKill` — for static runtimes (Embassy). `Handle = ()` (ZST), `kill` is a no-op.
 - `Kill` — for dynamic runtimes (Tokio). `Handle = R::AbortHandle`, `kill` calls `R::abort(handle)`.
 
-The supervisor stores the concrete `TaskHandle` per child in `ChildEntry` and invokes `kill` when policy dictates immediate cleanup.
+The supervisor stores the cloneable `abort_handle: Option<<R::Kill as KillCapability<R>>::Handle>` per child in `ChildEntry` (populated by `add_dynamic`). When `ChildPolicy::Kill` fires, `handle_done_or_failed` takes the handle and calls `R::Kill::kill(handle)`. The handle is `R::AbortHandle` (Clone), not `R::TaskHandle` (not Clone), so it can be extracted from `&Event` in action functions.
 
 ### Key Invariants for KillCapability
 
-- KillCapability is for unresponsive actors or cleanup, not a replacement for normal lifecycle.
+- KillCapability is the ripcord of last resort — for unresponsive actors or cleanup, not a replacement for the cooperative lifecycle levels (`Reset`/`Stop`/`Abort`).
 - Actors never see KillCapability; only supervisors and the wiring layer hold handles.
 - KillCapability is a runtime-facing capability (Tier 2), not a blox-facing trait.
 - After `kill()`, no `on_exit` callbacks fire — the task is dropped in-place.
 - Killed actors are permanently dead and cannot be restarted.
+- `ChildPolicy::Kill` is the only policy that invokes `KillCapability::kill`. `ChildPolicy::Abort` uses the cooperative `AbortCommand` mailbox instead.
 ## Generic Supervisor (`bloxide-supervisor`)
 
 The `bloxide-supervisor` crate provides a ready-to-use supervisor as a `MachineSpec`. No custom blox is needed — the wiring layer constructs a `ChildGroup<R>`, configures per-child policies and a group-level shutdown trigger, and spawns the generic `SupervisorSpec<R>`.
@@ -114,14 +134,20 @@ Each child is registered with its own `ChildPolicy` that determines what happens
 
 ```rust
 pub enum ChildPolicy {
-    Restart { max: usize },  // Reset → Init → Start, up to `max` times
+    Restart { max: usize },  // Reset → immediately operational, up to `max` times
     Stop,                    // Mark as permanently done immediately
+    Abort,                   // Send AbortCommand (cooperative task termination)
+    Kill,                    // Call KillCapability::kill (ripcord, permanently dead)
 }
 ```
 
-**`Restart { max }`**: The supervisor sends `Reset` to the child. When the child reports `Reset`, the supervisor increments its restart counter and sends `Start`. If the restart count reaches `max`, the child is marked permanently done instead.
+**`Restart { max }`**: The supervisor sends `Reset` to the child. The child goes directly to `initial_state()` and returns `Started` — the supervisor records the restart and increments the counter. No separate `Start` is needed. If the restart count reaches `max`, the child is marked permanently done instead.
 
 **`Stop`**: The child is marked permanently done immediately. No restart attempt is made.
+
+**`Abort`**: The supervisor sends `AbortCommand::Abort` on the child's abort mailbox. The child's task ends cooperatively. The supervisor sees `ChildLifecycleEvent::Aborted`.
+
+**`Kill`**: The supervisor calls `KillCapability::kill(handle)` — the ripcord. The task is permanently destroyed. No `DispatchOutcome` is produced; the supervisor learns the task is gone through the runtime's task-completion signal.
 
 ## Group Shutdown Trigger (`GroupShutdown`)
 
@@ -136,7 +162,11 @@ pub enum GroupShutdown {
 
 A child becomes "permanently done" when:
 - Its policy is `ChildPolicy::Stop` and it reports `Done` or `Failed`, OR
-- Its policy is `ChildPolicy::Restart { max }` and it has exhausted all restart attempts.
+- Its policy is `ChildPolicy::Restart { max }` and it has exhausted all restart attempts, OR
+- Its policy is `ChildPolicy::Abort` and it reports `Done` or `Failed` (the supervisor sends `AbortCommand` and marks it permanently done immediately), OR
+- Its policy is `ChildPolicy::Kill` and it reports `Done` or `Failed` (the supervisor invokes the ripcord and marks it permanently done immediately).
+
+In the `Abort` and `Kill` cases the child is marked permanently done at the moment `handle_done_or_failed` acts on the policy — `Abort` additionally waits for the `ChildLifecycleEvent::Aborted` confirmation (recorded by `record_aborted`), while `Kill` produces no lifecycle event at all.
 
 ## Group Restart Strategy (`RestartStrategy`)
 
@@ -156,7 +186,7 @@ pub enum RestartStrategy {
 | **`OneForAll`** | The failed child AND all other active children are sent `Reset` simultaneously. Use when children are tightly coupled and cannot operate correctly without all peers being in a clean state. |
 | **`RestForOne`** | The failed child AND all children declared after it (higher indices in `ChildGroup`) are sent `Reset`. Children declared before the failed child are left running. Use when children have dependencies on earlier siblings but not vice versa. |
 
-Only children in `Init` or `Running` phase are affected by the strategy. Children that are already `AwaitingReset`, `PermanentlyDone`, `Stopped`, or `Killed` are skipped.
+Only children in `Init` or `Running` phase are affected by the strategy. Children that are already `ResetPending`, `PermanentlyDone`, or `Stopped` are skipped. (Aborted and killed children are both recorded under the `PermanentlyDone` phase — see `ChildPhase` in `bloxide-supervisor-context/src/registry.rs`.)
 
 The strategy is set on `ChildGroup` via the builder pattern:
 
@@ -188,29 +218,44 @@ impl<R: BloxRuntime> ChildGroup<R> {
     pub fn new(shutdown: GroupShutdown) -> Self;
     pub fn with_restart_strategy(self, strategy: RestartStrategy) -> Self;
     pub fn add(&mut self, id: ActorId, lifecycle_ref: ActorRef<LifecycleCommand, R>, policy: ChildPolicy);
+    pub fn add_dynamic(
+        &mut self,
+        id: ActorId,
+        lifecycle_ref: ActorRef<LifecycleCommand, R>,
+        abort_ref: ActorRef<AbortCommand, R>,
+        abort_handle: <R::Kill as KillCapability<R>>::Handle,
+        policy: ChildPolicy,
+    );
     pub fn start_child(&self, child_id: ActorId, from: ActorId);
 
     pub fn start_all(&self, from: ActorId);
     pub fn stop_all(&self, from: ActorId);
 
     pub fn handle_done_or_failed(&mut self, child_id: ActorId, from: ActorId) -> ChildAction;
-    pub fn handle_reset(&mut self, child_id: ActorId, from: ActorId);
     pub fn handle_started(&mut self, child_id: ActorId);
     pub fn handle_alive(&mut self, child_id: ActorId);
     pub fn health_check_tick(&mut self, from: ActorId) -> ChildAction;
 
     pub fn record_stopped(&mut self, child_id: ActorId);
+    pub fn record_aborted(&mut self, child_id: ActorId);
     pub fn all_stopped(&self) -> bool;
     pub fn clear_counters(&mut self);
 }
 ```
 
-`handle_done_or_failed` applies the child's `ChildPolicy`:
-- If `Restart { max }` and restarts remaining → sends `Reset` to the failed child, then applies the group's `RestartStrategy` (sending `Reset` to affected siblings), returns `Continue`
-- If `Stop` or restarts exhausted → marks child permanently done, evaluates `GroupShutdown`
-- Returns `BeginShutdown` when the group shutdown condition is met
+> **Removed vs. old API**: `handle_reset` is gone — in the four-level model `Reset` returns `Started`, so the existing `handle_started` path covers it. `record_aborted` is new — it records a child as permanently done after an `Aborted` event (the task self-terminated cooperatively; it is not in `Init` like a `Stopped` child). `add_dynamic` is new — it stores the `abort_ref` (cooperative abort mailbox) and `abort_handle` (kill ripcord) for dynamically spawned children.
 
-`handle_reset` increments the restart counter and sends `Start` to the child.
+`handle_done_or_failed` evaluates the child's `ChildPolicy` (four variants):
+- **`ChildPolicy::Kill`** → calls `R::Kill::kill(abort_handle)` (the ripcord). No callbacks. Marks the child `PermanentlyDone`. Evaluates `GroupShutdown`.
+- **`ChildPolicy::Abort`** → sends `AbortCommand::Abort { child_id }` on the child's `abort_ref` (cooperative). The child's task will self-terminate and the supervisor later receives `ChildLifecycleEvent::Aborted`. Marks the child `PermanentlyDone` immediately. Evaluates `GroupShutdown`.
+- **`ChildPolicy::Restart { max }`** → if `restarts < max`, sends `Reset` to the failed child (goes directly to `initial_state()`, no separate `Start`), increments the restart counter, sets the child's phase to `ResetPending`, then applies the group's `RestartStrategy` (sending `Reset` to affected siblings). Returns `Continue`. If restarts are exhausted, falls through to the permanently-done path.
+- **`ChildPolicy::Stop`** (or exhausted `Restart`) → marks the child `PermanentlyDone` immediately. Evaluates `GroupShutdown`.
+
+In all permanently-done cases, `handle_done_or_failed` returns `BeginShutdown` when the group shutdown condition is met, otherwise `Continue`.
+
+Children already in `PermanentlyDone`, `Stopped`, or `ResetPending` phase are ignored (a duplicate `Done` while a Reset is in flight is coalesced).
+
+`handle_started` records that a child has started. In the four-level model `Started` covers both initial `Start` (from `Init`) and `Reset` (which goes directly to `initial_state()`), so there is no separate `handle_reset` — `Reset` no longer produces a distinct event. The restart counter is incremented when `Reset` is sent (in `handle_done_or_failed`), not when `Started` arrives. A `Started` event transitions the child out of `ResetPending` into `Running`.
 
 `health_check_tick` implements a deterministic health-check round:
 - Children that missed the previous round's `Alive` are treated as rogue (`handle_done_or_failed`)
@@ -229,7 +274,7 @@ stateDiagram-v2
 
     Running --> Running : "Done/Failed [policy == Restart, restarts remaining]"
     Running --> ShuttingDown : "Done/Failed [GroupShutdown trigger met]"
-    ShuttingDown --> Init : "Guard::Reset (all children Stopped)"
+    ShuttingDown --> Running : "Guard::Reset (all children Stopped) → initial_state()"
 ```
 
 When a child reports `Done` or `Failed`:
@@ -284,12 +329,6 @@ actions = ["handle_done_or_failed_action::<R>"]
 
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Reset { .. })"
-actions = ["handle_reset_action::<R>"]
-to = "stay"
-
-[[topology.transitions]]
-state = "Running"
 pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Started { .. })"
 actions = ["record_started_action::<R>"]
 to = "stay"
@@ -298,6 +337,12 @@ to = "stay"
 state = "Running"
 pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Alive { .. })"
 actions = ["record_alive_action::<R>"]
+to = "stay"
+
+[[topology.transitions]]
+state = "Running"
+pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Aborted { .. })"
+actions = ["record_aborted_action::<R>"]
 to = "stay"
 
 [[topology.transitions]]
@@ -366,12 +411,19 @@ impl<R: BloxRuntime + 'static> MachineSpec for SupervisorSpec<R> {
 
     fn initial_state() -> SupervisorState { SupervisorState::Running }
 
+    // on_init_entry fires only when the supervisor itself is Stopped (enters
+    // Init). In the four-level model, Guard::Reset goes directly to
+    // initial_state() (Running) — it does NOT fire on_init_entry. Counter
+    // clearing for a normal restart cycle is therefore done by the Running
+    // on_entry action `start_children`, not here.
     fn on_init_entry(ctx: &mut SupervisorCtx<R>) {
         ctx.children.clear_counters();
         ctx.pending = ChildAction::default();
     }
 }
 ```
+
+The **Running on_entry** action is `start_children` (in `bloxide-supervisor/src/actions.rs`). It calls `ctx.children.clear_counters()`, resets `ctx.pending` to `ChildAction::default()`, and then calls `start_all` to send `Start` to every child. Because `Guard::Reset` goes directly to `initial_state()` (Running), this on_entry fires both on the initial `Start` from wiring and on any `Guard::Reset` — replacing the old `on_init_entry` counter-clearing for the restart cycle.
 
 ## Lifecycle Flow
 
@@ -394,12 +446,11 @@ sequenceDiagram
     CG->>RT: LifecycleCommand::Reset
     CG-->>Sup: ChildAction::Continue
     RT->>M: dispatch(LifecycleCommand::Reset)
-    Note over RT: Task stays alive
-    RT-->>Sup: ChildLifecycleEvent::Reset
-    Sup->>CG: handle_reset(child_id)
-    Note over CG: increment restarts, send Start
-    CG->>RT: LifecycleCommand::Start
-    RT->>M: dispatch(LifecycleCommand::Start)
+    Note over RT: Reset goes directly to initial_state() (skips Init)
+    Note over RT: Returns DispatchOutcome::Started(initial_state)
+    RT-->>Sup: ChildLifecycleEvent::Started
+    Sup->>CG: handle_started(child_id)
+    Note over CG: Record child as running. Restart counter was incremented when Reset was sent.
 ```
 
 ### Shutdown path (GroupShutdown trigger met)
@@ -449,11 +500,11 @@ Defined in `bloxide-supervisor`. The runtime generates these automatically by ob
 
 ```rust
 pub enum ChildLifecycleEvent {
-    Started { child_id: ActorId },  // child exited Init, entered initial state
+    Started { child_id: ActorId },  // child exited Init or was Reset (now operational)
     Done    { child_id: ActorId },  // child entered a terminal state (is_terminal)
     Failed  { child_id: ActorId },  // child entered an error state (is_error)
-    Reset   { child_id: ActorId },  // child was Reset, now in Init (restartable)
-    Stopped { child_id: ActorId },  // child was Stopped, task has exited (permanent)
+    Stopped { child_id: ActorId },  // child was Stopped, now in Init (suspended)
+    Aborted { child_id: ActorId },  // child was Aborted, task has ended (cooperative)
     Alive   { child_id: ActorId },  // child responded to Ping (healthy)
 }
 ```
@@ -476,15 +527,22 @@ pub enum LifecycleCommand {
 | Command | Runtime behavior |
 |---|---|
 | `Start` | dispatch(VirtualRoot) — exits Init, enters `initial_state()` |
-| `Reset` | dispatch(VirtualRoot) — full LCA exit chain, task stays alive |
-| `Stop` | Full LCA exit chain → Init, task exits permanently |
+| `Reset` | dispatch(VirtualRoot) — full exit chain, enters `initial_state()` directly (skips Init, returns `Started`) |
+| `Stop` | Full exit chain → Init + `on_init_entry`, task stays alive suspended |
 | `Ping` | Child responds with `ChildLifecycleEvent::Alive` |
 
 ## Supervised Actor Run Loop
 
-Each runtime implements a supervised actor run loop that bridges lifecycle commands with domain mailboxes. This is runtime-specific code — never used as a bound on blox crates.
+Each runtime implements a supervised actor run loop that bridges lifecycle commands and abort commands with domain mailboxes. This is runtime-specific code — never used as a bound on blox crates.
 
-The runtime polls the internal lifecycle channel with priority over domain events. Domain events are only polled when no lifecycle command is pending. After every dispatch, the runtime inspects `DispatchOutcome` and sends `ChildLifecycleEvent` to the supervisor automatically.
+The runtime polls three streams in priority order:
+1. **Lifecycle stream** (`LifecycleCommand`: `Start`/`Reset`/`Stop`/`Ping`) — highest priority.
+2. **Abort mailbox** (`AbortCommand::Abort`) — serviced before domain messages so a stuck actor can be terminated promptly when it next yields. On receipt, the run loop reports `DispatchOutcome::Aborted` to the supervisor and self-terminates (no `dispatch()`, no callbacks).
+3. **Domain mailboxes** — polled only when no lifecycle or abort command is pending.
+
+After every dispatch, the runtime inspects `DispatchOutcome` and sends the corresponding `ChildLifecycleEvent` to the supervisor automatically. The `Aborted` outcome is synthesized by the run loop itself (not by `dispatch()`), since `Abort` bypasses the dispatch pipeline.
+
+The dynamic-runtime wrapper is `run_supervised_actor_with_abort` (in `runtimes/bloxide-tokio/src/supervision.rs`) — renamed from the old `run_supervised_actor_with_kill` to reflect that it listens on the abort mailbox rather than a kill mailbox. (The Embassy runtime uses a static equivalent.)
 
 ## `SupervisorEvent` and `SupervisorControl`
 
@@ -576,16 +634,17 @@ Supervision-specific invariants:
 
 - Actors never see `LifecycleCommand` — it is runtime-internal.
 - Actors have no `supervisor_ref` — they don't know their supervisor exists.
-- `on_init_entry` is for domain-state reset only.
-- `Reset` keeps the task alive in Init (restartable); `Stop` exits the task permanently.
+- `on_init_entry` is for domain-state reset only and fires only on `Stop` (entering Init). It does NOT fire on `Reset` (which skips Init and goes directly to `initial_state()`).
+- **Four-level lifecycle**: `Reset` goes directly to `initial_state()` (task stays alive, immediately operational, reports `Started`); `Stop` goes to `Init` (task suspended, reports `Stopped`); `Abort` ends the task cooperatively via the abort mailbox (reports `Aborted`); `Kill` destroys the task in place via `KillCapability::kill` (no report).
 - `is_error` takes precedence over `is_terminal` — a state that is both error and terminal reports only `Failed`.
-- `Guard::Reset` in any transition guard triggers the same `enter_init()` code path as `dispatch(LifecycleCommand::Reset)` — the full LCA exit chain (leaf → root) is guaranteed in both cases.
+- `Guard::Reset` goes directly to `initial_state()`, skipping Init entirely. It fires the full LCA exit chain (leaf → root) for the current state, then the entry chain for `initial_state()`. It does NOT call `on_init_entry` or `on_init_exit`.
 - Each child runs in its own Embassy task — precise per-actor wakeup is preserved.
 - `ChildGroup<R>` encapsulates all restart counting, policy evaluation, and shutdown logic.
-- Per-child `ChildPolicy` gives each child its own restart strategy (vs. the old group-wide approach).
+- Per-child `ChildPolicy` (four variants: `Restart`, `Stop`, `Abort`, `Kill`) gives each child its own failure strategy (vs. the old group-wide approach).
 - `GroupShutdown` controls when the supervisor enters shutdown, not which children are affected.
 - `RestartStrategy` (OneForOne / OneForAll / RestForOne) controls which siblings are restarted alongside a failed child. Default is `OneForOne` (only the failed child).
-- `LifecycleCommand` and `ChildLifecycleEvent` are defined in `bloxide-core` (and re-exported by `bloxide-supervisor`).
+- `ChildPhase` tracks each child's state: `Init`, `Running`, `ResetPending` (Reset sent, awaiting `Started`), `PermanentlyDone`, `Stopped`. Health checks (`is_health_monitored`) skip `ResetPending` and `PermanentlyDone` children.
+- `LifecycleCommand` and `ChildLifecycleEvent` are defined in `bloxide-core` (and re-exported by `bloxide-supervisor`). `ChildPolicy`, `AbortCommand`, `GroupShutdown`, and `RestartStrategy` are defined in `bloxide-core/src/child_management.rs`.
 - No custom supervisor implementation is needed — `SupervisorSpec<R>` is a generic, reusable `MachineSpec`.
 
 ## Related Docs
