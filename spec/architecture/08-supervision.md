@@ -18,7 +18,7 @@ Bloxide has a **four-level lifecycle model** (`reset → stop → abort → kill
 
 | Command / Capability | Target State | Through dispatch? | Callbacks | Can Restart? |
 |---------|--------------|-------------------|-----------|--------------|
-| `Reset` | User-defined initial operational state (`initial_state()`) | Yes | Full exit chain + entry chain for `initial_state()` (no `on_init_entry`) | Yes (already running) |
+| `Reset` | User-defined initial operational state (`initial_state()`) | Yes | Full exit chain + entry chain for `initial_state()` (fires `on_init_entry` for domain reset) | Yes (already running) |
 | `Stop` | Init | Yes | Full exit chain + `on_init_entry` | Yes (send `Start` to resume) |
 | `Abort` (`AbortCommand`) | Task ends cooperatively | No (run loop breaks) | None | Yes (respawn the task) |
 | `Kill` (`KillCapability::kill`) | Destroyed (task aborted in place) | No (runtime ripcord) | None | No (permanently dead) |
@@ -27,7 +27,7 @@ Bloxide has a **four-level lifecycle model** (`reset → stop → abort → kill
 
 ### Reset — Immediate Restart
 
-`Reset` sends the actor through its exit chain (all `on_exit` callbacks fire), then enters the **user-defined initial operational state** (defined by `MachineSpec::initial_state()`). **Reset skips Init entirely** — no `on_init_entry` or `on_init_exit` fires. The `on_entry` callbacks for `initial_state()` are responsible for resetting domain state. The actor is immediately running again — no separate `Start` command is needed. The runtime reports `DispatchOutcome::Started(initial_state)`, which the supervisor sees as `ChildLifecycleEvent::Started`.
+`Reset` sends the actor through its exit chain (all `on_exit` callbacks fire), then fires `on_init_entry` to reset domain state (e.g. `behavior = B::default()`), then enters the **user-defined initial operational state** (defined by `MachineSpec::initial_state()`). **Reset does not enter Init as a state** — it goes directly to `initial_state()` but uses `on_init_entry` to reset domain state. No `on_init_exit` fires. The actor is immediately running again — no separate `Start` command is needed. The runtime reports `DispatchOutcome::Started(initial_state)`, which the supervisor sees as `ChildLifecycleEvent::Started`.
 
 Use for: restart cycles where the actor should continue operating.
 
@@ -85,7 +85,7 @@ In the four-level model, `KillCapability` is **only** invoked by `ChildPolicy::K
 
 | Command/Cap | Path | Callbacks | When Used |
 |---|---|---|---|
-| `Reset` | dispatch(VirtualRoot) → exit + entry chain for `initial_state()` | `on_exit` (all states), `on_entry` for `initial_state()` (no `on_init_entry`) | Restart cycle |
+| `Reset` | dispatch(VirtualRoot) → exit + entry chain for `initial_state()` | `on_exit` (all states), `on_init_entry` (domain reset), `on_entry` for `initial_state()` | Restart cycle |
 | `Stop` | dispatch(VirtualRoot) → exit chain → Init | `on_exit` (all states), `on_init_entry` | Clean shutdown, suspend |
 | `Abort` (`AbortCommand`) | abort mailbox → run loop breaks (no dispatch) | **None** | Cooperative task termination |
 | `KillCapability::kill` | Runtime abort (bypasses dispatch and mailboxes) | **None** | Unresponsive actors, resource cleanup (ripcord) |
@@ -425,7 +425,7 @@ impl<R: BloxRuntime + 'static> MachineSpec for SupervisorSpec<R> {
 }
 ```
 
-The **Running on_entry** action is `start_children` (in `bloxide-supervisor/src/actions.rs`). It calls `ctx.children.clear_counters()`, resets `ctx.pending` to `ChildAction::default()`, and then calls `start_all` to send `Start` to every child. Because `Guard::Reset` goes directly to `initial_state()` (Running), this on_entry fires both on the initial `Start` from wiring and on any `Guard::Reset` — replacing the old `on_init_entry` counter-clearing for the restart cycle.
+The **Running on_entry** action is `start_children` (in `bloxide-supervisor/src/actions.rs`). It calls `ctx.children.clear_counters()`, resets `ctx.pending` to `ChildAction::default()`, and then calls `start_all` to send `Start` to every child. Because `Guard::Reset` goes directly to `initial_state()` (Running) after firing `on_init_entry`, this on_entry fires both on the initial `Start` from wiring and on any `Guard::Reset` — replacing the old `on_init_entry` counter-clearing for the restart cycle.
 
 ## Lifecycle Flow
 
@@ -638,10 +638,10 @@ Supervision-specific invariants:
 
 - Actors never see `LifecycleCommand` — it is runtime-internal.
 - Actors have no `supervisor_ref` — they don't know their supervisor exists.
-- `on_init_entry` is for domain-state reset only and fires only on `Stop` (entering Init). It does NOT fire on `Reset` (which skips Init and goes directly to `initial_state()`).
+- `on_init_entry` is for domain-state reset. It fires on `Stop` (entering Init) AND on `Reset` (to reset domain state before re-entering `initial_state()`).
 - **Four-level lifecycle**: `Reset` goes directly to `initial_state()` (task stays alive, immediately operational, reports `Started`); `Stop` goes to `Init` (task suspended, reports `Stopped`); `Abort` ends the task cooperatively via the abort mailbox (reports `Aborted`); `Kill` destroys the task in place via `KillCapability::kill` (no report).
 - `is_error` takes precedence over `is_terminal` — a state that is both error and terminal reports only `Failed`.
-- `Guard::Reset` goes directly to `initial_state()`, skipping Init entirely. It fires the full LCA exit chain (leaf → root) for the current state, then the entry chain for `initial_state()`. It does NOT call `on_init_entry` or `on_init_exit`.
+- `Guard::Reset` goes directly to `initial_state()`. It fires the full exit chain (leaf → root) for the current state, then `on_init_entry` to reset domain state, then the entry chain for `initial_state()`. It does NOT call `on_init_exit`.
 - Each child runs in its own Embassy task — precise per-actor wakeup is preserved.
 - `ChildGroup<R>` encapsulates all restart counting, policy evaluation, and shutdown logic.
 - Per-child `ChildPolicy` (four variants: `Restart`, `Stop`, `Abort`, `Kill`) gives each child its own failure strategy (vs. the old group-wide approach).

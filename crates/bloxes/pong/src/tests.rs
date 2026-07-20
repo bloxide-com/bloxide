@@ -108,7 +108,7 @@ mod pong_tests {
     }
 
     #[test]
-    fn terminate_resets_to_init() {
+    fn terminate_resets_to_initial_state() {
         let mut h = PongHarness::new();
         h.start();
 
@@ -116,22 +116,12 @@ mod pong_tests {
 
         h.terminate();
 
+        // Reset goes directly to initial_state() (Ready), not Init.
+        // The machine is immediately operational after reset.
         assert_eq!(
             h.current_state(),
-            MachineState::Init,
-            "machine must be in Init after reset"
-        );
-
-        h.send_ping(42);
-        assert_eq!(
-            h.current_state(),
-            MachineState::Init,
-            "non-Start events must be dropped in Init"
-        );
-        let replies = h.drain_to_ping_rx();
-        assert!(
-            replies.is_empty(),
-            "no reply should be sent for events dropped in Init"
+            MachineState::State(PongState::Ready),
+            "machine must be in Ready (initial_state) after reset"
         );
     }
 }

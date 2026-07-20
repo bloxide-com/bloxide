@@ -277,11 +277,12 @@ impl<S: MachineSpec> StateMachine<S> {
                         DispatchOutcome::HandledNoTransition
                     }
                     MachineState::State(_) => {
-                        // Reset directly to initial_state() — skip Init entirely.
-                        // Fire the full exit chain, then the entry chain for
-                        // initial_state(). No on_init_entry or on_init_exit.
+                        // Reset directly to initial_state() — skip Init as a
+                        // state, but fire on_init_entry to reset domain state
+                        // (e.g. behavior = B::default()). This ensures the
+                        // actor starts fresh after reset.
                         let target = S::initial_state();
-                        self.transition_to_state(target);
+                        self.reset_to_initial_state(target);
                         DispatchOutcome::Started(MachineState::State(target))
                     }
                 }
@@ -361,10 +362,10 @@ impl<S: MachineSpec> StateMachine<S> {
             }
             Guard::Stay => DispatchOutcome::HandledNoTransition,
             Guard::Reset => {
-                // Self-reset: go directly to initial_state(), skip Init.
-                // Fire the full exit chain, then the entry chain for initial_state().
+                // Self-reset: go directly to initial_state(), skip Init as a
+                // state, but fire on_init_entry to reset domain state.
                 let target = S::initial_state();
-                self.transition_to_state(target);
+                self.reset_to_initial_state(target);
                 DispatchOutcome::Started(MachineState::State(target))
             }
             Guard::Fail => {
@@ -382,6 +383,41 @@ impl<S: MachineSpec> StateMachine<S> {
                     }
                 }
             }
+        }
+    }
+
+    /// Reset to initial_state: exit the full source chain (leaf-to-root),
+    /// fire on_init_entry to reset domain state, then enter the full target
+    /// chain (root-to-leaf). Unlike `transition_to_state`, this always exits
+    /// ALL ancestors and always fires on_init_entry — that is the "reset"
+    /// semantic: domain state (behavior) is restored to its default.
+    fn reset_to_initial_state(&mut self, target: S::State) {
+        if let MachineState::State(source) = self.current {
+            // Exit the full source chain (leaf-to-root).
+            let source_path = source.path();
+            for &state in source_path.iter().rev() {
+                trace_on_exit!(state);
+                for action in handler_fns::<S>(&state).on_exit {
+                    action(&mut self.ctx);
+                }
+            }
+
+            // Reset domain state via on_init_entry (same as a fresh
+            // Init→Start). This is the "reset" semantic.
+            trace_init_entry!();
+            S::on_init_entry(&mut self.ctx);
+
+            // Enter the full target chain (root-to-leaf).
+            let target_path = target.path();
+            for &state in target_path.iter() {
+                trace_on_entry!(state);
+                for action in handler_fns::<S>(&state).on_entry {
+                    action(&mut self.ctx);
+                }
+            }
+
+            trace_on_transition!(source, target, None::<&S::State>);
+            self.current = MachineState::State(target);
         }
     }
 

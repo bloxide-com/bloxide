@@ -175,7 +175,7 @@ fn root_transitions() -> &'static [StateRule<Self>] { &[] }
 
 ### `reset` in State-Level Transitions
 
-Since `Guard::Reset` is available in any transition rule, actors can self-restart directly from a state handler without root rules. When a guard returns `Reset`, the engine fires `on_exit` for every state from the current leaf up to the topmost ancestor (full LCA exit chain), then fires `on_entry` for the `initial_state()` path. Reset skips Init — `on_init_entry` does NOT fire. The runtime observes `DispatchOutcome::Started(initial_state)` and emits `ChildLifecycleEvent::Started` to the supervisor.
+Since `Guard::Reset` is available in any transition rule, actors can self-restart directly from a state handler without root rules. When a guard returns `Reset`, the engine fires `on_exit` for every state from the current leaf up to the topmost ancestor (full exit chain), then fires `on_init_entry` to reset domain state, then fires `on_entry` for the `initial_state()` path. Reset does not enter Init as a state — it goes directly to `initial_state()`. The runtime observes `DispatchOutcome::Started(initial_state)` and emits `ChildLifecycleEvent::Started` to the supervisor.
 
 ```toml
 # Supervisor's ShuttingDown state: reset when all children have stopped
@@ -367,7 +367,7 @@ actions = ["record_child_done"]
 
 In `guards = [{ condition = "...", target = "..." }]` entries, the condition expression sees `ctx` as `&Ctx` (read-only — no mutation possible) and `results` as `&ActionResults`.
 In `actions = ["fn1", "fn2"]` lists, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.
-The `reset` target triggers the full LCA exit chain (leaf → root) followed by `on_init_entry`.
+The `reset` target triggers the full exit chain (leaf → root) followed by `on_init_entry` (domain reset), then `on_entry` for `initial_state()`. Reset does not enter Init as a state — it goes directly to `initial_state()` but fires `on_init_entry` to reset domain state.
 
 ## Related Docs
 
