@@ -19,10 +19,7 @@ pub mod timer;
 
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{TokioSender, TokioStream, TokioTrySendError};
-pub use supervision::{
-    run_supervised_actor, run_supervised_actor_with_kill, spawn_dynamic_supervised_child,
-    ChildGroupBuilder,
-};
+pub use supervision::{run_supervised_actor, run_supervised_actor_with_kill, ChildGroupBuilder};
 
 // ── TokioRuntime ──────────────────────────────────────────────────────────────
 
@@ -159,28 +156,6 @@ macro_rules! spawn_child {
     ($builder:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
         let (lc_rx, sup_notify) = $builder.add_child($id, $policy);
         let _handle = tokio::spawn($task_fn($machine, $mbox, lc_rx, $id, sup_notify));
-    }};
-}
-
-// ── spawn_child_dynamic! macro ───────────────────────────────────────────────
-
-/// Spawn and register a dynamic supervised child actor task using Tokio.
-///
-/// This wraps `spawn_dynamic_supervised_child` and mirrors `spawn_child!`
-/// call style for ergonomic dynamic supervision wiring.
-#[macro_export]
-macro_rules! spawn_child_dynamic {
-    ($from:expr, $control_ref:expr, $notify_sender:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
-        $crate::spawn_dynamic_supervised_child(
-            $from,
-            &$control_ref,
-            &$notify_sender,
-            $id,
-            $policy,
-            move |lc_rx, sup_notify, actor_id| {
-                $task_fn($machine, $mbox, lc_rx, actor_id, sup_notify)
-            },
-        )
     }};
 }
 

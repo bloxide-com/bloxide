@@ -11,11 +11,10 @@ use bloxide_core::{
 };
 
 use bloxide_supervisor::{
-    control::RegisterChild,
     control::SupervisorControl,
     registry::{ChildGroup, ChildPolicy, GroupShutdown},
 };
-use core::future::{poll_fn, Future};
+use core::future::poll_fn;
 use core::pin::Pin;
 use core::task::Poll;
 use futures_core::Stream;
@@ -292,39 +291,6 @@ impl ChildGroupBuilder {
     }
 }
 
-/// Spawn a dynamic supervised child actor.
-///
-/// Creates the per-child lifecycle channel, registers the child with the
-/// supervisor via `RegisterChild` on the control channel, and spawns the task.
-pub fn spawn_dynamic_supervised_child<F, Fut>(
-    from: ActorId,
-    control_ref: &ActorRef<SupervisorControl<TokioRuntime>, TokioRuntime>,
-    notify_sender: &TokioSender<ChildLifecycleEvent>,
-    child_id: ActorId,
-    policy: ChildPolicy,
-    task_builder: F,
-) -> Result<(), <TokioRuntime as BloxRuntime>::TrySendError>
-where
-    F: FnOnce(TokioStream<LifecycleCommand>, TokioSender<ChildLifecycleEvent>, ActorId) -> Fut,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    let (lifecycle_ref, lifecycle_rx) =
-        <TokioRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(child_id, 4);
-
-    control_ref.try_send(
-        from,
-        SupervisorControl::RegisterChild(RegisterChild {
-            id: child_id,
-            lifecycle_ref,
-            policy,
-        }),
-    )?;
-
-    let notify = notify_sender.clone();
-    let _handle = tokio::spawn(task_builder(lifecycle_rx, notify, child_id));
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,7 +300,6 @@ mod tests {
         spec::{MachineSpec, StateFns},
         topology::StateTopology,
     };
-    use bloxide_supervisor::registry::GroupShutdown;
     use std::time::Duration;
     use tokio::time::sleep;
 
@@ -491,39 +456,5 @@ mod tests {
         // After kill, the task is aborted. We can't directly observe abort
         // from inside, but the JoinHandle should report cancelled.
         // The key assertion is that kill() didn't panic and the handle was consumed.
-    }
-
-    /// Spawn a dynamic child and verify it runs without panic.
-    /// The child registers via the control channel and spawns as a task.
-    #[tokio::test]
-    async fn spawn_dynamic_child_runs_without_kill() {
-        let group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-        let control_ref = group.control_ref();
-        let notify = group.notify_sender();
-        let child_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
-
-        let (children, _notify_rx, mut control_rx) = group.finish();
-        let _children = children;
-
-        spawn_dynamic_supervised_child(
-            child_id,
-            &control_ref,
-            &notify,
-            child_id,
-            ChildPolicy::Kill,
-            |_lc_rx, _sup_notify, _actor_id| async move {
-                // Task completes immediately
-            },
-        )
-        .expect("register dynamic child");
-
-        // The RegisterChild message should arrive on the control channel.
-        let envelope = control_rx.inner.recv().await.expect("control message");
-        match envelope.1 {
-            SupervisorControl::RegisterChild(rc) => {
-                assert_eq!(rc.id, child_id);
-            }
-            _ => panic!("expected RegisterChild"),
-        }
     }
 }
