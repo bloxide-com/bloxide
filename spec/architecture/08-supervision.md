@@ -1,8 +1,10 @@
 # Supervision
 
 > **When would I use this?** Use this document when setting up supervision,
-> understanding KillCapability (immediate actor termination for unresponsive actors), or learning how child lifecycle
-> events flow to supervisors. For lifecycle command handling details, see `02-hsm-engine.md`.
+> understanding the four-level lifecycle model (`reset → stop → abort → kill`),
+> KillCapability (the kill ripcord for unresponsive actors), or learning how child lifecycle
+> events flow to supervisors. For lifecycle command handling details, see `02-hsm-engine.md`
+> and `14-unified-lifecycle.md`.
 
 The supervision model is inspired by Elixir/OTP. A **supervisor** is itself a state machine actor that monitors child actors and either restarts or permanently stops them in response to lifecycle triggers. Unlike OTP, the supervisor is a **generic library component** provided by `bloxide-supervisor` — users configure children and policies in the wiring layer without writing a custom blox.
 

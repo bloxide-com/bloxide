@@ -300,7 +300,7 @@ Defined in `bloxide-core::actor`:
 /// Run an actor until it reaches a terminal/error state or resets.
 ///
 /// Dispatches events until `DispatchOutcome::Started` or `DispatchOutcome::Transition`
-/// enters a terminal or error state, or `DispatchOutcome::Reset`/`DispatchOutcome::Stopped`
+/// enters a terminal or error state, or `DispatchOutcome::Stopped`/`DispatchOutcome::Aborted`
 /// is observed. Suitable for dynamically spawned actors that should exit their
 /// task when their work is done.
 ///
@@ -332,8 +332,8 @@ where
             }
             DispatchOutcome::Done(_) => return,
             DispatchOutcome::Failed => return,
-            DispatchOutcome::Reset => return,
             DispatchOutcome::Stopped => return,
+            DispatchOutcome::Aborted => return,
             _ => {}
         }
     }
@@ -738,17 +738,16 @@ stateDiagram-v2
     Running --> Running : "domain events (stay / self-transition)"
     Running --> Done : "transition to terminal state (is_terminal)"
     Running --> Error : "transition to error state (is_error)"
-    Running --> Init : "DispatchOutcome::Reset (Guard::Reset)"
+    Running --> Running : "Guard::Reset → initial_state() (Started)"
     Done --> [*] : "task exits"
     Error --> [*] : "task exits"
-    Init --> [*] : "task exits on Reset"
 ```
 
 | Exit condition | `DispatchOutcome` | Notes |
 |---|---|---|
 | Terminal state | `Started(s)` or `Transition(s)` where `is_terminal(&s)` | Normal completion — task exits cleanly |
 | Error state | `Started(s)` or `Transition(s)` where `is_error(&s)` | Fault — task exits; parent may notice dropped channel |
-| Reset | `Reset` | Explicit reset via `Guard::Reset`; task exits |
+| Reset | `Started(initial_state)` | Explicit reset via `Guard::Reset` — goes to `initial_state()`, task stays alive |
 | Domain shutdown | `Started(s)` or `Transition(s)` where `is_terminal(&s)` | Actor defines a `Shutdown` state marked `is_terminal` |
 
 ### Shutdown via Domain Messages

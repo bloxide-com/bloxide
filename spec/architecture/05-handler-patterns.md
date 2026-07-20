@@ -175,17 +175,17 @@ fn root_transitions() -> &'static [StateRule<Self>] { &[] }
 
 ### `reset` in State-Level Transitions
 
-Since `Guard::Reset` is available in any transition rule, actors can self-terminate directly from a state handler without root rules. When a guard returns `Reset`, the engine fires `on_exit` for every state from the current leaf up to the topmost ancestor (full LCA exit chain), then calls `on_init_entry`. This is the same code path used by `DispatchOutcome::Reset`.
+Since `Guard::Reset` is available in any transition rule, actors can self-restart directly from a state handler without root rules. When a guard returns `Reset`, the engine fires `on_exit` for every state from the current leaf up to the topmost ancestor (full LCA exit chain), then fires `on_entry` for the `initial_state()` path. Reset skips Init — `on_init_entry` does NOT fire. The runtime observes `DispatchOutcome::Started(initial_state)` and emits `ChildLifecycleEvent::Started` to the supervisor.
 
 ```toml
-# Supervisor's ShuttingDown state: reset when all children have shut down
+# Supervisor's ShuttingDown state: reset when all children have stopped
 [[topology.transitions]]
 state = "ShuttingDown"
-pattern = "SupervisorEvent::Child(ChildLifecycleEvent::Reset { .. })"
-actions = ["record_child_reset"]
+pattern = "SupervisorEvent::Child(ChildLifecycleEvent::Stopped { .. })"
+actions = ["record_stopped"]
 
   [[topology.transitions.guards]]
-  condition = "ctx.all_children_reset()"
+  condition = "ctx.all_children_stopped()"
   to = "reset"
 
   [[topology.transitions.guards]]
@@ -197,7 +197,7 @@ pattern = "SupervisorEvent::Child(_)"
 to = "stay"
 ```
 
-The `reset` target in a `[[topology.transitions]]` entry produces `Guard::Reset`. The full exit chain is guaranteed: `ShuttingDown::on_exit` fires, then `on_init_entry`. The runtime observes `DispatchOutcome::Reset` and emits `ChildLifecycleEvent::Reset` to the parent supervisor (if any).
+The `reset` target in a `[[topology.transitions]]` entry produces `Guard::Reset`. The full exit chain is guaranteed: `ShuttingDown::on_exit` fires, then `on_entry` for `initial_state()` (Running). The runtime observes `DispatchOutcome::Started(Running)` and emits `ChildLifecycleEvent::Started`. The supervisor self-restarts by re-entering `Running` and calling `start_children` to send `Start` to all children.
 
 ---
 
