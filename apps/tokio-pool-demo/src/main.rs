@@ -5,7 +5,6 @@ use ::bloxide_core::lifecycle::LifecycleCommand;
 use ::pool_blox::prelude::*;
 use ::pool_messages::SpawnWorker;
 use ::pool_messages::PoolMsg;
-use ::tokio_pool_demo_impl::spawn_worker;
 ::bloxide_tokio::actor_task_supervised!(pool_task, PoolSpec < TokioRuntime >);
 ::bloxide_tokio::root_task!(
     supervisor_task, ::bloxide_supervisor::supervisor::SupervisorSpec < TokioRuntime >

@@ -31,7 +31,6 @@ enum ChildPhase {
     AwaitingReset,
     PermanentlyDone,
     Stopped,
-    Killed,
 }
 
 struct ChildEntry<R: BloxRuntime> {
@@ -168,7 +167,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
             ChildPhase::AwaitingReset
                 | ChildPhase::PermanentlyDone
                 | ChildPhase::Stopped
-                | ChildPhase::Killed
         ) {
             return ChildAction::Continue;
         }
@@ -220,7 +218,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// - `RestForOne`: all children declared after the failed child are restarted.
     ///
     /// Only children in `Init` or `Running` phase are restarted. Children that
-    /// are `AwaitingReset`, `PermanentlyDone`, `Stopped`, or `Killed` are skipped.
+    /// are `AwaitingReset`, `PermanentlyDone`, or `Stopped` are skipped.
     fn restart_siblings(&mut self, failed_idx: usize, from: ActorId) {
         let strategy = self.restart_strategy;
         if strategy == RestartStrategy::OneForOne {
@@ -300,7 +298,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
             if !matches!(
                 entry.phase,
-                ChildPhase::PermanentlyDone | ChildPhase::Stopped | ChildPhase::Killed
+                ChildPhase::PermanentlyDone | ChildPhase::Stopped
             ) {
                 entry.phase = ChildPhase::Running;
                 entry.awaiting_alive = false;
@@ -312,7 +310,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
             if !matches!(
                 entry.phase,
-                ChildPhase::PermanentlyDone | ChildPhase::Stopped | ChildPhase::Killed
+                ChildPhase::PermanentlyDone | ChildPhase::Stopped
             ) {
                 entry.awaiting_alive = false;
             }
@@ -361,7 +359,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             && !entry.stopped
             && !matches!(
                 entry.phase,
-                ChildPhase::AwaitingReset | ChildPhase::PermanentlyDone | ChildPhase::Killed
+                ChildPhase::AwaitingReset | ChildPhase::PermanentlyDone
             )
     }
 

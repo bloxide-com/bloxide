@@ -21,7 +21,7 @@ use bloxide_core::{
 };
 use bloxide_tokio::{run_supervised_actor_with_kill, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasWorkerPeers};
-use pool_messages::{AppSpawnRequest, PoolMsg, SpawnedWorker, WorkerCtrl, WorkerMsg};
+use pool_messages::{AppSpawnRequest, SpawnedWorker, WorkerCtrl, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
 
 /// Behavior type for Worker actors holding task state and peer list.

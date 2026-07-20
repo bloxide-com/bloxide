@@ -435,8 +435,11 @@ pub fn generate(
         // Generate the channels! call with all message types.
         // Single mailbox: let ((ref,), mbox) = channels! { Msg(cap), };
         // Multi mailbox:  let ((ref1, ref2), mbox) = channels! { Msg1(cap), Msg2(cap), };
+        // The trailing comma after #(#ref_idents),* is critical for the
+        // single-mailbox case: `((ref,), mbox)` matches `(ActorRef,)` while
+        // `((ref), mbox)` would bind `ref` to the tuple `(ActorRef,)`.
         channel_stmts.push(quote! {
-            let ((#(#ref_idents),*), #mbox_ident) = ::#runtime_crate_ident::channels! {
+            let ((#(#ref_idents,)*), #mbox_ident) = ::#runtime_crate_ident::channels! {
                 #(#msg_type_tokens),*,
             };
             let #id_ident = #primary_ref_ident.id();
