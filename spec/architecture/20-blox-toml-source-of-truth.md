@@ -1,36 +1,17 @@
 # blox.toml as the Single Source of Truth
 
-## Problem Statement
+## Principle
 
-In Bloxide, a "blox" is a declarative actor: a state machine topology, a context struct, a set of messages, and a wiring contract. Today the framework has two partially-overlapping representations of that actor:
+`blox.toml` is the actor's source of truth. The codegen produces Rust source from it. Generated files are build artifacts — they are checked into the repository for convenience and for `cargo` builds, but they are never hand-edited, and no tool treats them as authoritative.
 
-1. **`blox.toml`** — the intended declarative spec.
-2. **`src/spec.rs` / `src/lib.rs` / hand-written generated files** — the Rust source that the visualizer and the compiler currently consume.
-
-This split creates drift. A developer edits `blox.toml`, runs `cargo blox generate`, and still must hand-edit generated files or keep `src/spec.rs` in sync for the visualizer. The visualizer (`bloxide-viz-export`) parses Rust source with `syn`, which means it sees the old model — hand-written code — rather than the declarative intent in `blox.toml`. The result is that the UI cannot safely edit a blox and regenerate it, because the UI does not know whether a piece of Rust was hand-written or generated.
-
-The root issues:
-
-1. **Dual sources of truth** — `blox.toml` and Rust source both describe the same actor.
-2. **Generated files are not fully authoritative** — the header says "Do not edit manually", but the visualizer ignores the header and reads the file anyway.
-3. **No clear boundary between generated and hand-written code** — action bodies, behavior impls, and generated topology all live in the same namespace.
-4. **Validation is incomplete** — the codegen checks wiring references, but state/event/context consistency is mostly enforced by the Rust compiler after generation.
-5. **Extensibility is implicit** — custom fields or annotations rely on string-matching and convention rather than a declared schema.
-
-The goal is to make `blox.toml` the *only* source of truth for everything the framework can generate, and to make the generated Rust files a pure function of the TOML that no tool ever reads back as authoritative.
-
-## Design
-
-### Principle: the spec is the source; Rust is a build artifact
-
-`blox.toml` is the actor's source of truth. The codegen produces Rust source from it. Generated files are build artifacts, like `.o` files or `target/` outputs. They are checked into the repository for convenience and for `cargo` builds, but they are never hand-edited, and no tool (including the visualizer) treats them as authoritative.
-
-This implies:
+This means:
 
 - Every actor fact that *can* be expressed in TOML *is* expressed in TOML.
 - The codegen is deterministic: same TOML → same Rust.
 - Hand-written Rust lives only where TOML cannot express intent: action function bodies, behavior implementations, and complex guard logic.
 - The visualizer reads `blox.toml` directly and writes `blox.toml` directly.
+
+## Design
 
 ### What `blox.toml` captures
 
@@ -41,7 +22,7 @@ The schema is defined in `crates/tools/bloxide-codegen/src/schema.rs` as `BloxCo
 | `[actor]` | `ActorConfig` | Actor name (used for state enum, spec struct, event enum). |
 | `[[messages]]` | `Vec<MessageEnumConfig>` | Message enums with variants, fields, `Copy`, and visibility. |
 | `[event]` | `EventConfig` | Event enum name, generics, `Debug` derive, and mailbox variants. |
-| `[topology]` | `TopologyConfig` | States, parent/initial/terminal/error flags, declarative transitions, entry/exit actions, and legacy `handler_fns`. |
+| `[topology]` | `TopologyConfig` | States, parent/initial/terminal/error flags, declarative transitions, and entry/exit actions. |
 | `[context]` | `ContextConfig` | Context struct name, generics, fields, imports, `extra_where`, `on_init`, and `[[context.uses]]` for composable context crates. |
 | `[mailboxes]` | `MailboxesConfig` | `max_arity` for generated mailbox tuple impls. |
 | `[wiring]` | `WiringConfig` | Runtime, channels, actor instances, connections, and supervisors for the generated binary. |
@@ -105,7 +86,6 @@ From `crates/bloxes/pool/blox.toml`:
 
 ```toml
 [topology]
-handler_fns = ["IDLE_FNS", "ACTIVE_FNS", "ALL_DONE_FNS"]
 
 [[topology.states]]
 name = "Idle"
@@ -151,9 +131,6 @@ actions = ["log_all_done"]
 - Terminal and error flags.
 - Declarative transitions with event patterns, action function paths, guards, and targets (`stay`, `reset`, `fail`, or a state name).
 - Per-state `entry` and `exit` action lists.
-- Legacy `handler_fns` for backward compatibility.
-
-When `handler_fns` is present it takes precedence over `transitions` for `StateFns` generation. This preserves existing bloxes while the declarative syntax is being adopted.
 
 #### `[context]` — context struct
 
@@ -225,7 +202,7 @@ This controls how many mailbox tuple variants the generated `mailboxes_impls.rs`
 
 #### `[wiring]` — generated binary
 
-`[wiring]` is the older in-spec wiring section. It is being superseded by the separate `system.toml` manifest described in `spec/architecture/19-declarative-wiring.md`. Both are parsed from the same `WiringConfig` / `SystemConfig` schema today.
+`[wiring]` is the in-spec wiring section. For real applications, use the separate `system.toml` manifest described in `spec/architecture/19-declarative-wiring.md`. Both are parsed from the same `WiringConfig` / `SystemConfig` schema.
 
 ```toml
 [wiring]
@@ -301,9 +278,7 @@ It also emits `From` impls and `Debug` when requested.
 
 1. A `#[repr(u8)]` state enum with one variant per `[[topology.states]]`.
 2. A `StateTopology` impl with `parent`, `is_leaf`, `path`, and `as_index`.
-3. Either:
-   - A handler-table macro referencing legacy `StateFns` constants (when `handler_fns` is set), or
-   - Complete `StateFns` constants built from raw `StateRule { ... }` struct literals emitted by `bloxide-codegen` from `[[topology.transitions]]` entries (when `handler_fns` is absent and `transitions` is present). Codegen emits the arrays directly.
+3. Complete `StateFns` constants built from raw `StateRule { ... }` struct literals emitted by `bloxide-codegen` from `[[topology.transitions]]` entries. Codegen emits the arrays directly.
 
 From `crates/bloxes/ping/src/generated/topology.rs`:
 
@@ -435,7 +410,6 @@ Never edit generated files by hand
 - Generated files carry the header `// Auto-generated by bloxide-codegen. Do not edit manually.`
 - Editing generated Rust is forbidden. If a generated file is wrong, fix `blox.toml` or the codegen, not the file.
 - Hand-written Rust (actions, behaviors, tests) is allowed, but it is never placed inside `src/generated/`.
-- Legacy `handler_fns` takes precedence over declarative `transitions` so existing bloxes keep compiling during migration.
 
 #### Round-trip verification
 
@@ -471,16 +445,7 @@ Both mechanisms run in CI via the `round-trip-verify` job in `.github/workflows/
 
 ### UI contract
 
-The visualizer is moving from the old model to the new model:
-
-| Old model | New model |
-|-----------|-----------|
-| Reads `src/spec.rs` with `syn` | Reads `blox.toml` directly |
-| Parses hand-written Rust | Parses declarative TOML |
-| Cannot distinguish generated from hand-written code | Knows exactly what is generated vs what is hand-written |
-| Edits Rust source | Edits `blox.toml` and triggers `cargo blox generate` |
-
-The new UI contract:
+The visualizer reads `blox.toml` directly (not Rust source):
 
 1. The visualizer loads `blox.toml`, not Rust source.
 2. All diagrams, state tables, and wiring graphs are derived from the TOML sections.
@@ -529,38 +494,11 @@ The key is that every extension is opt-in and schema-driven. The codegen does no
 - The codegen produces `ctx.rs`, `topology.rs`, `spec_skeleton.rs`, `events.rs`, `messages_*.rs`, `mailboxes_impls.rs`, and `wiring_main.rs`.
 - Generated files carry the "Do not edit manually" header.
 - `cargo blox generate` and `cargo blox watch` regenerate files from TOML.
-- Legacy `handler_fns` takes precedence over declarative `transitions` for backward compatibility.
 - `bloxide-viz-export` parses `blox.toml` directly (not Rust source) to produce the visualizer model.
 - Round-trip verification is enforced by 10 integration tests and the `cargo blox verify` CLI command, both running in CI.
 - Wiring validation checks actor references, connection endpoints, context field references, and supervisor children.
 
-### What is planned
-
-- The separate `system.toml` wiring manifest (see `spec/architecture/19-declarative-wiring.md`) will replace the in-spec `[wiring]` section for real applications.
-- Declarative `transitions` will become the default; `handler_fns` will be deprecated and removed.
-- The UI will edit `blox.toml` and `system.toml`, then trigger regeneration, rather than editing Rust.
-- Validation will move earlier: more checks will run in the codegen before Rust compilation.
-
-## Migration path
-
-1. ~~**Visualize TOML, not Rust** — rewrite `bloxide-viz-export` to deserialize `BloxConfig` and `SystemConfig` from TOML.~~ **Done.**
-2. **Remove `src/spec.rs` usage** — ensure no tool reads generated or hand-written Rust as authoritative.
-3. **Complete declarative transitions** — migrate existing bloxes from `handler_fns` to `topology.transitions`.
-4. **Adopt `system.toml`** — move wiring out of `blox.toml` and into per-system `system.toml` manifests.
-5. **Strengthen validation** — add pre-generation checks for state/event references, context type consistency, and wiring message types.
-6. **Document the contract** — this document is the first step; update it as the schema evolves.
-7. **Enforce round-trip in CI** — integration tests and `cargo blox verify` run automatically on every push and PR. **Done.**
-
-## What this eliminates
-
-- ❌ No more dual maintenance of `blox.toml` and `src/spec.rs`.
-- ❌ No more visualizer parsing hand-written Rust with `syn`.
-- ❌ No more ambiguity about whether a Rust file is generated or hand-written.
-- ❌ No more editing generated files and losing changes on regeneration.
-- ❌ No more string-matching on field types to infer imports.
-- ❌ No more drift between the visual model and the compiled model.
-
-## What the UI needs to produce
+## Visual Editor Integration
 
 The UI is a `blox.toml` (and optionally `system.toml`) editor:
 

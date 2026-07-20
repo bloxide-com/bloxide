@@ -1,7 +1,5 @@
-# Spawn Architecture v2 — Design Spec
+# Spawn Architecture
 
-> Status: **REVIEWED** — July 2026 (decisions finalized, ready for implementation)
-> Supersedes: spec 21 (spawn-architecture), which superseded specs 15–17
 > Related: 08 (supervision), 11 (dynamic-actors), 14 (unified-lifecycle), 18 (composable-context-crates), 19 (declarative-wiring)
 
 ## 0. Review Decisions (July 2026)

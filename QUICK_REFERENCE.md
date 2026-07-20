@@ -83,7 +83,7 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
 | Spawn actors dynamically | `SpawnCap` | Tier 2 | Runtime (Tokio only) |
 | Get current time, set timers | `TimerService` | Tier 2 | Runtime + `bloxide-timer` |
 | Run a supervised actor | `SupervisedRunLoop` | Tier 2 | Runtime |
-| Emergency kill an actor | `KillCap` | Tier 2 | Runtime (Tokio only) |
+| Emergency kill an actor | `KillCapability` | Tier 2 | Runtime (Tokio) |
 | Send/receive messages | `BloxRuntime` | Tier 1 | Runtime (blox sees only this) |
 
 ---
@@ -229,7 +229,7 @@ pub fn spawn_worker<R: BloxRuntime + SpawnCap>(ctx: &mut impl HasWorkerFactory<R
 
 ### Emergency Kill (Non-cooperative)
 
-If the actor is non-responsive (stuck in infinite loop, blocking call), use `KillCap::kill(actor_id)`:
+If the actor is non-responsive (stuck in infinite loop, blocking call), use `KillCapability::kill(handle)`:
 - **No callbacks fire** — immediate task abort
 - Only available in Tokio (Embassy lacks abort support)
 - Supervisor tracks killed children separately (no `ChildLifecycleEvent`)
@@ -247,7 +247,7 @@ This means supervisors can safely send `Start` multiple times without state corr
 
 ### `#[derive(BloxCtx)]` Annotations
 
-Most annotations are auto-detected by field naming convention. Explicit annotations remain for backward compatibility but are not required.
+Most annotations are auto-detected by field naming convention.
 
 | Convention / Annotation | Generates | Use When |
 |--------------------------|-----------|----------|
@@ -255,11 +255,6 @@ Most annotations are auto-detected by field naming convention. Explicit annotati
 | `foo_ref: ActorRef<M, R>` | `fn foo_ref(&self) -> &ActorRef<Msg, R>` | Auto-detected from `_ref` suffix |
 | `foo_factory: fn(...) -> ...` | `fn foo_factory(&self) -> ...` | Auto-detected from `_factory` suffix |
 | `#[delegates(Trait1, Trait2)]` | Delegates trait impls to field | Required for behavior fields |
-
-**Legacy explicit annotations** (still work, auto-detected if omitted):
-- `#[self_id]` — on the `self_id: ActorId` field
-- `#[provides(HasXRef<R>)]` — on `ActorRef` fields matching the `_ref` convention
-- `#[ctor]` — on non-`_ref` fields like factories
 
 ### Declarative Transitions (`blox.toml`)
 

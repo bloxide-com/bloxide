@@ -73,7 +73,6 @@ fn new(
 
 ```toml
 [topology]
-handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
 
 [[topology.states]]
 name = "Operating"
@@ -381,9 +380,7 @@ Generates forwarding impls. Import `__delegate_TraitA` from the action crate.
 
 ### `#[ctor]` — Override auto-detection
 
-> **Deprecated** — fields are now auto-detected by naming convention (`foo_factory` for constructor-only fields). The `#[ctor]` attribute is retained for backward compatibility but is no longer needed for new code.
-
-Use `#[ctor]` when a field matches the naming convention but you *don't* want a trait impl generated:
+Fields are auto-detected by naming convention (`foo_factory` for constructor-only fields). Use `#[ctor]` when a field matches the naming convention but you *don't* want a trait impl generated:
 
 ```rust
 #[derive(BloxCtx)]

@@ -45,11 +45,7 @@ stateDiagram-v2
 
 ## blox.toml
 
-> The blox.toml file drives code generation via `cargo blox generate`. It declares the event type, state topology, and optionally declarative transitions that the codegen tool turns into Rust source files.
->
-> There are two codegen modes for transitions:
-> - **Legacy mode** (`handler_fns` present): references hand-written `StateFns` constants in `actions.rs`. Use during migration.
-> - **Declarative mode** (no `handler_fns`, `[[topology.transitions]]` present): generates `StateFns` constants directly from TOML. The single source of truth for transitions.
+> The blox.toml file drives code generation via `cargo blox generate`. It declares the event type, state topology, and declarative transitions that the codegen tool turns into Rust source files.
 
 ```toml
 [actor]
@@ -95,7 +91,7 @@ parent = "Operational"
 name = "Done"
 terminal = true
 
-# --- Declarative transitions (omit handler_fns to activate this mode) ---
+# --- Declarative transitions ---
 
 # Idle: Begin event → transition to Working
 [[topology.transitions]]
@@ -146,8 +142,6 @@ actions = ["log_work_complete"]
 > **Entry/exit** (`[[topology.entry]]` / `[[topology.exit]]`):
 > - `state` — which state this handler belongs to
 > - `actions` — list of `fn(&mut Ctx)` function references
->
-> **Mode selection**: if `handler_fns` is present in `[topology]`, it takes precedence and declarative transitions serve as documentation only. To switch to fully generated code, remove `handler_fns` and ensure all action functions are free functions (not `Self::` methods on the spec impl).
 >
 > See `spec/architecture/12-action-crate-pattern.md` for the full blox.toml schema.
 

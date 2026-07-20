@@ -1,74 +1,171 @@
 # Unified Lifecycle Architecture
 
-This document specifies the unified lifecycle model for Bloxide actors. This is a significant architectural change from the previous dual-track system.
+> **When would I use this?** Use this document to understand how lifecycle
+> commands (Start/Reset/Stop/Kill) interact with the dispatch pipeline, how
+> `VirtualRoot` intercepts them, and how supervisors observe `DispatchOutcome`
+> events. For the supervision policy layer, see `08-supervision.md`; for the
+> core HSM dispatch algorithm and `Init`/`VirtualRoot` mechanics, see
+> `02-hsm-engine.md`.
 
-## Design Decisions Summary
+Bloxide actors use a **unified lifecycle model**: every event — including
+lifecycle commands such as `Start`, `Reset`, and `Stop` — flows through a single
+`dispatch()` entry point and is routed by the engine's `VirtualRoot` handler.
+There is no separate "lifecycle track" that bypasses dispatch. This keeps the
+state machine the single source of truth for all state transitions and lets the
+runtime observe every lifecycle-relevant outcome through one return type,
+`DispatchOutcome`.
 
-| Decision | Choice |
-|----------|--------|
-| Init state | Implicit leaf, not in user enum, tracked via `MachineState<S>` type |
-| Lifecycle commands | Start/Reset/Stop flow through dispatch, handled at VirtualRoot |
-| Kill | Runtime capability (not a message), supervisor calls `runtime.kill(actor_id)` |
-| Error recovery | `Guard::Fail` → transition to Init → supervisor sees `Failed` |
-| Init on_entry | Fires when entering Init (Reset/Fail/Stop), NOT at construction |
-| Init transitions | Auto-generated catch-all: all domain events → stay |
-| Supervisor ref | Not needed for lifecycle; optional for domain notifications |
-| MachineState type | `enum MachineState<S> { Init, State(S) }` - like Option but semantically clear |
+## Core Concept: One Dispatch Pipeline
 
----
+All mailboxes (lifecycle and domain) are polled together by the `Mailboxes`
+trait, which returns a unified event stream. Each event is handed to
+`StateMachine::dispatch()`. Inside `dispatch`, the engine checks whether the
+event carries a `LifecycleCommand` (via the `LifecycleEvent::as_lifecycle_command`
+trait method). If it does, `VirtualRoot` handles it before any user-declared
+state ever sees it. Otherwise the event is routed through the user's state
+handler tables, bubbling from the active leaf up to `VirtualRoot`.
 
-## Phase 1: New Type Definitions
+```
+All mailboxes (lifecycle + domain)
+        │
+        ▼
+   dispatch(event)
+        │
+        ├── event carries LifecycleCommand?  ──►  VirtualRoot handles it
+        │                                              (Start / Reset / Stop / Ping)
+        │
+        └── domain event  ──►  active leaf → ancestors → VirtualRoot
+                               (user handler tables)
+```
 
-### 1.1 MachineState Type
+`VirtualRoot` is engine-implicit — it is not a member of the user's `State`
+enum. It exists solely as the top of the state hierarchy for LCA computation
+and as the place where lifecycle commands are intercepted. Top-level user
+states return `None` from `parent()`, which makes them direct children of
+`VirtualRoot`.
 
-**File:** `crates/bloxide-core/src/engine.rs` (or new `state.rs`)
+## Init as an Implicit Leaf
+
+`Init` is an engine-implicit leaf state, separate from the user's `State` enum.
+A freshly constructed `StateMachine` begins in `Init` **silently** — no
+`on_entry` callbacks fire at construction time. `on_init_entry` fires only when
+the machine *re-enters* `Init` as the result of a `Reset`, `Fail`, or `Stop`.
+Likewise, `on_init_exit` fires only when `Init` is left via the `Start`
+command.
+
+The current state is tracked by the `MachineState<S>` wrapper, which is the
+moral equivalent of `Option<S>` but semantically distinguishes the engine's
+implicit `Init` from any user-declared state that happens to be named "Init":
 
 ```rust
-/// Represents the current state of a machine, including the implicit Init.
-/// 
-/// Init is implicit (not part of the user's state enum) and tracked separately.
-/// Users may have their own domain state also named "Init" with no conflict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MachineState<S> {
-    /// Implicit Init state - machine is in lifecycle wait state.
+    /// Implicit Init state — machine is in lifecycle wait state.
     Init,
     /// One of the user's declared operational states.
     State(S),
 }
+```
 
-impl<S> MachineState<S> {
-    pub fn is_init(&self) -> bool {
-        matches!(self, MachineState::Init)
-    }
-    
-    pub fn as_state(&self) -> Option<&S> {
-        match self {
-            MachineState::Init => None,
-            MachineState::State(s) => Some(s),
-        }
-    }
-    
-    /// Returns the state if present, or a default. Used for pattern matching.
-    pub fn unwrap_state(self) -> S 
-    where S: Default 
-    {
-        match self {
-            MachineState::Init => S::default(),
-            MachineState::State(s) => s,
-        }
-    }
+Users may declare their own domain state also named `Init` with no conflict,
+because the engine's `Init` is never a variant of the user's enum.
+
+### State Tree
+
+```
+VirtualRoot (implicit, not entered/exited — used for LCA and lifecycle intercept)
+    │
+    ├── Init (implicit leaf, auto-generated)
+    │       on_entry: S::on_init_entry   (fires on Reset / Fail / Stop)
+    │       on_exit:  S::on_init_exit    (fires on Start)
+    │       transitions: [* => stay]      (catch-all for domain events)
+    │
+    ├── Waiting   (user-declared leaf, returned by initial_state())
+    ├── Running   (user-declared leaf)
+    └── Done      (user-declared leaf)
+```
+
+While in `Init`, all non-lifecycle domain events are **silently dropped**:
+`Init`'s auto-generated handler table is a catch-all that maps every domain
+event to `Stay`. Lifecycle commands, however, are still processed at
+`VirtualRoot` regardless of current state — so a machine sitting in `Init`
+still responds to `Start`, `Reset`, `Stop`, and `Ping`.
+
+## Lifecycle Commands and the Mailbox Event Wrapper
+
+`LifecycleCommand` is the set of commands that `VirtualRoot` knows how to
+handle:
+
+```rust
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LifecycleCommand {
+    /// Transition from Init to the operational initial state.
+    Start,
+    /// Transition to Init, report Reset. Actor can be restarted.
+    Reset,
+    /// Transition to Init, report Stopped. Actor stays in Init.
+    Stop,
+    /// Health check — respond with Alive.
+    Ping,
 }
 ```
 
-### 1.2 Guard::Fail Variant
+`Kill` is **not** a `LifecycleCommand`. It is a runtime capability, not a
+message (see [Kill vs Stop vs Reset](#kill-vs-stop-vs-reset) below).
 
-**File:** `crates/bloxide-core/src/transition.rs`
+### Wrapping Lifecycle Commands in the Event Enum
+
+Lifecycle commands are not dispatched as a bare enum. Each actor's event type
+wraps `LifecycleCommand` in one of its own variants and implements the
+`LifecycleEvent` trait so the engine can recognise it:
+
+```rust
+pub trait LifecycleEvent: EventTag {
+    /// Returns the lifecycle command if this event wraps one.
+    /// Returns None for domain events.
+    fn as_lifecycle_command(&self) -> Option<LifecycleCommand> { None }
+}
+```
+
+`dispatch()` calls `as_lifecycle_command()` on every event. When it returns
+`Some(cmd)`, the engine routes the event to its `VirtualRoot` lifecycle handler
+and never consults the user's state handler tables for that event. When it
+returns `None`, the event is treated as a domain event and flows through the
+normal leaf-to-root handler lookup.
+
+This wrapper design is what makes the lifecycle model "unified": lifecycle
+commands travel through the same mailbox stream and the same `dispatch()` call
+as domain events, rather than being intercepted by the runtime before the state
+machine ever sees them.
+
+### Mailbox Priority Ordering
+
+The `Mailboxes` trait polls its constituent streams in **priority order**: the
+first stream in the tuple is always polled first, and when it has a message
+that message is returned immediately without checking later streams. The
+convention is to place the lifecycle mailbox at index 0 so that lifecycle
+commands are always drained before domain events:
+
+```rust
+// Convention for supervised actors:
+type Mailboxes<R> = (
+    R::Stream<LifecycleCommand>, // index 0 — highest priority
+    R::Stream<DomainMsg>,        // index 1 — domain
+);
+```
+
+This guarantees that a `Stop` or `Reset` sent while domain messages are
+backlogged is still observed promptly, because `dispatch()` will see the
+lifecycle command before any queued domain event.
+
+## Guard::Fail and Error Recovery
+
+State handler rules return a `Guard` outcome. In addition to `Transition` and
+`Stay`, the engine recognises two lifecycle-affecting outcomes:
 
 ```rust
 pub enum Guard<S: MachineSpec> {
-    /// Transition to target state.
     Transition(LeafState<S::State>),
-    /// Stay in current state.
     Stay,
     /// Exit to implicit Init, report Reset to supervisor.
     Reset,
@@ -77,24 +174,104 @@ pub enum Guard<S: MachineSpec> {
 }
 ```
 
-### 1.3 Updated DispatchOutcome
+`Guard::Fail` is the error-propagation outcome. When a state handler returns
+`Fail`, the engine:
 
-**File:** `crates/bloxide-core/src/engine.rs`
+1. Runs `on_exit` for every state from the current leaf up to the topmost
+   ancestor (the full exit chain).
+2. Calls `MachineSpec::on_init_entry` — giving the actor a chance to release
+   resources and reset domain state.
+3. Sets the current state to `MachineState::Init`.
+4. Returns `DispatchOutcome::Failed` from `dispatch()`.
+
+The supervisor observes that `Failed` outcome (see
+[Supervisor Observation](#supervisor-observation-of-dispatchoutcome) below) and
+applies its `ChildPolicy` — typically restarting the actor by sending `Start`,
+or marking it permanently failed.
+
+`Guard::Reset` follows the same exit-chain and `on_init_entry` mechanics but
+reports `DispatchOutcome::Reset`, which the supervisor treats as a normal
+restart cycle rather than a failure.
+
+## Kill vs Stop vs Reset
+
+Three mechanisms can move an actor out of its current operational state. They
+differ in whether they go through `dispatch()`, whether callbacks fire, and
+whether the actor can be restarted.
+
+| Action | Mechanism                                         | Actor Still Exists? | Task Running? | Supervisor Sees |
+|--------|---------------------------------------------------|---------------------|---------------|-----------------|
+| Reset  | `LifecycleCommand` → `dispatch()` → Init          | Yes                 | Yes           | `Reset`         |
+| Stop   | `LifecycleCommand` → `dispatch()` → Init          | Yes                 | Yes           | `Stopped`       |
+| Kill   | `KillCapability::kill(handle)` (bypasses dispatch) | No                  | No            | (nothing — actor is gone) |
+
+`Reset` and `Stop` both transition the actor to `Init` and fire the full exit
+chain plus `on_init_entry`. The difference is the outcome the supervisor
+observes: `Reset` signals a restart cycle (the actor is expected to continue
+operating), while `Stop` signals a graceful shutdown (the actor sits suspended
+in `Init` until a `Start` arrives).
+
+`Kill` is fundamentally different: it is a **runtime capability**, not a
+message. It immediately aborts the actor's task. No `on_exit` or `on_init_entry`
+callbacks fire — the task is dropped in place. The actor is permanently dead
+and cannot be restarted. The supervisor receives no `DispatchOutcome` for a
+killed actor; it learns the actor is gone through the runtime's task-completion
+signal or its own registry bookkeeping.
+
+### KillCapability
+
+`KillCapability` is a runtime-facing capability trait (Tier 2), not a
+blox-facing trait. Only supervisors and the wiring layer hold kill handles;
+actors never see `KillCapability`.
 
 ```rust
-/// Outcome of dispatching an event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DispatchOutcome<S> {
+// In bloxide-core/src/capability.rs
+pub trait KillCapability<R: BloxRuntime> {
+    type Handle: Clone + Send + 'static;
+    fn kill(handle: Self::Handle);
+}
+```
+
+The runtime provides two implementations:
+
+- **`Kill`** — for dynamic runtimes (Tokio). `Handle = R::AbortHandle`,
+  `kill` calls `R::abort(handle)`, which aborts the spawned task.
+- **`NoKill`** — for static runtimes (Embassy). `Handle = ()` (a ZST), `kill`
+  is a no-op, because static actors cannot be aborted at runtime.
+
+The supervisor stores the concrete `TaskHandle` per child in its `ChildEntry`
+registry — not a trait object. There is no `Arc<dyn KillCapability>` and no
+dynamic dispatch: the kill handle is a concrete, clonable value supplied by the
+runtime, and the supervisor invokes `KillCapability::kill(handle)` when its
+policy dictates immediate cleanup.
+
+`Kill` has two purposes:
+
+1. **Unresponsive actors** — actors stuck in infinite loops, deadlocks, or
+   blocking calls that cannot process `Stop` or `Reset`. Kill forces
+   termination when cooperation is not possible.
+2. **Cleanup of stopped actors** — an actor was stopped (now in `Init`), but
+   the supervisor wants to free its resources immediately rather than keep it
+   suspended.
+
+## Supervisor Observation of DispatchOutcome
+
+`dispatch()` returns a `DispatchOutcome`, which the runtime actor loop forwards
+to the supervisor as a `ChildLifecycleEvent`. This is how the supervisor learns
+about lifecycle transitions without being coupled to the actor's event types:
+
+```rust
+pub enum DispatchOutcome<State> {
     /// No rule matched anywhere (event bubbled to VirtualRoot with no match).
     NoRuleMatched,
     /// Rule matched but guard returned Stay.
     HandledNoTransition,
     /// Transition occurred to a user state.
-    Transition(MachineState<S>),
+    Transition(MachineState<State>),
     /// Left Init via Start command.
-    Started(MachineState<S>),
+    Started(MachineState<State>),
     /// Transitioned to terminal state.
-    Done(MachineState<S>),
+    Done(MachineState<State>),
     /// Actor reset to Init via Guard::Reset.
     Reset,
     /// Actor failed to Init via Guard::Fail or entered error state.
@@ -104,679 +281,37 @@ pub enum DispatchOutcome<S> {
     /// Actor responded to Ping.
     Alive,
 }
-
-// Remove: DroppedInInit, InitNoOp (no longer needed)
 ```
 
----
-
-## Phase 2: Core Engine Refactor
-
-### 2.1 StateMachine Struct Update
-
-**File:** `crates/bloxide-core/src/engine.rs`
-
-```rust
-pub struct StateMachine<S: MachineSpec> {
-    /// Current state - either implicit Init or a user state.
-    current: MachineState<S::State>,
-    /// Actor context.
-    ctx: S::Ctx,
-}
-
-impl<S: MachineSpec> StateMachine<S> {
-    /// Construct a new machine in implicit Init state.
-    /// 
-    /// Init is entered SILENTLY - no callbacks fire. Construction is just
-    /// setting the initial state. `on_init_entry` only fires when entering
-    /// Init due to Reset/Fail/Stop.
-    pub fn new(ctx: S::Ctx) -> Self {
-        Self {
-            current: MachineState::Init,
-            ctx,
-        }
-    }
-    
-    /// Current state of the machine.
-    pub fn current_state(&self) -> MachineState<S::State> {
-        self.current
-    }
-    
-    /// Mutable reference to context.
-    pub fn ctx_mut(&mut self) -> &mut S::Ctx {
-        &mut self.ctx
-    }
-}
-```
-
-### 2.2 Dispatch Implementation
-
-**File:** `crates/bloxide-core/src/engine.rs`
-
-```rust
-impl<S: MachineSpec> StateMachine<S> {
-    /// Dispatch an event through the state machine.
-    /// 
-    /// Lifecycle commands (Start/Reset/Stop/Ping) are handled at VirtualRoot.
-    /// Domain events flow through state handler tables, bubbling to root.
-    pub fn dispatch(&mut self, event: S::Event) -> DispatchOutcome<S::State> {
-        // Check for lifecycle commands first (VirtualRoot handling)
-        if let Some(cmd) = event.as_lifecycle_command() {
-            return self.handle_lifecycle(cmd);
-        }
-        
-        // Domain event flow depends on current state
-        match self.current {
-            MachineState::Init => {
-                // Init's auto-generated transitions catch all domain events
-                self.process_init_event(event)
-            }
-            MachineState::State(_) => {
-                self.process_operational_event(event)
-            }
-        }
-    }
-    
-    /// Handle lifecycle commands at VirtualRoot level.
-    fn handle_lifecycle(&mut self, cmd: LifecycleCommand) -> DispatchOutcome<S::State> {
-        match cmd {
-            LifecycleCommand::Start => {
-                // Transition from Init to user's initial state
-                let target = S::initial_state();
-                self.transition_to_state(target);
-                DispatchOutcome::Started(MachineState::State(target))
-            }
-            LifecycleCommand::Reset => {
-                // Transition to Init, report Reset
-                self.transition_to_init();
-                DispatchOutcome::Reset
-            }
-            LifecycleCommand::Stop => {
-                // Transition to Init, report Stopped
-                self.transition_to_init();
-                DispatchOutcome::Stopped
-            }
-            LifecycleCommand::Ping => {
-                // Respond Alive (runtime will send notification)
-                DispatchOutcome::Alive
-            }
-        }
-    }
-    
-    /// Process event while in implicit Init (catch-all behavior).
-    fn process_init_event(&mut self, _event: S::Event) -> DispatchOutcome<S::State> {
-        // Init's auto-generated transitions: all domain events => stay
-        // No callbacks, no state change
-        DispatchOutcome::HandledNoTransition
-    }
-    
-    /// Process event while in operational state.
-    fn process_operational_event(&mut self, event: S::Event) -> DispatchOutcome<S::State> {
-        let current = match self.current {
-            MachineState::State(s) => s,
-            MachineState::Init => unreachable!("process_operational_event called while in Init"),
-        };
-        let event_tag = event.event_tag();
-        let current_path = current.path();
-        
-        // Walk from leaf to root, evaluating state handlers
-        for &ancestor in current_path.iter().rev() {
-            let fns = Self::handler_fns_for_state(ancestor);
-            
-            if let Some(guard) = eval_rules(fns.transitions, &mut self.ctx, &event, event_tag) {
-                return self.apply_guard(guard);
-            }
-        }
-        
-        // Bubbled to VirtualRoot - no match in any state
-        DispatchOutcome::NoRuleMatched
-    }
-    
-    /// Apply a Guard outcome.
-    fn apply_guard(&mut self, guard: Guard<S>) -> DispatchOutcome<S::State> {
-        match guard {
-            Guard::Transition(leaf) => {
-                let target = leaf.into_inner();
-                self.transition_to_state(target);
-                
-                // Check for terminal/error states
-                if S::is_error(&target) {
-                    DispatchOutcome::Failed
-                } else if S::is_terminal(&target) {
-                    DispatchOutcome::Done(MachineState::State(target))
-                } else {
-                    DispatchOutcome::Transition(MachineState::State(target))
-                }
-            }
-            Guard::Stay => DispatchOutcome::HandledNoTransition,
-            Guard::Reset => {
-                self.transition_to_init();
-                DispatchOutcome::Reset
-            }
-            Guard::Fail => {
-                self.transition_to_init();
-                DispatchOutcome::Failed
-            }
-        }
-    }
-    
-    /// Transition to a user state (with LCA exit/entry callbacks).
-    fn transition_to_state(&mut self, target: S::State) {
-        match self.current {
-            MachineState::Init => {
-                // Exiting Init: fire on_init_exit, then enter target states
-                S::on_init_exit(&mut self.ctx);
-                let path = target.path();
-                for &state in path.iter() {
-                    for action in Self::handler_fns_for_state(state).on_entry {
-                        action(&mut self.ctx);
-                    }
-                }
-                self.current = MachineState::State(target);
-            }
-            MachineState::State(source) => {
-                // Normal state-to-state transition with LCA
-                self.change_state(source, target);
-            }
-        }
-    }
-    
-    /// Transition to implicit Init (with LCA exit callbacks).
-    fn transition_to_init(&mut self) {
-        match self.current {
-            MachineState::Init => {
-                // Already in Init, nothing to do
-            }
-            MachineState::State(source) => {
-                // Exit all states leaf-to-root
-                let source_path = source.path();
-                for &state in source_path.iter().rev() {
-                    for action in Self::handler_fns_for_state(state).on_exit {
-                        action(&mut self.ctx);
-                    }
-                }
-                // Enter Init: fire on_init_entry
-                S::on_init_entry(&mut self.ctx);
-                self.current = MachineState::Init;
-            }
-        }
-    }
-    
-    /// Get handler functions for a user state.
-    fn handler_fns_for_state(state: S::State) -> &'static StateFns<S> {
-        S::HANDLER_TABLE[state.as_index()]
-    }
-}
-```
-
-### 2.3 Remove Old Methods
-
-**File:** `crates/bloxide-core/src/engine.rs`
-
-Remove:
-- `pub fn start(&mut self) -> DispatchOutcome<S::State>`
-- `pub fn reset(&mut self) -> DispatchOutcome<S::State>`
-- `fn leave_init(&mut self)` (replaced by `transition_to_state`)
-- `fn enter_init(&mut self)` (replaced by `transition_to_init`)
-- `MachinePhase` enum entirely
-
----
-
-## Phase 3: MachineSpec Trait Updates
-
-**File:** `crates/bloxide-core/src/spec.rs`
-
-```rust
-pub trait MachineSpec: Sized + 'static {
-    type State: StateTopology;
-    type Event: EventTag + Send + 'static;
-    type Ctx: 'static;
-    type Mailboxes<R: BloxRuntime>: Mailboxes<Self::Event>;
-
-    const HANDLER_TABLE: &'static [&'static StateFns<Self>];
-
-    /// The initial operational state to transition to on Start command.
-    /// MUST return a leaf state (not a composite state).
-    fn initial_state() -> Self::State;
-
-    /// Called when entering implicit Init via Reset/Fail/Stop.
-    /// Use for cleanup, resource release, state reset.
-    /// NOT called at construction time.
-    fn on_init_entry(_ctx: &mut Self::Ctx) {}
-
-    /// Called when leaving implicit Init via Start command.
-    /// Use for setup, initialization before entering operational states.
-    fn on_init_exit(_ctx: &mut Self::Ctx) {}
-
-    /// Returns true if state represents normal completion.
-    /// Transitions to this state report Done to supervisor.
-    fn is_terminal(_state: &Self::State) -> bool { false }
-
-    /// Returns true if state represents a failure.
-    /// Transitions to this state report Failed to supervisor.
-    /// Takes precedence over is_terminal if both true.
-    fn is_error(_state: &Self::State) -> bool { false }
-
-    // REMOVED: fn is_start(_event: &Self::Event) -> bool { false }
-    // REMOVED: fn root_transitions() -> &'static [StateRule<Self>] { &[] }
-}
-```
-
----
-
-## Phase 4: Lifecycle Event Integration
-
-### 4.1 Event Trait for Lifecycle
-
-**File:** `crates/bloxide-core/src/event_tag.rs`
-
-```rust
-/// Reserved event tag for lifecycle commands.
-pub const LIFECYCLE_TAG: u8 = 254;  // Before WILDCARD_TAG (255)
-
-/// Trait for events that may carry lifecycle commands.
-pub trait LifecycleEvent: EventTag {
-    /// Returns the lifecycle command if this event is one.
-    fn as_lifecycle_command(&self) -> Option<LifecycleCommand> {
-        None
-    }
-}
-```
-
-### 4.2 LifecycleCommand Enum
-
-**File:** `crates/bloxide-supervisor/src/lifecycle.rs`
-
-```rust
-/// Lifecycle commands sent to actors via their lifecycle mailbox.
-/// Handled at VirtualRoot level, not in user state handlers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LifecycleCommand {
-    /// Transition from Init to operational initial state.
-    Start,
-    /// Transition to Init, report Reset. Actor can be restarted.
-    Reset,
-    /// Transition to Init, report Stopped. Actor stays in Init.
-    Stop,
-    /// Health check - respond with Alive.
-    Ping,
-    // REMOVED: Kill - handled by runtime directly, not as a message
-}
-```
-
-### 4.3 LifecycleMailbox Type Convention
-
-**Convention:** Supervised actors include a lifecycle mailbox as their first mailbox.
-
-```rust
-// Example:
-type Mailboxes<R> = (R::Stream<LifecycleCommand>, R::Stream<DomainMsg>);
-
-// Lifecycle mailbox at index 0 for priority (handled by VirtualRoot first).
-```
-
----
-
-## Phase 5: Runtime Kill Capability
-
-### 5.1 KillCap Trait
-
-**File:** `crates/bloxide-core/src/capability.rs`
-
-```rust
-/// Capability to kill actors by ID.
-/// 
-/// Implementations are runtime-specific. The supervisor holds a reference
-/// to this capability and calls it when policy says "kill this actor".
-pub trait KillCap {
-    /// Kill the actor immediately. Runtime aborts the task and drops channels.
-    /// No callbacks fire on the actor - it's just gone.
-    fn kill(&self, actor_id: ActorId);
-}
-```
-
-### 5.2 Tokio Implementation
-
-**File:** `runtimes/bloxide-tokio/src/lib.rs`
-
-```rust
-use std::sync::{Arc, Mutex};
-use tokio::task::JoinHandle;
-use bloxide_core::capability::KillCap;
-use bloxide_core::messaging::ActorId;
-
-pub struct TokioKillCap {
-    tasks: Arc<Mutex<HashMap<ActorId, JoinHandle<()>>>>,
-}
-
-impl KillCap for TokioKillCap {
-    fn kill(&self, actor_id: ActorId) {
-        if let Some((_, handle)) = self.tasks.lock().unwrap().remove_entry(&actor_id) {
-            handle.abort();
-        }
-    }
-}
-
-impl TokioRuntime {
-    pub fn kill_cap(&self) -> Arc<dyn KillCap> {
-        // Arc to the KillCap held by runtime
-    }
-}
-```
-
-### 5.3 Embassy Implementation
-
-**File:** `runtimes/bloxide-embassy/src/lib.rs`
-
-```rust
-impl KillCap for EmbassyKillCap {
-    fn kill(&self, _actor_id: ActorId) {
-        // Static actors can't be killed - no-op or log warning
-        // OR: could drop channels to signal "dead" state
-    }
-}
-```
-
----
-
-## Phase 6: Runtime Actor Loop Refactor
-
-### 6.1 Remove SupervisedRunLoop Trait
-
-**File:** `crates/bloxide-supervisor/src/service.rs`
-
-DELETE this file and the trait. Runtime actor loops now just:
-1. Poll mailboxes (including lifecycle)
-2. Call `dispatch()` on any event
-3. Report `DispatchOutcome` to supervisor
-4. Exit on certain outcomes or runtime-directed kill
-
-### 6.2 Standard Actor Loop (Tokio Example)
-
-**File:** `runtimes/bloxide-tokio/src/actor.rs` (new file)
-
-```rust
-pub async fn run_actor<S: MachineSpec + 'static>(
-    machine: StateMachine<S>,
-    mailboxes: S::Mailboxes<TokioRuntime>,
-    actor_id: ActorId,
-    notify: TokioSender<ChildLifecycleEvent>,
-) {
-    let mut machine = machine;
-    let mut mailboxes = mailboxes;
-    
-    loop {
-        // Unified mailbox polling (lifecycle + domain)
-        let event = mailboxes.next().await;
-        
-        let outcome = machine.dispatch(event);
-        
-        // Report outcome to supervisor
-        report_outcome::<S>(&outcome, actor_id, &notify);
-        
-        // No special break needed - supervisor uses KillCap to end task
-    }
-}
-
-fn report_outcome<S: MachineSpec>(
-    outcome: &DispatchOutcome<S::State>,
-    actor_id: ActorId,
-    notify: &TokioSender<ChildLifecycleEvent>,
-) {
-    let event = match outcome {
-        DispatchOutcome::Started(_) => ChildLifecycleEvent::Started { child_id: actor_id },
-        DispatchOutcome::Done(_) => ChildLifecycleEvent::Done { child_id: actor_id },
-        DispatchOutcome::Reset => ChildLifecycleEvent::Reset { child_id: actor_id },
-        DispatchOutcome::Failed => ChildLifecycleEvent::Failed { child_id: actor_id },
-        DispatchOutcome::Stopped => ChildLifecycleEvent::Stopped { child_id: actor_id },
-        DispatchOutcome::Alive => ChildLifecycleEvent::Alive { child_id: actor_id },
-        DispatchOutcome::NoRuleMatched | 
-        DispatchOutcome::HandledNoTransition | 
-        DispatchOutcome::Transition(_) => return, // No notification
-    };
-    
-    let _ = notify.try_send(Envelope(actor_id, event));
-}
-```
-
----
-
-## Phase 7: Macro Updates
-
-> **Note:** Transition rules are declared declaratively in `blox.toml` via `[[topology.transitions]]`, and `bloxide-codegen` emits raw `StateRule { ... }` struct literals. The `fail`/`reset` outcomes described below are expressed as guard outcomes in the TOML-driven codegen. This section is retained as a record of the original design intent.
-
-### 7.1 Add `fail` Guard Outcome
-
-**File:** `crates/bloxide-codegen/src/...` (emitted from `blox.toml`)
-
-Add support for `fail` outcome (in addition to `stay`, `transition`, `reset`):
-
-```toml
-# In blox.toml — guard outcomes map to Guard variants
-[[topology.transitions]]
-pattern = "SomeError(_)"
-to = "fail"   # Maps to Guard::Fail
-
-[[topology.transitions]]
-pattern = "SomeReset(_)"
-to = "reset"  # Maps to Guard::Reset
-```
-
-### 7.2 No Init State Injection in Enum
-
-Do NOT inject Init into the user's enum. The `MachineState` type handles it implicitly.
-
-### 7.3 Root-Scope Transitions
-
-Root-scope transitions are declared with `scope = "root"` on `[[topology.transitions]]` entries in `blox.toml`. Lifecycle is always handled by the engine at VirtualRoot.
-
----
-
-## Phase 8: Supervisor Updates
-
-### 8.1 Supervisor Context Has KillCap
-
-**File:** `crates/bloxide-supervisor/src/ctx.rs`
-
-```rust
-#[derive(BloxCtx)]
-pub struct SupervisorCtx<R: BloxRuntime> {
-    #[self_id]
-    pub self_id: ActorId,
-    
-    /// Capabilities for killing children based on policy.
-    #[ctor]
-    pub kill_cap: Arc<dyn KillCap>,
-    
-    // ... other fields ...
-}
-```
-
-### 8.2 Supervisor Actions
-
-**File:** `crates/bloxide-supervisor/src/actions.rs`
-
-```rust
-/// Kill a child actor immediately.
-pub fn kill_child<R>(ctx: &impl HasKillCap, child_id: ActorId) {
-    ctx.kill_cap().kill(child_id);
-}
-```
-
-### 8.3 ChildGroup - Track Child States
-
-**File:** `crates/bloxide-supervisor/src/registry.rs`
-
-Update `ChildGroup` to track when children are in Init (so it knows they can be restarted):
-
-```rust
-struct ChildEntry {
-    id: ActorId,
-    lifecycle_ref: ActorRef<LifecycleCommand, R>,
-    policy: ChildPolicy,
-    restarts: usize,
-    in_init: bool,  // NEW: tracks if child is in implicit Init
-}
-```
-
----
-
-## Phase 9: Example Blox Updates
-
-For each blox (`ping`, `pong`, `counter`, `pool`, `worker`):
-
-1. Remove any `is_start()` implementations
-2. Ensure `initial_state()` returns correct first operational state
-3. Use `LifecycleMailbox` convention:
-
-```rust
-// Example: WorkerSpec
-impl<R: BloxRuntime> MachineSpec for WorkerSpec<R> {
-    type State = WorkerState;
-    type Event = WorkerEvent<R>;
-    type Ctx = WorkerCtx<R>;
-    
-    // Lifecycle mailbox first, then domain mailboxes
-    type Mailboxes<Rt: BloxRuntime> = (
-        Rt::Stream<LifecycleCommand>,  // Lifecycle
-        Rt::Stream<WorkerCtrl<R>>,  // Control
-        Rt::Stream<WorkerMsg>,  // Domain
-    );
-    
-    fn initial_state() -> WorkerState {
-        WorkerState::Waiting
-    }
-    
-    // REMOVED: is_start - no longer needed
-    
-    fn on_init_entry(ctx: &mut WorkerCtx<R>) {
-        // Cleanup when entering Init (Reset/Fail/Stop)
-        ctx.peers_mut().clear();
-        ctx.set_task_id(0);
-    }
-    
-    fn on_init_exit(ctx: &mut WorkerCtx<R>) {
-        // Setup when leaving Init (Start)
-        // (if needed)
-    }
-}
-```
-
----
-
-## Phase 10: Test Updates
-
-### 10.1 Update TestRuntime
-
-**File:** `crates/bloxide-core/src/test_utils.rs`
-
-Update `TestRuntime` to support lifecycle mailboxes.
-
-### 10.2 Update All Tests
-
-Remove tests for:
-- `is_start()` method
-- `machine.start()` / `machine.reset()` direct calls
-- `MachinePhase::Init`
-
-Add tests for:
-- `MachineState::Init` vs `MachineState::State`
-- `Guard::Fail` outcome
-- Lifecycle commands through dispatch
-- `on_init_entry` firing on Reset/Fail/Stop but not construction
-
----
-
-## Phase 11: Documentation Updates
-
-### 11.1 Update Existing Specs
-
-| File | Updates |
-|------|---------|
-| `02-hsm-engine.md` | Rewrite Init/VirtualRoot behavior |
-| `08-supervision.md` | Rewrite for observer model, KillCap |
-| `12-action-crate-pattern.md` | Add LifecycleMailbox convention |
-| `13-factory-injection-and-supervision.md` | Remove two-stream section |
-| `AGENTS.md` | Update all invariants |
-| `QUICK_REFERENCE.md` | Update decision trees |
-
----
-
-## File Changes Summary
-
-### New Files
-- `spec/architecture/14-unified-lifecycle.md` (this file)
-- `runtimes/bloxide-tokio/src/actor.rs` (standard actor loop)
-- `runtimes/bloxide-embassy/src/actor.rs` (standard actor loop)
-
-### Modified Files
-- `crates/bloxide-core/src/engine.rs` (major refactor)
-- `crates/bloxide-core/src/spec.rs` (remove is_start, update trait)
-- `crates/bloxide-core/src/transition.rs` (add Guard::Fail)
-- `crates/bloxide-core/src/capability.rs` (add KillCap)
-- `crates/bloxide-supervisor/src/lifecycle.rs` (remove Kill command)
-- `crates/bloxide-supervisor/src/service.rs` (DELETE - remove SupervisedRunLoop)
-- `crates/bloxide-supervisor/src/ctx.rs` (add KillCap)
-- `runtimes/bloxide-tokio/src/lib.rs` (add KillCap impl)
-- `runtimes/bloxide-tokio/src/supervision.rs` (major refactor)
-- `runtimes/bloxide-embassy/src/supervision.rs` (major refactor)
-- `crates/bloxide-macros/src/transitions.rs` (add fail support)
-- All blox spec.rs files (remove is_start, update Mailboxes)
-- All example files (update wiring)
-- All test files
-- All spec docs
-
----
-
-## Order of Implementation
-
-1. **Phase 1-2:** Core engine types and dispatch refactor
-2. **Phase 3-4:** MachineSpec updates, lifecycle event integration
-3. **Phase 5-6:** KillCap, runtime actor loop refactor
-4. **Phase 7:** Macro updates
-5. **Phase 8:** Supervisor updates
-6. **Phase 9:** Example blox updates
-7. **Phase 10:** Test updates
-8. **Phase 11:** Documentation
-
----
-
-## Key Architectural Insights
-
-### The Unified Mental Model
-
-**Before (dual-track):**
-```
-LifecycleCommand stream → Runtime intercepts → machine.start/reset (bypasses dispatch)
-Domain event streams → dispatch → handler tables
-```
-
-**After (unified):**
-```
-All mailboxes (including lifecycle) → dispatch → VirtualRoot handles lifecycle, state handlers handle domain
-```
-
-### Init as Implicit Leaf
-
-```
-VirtualRoot (implicit, not entered/exited - just for LCA)
-    │
-    ├── Init (implicit leaf, auto-generated)
-    │       on_entry: S::on_init_entry (fires on Reset/Fail/Stop)
-    │       on_exit:  S::on_init_exit (fires on Start)
-    │       transitions: [* => stay]  (catch-all for domain events)
-    │
-    ├── Waiting (user-declared leaf, initial_state())
-    ├── Running (user-declared leaf)
-    └── Done (user-declared leaf)
-```
-
-### Kill vs Stop vs Reset
-
-| Action | Mechanism | Actor Still Exists? | Task Running? | Supervisor Sees |
-|--------|-----------|---------------------|---------------|-----------------|
-| Reset | LifecycleCommand → dispatch → Init | Yes | Yes | `Reset` |
-| Stop | LifecycleCommand → dispatch → Init | Yes | Yes | `Stopped` |
-| Kill | Runtime.kill() (KillCap) | No | No | (nothing - actor is gone) |
-
-The supervisor uses Stop/Reset for normal lifecycle management, and Kill when policy decides to permanently remove an actor.
+The runtime actor loop maps each outcome to a `ChildLifecycleEvent` and sends
+it to the supervisor's mailbox. Only lifecycle-relevant outcomes produce a
+notification — `NoRuleMatched`, `HandledNoTransition`, and `Transition` are
+internal state-machine events that the supervisor does not need to see:
+
+| `DispatchOutcome`        | `ChildLifecycleEvent` | Supervisor Action |
+|---------------------------|-----------------------|-------------------|
+| `Started(_)`              | `Started`             | Record child as running |
+| `Done(_)`                 | `Done`                | Apply `ChildPolicy` (restart or stop) |
+| `Reset`                   | `Reset`               | Apply restart policy |
+| `Failed`                  | `Failed`              | Apply `ChildPolicy` (restart or stop) |
+| `Stopped`                 | `Stopped`             | Record child as suspended in Init |
+| `Alive`                   | `Alive`               | Record child as responsive |
+| `NoRuleMatched`           | —                     | (not forwarded) |
+| `HandledNoTransition`     | —                     | (not forwarded) |
+| `Transition(_)`           | —                     | (not forwarded) |
+
+Because the supervisor is itself a state machine actor, it handles these
+`ChildLifecycleEvent` messages through its own `dispatch()` pipeline and state
+handler tables — the same unified mechanism as every other actor. There is no
+special "supervisor channel" that bypasses dispatch: child lifecycle events
+arrive as ordinary domain events on the supervisor's mailbox and are routed
+through the supervisor's handler tables, where they trigger policy actions such
+as sending `Start` to restart a failed child or invoking `KillCapability::kill`
+to permanently remove one.
+
+This observer model means actors have **zero knowledge of their supervisor**.
+There is no `supervisor_ref` in actor context, no lifecycle messages in the
+actor's event enum beyond the wrapper for `LifecycleCommand`, and no root rules
+for `Reset`/`Stop`/`Ping` in the actor's own handler tables. The actor simply
+runs its state machine and returns `DispatchOutcome` values; the supervisor
+watches those outcomes and decides what to do.

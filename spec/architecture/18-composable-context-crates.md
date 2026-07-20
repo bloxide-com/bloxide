@@ -274,30 +274,9 @@ The spec_skeleton gets its own import scope, fully computed from what it referen
 
 It does NOT get context imports (accessor traits, message types, `ActorRef`, etc.) — those are only needed by `ctx.rs`.
 
-### Migration path
+### Visual Editor Integration
 
-1. Create `bloxide-messaging` crate with `HasSelfRef` and `HasPeerRef` traits
-2. Create domain context crates (`blox-ctx-workers`, `blox-ctx-pool-ref`, `blox-ctx-rounds`, etc.)
-3. Move trait definitions from actions crates to context crates
-4. Update actions crates to import traits from context crates
-5. Update `blox.toml` files to use `[[context.uses]]` instead of raw `[[context.fields]]` with `imports`
-6. Update codegen to handle `context.uses` — emit fields, imports, attributes, and impl macro calls
-7. Remove `accessor_traits()` inference from codegen — replaced by explicit `context.uses`
-8. Remove hand-patched files — regenerate all bloxes from TOML
-
-### What this eliminates
-
-- ❌ No more string-matching on field types to guess imports
-- ❌ No more `accessor_traits()` inference function
-- ❌ No more shared import list between ctx.rs and spec_skeleton
-- ❌ No more hand-patching generated files
-- ❌ No more trait duplication across actions crates
-- ❌ No more manual `impl` blocks for multi-field traits in blox `actions.rs`
-- ❌ No more coupling to a domain's actions crate just for a trait definition
-
-### What the UI needs to produce
-
-The blox.toml `[[context.uses]]` entries. A visual editor where you:
+The blox.toml `[[context.uses]]` entries drive a visual editor where you:
 - Add context fields by picking from a library of context crates (dropdown)
 - Each context crate shows what traits + fields it provides
 - Set field roles (ctor / state / delegate) via dropdown

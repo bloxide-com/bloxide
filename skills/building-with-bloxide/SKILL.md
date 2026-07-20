@@ -235,7 +235,6 @@ Define state topology in `blox.toml`:
 ```toml
 // crates/bloxes/ping/blox.toml
 [topology]
-handler_fns = ["OPERATING_FNS", "ACTIVE_FNS", "PAUSED_FNS", "DONE_FNS", "ERROR_FNS"]
 
 [[topology.states]]
 name = "Operating"
@@ -258,7 +257,6 @@ name = "Error"
 
 - Use `composite = true` for non-leaf states
 - Use `parent = "ParentState"` for child states
-- `handler_fns` generates the handler table macro
 
 After running `cargo blox generate`, use the generated state enum in `src/spec.rs`:
 

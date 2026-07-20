@@ -174,21 +174,16 @@ impl<R: BloxRuntime, B: CountsRounds> PingCtx<R, B> {
 
 ---
 
-### Rule 6: State Fields (Deprecated)
+### Rule 6: Plain Constructor Fields
 
-**Pattern**: Fields that don't match any of the above patterns
+**Pattern**: Fields that don't match any of the above conventions (not `_ref`, not `_factory`, not `self_id`, not a `behavior` field with `#[delegates]`).
 
 ```rust
-pub task_id: u32,    // State field (deprecated)
-pub result: u32,     // State field (deprecated)
-pub peers: Vec<T>,   // State field (deprecated)
+pub config: Config,    // Plain constructor parameter
+pub timeout: Duration, // Plain constructor parameter
 ```
 
-**Behavior**: These fields are zero-initialized via `Default::default()`.
-No trait implementations are generated.
-
-**Deprecation**: This pattern is deprecated. All mutable state should be
-moved to behavior objects. See Migration Guide below.
+**Behavior**: These fields are passed as constructor parameters. No trait implementations are generated. If a field matches a convention but you don't want the trait impl, use `#[blox_ctx(skip)]` to suppress auto-detection.
 
 ---
 
@@ -202,7 +197,6 @@ The constructor `new()` signature is generated from field roles:
 | Ctor | Yes | Passed in |
 | Accessor | Yes | Passed in |
 | Delegates | Yes | Passed in |
-| State | No | `Default::default()` |
 
 **Signature Order**: Fields appear in constructor in declaration order.
 
@@ -394,62 +388,6 @@ error: #[derive(BloxCtx)] only supports structs
 ---
 
 
-## Migration Guide
-
-### From State Fields to Behavior Objects
-
-**Before** (state fields directly in context):
-```rust
-#[derive(BloxCtx)]
-pub struct WorkerCtx<R: BloxRuntime> {
-    pub self_id: ActorId,
-    pub task_id: u32,      // state
-    pub result: u32,       // state
-    pub peers: Vec<T>,     // state
-}
-
-impl<R: BloxRuntime> HasCurrentTask for WorkerCtx<R> { ... }
-impl<R: BloxRuntime> HasPeers for WorkerCtx<R> { ... }
-```
-
-**After** (recommended pattern):
-
-1. Create behavior type in impl crate:
-```rust
-// impl/tokio-pool-demo-impl/src/lib.rs
-pub struct WorkerBehavior<R: BloxRuntime> {
-    task_id: u32,
-    result: u32,
-    peers: Vec<ActorRef<WorkerMsg, R>>,
-}
-
-impl<R: BloxRuntime> HasCurrentTask for WorkerBehavior<R> { ... }
-impl<R: BloxRuntime> HasPeers<WorkerMsg, R> for WorkerBehavior<R> { ... }
-```
-
-2. Update context to delegate:
-```rust
-// bloxes/worker/src/ctx.rs
-#[derive(BloxCtx)]
-pub struct WorkerCtx<R: BloxRuntime, B: HasCurrentTask + HasPeers<WorkerMsg, R>> {
-    pub self_id: ActorId,
-    pub pool_ref: ActorRef<PoolMsg, R>,
-    
-    #[delegates(HasCurrentTask, HasPeers<WorkerMsg, R>)]
-    pub behavior: B,
-}
-```
-
-### From Old Annotations to Conventions
-
-| Before | After |
-|--------|-------|
-| `#[provides(HasPeerRef<R>)] pub peer_ref: ActorRef<M, R>` | `pub peer_ref: ActorRef<M, R>` (or keep `#[provides(...)]` for multi-param traits) |
-| `#[ctor] pub config: Config` | `#[blox_ctx(skip)] pub config: Config` |
-| `#[ctor] pub factory: FactoryFn` | `pub factory: FactoryFn` (auto-detected as `_factory` suffix) or `#[blox_ctx(skip)] pub factory: FactoryFn` |
-
----
-
 ## Summary Table
 
 | Field Pattern | Inferred Role | Annotation Needed? |
@@ -460,7 +398,7 @@ pub struct WorkerCtx<R: BloxRuntime, B: HasCurrentTask + HasPeers<WorkerMsg, R>>
 | `behavior: B` with traits | Delegates | **Yes**: `#[delegates(T1, T2)]` |
 | Field matching convention but no trait impl | Ctor param | **Yes**: `#[blox_ctx(skip)]` |
 | Other ActorRef fields | Ctor param | No |
-| Other types | State | No |
+| Other types | Ctor param | No |
 
 **`#[delegates]` is required** for marking behavior delegation fields.
 **`#[provides]` is required** for multi-param accessor traits that convention-based

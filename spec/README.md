@@ -49,9 +49,7 @@ spec/
     18-composable-context-crates.md  ← composable context crates, trait-with-data pattern
     19-declarative-wiring.md         ← declarative wiring, handle injection, system.toml
     20-blox-toml-source-of-truth.md  ← blox.toml as single source of truth for codegen
-    21-spawn-architecture.md         ← spawn architecture (SUPERSEDED by 22, retained for history)
-    22-spawn-architecture-v2.md      ← spawn architecture v2 (current — fn pointers, decoupled spawning)
-  history/                           ← superseded plans and implementation audit documents
+    22-spawn-architecture-v2.md      ← spawn architecture (fn pointers, decoupled spawning)
   templates/
     blox-spec.md                     ← copy this to start a new blox spec
   bloxes/
@@ -86,8 +84,7 @@ spec/
 | How do composable context crates work? | [architecture/18-composable-context-crates.md](architecture/18-composable-context-crates.md) |
 | How does declarative wiring and handle injection work? | [architecture/19-declarative-wiring.md](architecture/19-declarative-wiring.md) |
 | How does blox.toml serve as the source of truth? | [architecture/20-blox-toml-source-of-truth.md](architecture/20-blox-toml-source-of-truth.md) |
-| How does spawning work? (current architecture) | [architecture/22-spawn-architecture-v2.md](architecture/22-spawn-architecture-v2.md) |
-| How does spawning work? (historical, superseded) | [architecture/21-spawn-architecture.md](architecture/21-spawn-architecture.md) |
+| How does spawning work? | [architecture/22-spawn-architecture-v2.md](architecture/22-spawn-architecture-v2.md) |
 | Create a new blox | Copy [templates/blox-spec.md](templates/blox-spec.md) to `spec/bloxes/<name>.md` |
 | Read the Ping spec | [bloxes/ping.md](bloxes/ping.md) |
 | Read the Pong spec | [bloxes/pong.md](bloxes/pong.md) |
@@ -96,6 +93,7 @@ spec/
 | Read the Worker spec | [bloxes/worker.md](bloxes/worker.md) |
 | Read the BHSM test spec | [bloxes/bhsm.md](bloxes/bhsm.md) |
 | Read the Supervisor spec | [architecture/08-supervision.md](architecture/08-supervision.md) |
+
 ## Creating a New Blox
 
 1. Copy `spec/templates/blox-spec.md` → `spec/bloxes/<your-blox-name>.md`

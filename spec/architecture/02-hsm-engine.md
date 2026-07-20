@@ -98,7 +98,6 @@ For most bloxes, the state enum and handler table mapping are generated from `bl
 
 ```toml
 [topology]
-handler_fns = ["READY_FNS", "DONE_FNS"]
 
 [[topology.states]]
 name = "Ready"
@@ -154,10 +153,7 @@ impl<S: MachineSpec> StateMachine<S> {
 }
 ```
 
-> **Note**: The `start()` and `reset()` methods are deprecated. Lifecycle is driven
-> entirely through `dispatch()` with LifecycleCommand events. VirtualRoot handles
-> these commands internally, and the runtime observes DispatchOutcome to emit
-> ChildLifecycleEvents to supervisors.
+Lifecycle is driven entirely through `dispatch()` with LifecycleCommand events. VirtualRoot handles these commands internally, and the runtime observes DispatchOutcome to emit ChildLifecycleEvents to supervisors.
 
 ### `DispatchOutcome`
 
@@ -433,4 +429,4 @@ fn test_topology_no_cycles() {
 - **MachineSpec trait** → `crates/bloxide-core/src/spec.rs`
 - **Handler patterns** → `spec/architecture/05-handler-patterns.md`
 - **Declarative transitions (blox.toml)** → `skills/building-with-bloxide/reference.md` → `[[topology.transitions]]`
-- **Init/Start/Reset flow** → `START_HERE.md` → "Init, Start, and Reset"
+- **Init/Start/Reset flow** → This file → "Init, Start, and Reset"

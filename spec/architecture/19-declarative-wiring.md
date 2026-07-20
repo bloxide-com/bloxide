@@ -195,16 +195,9 @@ The supervisor already handles child registration and lifecycle. The wiring mani
 2. **Dynamic children** — spawned at runtime via the spawn factory. The supervisor registers them dynamically (already supported via `SupervisorControl::RegisterChild`).
 3. **Health checks** — optional `health_check_interval_ms` in the wiring manifest.
 
-### What this eliminates
+### Visual Editor Integration
 
-- ❌ No more hand-written wiring binaries
-- ❌ No more manual channel creation and ref passing
-- ❌ No more manual supervisor tree construction
-- ❌ No more manual behavior type implementation in the binary
-
-### What the UI needs to produce
-
-The wiring manifest. A visual editor where you:
+The wiring manifest drives a visual editor where you:
 - Drag blox instances onto a canvas
 - Draw connections between actors (message type flows from A to B)
 - The editor infers `inject` entries from the connections
@@ -213,13 +206,3 @@ The wiring manifest. A visual editor where you:
 - Pick the runtime (Tokio / Embassy / Test)
 
 The codegen produces the complete binary. The only hand-written Rust is action function bodies and guard predicates in actions crates.
-
-### Migration path
-
-1. Define the wiring manifest TOML schema in `bloxide-codegen`
-2. Update codegen to parse wiring manifests and generate `main.rs`
-3. Write the `tokio-demo` wiring manifest as the first example
-4. Verify the generated binary matches the current hand-written one
-5. Write wiring manifests for `tokio-pool-demo` and `embassy-demo`
-6. Remove hand-written example binaries — replace with generated ones
-7. Add `cargo blox wire` command to generate binaries from wiring manifests

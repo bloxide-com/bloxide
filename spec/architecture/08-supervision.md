@@ -1,7 +1,7 @@
 # Supervision
 
 > **When would I use this?** Use this document when setting up supervision,
-> understanding KillCap (policy-driven cleanup for dynamic actors), or learning how child lifecycle
+> understanding KillCapability (immediate actor termination for unresponsive actors), or learning how child lifecycle
 > events flow to supervisors. For lifecycle command handling details, see `02-hsm-engine.md`.
 
 The supervision model is inspired by Elixir/OTP. A **supervisor** is itself a state machine actor that monitors child actors and either restarts or permanently stops them in response to lifecycle triggers. Unlike OTP, the supervisor is a **generic library component** provided by `bloxide-supervisor` — users configure children and policies in the wiring layer without writing a custom blox.
@@ -57,88 +57,41 @@ Stop → actor goes to Init (suspended)
 - No replacement possible (static actors are created at wiring time)
 
 **Actors have zero knowledge of their supervisor.** No `supervisor_ref` in context, no lifecycle messages in event enums, no root rules for Reset/Stop/Ping.
-## KillCap: Policy-Driven Actor Cleanup
+## KillCapability: Policy-Driven Actor Cleanup
 
-`KillCap` is a **runtime capability** for terminating actors and freeing their allocated resources. It is primarily used by supervisors managing **dynamic actors** — actors spawned at runtime whose resources (channels, Vec slots, task slots) may need explicit cleanup based on policy.
+`KillCapability` is a **runtime capability** for terminating actors immediately, bypassing the normal dispatch lifecycle. It is used for unresponsive actors or cleanup of stopped dynamic actors whose resources should be freed.
 
-### Static vs. Dynamic Actor Cleanup
-
-For **static actors** (created at wiring time), lifecycle commands `Stop` and `Reset` are sufficient. The actor's channels and resources are held by the wiring layer and naturally cleaned up when the task exits.
-
-For **dynamic actors** (spawned at runtime), the supervisor may need to:
-- Free the child's allocated channel memory
-- Remove the child from `Vec<ActorRef>` collections in parent actors
-- Reclaim task slots for reuse
-
-### When to Use KillCap
-
-The `ChildPolicy` determines whether KillCap is applied when a child reaches a terminal state:
-
-| Situation | Use | Rationale |
-|---|---|---|
-| Normal restart cycle | Reset | Preserves on_exit callbacks, child stays alive |
-| Clean shutdown | Stop | Actor processes Stop command, callbacks run |
-| Policy-driven cleanup for dynamic actors | Kill | Immediate termination, memory freed |
-| Child unresponsive, health check failed | Kill | Cannot process Stop if stuck |
-
-### KillCap vs. Lifecycle Commands
+### KillCapability vs. Lifecycle Commands
 
 | Command/Cap | Path | Callbacks | When Used |
 |---|---|---|---|
 | `Reset` | dispatch(VirtualRoot) → exit chain | `on_exit` (all states), `on_init_entry` | Restart cycle |
 | `Stop` | dispatch(VirtualRoot) → exit chain | `on_exit` (all states) | Clean shutdown |
-| `KillCap::kill` | Runtime abort (bypasses dispatch) | **None** | Policy-driven cleanup for dynamic actors |
+| `KillCapability::kill` | Runtime abort (bypasses dispatch) | **None** | Unresponsive actors, resource cleanup |
 
-### KillCap Trait Definition
+### KillCapability Trait Definition
 
 ```rust
 // In bloxide-core/src/capability.rs
-pub trait KillCap: Send + Sync + 'static {
-    /// Kill the actor immediately. Runtime aborts the task and drops channels.
-    /// No callbacks fire on the actor - it's just gone.
-    fn kill(&self, actor_id: ActorId);
+pub trait KillCapability<R: BloxRuntime> {
+    type Handle: Clone + Send + 'static;
+    fn kill(handle: Self::Handle);
 }
 ```
 
-### Tokio Implementation
+The runtime provides two implementations:
+- `NoKill` — for static runtimes (Embassy). `Handle = ()` (ZST), `kill` is a no-op.
+- `Kill` — for dynamic runtimes (Tokio). `Handle = R::AbortHandle`, `kill` calls `R::abort(handle)`.
 
-```rust
-// In bloxide-tokio/src/kill.rs
-#[derive(Clone)]
-pub struct TokioKillCap {
-    tasks: Arc<Mutex<HashMap<ActorId, JoinHandle<()>>>>,
-}
+The supervisor stores the concrete `TaskHandle` per child in `ChildEntry` and invokes `kill` when policy dictates immediate cleanup.
 
-impl KillCap for TokioKillCap {
-    fn kill(&self, actor_id: ActorId) {
-        if let Some(handle) = self.tasks.lock().unwrap().remove(&actor_id) {
-            handle.abort();  // Immediate task termination
-            // channels drop, Vec entries can be removed
-        }
-    }
-}
-```
+### Key Invariants for KillCapability
 
-### Integration with ChildGroup
-
-The supervisor's `ChildGroup<R>` may hold a `KillCap` reference (optional, only for runtimes that support it):
-
-```rust
-pub struct ChildGroup<R: BloxRuntime> {
-    // ... existing fields ...
-    kill_cap: Option<Rc<dyn KillCap>>,  // None for Embassy, Some for Tokio
-}
-```
-
-When policy dictates immediate cleanup (e.g., `ChildPolicy::KillOnDone`), `ChildGroup` invokes `kill_cap.kill(child_id)` instead of sending `Stop`.
-
-### Key Invariants for KillCap
-
-- KillCap is a **policy tool** for dynamic actor cleanup, not a replacement for normal lifecycle.
-- Actors have no access to KillCap; only supervisors (and potentially the wiring layer) hold it.
-- KillCap is a runtime-facing capability, not a blox-facing trait.
-- Embassy lacks KillCap — dynamic actors on Embassy use cooperative cleanup strategies.
-- After `kill()`, no `ChildLifecycleEvent::Stopped` is emitted; the supervisor tracks cleanup separately.
+- KillCapability is for unresponsive actors or cleanup, not a replacement for normal lifecycle.
+- Actors never see KillCapability; only supervisors and the wiring layer hold handles.
+- KillCapability is a runtime-facing capability (Tier 2), not a blox-facing trait.
+- After `kill()`, no `on_exit` callbacks fire — the task is dropped in-place.
+- Killed actors are permanently dead and cannot be restarted.
 ## Generic Supervisor (`bloxide-supervisor`)
 
 The `bloxide-supervisor` crate provides a ready-to-use supervisor as a `MachineSpec`. No custom blox is needed — the wiring layer constructs a `ChildGroup<R>`, configures per-child policies and a group-level shutdown trigger, and spawns the generic `SupervisorSpec<R>`.
