@@ -9,16 +9,25 @@ use bloxide_core::{
     accessor::HasSelfId, lifecycle::ChildLifecycleEvent, messaging::Envelope,
     transition::ActionResult,
 };
-use bloxide_supervisor_context::{HasChildGroup, HasChildGroupMut, HasPending, SupervisorControl};
+use bloxide_supervisor_context::{
+    ChildAction, HasChildGroup, HasChildGroupMut, HasPending, SupervisorControl,
+};
 
 use crate::{SupervisorCtx, SupervisorEvent};
 
-/// Start all children in the group.
+/// Start all children in the group and clear lifecycle counters.
+///
+/// This is the `on_entry` for the Running state. In the four-level lifecycle
+/// model, `Guard::Reset` goes directly to `initial_state()` (Running) — it
+/// does NOT fire `on_init_entry`. So counters must be cleared here, in the
+/// Running on_entry, which fires both on initial Start and on Reset.
 pub fn start_children<R, C>(ctx: &mut C)
 where
     R: bloxide_core::capability::BloxRuntime,
-    C: HasSelfId + HasChildGroup<R>,
+    C: HasSelfId + HasChildGroup<R> + HasChildGroupMut<R> + HasPending,
 {
+    ctx.children_mut().clear_counters();
+    ctx.set_pending(ChildAction::default());
     ctx.children().start_all(ctx.self_id());
 }
 
@@ -46,14 +55,17 @@ where
     ActionResult::Ok
 }
 
-/// Handle a Reset child lifecycle event.
-pub fn handle_reset<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
+/// Record a started child.
+///
+/// In the four-level lifecycle model, `Started` covers both initial `Start`
+/// and `Reset` (both go directly to `initial_state()`). The supervisor does
+/// not need to send `Start` after `Reset`.
+pub fn record_started<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Reset { child_id })) = ev {
-        let from = ctx.self_id();
-        ctx.children_mut().handle_reset(*child_id, from);
+    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Started { child_id })) = ev {
+        ctx.children_mut().handle_started(*child_id);
     }
     ActionResult::Ok
 }
@@ -69,13 +81,16 @@ where
     ActionResult::Ok
 }
 
-/// Record a started child.
-pub fn record_started<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
+/// Record an aborted child.
+///
+/// Aborted means the child's task self-terminated cooperatively via
+/// `AbortCommand`. The task is gone — restarting requires respawning.
+pub fn record_aborted<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Started { child_id })) = ev {
-        ctx.children_mut().handle_started(*child_id);
+    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { child_id })) = ev {
+        ctx.children_mut().record_aborted(*child_id);
     }
     ActionResult::Ok
 }
@@ -109,13 +124,8 @@ where
 ///
 /// Called when the supervisor receives a `SupervisorControl::RegisterDynamicChild`
 /// from the `spawn_child` helper. Registers the child in the child group
-/// (storing the `kill_ref` for the kill mailbox and the `abort_handle` for
-/// the external abort ripcord) and sends a Start command.
-///
-/// The `abort_handle` is `Clone` (it's `R::AbortHandle`), so we can clone it
-/// from `&Event` — the HSM engine passes `&Event` to action functions, not
-/// `&mut Event`. This is the key advantage of `AbortHandle` over `TaskHandle`
-/// (`JoinHandle<()>` is not `Clone`).
+/// (storing the `abort_ref` for the cooperative abort mailbox and the
+/// `abort_handle` for the external kill ripcord) and sends a Start command.
 pub fn handle_register_dynamic_child<R>(
     ctx: &mut SupervisorCtx<R>,
     ev: &SupervisorEvent<R>,
@@ -130,7 +140,7 @@ where
         ctx.children_mut().add_dynamic(
             child_id,
             reg.lifecycle_ref.clone(),
-            reg.kill_ref.clone(),
+            reg.abort_ref.clone(),
             reg.abort_handle.clone(),
             reg.policy,
         );

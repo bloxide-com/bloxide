@@ -3,23 +3,19 @@
 //!
 //! This crate is the impl layer for `tokio-pool-demo`. It is the only place
 //! that knows about concrete worker context/spec types and task spawning.
-//!
-//! Per spec 22 Step 5, the old `AppSpawnFactory` struct was replaced with a
-//! stateless `fn spawn_worker`. All state comes from the `SpawnRequest`
-//! message — no captured struct fields.
 
 extern crate alloc;
 use alloc::vec::Vec;
 
 use bloxide_core::{
     capability::{BloxRuntime, DynamicChannelCap, SpawnCap},
-    child_management::{ChildPolicy, KillCommand},
+    child_management::{AbortCommand, ChildPolicy},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::ActorRef,
     spawn::SpawnOutput,
     StateMachine,
 };
-use bloxide_tokio::{run_supervised_actor_with_kill, TokioRuntime};
+use bloxide_tokio::{run_supervised_actor_with_abort, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasWorkerPeers};
 use pool_messages::{SpawnRequest, SpawnedWorker, WorkerCtrl, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
@@ -91,8 +87,8 @@ pub fn spawn_worker(
                 <TokioRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
             let (lifecycle_ref, lifecycle_rx) =
                 <TokioRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(worker_id, 4);
-            let (kill_ref, kill_rx) =
-                <TokioRuntime as DynamicChannelCap>::channel::<KillCommand>(worker_id, 4);
+            let (abort_ref, abort_rx) =
+                <TokioRuntime as DynamicChannelCap>::channel::<AbortCommand>(worker_id, 4);
 
             let behavior = WorkerBehavior::<TokioRuntime>::default();
             let worker_ctx = WorkerCtx::new(pool_ref, worker_id, behavior);
@@ -103,11 +99,11 @@ pub fn spawn_worker(
 
             let notify_sender = notify.sender();
             let task_handle = <TokioRuntime as SpawnCap>::spawn(async move {
-                run_supervised_actor_with_kill(
+                run_supervised_actor_with_abort(
                     machine,
                     (ctrl_rx, domain_rx),
                     lifecycle_rx,
-                    kill_rx,
+                    abort_rx,
                     worker_id,
                     notify_sender,
                 )
@@ -131,7 +127,7 @@ pub fn spawn_worker(
             SpawnOutput {
                 child_id: worker_id,
                 lifecycle_ref,
-                kill_ref,
+                abort_ref,
                 abort_handle,
                 policy: ChildPolicy::Stop,
             }

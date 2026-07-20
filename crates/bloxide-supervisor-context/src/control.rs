@@ -3,12 +3,12 @@ use core::fmt;
 
 use bloxide_core::{
     capability::{BloxRuntime, KillCapability},
-    child_management::{ChildPolicy, KillCommand},
+    child_management::{AbortCommand, ChildPolicy},
     lifecycle::LifecycleCommand,
     messaging::{ActorId, ActorRef},
 };
 
-/// Register a static child (wired at startup). No kill capability.
+/// Register a static child (wired at startup). No abort capability.
 /// Used by the wiring layer for Embassy and static Tokio children.
 pub struct RegisterChild<R: BloxRuntime> {
     pub id: ActorId,
@@ -35,11 +35,12 @@ impl<R: BloxRuntime> fmt::Debug for RegisterChild<R> {
     }
 }
 
-/// Register a dynamically spawned child. Has a kill capability mailbox.
-/// Used by the spawn helper when SpawnCap is available.
+/// Register a dynamically spawned child. Has an abort capability mailbox
+/// and a kill handle (ripcord).
 ///
-/// The `kill_ref` and `abort_handle` fields are for the kill capability —
-/// see spec/architecture/22-spawn-architecture-v2.md §4.7.
+/// The `abort_ref` is for cooperative self-termination (the child polls its
+/// abort mailbox and self-terminates on receipt of `AbortCommand`).
+/// The `abort_handle` is the external ripcord (`KillCapability::kill(handle)`).
 ///
 /// This type implements `Clone` because `abort_handle` is `Clone`
 /// (it's `R::AbortHandle`, which requires `Clone` on the `SpawnCap` trait).
@@ -54,10 +55,11 @@ impl<R: BloxRuntime> fmt::Debug for RegisterChild<R> {
 pub struct RegisterDynamicChild<R: BloxRuntime> {
     pub id: ActorId,
     pub lifecycle_ref: ActorRef<LifecycleCommand, R>,
-    /// Kill capability mailbox (send side). The supervisor sends `KillCommand`
-    /// here; the child's task receives it and self-terminates.
-    pub kill_ref: ActorRef<KillCommand, R>,
-    /// Cloneable abort handle for external task abort (the ripcord).
+    /// Abort capability mailbox (send side). The supervisor sends
+    /// `AbortCommand` here; the child's task receives it and self-terminates
+    /// cooperatively (no callbacks, no dispatch).
+    pub abort_ref: ActorRef<AbortCommand, R>,
+    /// Cloneable abort handle for external task kill (the ripcord).
     /// `()` for NoKill runtimes, `R::AbortHandle` for Kill runtimes.
     /// Must be `Clone` so the action function can extract it from `&Event`.
     pub abort_handle: <R::Kill as KillCapability<R>>::Handle,
@@ -69,7 +71,7 @@ impl<R: BloxRuntime> Clone for RegisterDynamicChild<R> {
         Self {
             id: self.id,
             lifecycle_ref: self.lifecycle_ref.clone(),
-            kill_ref: self.kill_ref.clone(),
+            abort_ref: self.abort_ref.clone(),
             abort_handle: self.abort_handle.clone(),
             policy: self.policy,
         }
@@ -95,9 +97,9 @@ impl<R: BloxRuntime> fmt::Debug for RegisterDynamicChild<R> {
 /// uses `abort_handle` which is `Clone`). Manual impl (not `#[derive]`) to
 /// avoid the derive macro generating `R: Clone` bounds.
 pub enum SupervisorControl<R: BloxRuntime> {
-    /// Register a static child (wired at startup, no kill capability).
+    /// Register a static child (wired at startup, no abort capability).
     RegisterChild(RegisterChild<R>),
-    /// Register a dynamically spawned child (has kill capability).
+    /// Register a dynamically spawned child (has abort capability + kill handle).
     RegisterDynamicChild(RegisterDynamicChild<R>),
     /// Trigger one health-check round.
     HealthCheckTick,
@@ -139,7 +141,7 @@ impl<R: BloxRuntime> bloxide_core::spawn::ChildRegistrar<R> for SupervisorRegist
         SupervisorControl::RegisterDynamicChild(RegisterDynamicChild {
             id: output.child_id,
             lifecycle_ref: output.lifecycle_ref,
-            kill_ref: output.kill_ref,
+            abort_ref: output.abort_ref,
             abort_handle: output.abort_handle,
             policy: output.policy,
         })

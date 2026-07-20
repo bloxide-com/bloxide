@@ -152,16 +152,20 @@ pub enum DispatchOutcome<State> {
     HandledNoTransition,
     /// Transition occurred to a user state.
     Transition(MachineState<State>),
-    /// Left Init via Start command.
+    /// Left Init via Start command, or reset directly to initial_state()
+    /// via Reset command or Guard::Reset. Actor is immediately operational.
     Started(MachineState<State>),
     /// Transitioned to terminal state.
     Done(MachineState<State>),
-    /// Actor reset to Init via Guard::Reset.
-    Reset,
-    /// Actor failed to Init via Guard::Fail or entered error state.
+    /// Actor failed via Guard::Fail or entered error state.
     Failed,
     /// Actor stopped to Init via LifecycleCommand::Stop.
+    /// Exit chain and on_init_entry fired. Actor is suspended in Init.
     Stopped,
+    /// Actor aborted via AbortCommand on the abort mailbox.
+    /// No callbacks fired — the run loop self-terminated cooperatively.
+    /// This outcome is synthesized by the run loop, not by dispatch().
+    Aborted,
     /// Actor responded to Ping.
     Alive,
 }
@@ -175,8 +179,9 @@ pub enum DispatchOutcome<State> {
 /// on initial construction). Lifecycle commands (Start/Reset/Stop/Ping) flow
 /// through `dispatch()` and are handled at VirtualRoot level.
 ///
-/// `on_init_entry` fires only when the machine is **reset** (via
-/// `Guard::Reset` or `Guard::Fail`), not on first construction.
+/// `on_init_entry` fires only when the machine **enters Init** (via Stop),
+/// not on first construction or on Reset (which skips Init entirely).
+/// `on_init_exit` fires only when the machine **leaves Init** (via Start).
 pub struct StateMachine<S: MachineSpec> {
     /// Current state - either implicit Init or a user state.
     current: MachineState<S::State>,
@@ -188,7 +193,7 @@ impl<S: MachineSpec> StateMachine<S> {
     ///
     /// Init is entered SILENTLY - no callbacks fire. Construction is just
     /// setting the initial state. `on_init_entry` only fires when entering
-    /// Init due to Reset/Fail/Stop.
+    /// Init due to Stop. `on_init_exit` only fires when leaving Init via Start.
     pub fn new(ctx: S::Ctx) -> Self {
         debug_assert!(
             S::HANDLER_TABLE.len() == S::State::STATE_COUNT,
@@ -265,14 +270,34 @@ impl<S: MachineSpec> StateMachine<S> {
                 }
             }
             LifecycleCommand::Reset => {
-                // Transition to Init, report Reset
-                self.transition_to_init();
-                DispatchOutcome::Reset
+                match self.current {
+                    MachineState::Init => {
+                        // Already in Init - no-op. Reset from Init doesn't
+                        // make sense (there's nothing to reset).
+                        DispatchOutcome::HandledNoTransition
+                    }
+                    MachineState::State(_) => {
+                        // Reset directly to initial_state() — skip Init entirely.
+                        // Fire the full exit chain, then the entry chain for
+                        // initial_state(). No on_init_entry or on_init_exit.
+                        let target = S::initial_state();
+                        self.transition_to_state(target);
+                        DispatchOutcome::Started(MachineState::State(target))
+                    }
+                }
             }
             LifecycleCommand::Stop => {
-                // Transition to Init, report Stopped
-                self.transition_to_init();
-                DispatchOutcome::Stopped
+                match self.current {
+                    MachineState::Init => {
+                        // Already in Init - no-op
+                        DispatchOutcome::HandledNoTransition
+                    }
+                    MachineState::State(_) => {
+                        // Transition to Init, report Stopped
+                        self.transition_to_init();
+                        DispatchOutcome::Stopped
+                    }
+                }
             }
             LifecycleCommand::Ping => {
                 // Respond Alive (runtime will send notification)
@@ -336,12 +361,26 @@ impl<S: MachineSpec> StateMachine<S> {
             }
             Guard::Stay => DispatchOutcome::HandledNoTransition,
             Guard::Reset => {
-                self.transition_to_init();
-                DispatchOutcome::Reset
+                // Self-reset: go directly to initial_state(), skip Init.
+                // Fire the full exit chain, then the entry chain for initial_state().
+                let target = S::initial_state();
+                self.transition_to_state(target);
+                DispatchOutcome::Started(MachineState::State(target))
             }
             Guard::Fail => {
-                self.transition_to_init();
-                DispatchOutcome::Failed
+                // Error propagation: go to user-defined error_state() or Init.
+                match S::error_state() {
+                    Some(error_state) => {
+                        // Transition to user-defined error state
+                        self.transition_to_state(error_state);
+                        DispatchOutcome::Failed
+                    }
+                    None => {
+                        // No error state defined — go to Init
+                        self.transition_to_init();
+                        DispatchOutcome::Failed
+                    }
+                }
             }
         }
     }
@@ -385,7 +424,7 @@ impl<S: MachineSpec> StateMachine<S> {
                         action(&mut self.ctx);
                     }
                 }
-                // Enter Init: fire on_init_entry
+                // Enter Init: fire on_init_entry (cleanup)
                 trace_init_entry!();
                 S::on_init_entry(&mut self.ctx);
                 trace_on_transition!(source, "Init", None::<&S::State>);

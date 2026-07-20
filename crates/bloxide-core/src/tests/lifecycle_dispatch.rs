@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_fires_exit_chain_and_on_init_entry() {
+    fn reset_goes_to_initial_state_with_exit_and_entry_chains() {
         let ctx = SpyCtx::default();
         let mut machine = StateMachine::<TestSpec<TestRuntime>>::new(ctx);
 
@@ -247,17 +247,26 @@ mod tests {
         // Dispatch Reset
         let outcome = machine.handle_lifecycle(LifecycleCommand::Reset);
 
-        // Verify outcome
-        assert!(matches!(outcome, DispatchOutcome::Reset));
+        // Reset goes directly to initial_state() (Running) — returns Started
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TestState::Running))
+        ));
 
-        // Verify state changed back to Init
-        assert!(machine.current_state().is_init());
+        // Verify state is Running (initial_state), NOT Init
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Running)
+        ));
 
-        // CRITICAL: Verify on_exit fired for Running
+        // CRITICAL: on_exit fired for Running (exit chain ran)
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);
 
-        // CRITICAL: Verify on_init_entry fired
-        assert_eq!(machine.ctx().init_entry_count.load(Ordering::SeqCst), 1);
+        // CRITICAL: on_entry fired again for Running (entry chain for initial_state)
+        assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 2);
+
+        // CRITICAL: on_init_entry did NOT fire — Reset skips Init
+        assert_eq!(machine.ctx().init_entry_count.load(Ordering::SeqCst), 0);
     }
 
     #[test]

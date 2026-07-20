@@ -122,11 +122,11 @@ fn report_outcome<S: MachineSpec>(
         DispatchOutcome::Failed => {
             send(ChildLifecycleEvent::Failed { child_id: actor_id });
         }
-        DispatchOutcome::Reset => {
-            send(ChildLifecycleEvent::Reset { child_id: actor_id });
-        }
         DispatchOutcome::Stopped => {
             send(ChildLifecycleEvent::Stopped { child_id: actor_id });
+        }
+        DispatchOutcome::Aborted => {
+            send(ChildLifecycleEvent::Aborted { child_id: actor_id });
         }
         DispatchOutcome::Alive => {
             send(ChildLifecycleEvent::Alive { child_id: actor_id });

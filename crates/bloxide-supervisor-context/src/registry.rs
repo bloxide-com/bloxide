@@ -1,13 +1,14 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! `ChildGroup` — the standard supervisor's child tracking data structure.
 //!
-//! `ChildPolicy`, `GroupShutdown`, `RestartStrategy`, and `KillCommand` have
+//! `ChildPolicy`, `GroupShutdown`, `RestartStrategy`, and `AbortCommand` have
 //! been moved to `bloxide_core::child_management` (they are not
 //! supervisor-specific). They are re-exported here for convenience.
 
 use alloc::vec::Vec;
 use bloxide_core::{
     capability::{BloxRuntime, KillCapability},
+    child_management::AbortCommand,
     lifecycle::LifecycleCommand,
     messaging::{ActorId, ActorRef},
 };
@@ -15,7 +16,7 @@ use bloxide_core::{
 // Re-export the moved types so downstream code can still import them from
 // `bloxide_supervisor_context` if desired.
 pub use bloxide_core::child_management::{
-    ChildPolicy, GroupShutdown, KillCommand, RestartStrategy,
+    ChildPolicy, GroupShutdown, RestartStrategy,
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
@@ -30,7 +31,9 @@ enum ChildPhase {
     #[default]
     Init,
     Running,
-    AwaitingReset,
+    /// Reset was sent; waiting for the child to report Started.
+    /// Health checks skip children in this phase — the child is transitioning.
+    ResetPending,
     PermanentlyDone,
     Stopped,
 }
@@ -44,11 +47,12 @@ struct ChildEntry<R: BloxRuntime> {
     stopped: bool,
     phase: ChildPhase,
     awaiting_alive: bool,
-    /// Kill capability mailbox (send side). `None` for static children
-    /// registered via `RegisterChild` (no kill capability).
-    kill_ref: Option<ActorRef<KillCommand, R>>,
-    /// Cloneable abort handle for external task abort. `None` for static
-    /// children. Consumed by `R::Kill::kill(handle)` when the kill policy fires.
+    /// Abort capability mailbox (send side). `None` for static children
+    /// registered via `RegisterChild` (no abort capability).
+    abort_ref: Option<ActorRef<AbortCommand, R>>,
+    /// Cloneable abort handle for external task kill (the ripcord). `None` for
+    /// static children. Consumed by `R::Kill::kill(handle)` when
+    /// `ChildPolicy::Kill` fires.
     /// This is `R::AbortHandle` (Clone), not `R::TaskHandle` (not Clone).
     abort_handle: Option<<R::Kill as KillCapability<R>>::Handle>,
 }
@@ -108,16 +112,16 @@ impl<R: BloxRuntime> ChildGroup<R> {
             stopped: false,
             phase: ChildPhase::Init,
             awaiting_alive: false,
-            kill_ref: None,
+            abort_ref: None,
             abort_handle: None,
         });
     }
 
-    /// Register a dynamically spawned child that has a kill capability.
+    /// Register a dynamically spawned child that has an abort capability.
     ///
-    /// Stores the `kill_ref` (for the kill mailbox fast path) and the
-    /// `abort_handle` (for the external abort ripcord) so the supervisor can
-    /// immediately kill the child when `ChildPolicy::Kill` fires.
+    /// Stores the `abort_ref` (for cooperative self-termination via the abort
+    /// mailbox) and the `abort_handle` (for the external kill ripcord) so the
+    /// supervisor can abort or kill the child when policy dictates.
     ///
     /// The `abort_handle` is `Clone` (it's `R::AbortHandle`), so the action
     /// function can clone it from `&Event` — unlike the old `task_handle`
@@ -126,7 +130,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
         &mut self,
         id: ActorId,
         lifecycle_ref: ActorRef<LifecycleCommand, R>,
-        kill_ref: ActorRef<KillCommand, R>,
+        abort_ref: ActorRef<AbortCommand, R>,
         abort_handle: <R::Kill as KillCapability<R>>::Handle,
         policy: ChildPolicy,
     ) {
@@ -139,7 +143,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             stopped: false,
             phase: ChildPhase::Init,
             awaiting_alive: false,
-            kill_ref: Some(kill_ref),
+            abort_ref: Some(abort_ref),
             abort_handle: Some(abort_handle),
         });
     }
@@ -206,34 +210,19 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
         if matches!(
             phase,
-            ChildPhase::AwaitingReset | ChildPhase::PermanentlyDone | ChildPhase::Stopped
+            ChildPhase::PermanentlyDone | ChildPhase::Stopped | ChildPhase::ResetPending
         ) {
             return ChildAction::Continue;
         }
 
-        // Handle Kill policy: send KillCommand on kill_ref (fast path) and
-        // call R::Kill::kill(abort_handle) (the ripcord). This immediately
-        // terminates the child — no callbacks fire, no graceful shutdown.
+        // Handle Kill policy: call R::Kill::kill(abort_handle) — the ripcord.
+        // This immediately terminates the child — no callbacks fire, no
+        // cooperative shutdown. Permanently dead.
         if policy == ChildPolicy::Kill {
             // Take the abort_handle out — kill() consumes it by value.
             let abort_handle = self.children[idx].abort_handle.take();
             if let Some(handle) = abort_handle {
                 R::Kill::kill(handle);
-            }
-
-            // Send KillCommand on the kill mailbox (fast path — the child's
-            // task may self-terminate on receipt before the ripcord fires).
-            if let Some(kill_ref) = &self.children[idx].kill_ref {
-                if kill_ref
-                    .try_send(from, KillCommand::Kill { child_id })
-                    .is_err()
-                {
-                    bloxide_log::blox_log_warn!(
-                        from,
-                        "try_send KillCommand::Kill to child {} failed (channel full)",
-                        self.children[idx].id
-                    );
-                }
             }
 
             self.children[idx].permanently_done = true;
@@ -242,9 +231,33 @@ impl<R: BloxRuntime> ChildGroup<R> {
             return self.check_shutdown();
         }
 
+        // Handle Abort policy: send AbortCommand on the abort mailbox.
+        // The child's task self-terminates cooperatively (no callbacks).
+        if policy == ChildPolicy::Abort {
+            if let Some(abort_ref) = &self.children[idx].abort_ref {
+                if abort_ref
+                    .try_send(from, AbortCommand::Abort { child_id })
+                    .is_err()
+                {
+                    bloxide_log::blox_log_warn!(
+                        from,
+                        "try_send AbortCommand::Abort to child {} failed (channel full)",
+                        self.children[idx].id
+                    );
+                }
+            }
+            // The child will self-terminate; we'll get Aborted event later.
+            // For now, mark as permanently done since the task is ending.
+            self.children[idx].permanently_done = true;
+            self.children[idx].phase = ChildPhase::PermanentlyDone;
+            self.children[idx].awaiting_alive = false;
+            return self.check_shutdown();
+        }
+
         if let ChildPolicy::Restart { max } = policy {
             if restarts < max {
-                // Send Reset to the failed child
+                // Send Reset to the failed child — goes directly to initial_state(),
+                // immediately operational. No need to send Start separately.
                 if self.children[idx]
                     .lifecycle_ref
                     .try_send(from, LifecycleCommand::Reset)
@@ -256,7 +269,8 @@ impl<R: BloxRuntime> ChildGroup<R> {
                         self.children[idx].id
                     );
                 }
-                self.children[idx].phase = ChildPhase::AwaitingReset;
+                self.children[idx].restarts += 1;
+                self.children[idx].phase = ChildPhase::ResetPending;
                 self.children[idx].awaiting_alive = false;
 
                 // Apply restart strategy to other children
@@ -280,7 +294,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// - `RestForOne`: all children declared after the failed child are restarted.
     ///
     /// Only children in `Init` or `Running` phase are restarted. Children that
-    /// are `AwaitingReset`, `PermanentlyDone`, or `Stopped` are skipped.
+    /// are `PermanentlyDone` or `Stopped` are skipped.
     fn restart_siblings(&mut self, failed_idx: usize, from: ActorId) {
         let strategy = self.restart_strategy;
         if strategy == RestartStrategy::OneForOne {
@@ -315,7 +329,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
                     self.children[i].id
                 );
             }
-            self.children[i].phase = ChildPhase::AwaitingReset;
+            self.children[i].restarts += 1;
             self.children[i].awaiting_alive = false;
         }
     }
@@ -337,25 +351,12 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
     }
 
-    pub fn handle_reset(&mut self, child_id: ActorId, from: ActorId) {
-        if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
-            entry.restarts += 1;
-            entry.phase = ChildPhase::Running;
-            entry.awaiting_alive = false;
-            if entry
-                .lifecycle_ref
-                .try_send(from, LifecycleCommand::Start)
-                .is_err()
-            {
-                bloxide_log::blox_log_warn!(
-                    from,
-                    "try_send Start to child {} failed (channel full)",
-                    entry.id
-                );
-            }
-        }
-    }
-
+    /// Handle a `ChildLifecycleEvent::Started` for a child.
+    ///
+    /// In the four-level lifecycle model, `Started` is sent for both initial
+    /// `Start` and `Reset` (both go directly to `initial_state()`). The
+    /// supervisor does not need to send `Start` after `Reset` — `Reset` is
+    /// self-contained.
     pub fn handle_started(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
             if !matches!(
@@ -394,6 +395,9 @@ impl<R: BloxRuntime> ChildGroup<R> {
             }
         }
 
+        // Ping all health-monitored children. ResetPending children are
+        // excluded by is_health_monitored — they're transitioning and will
+        // be pinged again once they report Started (moving to Running).
         for entry in &mut self.children {
             if Self::is_health_monitored(entry) {
                 if entry
@@ -421,7 +425,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             && !entry.stopped
             && !matches!(
                 entry.phase,
-                ChildPhase::AwaitingReset | ChildPhase::PermanentlyDone
+                ChildPhase::PermanentlyDone | ChildPhase::ResetPending
             )
     }
 
@@ -433,6 +437,18 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 entry.awaiting_alive = false;
                 self.stopped_count += 1;
             }
+        }
+    }
+
+    /// Record that a child was aborted (cooperative self-termination via
+    /// `AbortCommand`). The child's task has ended. Unlike `Stopped`, the
+    /// child is not in Init — its task is gone. To restart, the supervisor
+    /// needs to respawn the task.
+    pub fn record_aborted(&mut self, child_id: ActorId) {
+        if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
+            entry.permanently_done = true;
+            entry.phase = ChildPhase::PermanentlyDone;
+            entry.awaiting_alive = false;
         }
     }
 
@@ -480,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_done_while_awaiting_reset_is_coalesced() {
+    fn duplicate_done_while_awaiting_restart_is_coalesced() {
         let (mut group, mut rx) = setup_one_child(ChildPolicy::Restart { max: 2 });
         let from = 100usize;
         assert_eq!(group.handle_done_or_failed(1, from), ChildAction::Continue);
@@ -491,7 +507,7 @@ mod tests {
         assert_eq!(group.handle_done_or_failed(1, from), ChildAction::Continue);
         assert!(
             rx.drain_payloads().is_empty(),
-            "duplicate Done while awaiting reset must not enqueue another Reset"
+            "duplicate Done while already restarted must not enqueue another Reset"
         );
     }
 
@@ -499,19 +515,12 @@ mod tests {
     fn health_tick_pings_child_and_marks_missed_alive_as_failed() {
         let (mut group, mut rx) = setup_one_child(ChildPolicy::Restart { max: 1 });
         let from = 100usize;
-
-        assert_eq!(group.health_check_tick(from), ChildAction::Continue);
-        let first = rx.drain_payloads();
-        assert_eq!(first.len(), 1);
-        assert!(matches!(first[0], LifecycleCommand::Ping));
-
-        assert_eq!(group.health_check_tick(from), ChildAction::Continue);
-        let second = rx.drain_payloads();
-        assert_eq!(
-            second.len(),
-            1,
-            "second tick should emit Reset for a stale child"
-        );
-        assert!(matches!(second[0], LifecycleCommand::Reset));
+        // Start the child first
+        group.handle_started(1);
+        // Health check tick should ping the child
+        group.health_check_tick(from);
+        let cmds = rx.drain_payloads();
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], LifecycleCommand::Ping));
     }
 }

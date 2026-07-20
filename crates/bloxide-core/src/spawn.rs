@@ -2,12 +2,11 @@
 //! Spawn types — `SpawnOutput`, `ChildRegistrar`, `SpawnFn`, `spawn_child` helper.
 //!
 //! These types live in `bloxide-core` because spawning is NOT supervisor-specific.
-//! Any blox that manages children needs the same lifecycle refs, kill ref, task
-//! handle, and policy from a spawn operation. See spec/architecture/
-//! 22-spawn-architecture-v2.md §4.2, §4.4, §4.4a, §4.11.
+//! Any blox that manages children needs the same lifecycle refs, abort ref, task
+//! handle, and policy from a spawn operation.
 
 use crate::capability::{BloxRuntime, KillCapability};
-use crate::child_management::{ChildPolicy, KillCommand};
+use crate::child_management::{AbortCommand, ChildPolicy};
 use crate::lifecycle::ChildLifecycleEvent;
 use crate::lifecycle::LifecycleCommand;
 use crate::messaging::{ActorId, ActorRef};
@@ -32,14 +31,16 @@ pub struct SpawnOutput<R: BloxRuntime> {
     pub child_id: ActorId,
     /// Channel for sending lifecycle commands (Start, Stop, Reset).
     pub lifecycle_ref: ActorRef<LifecycleCommand, R>,
-    /// Kill capability mailbox (send side). The managing blox sends `KillCommand`
-    /// here; the child's task receives it and self-terminates (fast path).
-    pub kill_ref: ActorRef<KillCommand, R>,
-    /// Cloneable abort handle for external task abort (the ripcord). The
+    /// Abort capability mailbox (send side). The managing blox sends
+    /// `AbortCommand` here; the child's task receives it and self-terminates
+    /// cooperatively (no callbacks, no dispatch).
+    pub abort_ref: ActorRef<AbortCommand, R>,
+    /// Cloneable abort handle for external task kill (the ripcord). The
     /// managing blox calls `R::Kill::kill(handle)` when the child is
-    /// unresponsive. `()` for `NoKill` runtimes, `R::AbortHandle` for `Kill`
-    /// runtimes. Must be `Clone` so action functions can extract it from
-    /// `&Event` (the HSM engine passes `&Event`, not `&mut Event`).
+    /// unresponsive and `ChildPolicy::Kill` fires. `()` for `NoKill` runtimes,
+    /// `R::AbortHandle` for `Kill` runtimes. Must be `Clone` so action
+    /// functions can extract it from `&Event` (the HSM engine passes `&Event`,
+    /// not `&mut Event`).
     pub abort_handle: <R::Kill as KillCapability<R>>::Handle,
     /// Supervision policy for this child.
     pub policy: ChildPolicy,
@@ -50,7 +51,7 @@ impl<R: BloxRuntime> Clone for SpawnOutput<R> {
         Self {
             child_id: self.child_id,
             lifecycle_ref: self.lifecycle_ref.clone(),
-            kill_ref: self.kill_ref.clone(),
+            abort_ref: self.abort_ref.clone(),
             abort_handle: self.abort_handle.clone(),
             policy: self.policy,
         }

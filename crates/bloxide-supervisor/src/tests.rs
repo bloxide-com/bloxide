@@ -120,8 +120,12 @@ fn restart_policy_stays_running_on_done() {
     assert!(matches!(cmds[0], LifecycleCommand::Reset));
 }
 
+/// In the four-level lifecycle model, Reset goes directly to initial_state()
+/// and returns Started. The supervisor does NOT send a separate Start after
+/// Reset — the Reset command itself re-enters initial_state(). The supervisor
+/// sees Started from the child (which is the outcome of the Reset dispatch).
 #[test]
-fn restart_policy_reset_sends_start() {
+fn restart_policy_reset_returns_started_no_separate_start() {
     let (mut machine, mut receivers) = make_supervisor(
         GroupShutdown::WhenAnyDone,
         &[ChildPolicy::Restart { max: 3 }],
@@ -129,15 +133,17 @@ fn restart_policy_reset_sends_start() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
+    // Child reports Done → supervisor sends Reset
     dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
     receivers[0].drain_payloads();
 
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Reset { child_id: 1 });
+    // Child reports Started (outcome of Reset going to initial_state)
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Started { child_id: 1 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
+    // No additional commands should be sent — Reset is self-contained
     let cmds = receivers[0].drain_payloads();
-    assert_eq!(cmds.len(), 1);
-    assert!(matches!(cmds[0], LifecycleCommand::Start));
+    assert!(cmds.is_empty(), "no Start should be sent after Reset — Reset goes directly to initial_state()");
 }
 
 #[test]
@@ -149,11 +155,14 @@ fn restart_limit_exhausted_shuts_down() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
+    // First Done → Reset (restart count 0 < 1)
     dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
     receivers[0].drain_payloads();
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Reset { child_id: 1 });
+    // Child reports Started (Reset went to initial_state)
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Started { child_id: 1 });
     receivers[0].drain_payloads();
 
+    // Second Done → restart count 1 >= max 1 → permanently done → shutdown
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
     assert_eq!(
         outcome,
@@ -198,8 +207,13 @@ fn shutting_down_stops_all_and_resets_when_done() {
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
+    // When all children are stopped, Guard::Reset fires — goes directly to
+    // initial_state() (Running) and returns Started.
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
-    assert_eq!(outcome, DispatchOutcome::Reset);
+    assert_eq!(
+        outcome,
+        DispatchOutcome::Started(MachineState::State(SupervisorState::Running))
+    );
 }
 
 #[test]
@@ -255,7 +269,7 @@ fn stray_events_absorbed_in_shutting_down() {
 }
 
 #[test]
-fn on_init_entry_clears_counters() {
+fn running_on_entry_clears_counters_on_reset() {
     let (mut machine, mut receivers) =
         make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
@@ -266,8 +280,14 @@ fn on_init_entry_clears_counters() {
         rx.drain_payloads();
     }
 
+    // When the last child stops, Guard::Reset fires → goes directly to
+    // initial_state() (Running). The Running on_entry (start_children)
+    // clears counters and re-sends Start to all children.
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
-    assert_eq!(outcome, DispatchOutcome::Reset);
+    assert_eq!(
+        outcome,
+        DispatchOutcome::Started(MachineState::State(SupervisorState::Running))
+    );
 
     assert_eq!(machine.ctx().pending, ChildAction::default());
     assert!(!machine.ctx().children.all_stopped());
@@ -394,8 +414,7 @@ fn one_for_all_restarts_all_children() {
     for (i, rx) in receivers.iter_mut().enumerate() {
         let cmds = rx.drain_payloads();
         assert_eq!(
-            cmds.len(),
-            1,
+            cmds.len(), 1,
             "child {} should receive exactly one Reset",
             i + 1
         );
@@ -437,8 +456,7 @@ fn rest_for_one_restarts_subsequent_children() {
     for i in 1..=3 {
         let cmds = receivers[i].drain_payloads();
         assert_eq!(
-            cmds.len(),
-            1,
+            cmds.len(), 1,
             "child {} should receive exactly one Reset",
             i + 1
         );
@@ -473,13 +491,13 @@ fn restart_strategy_respects_max_restarts() {
         assert!(matches!(cmds[0], LifecycleCommand::Reset));
     }
 
-    // Both children report Reset: each gets Start, restart counter increments to 1
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Reset { child_id: 1 });
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Reset { child_id: 2 });
+    // Both children report Started (Reset went to initial_state, returns Started)
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Started { child_id: 1 });
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Started { child_id: 2 });
+    // No additional commands — Reset is self-contained
     for rx in receivers.iter_mut() {
         let cmds = rx.drain_payloads();
-        assert_eq!(cmds.len(), 1);
-        assert!(matches!(cmds[0], LifecycleCommand::Start));
+        assert!(cmds.is_empty(), "no Start should be sent after Reset");
     }
 
     // Second failure of child 1: restarts 1 >= max 1 → permanently done → shutdown

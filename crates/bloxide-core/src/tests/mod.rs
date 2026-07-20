@@ -134,31 +134,46 @@ mod hsm_engine {
     }
 
     // ── Guard::Reset ────────────────────────────────────────────────────────
+    //
+    // In the four-level lifecycle model, Guard::Reset goes directly to
+    // initial_state() (TState::A) — it does NOT visit Init and does NOT
+    // fire on_init_entry. The exit chain fires for the current state,
+    // then the entry chain fires for initial_state().
 
     #[test]
-    fn reset_from_shallow_state_exits_full_chain_then_calls_init_entry() {
+    fn reset_from_shallow_state_exits_then_enters_initial_state() {
         let mut m = machine_in_a();
-        m.dispatch(TEvent::Reset);
-        assert_eq!(take_log(), vec!["A:exit", "Top:exit", "Init:entry"]);
-        assert!(m.current_state().is_init());
+        let outcome = m.dispatch(TEvent::Reset);
+        // A is initial_state — self-transition: exit A, enter A
+        assert_eq!(take_log(), vec!["A:exit", "A:entry"]);
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TState::A))
+        ));
     }
 
     #[test]
-    fn reset_from_deep_state_exits_all_ancestors() {
+    fn reset_from_deep_state_exits_all_ancestors_enters_initial_state() {
         let mut m = machine_in_c();
-        m.dispatch(TEvent::Reset);
-        assert_eq!(take_log(), vec!["C:exit", "Other:exit", "Init:entry"]);
-        assert!(m.current_state().is_init());
+        let outcome = m.dispatch(TEvent::Reset);
+        // C→A: exit C, Other; enter Top, A
+        assert_eq!(take_log(), vec!["C:exit", "Other:exit", "Top:entry", "A:entry"]);
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TState::A))
+        ));
     }
 
     #[test]
-    fn lifecycle_reset_command_works() {
+    fn lifecycle_reset_command_goes_to_initial_state() {
         let mut m = machine_in_a();
         let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Reset));
-        assert!(matches!(outcome, DispatchOutcome::Reset));
-        assert_eq!(take_log(), vec!["A:exit", "Top:exit", "Init:entry"]);
-        assert!(matches!(outcome, DispatchOutcome::Reset));
-        assert!(m.current_state().is_init());
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TState::A))
+        ));
+        assert_eq!(take_log(), vec!["A:exit", "A:entry"]);
+        assert!(matches!(m.current_state(), MachineState::State(TState::A)));
     }
 
     // ── Lifecycle command dispatch from Init ─────────────────────────────────
@@ -183,7 +198,9 @@ mod hsm_engine {
         let mut m = StateMachine::<TSpec>::new(TCtx);
         take_log();
         let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Reset));
-        assert!(matches!(outcome, DispatchOutcome::Reset));
+        // Reset from Init is a no-op — there's nothing to reset.
+        assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
+        assert!(take_log().is_empty(), "Reset from Init must not fire callbacks");
         assert!(m.current_state().is_init());
     }
 

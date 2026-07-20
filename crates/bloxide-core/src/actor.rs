@@ -26,10 +26,10 @@ where
     }
 }
 
-/// Run an actor until it reaches a terminal/error state or resets.
+/// Run an actor until it reaches a terminal/error state or stops.
 ///
 /// Dispatches events until `DispatchOutcome::Started` or `DispatchOutcome::Transition`
-/// enters a terminal or error state, or `DispatchOutcome::Reset`/`DispatchOutcome::Stopped`
+/// enters a terminal or error state, or `DispatchOutcome::Stopped`
 /// is observed. Suitable for dynamically spawned actors that should exit their
 /// task when their work is done.
 ///
@@ -61,7 +61,6 @@ where
             }
             DispatchOutcome::Done(_) => return,
             DispatchOutcome::Failed => return,
-            DispatchOutcome::Reset => return,
             DispatchOutcome::Stopped => return,
             _ => {}
         }
@@ -108,7 +107,6 @@ where
             }
             DispatchOutcome::Done(_) => return,
             DispatchOutcome::Failed => return,
-            DispatchOutcome::Reset => return,
             DispatchOutcome::Stopped => return,
             _ => {}
         }

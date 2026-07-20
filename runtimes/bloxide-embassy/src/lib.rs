@@ -192,8 +192,9 @@ macro_rules! spawn_child {
 /// Run the program's top-level supervisor.
 ///
 /// Like `run_actor`, dispatches events from `mailboxes` to `machine` in
-/// run-to-completion order. When `DispatchOutcome::Reset` is observed,
-/// the function returns so the caller can terminate.
+/// run-to-completion order. When `DispatchOutcome::Stopped` or
+/// `DispatchOutcome::Aborted` is observed, the function returns so the
+/// caller can terminate.
 pub async fn run_root<S, M>(mut machine: StateMachine<S>, mut mailboxes: M)
 where
     S: MachineSpec + 'static,
@@ -205,8 +206,9 @@ where
             Some(event) => event,
             None => return,
         };
-        if let DispatchOutcome::Reset = machine.dispatch(event) {
-            return;
+        match machine.dispatch(event) {
+            DispatchOutcome::Stopped | DispatchOutcome::Aborted => return,
+            _ => {}
         }
     }
 }

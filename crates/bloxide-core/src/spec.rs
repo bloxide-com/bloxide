@@ -28,8 +28,9 @@ pub struct StateFns<S: MachineSpec> {
 ///   `root_transitions()` for global fallback handling.
 ///
 /// - **Init** is engine-implicit. The engine calls `on_init_entry` only
-///   when entering Init via Reset/Fail/Stop — **not** at initial construction.
-///   It calls `on_init_exit` when leaving Init via Start command.
+///   when entering Init via Stop — **not** at initial construction, and not
+///   on Reset (which skips Init entirely). It calls `on_init_exit` when
+///   leaving Init via Start command.
 pub trait MachineSpec: Sized + 'static {
     type State: StateTopology;
     type Event: EventTag + LifecycleEvent + Send + 'static;
@@ -41,11 +42,27 @@ pub trait MachineSpec: Sized + 'static {
     /// The first operational leaf state entered after Start command.
     fn initial_state() -> Self::State;
 
-    /// Called when entering Init via Reset/Fail/Stop.
+    /// Called when entering Init via Stop.
+    /// Resource cleanup callback — fires after the full exit chain.
+    /// Does NOT fire on Reset (which skips Init) or Abort (which bypasses dispatch).
     fn on_init_entry(_ctx: &mut Self::Ctx) {}
 
     /// Called when leaving Init via Start command.
+    /// Resource acquisition callback — fires before entering initial_state().
+    /// Does NOT fire on Reset (which skips Init).
     fn on_init_exit(_ctx: &mut Self::Ctx) {}
+
+    /// User-defined error recovery state for `Guard::Fail`.
+    ///
+    /// - `Some(state)`: the engine transitions to this state (firing exit/entry
+    ///   chains). The supervisor sees `DispatchOutcome::Failed` and applies
+    ///   its `ChildPolicy`. The actor handles its own error recovery.
+    /// - `None` (default): the engine transitions to Init (firing exit chain
+    ///   + `on_init_entry`). The supervisor sees `DispatchOutcome::Failed`
+    ///   and applies its `ChildPolicy`.
+    fn error_state() -> Option<Self::State> {
+        None
+    }
 
     /// Returns true if state represents normal completion.
     fn is_terminal(_state: &Self::State) -> bool {

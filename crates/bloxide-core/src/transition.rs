@@ -171,11 +171,13 @@ pub enum Guard<S: MachineSpec> {
     Transition(LeafState<S::State>),
     /// Stay in the current state. No `on_exit` or `on_entry` is called.
     Stay,
-    /// Exit the entire operational state chain and re-enter engine-implicit Init.
-    /// The engine calls `on_exit` for every state from the current leaf up to
-    /// the topmost ancestor, then calls `MachineSpec::on_init_entry`.
+    /// Self-reset: go directly to `initial_state()`, skipping Init entirely.
+    /// Fires the full exit chain for the current state, then the entry chain
+    /// for `initial_state()`. Does NOT call `on_init_entry` or `on_init_exit`.
+    /// The actor is immediately operational.
     Reset,
-    /// Exit to implicit Init, report Failed to supervisor.
-    /// Used for error propagation that should trigger supervisor intervention.
+    /// Error propagation. Go to user-defined `error_state()` if one exists,
+    /// otherwise go to Init (firing exit chain + `on_init_entry`).
+    /// Reports `DispatchOutcome::Failed` to the supervisor.
     Fail,
 }

@@ -35,7 +35,7 @@ pub use actor::{run_actor, run_actor_auto_start, run_actor_to_completion};
 pub use capability::{
     BloxRuntime, DynamicChannelCap, Kill, KillCapability, NoKill, SpawnCap, StaticChannelCap,
 };
-pub use child_management::{ChildPolicy, GroupShutdown, KillCommand, RestartStrategy};
+pub use child_management::{AbortCommand, ChildPolicy, GroupShutdown, RestartStrategy};
 pub use engine::{DispatchOutcome, MachineState, StateMachine};
 pub use event_tag::{EventTag, LifecycleEvent, LIFECYCLE_TAG, WILDCARD_TAG};
 pub use lifecycle::{ChildLifecycleEvent, LifecycleCommand};

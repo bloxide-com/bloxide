@@ -59,8 +59,8 @@ mod pool_tests {
                 >(worker_id, 16);
                 let (lifecycle_ref, _lifecycle_rx) =
                     <TestRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(worker_id, 4);
-                let (kill_ref, _kill_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-                    bloxide_core::child_management::KillCommand,
+                let (abort_ref, _abort_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+                    bloxide_core::child_management::AbortCommand,
                 >(worker_id, 4);
 
                 let _ = reply_to.try_send(
@@ -75,7 +75,7 @@ mod pool_tests {
                 SpawnOutput {
                     child_id: worker_id,
                     lifecycle_ref,
-                    kill_ref,
+                    abort_ref,
                     abort_handle: (),
                     policy: ChildPolicy::Stop,
                 }
