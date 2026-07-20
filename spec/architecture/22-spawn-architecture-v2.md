@@ -257,12 +257,13 @@ bloxide-supervisor-context/  ← context crate (hand-written data types + traits
   RegisterDynamicChild<R>   ← NEW: dynamic registration with kill_ref + task_handle
   SupervisorRegistrar       ← NEW: ChildRegistrar impl for standard supervisor
 
-bloxide-supervisor-actions/  ← action crate (hand-written action functions)
+bloxide-supervisor/src/actions.rs  ← in-crate action functions (concrete &SupervisorEvent<R>)
   start_children, stop_all_children
   handle_done_or_failed, handle_reset, record_stopped, record_started, record_alive
-  register_child, handle_health_check
+  register_child, handle_register_dynamic_child, handle_health_check
   (NO handle_spawn_request — spawning is not a supervisor action)
   (kill_child sends a KillCommand message, not a function call)
+  (bloxide-supervisor-actions crate deleted — actions are in-crate like every other blox)
 
 bloxide-tokio/            ← Tokio runtime (adds spawn helper)
   run_supervised_actor (existing)

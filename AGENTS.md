@@ -29,7 +29,7 @@ bloxide/
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
     bloxide-supervisor-context/ ← supervisor context struct + traits (split from bloxide-supervisor in Phase 1)
-    bloxide-supervisor-actions/ ← supervisor action functions (split from bloxide-supervisor in Phase 1)
+    (bloxide-supervisor-actions deleted in Spec 22 — action functions are now in-crate in bloxide-supervisor/src/actions.rs)
     bloxide-peers/             ← peer introduction support for wiring actors to peers
     messages/
       ping-pong-messages/      ← PingPongMsg shared by both ping and pong bloxes
