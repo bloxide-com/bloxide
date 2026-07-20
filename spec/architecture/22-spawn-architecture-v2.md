@@ -375,11 +375,16 @@ where
                 ctrl_ref: ctrl_ref.clone(),
             });
 
-            // Return what the supervisor needs for lifecycle management + kill
+            // Return what the supervisor needs for lifecycle management + kill.
+            // The task_handle from R::spawn() flows to the managing blox via
+            // SpawnOutput::task_handle → RegisterDynamicChild::task_handle →
+            // ChildEntry::task_handle. The managing blox uses it as the
+            // ripcord for unresponsive children (§4.12).
             SpawnOutput {
                 child_id: worker_id,
                 lifecycle_ref,
                 kill_ref,       // ← NEW: kill capability mailbox (send side)
+                task_handle,    // ← NEW: from R::spawn(), for external abort
                 policy: ChildPolicy::Stop,
             }
         }
@@ -624,21 +629,26 @@ on it in the child's task.
 
 ### 4.6 The Supervisor Control Enum
 
-**Unchanged from the current code.** No `Spawn` variant is added. This enum
-is specific to our standard supervisor — a user's custom child-managing blox
-would define its own control enum (see §4.4a `ChildRegistrar`).
+**Modified — adds `RegisterDynamicChild` variant.** No `Spawn` variant is
+added. This enum is specific to our standard supervisor — a user's custom
+child-managing blox would define its own control enum (see §4.4a
+`ChildRegistrar`).
 
 ```rust
-// In bloxide-supervisor-context (unchanged)
+// In bloxide-supervisor-context (modified — adds RegisterDynamicChild)
 
 /// Supervisor control-plane events delivered through the control mailbox.
 #[derive(Debug, Clone)]
 pub enum SupervisorControl<R: BloxRuntime> {
-    /// Register a child (static or dynamic) with the supervisor.
-    /// The child's channels already exist (created by the wiring layer
-    /// for static, or by the spawn helper for dynamic). The supervisor
-    /// just tracks it for lifecycle management.
+    /// Register a static child (wired at startup, no kill capability).
+    /// The child's channels already exist (created by the wiring layer).
+    /// The supervisor just tracks it for lifecycle management.
     RegisterChild(RegisterChild<R>),
+
+    /// Register a dynamically spawned child (has kill capability).
+    /// Sent by the spawn helper after creating the child. Carries the
+    /// kill_ref and task_handle for external abort (see §4.7).
+    RegisterDynamicChild(RegisterDynamicChild<R>),
 
     /// Trigger one health-check round.
     HealthCheckTick,
@@ -649,12 +659,13 @@ The supervisor's control enum is the same for static and dynamic apps. Dynamic
 spawning doesn't add a variant — it just means `RegisterChild` arrives at runtime
 (from the spawn helper) instead of at startup (from the wiring layer).
 
-### 4.7 RegisterChild
+### 4.7 RegisterChild and RegisterDynamicChild
 
-`RegisterChild` now carries a `kill_ref` for dynamically spawned children. For
-static children (wired at startup, no `SpawnCap`), the `kill_ref` is not present.
+`RegisterChild` is for static children (wired at startup, no kill capability).
+`RegisterDynamicChild` is for dynamically spawned children (has kill_ref +
+task_handle). Both are variants of `SupervisorControl<R>` (see §4.6 above).
 
-To avoid `Option`, we use two types:
+To avoid `Option` on the kill fields, we use two separate structs:
 
 ```rust
 // In bloxide-supervisor-context
@@ -677,16 +688,6 @@ pub struct RegisterDynamicChild<R: BloxRuntime> {
     /// `()` for NoKill runtimes, `R::TaskHandle` for Kill runtimes.
     pub task_handle: <R::Kill as KillCapability<R>>::Handle,
     pub policy: ChildPolicy,
-}
-```
-
-`SupervisorControl<R>` has two registration variants:
-
-```rust
-pub enum SupervisorControl<R: BloxRuntime> {
-    RegisterChild(RegisterChild<R>),
-    RegisterDynamicChild(RegisterDynamicChild<R>),
-    HealthCheckTick,
 }
 ```
 
@@ -866,9 +867,7 @@ use bloxide_core::{
     capability::{BloxRuntime, DynamicChannelCap, SpawnCap},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::{ActorId, ActorRef},
-};
-use bloxide_supervisor_context::{
-    ChildPolicy, KillCommand, RegisterDynamicChild, SpawnOutput, SupervisorControl,
+    spawn::{ChildRegistrar, SpawnFn, SpawnOutput},
 };
 
 /// A spawn function creates a child actor and returns the handles the
@@ -888,11 +887,14 @@ use bloxide_supervisor_context::{
 ///   2. Constructs the child's context (app-specific)
 ///   3. Spawns the child task (R::spawn) with kill mailbox support
 ///   4. Sends any typed reply via the request's reply_to field
-///   5. Returns SpawnOutput for supervisor registration (includes kill_ref)
+///   5. Returns SpawnOutput for supervisor registration (includes kill_ref
+///      and task_handle)
 ///
-/// Note: the TaskHandle from R::spawn() stays inside the child's task
-/// (in run_supervised_actor_with_kill). The supervisor never sees it.
-/// The supervisor only gets the kill_ref (send side of the kill mailbox).
+/// The `TaskHandle` from `R::spawn()` is returned in `SpawnOutput::task_handle`
+/// and flows to the managing blox via `RegisterDynamicChild::task_handle` →
+/// `ChildEntry::task_handle`. The managing blox uses it as the ripcord for
+/// unresponsive children (§4.12). The supervisor also gets the `kill_ref`
+/// (send side of the kill mailbox) for the fast-path kill message.
 
 /// Spawn a supervised child actor.
 ///
@@ -958,6 +960,8 @@ without a runtime or supervisor dependency.
 The standard supervisor's convenience wrapper:
 ```rust
 // In bloxide-supervisor-context
+
+use bloxide_core::spawn::{ChildRegistrar, SpawnFn};
 
 /// Convenience wrapper that fixes C = SupervisorRegistrar.
 pub fn spawn_supervised_child<R, Req>(
@@ -1056,6 +1060,13 @@ or a task-handle registry in the supervisor.
 For static children (wired at startup, no kill mailbox), the existing
 `run_supervised_actor` (without kill support) is used unchanged.
 
+> **Runtime-specific note:** `run_supervised_actor_with_kill` uses concrete
+> `TokioRuntime` / `TokioStream` types because it lives in `bloxide-tokio`.
+> A future Embassy implementation would provide its own equivalent (or use a
+> different mechanism for task pools, since Embassy's task model differs from
+> Tokio's `JoinHandle`-based approach). The kill mailbox mechanism itself is
+> runtime-generic — only the `select` loop wrapper is runtime-specific.
+
 ### 4.13 The Pool's Spawn Action
 
 The Pool handles spawning in its own state machine. When it receives a
@@ -1136,15 +1147,14 @@ pub spawn_ref: ActorRef<SupervisorControl<R>, R>,
 pub notify_ref: ActorRef<ChildLifecycleEvent, R>,
 ```
 
-Note: the Pool's `spawn_ref` now points to the managing blox's **control**
-mailbox. For the standard supervisor, the type is `SupervisorControl<R>`. The
-Pool imports `SupervisorControl` from `bloxide-supervisor-context` to name the
-type — this is acceptable for the standard supervisor. **For a user's custom
-managing blox**, the Pool would import the blox's own control message type
-instead, and the spawn helper's `C: ChildRegistrar<R>` type parameter resolves
-the type. The generic `spawn_child::<R, Req, C>` helper avoids hardcoding the
-supervisor dependency — the convenience wrapper `spawn_supervised_child` is
-only for the standard supervisor case.
+Note: the Pool's `spawn_ref` is always a **concrete type** determined by the
+`blox.toml` field type for whichever managing blox is wired. For the standard
+supervisor, it's `ActorRef<SupervisorControl<R>, R>`. For a custom managing
+blox, the `blox.toml` would name that blox's control message type instead.
+The generality is in the `spawn_child<R, Req, C>` helper's `C: ChildRegistrar<R>`
+type parameter — not in the Pool's context struct. The Pool is always wired
+against a specific managing blox's control type; the helper works with any
+`ChildRegistrar` impl.
 
 ### 4.14 The Wiring
 
@@ -1190,8 +1200,15 @@ children = ["pool"]
 
 The wiring layer:
 1. Provides `spawn_fn` — the `fn` pointer (`spawn_worker` from
-   `tokio_pool_demo_impl`). Reuses the existing `source = "factory"` handler.
-   The codegen resolves this to `spawn_worker::<TokioRuntime>` at the wiring site.
+   `tokio_pool_demo_impl`). Reuses the `source = "factory"` source name, but
+   the codegen emits a **path expression** (`spawn_worker as SpawnFn<R, Req>`)
+   rather than struct construction. This differs from the existing `factory`
+   handler for struct factories (e.g. `AppSpawnFactory { pool_ref: ... }`),
+   which generates a struct literal with captured args. The handler detects
+   whether the target is a `fn` pointer type (from the field's `ty` in
+   `blox.toml`) and emits the appropriate code: path expression + cast for
+   `fn` pointers, struct construction for factory structs. One source type,
+   two output shapes, selected by field type.
 2. Provides `spawn_ref` — the managing blox's control mailbox ref. Uses
    `source = "actor"` with `field = "control"` — the general injection mechanism
    for any actor's named refs. The Pool uses this to send the registration message
@@ -1348,6 +1365,13 @@ Pool                      Spawn Helper            Managing Blox            Child
   |                            |                           |                       |     task aborts
 ```
 
+> **Function boundary note:** Steps 3–5 all execute inside the `spawn_fn`
+> call body (the `spawn_worker` function). Step 6 is the `spawn_child`
+> helper's code, which runs after `spawn_fn` returns — it calls
+> `C::register(output)` to send the registration message to the managing
+> blox. The boundary between `spawn_fn` and `spawn_child` is the `return`
+> of `SpawnOutput`.
+
 Steps 2-6 are fast (run-to-completion in the spawn helper): channel creation +
 `R::spawn()` + `RegisterDynamicChild` send are non-blocking. Step 4 (the child's own
 initialization) is async — it runs in the child's task and reports back via
@@ -1367,8 +1391,24 @@ as a normal control event — the same path used for static children.
 
 Key difference from the original spec 22: kill is a message on a per-child
 mailbox (step 13-14), not a function call on a `KillCap` trait object. The
-`TaskHandle` never leaves the child's task. The supervisor only has the
-`kill_ref` (send side).
+`TaskHandle` flows to the managing blox via `SpawnOutput::task_handle` →
+`ChildEntry::task_handle` (for the ripcord). The supervisor also has the
+`kill_ref` (send side) for the fast-path kill message.
+
+### Feature-Aware Wiring: `collect_ctor_fields`
+
+**Decision (option a):** `collect_ctor_fields` in `system_wiring.rs` becomes
+feature-aware. It reads the `feature` attribute on context fields (already
+present in `blox.toml`) and skips fields whose feature is not enabled in the
+current build configuration. The `system.toml` lists all inject entries
+unconditionally — the codegen silently skips injections whose target fields
+don't exist when the feature is off.
+
+This keeps `system.toml` feature-agnostic (it describes the full system
+topology; Cargo features determine which parts are active). The feature
+knowledge already lives in `blox.toml` — `collect_ctor_fields` just needs
+a ~5 line filter: skip fields where `field.feature.is_some() && field.feature
+!= active_feature`. No changes to the `system.toml` schema or deserializer.
 
 ## 6. Static vs Dynamic
 
