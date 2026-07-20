@@ -16,7 +16,8 @@ Layer 3: Bloxes
 Layer 2: Standard Library (patterns)
   Message types, accessor traits, action functions, shared data structures,
   and runtime-facing service traits.
-  Only depend on BloxRuntime. Crates: bloxide-timer, bloxide-supervisor, bloxide-spawn.
+  Only depend on BloxRuntime. Crates: bloxide-timer, bloxide-supervisor,
+  bloxide-supervisor-context, bloxide-peers, bloxide-messaging.
 
 Layer 1: Runtime (primitives + bridges)
   Primitives: channels (BloxRuntime), native timers, spawning, I/O.
@@ -39,8 +40,8 @@ These traits formalize the contract that runtime crates must fulfill. They enabl
 - `StaticChannelCap: BloxRuntime` (in `bloxide-core`) — compile-time capacity channel creation. Used by `channels!` macro.
 - `DynamicChannelCap: BloxRuntime` (in `bloxide-core`) — runtime-configurable channel creation. Used by `TestRuntime`.
 - `TimerService: BloxRuntime` (in `bloxide-timer`) — timer service run loop. Each runtime bridges `TimerQueue` to its native timer.
-- `SpawnCap: DynamicChannelCap` (in `bloxide-spawn`) — dynamic actor spawning. Extends `DynamicChannelCap` for runtimes that can spawn futures at runtime (Tokio, TestRuntime).
-- `KillCap` (in `bloxide-core`) — runtime capability for immediately aborting actor tasks. Used by supervisors for policy-driven cleanup of dynamic actors.
+- `SpawnCap: DynamicChannelCap` (in `bloxide-core`) — dynamic actor spawning. Extends `DynamicChannelCap` for runtimes that can spawn futures at runtime (Tokio, TestRuntime).
+- `KillCapability: BloxRuntime` (in `bloxide-core`) — runtime capability for immediately aborting actor tasks. Used by supervisors for policy-driven cleanup of dynamic actors.
 
 ### Standard Library Crate Pattern
 
@@ -80,23 +81,28 @@ bloxide-timer (depends on bloxide-core)
   Blox-facing: TimerCommand, TimerQueue, HasTimerRef, set_timer, cancel_timer
   Runtime-facing: trait TimerService
 
-bloxide-supervisor (depends on bloxide-core)
-  Blox-facing: LifecycleCommand, ChildLifecycleEvent, ChildGroup, HasChildren, actions
+bloxide-supervisor (depends on bloxide-core, bloxide-supervisor-context)
+  Blox-facing: LifecycleCommand, ChildLifecycleEvent, ChildGroup, HasChildGroup, actions
   Runtime-facing: trait SupervisedRunLoop
 
-bloxide-spawn (depends on bloxide-core)
-  Blox-facing: SpawnCap, DynamicChannelCap
-  Runtime-facing: trait SpawnCap
-  Also provides: SpawnCap impl for TestRuntime (in test_impl module, requires std feature)
+bloxide-supervisor-context (depends on bloxide-core)
+  Supervisor context struct, SpawnFactory, SpawnOutput, SpawnPolicy, SupervisorControl,
+  ChildRegistrar, SupervisorRegistrar
+
+bloxide-peers (depends on bloxide-core)
+  Peer introduction: PeerCtrl, AddPeer, RemovePeer, HasPeers, introduce_peers
+
+bloxide-messaging (depends on bloxide-core)
+  Accessor traits: HasSelfRef<R,M>, HasPeerRef<R,M> for peer/self messaging
 
 bloxide-embassy (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-supervisor)
   impl BloxRuntime + StaticChannelCap + TimerService
   macros: channels!, next_actor_id!, actor_task!, actor_task_supervised!, root_task!,
           timer_task!, spawn_child!, spawn_timer!
-  Note: StaticChannelCap only (no DynamicChannelCap).
+  Note: StaticChannelCap only (no DynamicChannelCap, no SpawnCap).
 
-bloxide-tokio (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-supervisor, bloxide-spawn)
-  impl BloxRuntime + DynamicChannelCap + TimerService + SpawnCap
+bloxide-tokio (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-supervisor)
+  impl BloxRuntime + DynamicChannelCap + TimerService + SpawnCap + KillCapability
   macros: channels!, next_actor_id!, actor_task!, actor_task_supervised!, spawn_timer!, spawn_child_dynamic!
 ```
 
@@ -104,13 +110,13 @@ bloxide-tokio (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-su
 
 This table shows which runtime implements each Tier 2 capability.
 
-| Capability | Tier 2 Trait | bloxide-embassy | bloxide-tokio | TestRuntime | Notes |
-|------------|--------------|-----------------|---------------|-------------|-------|
-| Static channel creation | `StaticChannelCap` | ✅ | ❌ | ❌ | Compile-time capacity via `channels!` (Embassy only) |
-| Dynamic channel creation | `DynamicChannelCap` | ❌ | ✅ | ✅ | Runtime-configurable capacity; Tokio uses `__dyn_channels_proc_macro` |
-| Timer service | `TimerService` | ✅ | ✅ | ❌ | Bridges native timer to `TimerQueue` |
-| Spawn capability | `SpawnCap` | ❌ | ✅ | ✅ | Dynamic actor spawning |
-| Kill capability | `KillCap` | ❌ | ✅ | ❌ | Immediately aborts actor tasks for dynamic actor cleanup |
+|| Capability | Tier 2 Trait | bloxide-embassy | bloxide-tokio | TestRuntime | Notes |
+||------------|--------------|-----------------|---------------|-------------|-------|
+|| Static channel creation | `StaticChannelCap` | ✅ | ❌ | ❌ | Compile-time capacity via `channels!` (Embassy only) |
+|| Dynamic channel creation | `DynamicChannelCap` | ❌ | ✅ | ✅ | Runtime-configurable capacity; Tokio uses `__dyn_channels_proc_macro` |
+|| Timer service | `TimerService` | ✅ | ✅ | ❌ | Bridges native timer to `TimerQueue` |
+|| Spawn capability | `SpawnCap` | ❌ | ✅ | ✅ | Dynamic actor spawning |
+|| Kill capability | `KillCapability` | ❌ | ✅ | ❌ | Immediately aborts actor tasks for dynamic actor cleanup |
 
 ### Feature Flags
 
@@ -122,7 +128,7 @@ This table shows which runtime implements each Tier 2 capability.
 
 ### TestRuntime (in bloxide-core)
 
-TestRuntime implements `DynamicChannelCap` for test ergonomics. `SpawnCap` support is provided by `bloxide-spawn/test_impl` (enabled when building with the `std` feature). This keeps `bloxide-core` free of spawning logic while allowing tests to spawn actors dynamically.
+TestRuntime implements `DynamicChannelCap` and `SpawnCap` for test ergonomics. Both are in `bloxide-core` (the `SpawnCap` impl is gated behind the `std` feature). This keeps `bloxide-core` as the single source of channel and spawn traits while allowing tests to exercise dynamic spawning without a real executor.
 
 ### Tier 2 Trait Naming Convention
 
@@ -134,5 +140,5 @@ TestRuntime implements `DynamicChannelCap` for test ergonomics. `SpawnCap` suppo
 
 **Why different suffixes?**
 - `*Service` traits are async services (like timer management)
-- `KillCap` traits provide immediate task termination for dynamic actor cleanup
+- `KillCapability` traits provide immediate task termination for dynamic actor cleanup
 - `*Cap` traits are capabilities that runtimes implement for injection (spawning, channels)

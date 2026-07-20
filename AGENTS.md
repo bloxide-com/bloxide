@@ -151,12 +151,17 @@ Then dive deeper as needed:
 | How do dynamic actors, factory injection, and peer introduction work? | `spec/architecture/11-dynamic-actors.md` |
 | How does factory injection interact with supervision? | `spec/architecture/13-factory-injection-and-supervision.md` |
 | How does the unified lifecycle model work? | `spec/architecture/14-unified-lifecycle.md` |
-| How does spawning work? | `spec/architecture/21-spawn-architecture.md` |
+| How do composable context crates work? | `spec/architecture/18-composable-context-crates.md` |
+| How does declarative wiring and handle injection work? | `spec/architecture/19-declarative-wiring.md` |
+| How does blox.toml serve as the source of truth? | `spec/architecture/20-blox-toml-source-of-truth.md` |
+| How does spawning work? (current) | `spec/architecture/22-spawn-architecture-v2.md` |
+| How does spawning work? (historical, superseded) | `spec/architecture/21-spawn-architecture.md` |
 | Spec for the Ping actor | `spec/bloxes/ping.md` |
 | Spec for the Pong actor | `spec/bloxes/pong.md` |
 | Spec for the Counter actor | `spec/bloxes/counter.md` |
 | Spec for the Pool actor | `spec/bloxes/pool.md` |
 | Spec for the Worker actor | `spec/bloxes/worker.md` |
+| Spec for the BHSM test actor | `spec/bloxes/bhsm.md` |
 | How does the reusable supervisor spec work? | `spec/architecture/08-supervision.md` |
 | Template for a new blox | `spec/templates/blox-spec.md` |
 | **How do I test a blox in isolation?** | `crates/bloxide-core/src/test_utils.rs` |

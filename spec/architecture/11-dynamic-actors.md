@@ -38,24 +38,26 @@ general case. All Embassy actors use the static wiring pattern described in
 
 ---
 
-## `bloxide-spawn` Crate
+## Dynamic Spawning Crates
 
-`bloxide-spawn` is the standard library crate for dynamic actor creation and peer
-introduction. It parallels `bloxide-supervisor` (supervision) and `bloxide-timer`
-(timers) in its role: it defines the Tier 2 capability trait, the accessor traits,
-and the framework action functions — keeping all dynamic-spawning concerns out of
-`bloxide-core` and out of blox crates.
+Dynamic actor spawning and peer introduction are handled by two standard library
+crates that parallel `bloxide-supervisor` (supervision) and `bloxide-timer`
+(timers):
+
+- **`bloxide-core`** — defines the `SpawnCap` and `KillCapability` Tier 2 traits
+- **`bloxide-peers`** — defines peer introduction (`PeerCtrl`, `introduce_peers`)
+
+This keeps all dynamic-spawning concerns out of blox crates while remaining
+runtime-agnostic.
 
 ### Contents
 
-| Module | Contents |
-|--------|---------|
-| `capability` | `SpawnCap` trait — Tier 2, extends `DynamicChannelCap` |
-| `peer` | `SpawnCap`, `DynamicChannelCap` — runtime capabilities for dynamic actors |
-| `test_impl` | `SpawnCap` impl for `TestRuntime`; `drain_spawned()`, `spawned_count()` |
-| `prelude` | Re-exports for convenient glob imports |
+| Crate | Module | Contents |
+|-------|--------|----------|
+| `bloxide-core` | `spawn` | `SpawnCap` trait — Tier 2, extends `DynamicChannelCap`; `KillCapability` trait |
+| `bloxide-peers` | `lib` | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` |
 
-`bloxide-spawn` is `no_std` (uses `extern crate alloc` for `Vec`).
+Both crates are `no_std`.
 
 ### Domain-Specific Peer Control (Recommended)
 
@@ -74,24 +76,22 @@ For peer introduction, use domain-specific control types defined in your message
 
 ```mermaid
 flowchart TD
-    BloxideCore["bloxide-core\n(BloxRuntime, DynamicChannelCap,\nrun_actor_to_completion)"]
-    BloxideSpawn["bloxide-spawn\n(SpawnCap,\nDynamicChannelCap)"]
-    TokioRuntime["bloxide-tokio\n(impl SpawnCap)"]
-    TestImpl["bloxide-spawn/test_impl\n(impl SpawnCap for TestRuntime)"]
+    BloxideCore["bloxide-core\n(BloxRuntime, DynamicChannelCap,\nSpawnCap, KillCapability,\nrun_actor_to_completion)"]
+    BloxidePeers["bloxide-peers\n(PeerCtrl, introduce_peers)"]
+    TokioRuntime["bloxide-tokio\n(impl SpawnCap, KillCapability)"]
     PoolBlox["pool-blox / worker-blox\n(R: BloxRuntime only)"]
     WiringBinary["wiring binary\n(uses SpawnCap inside factory fn)"]
 
-    BloxideSpawn --> BloxideCore
-    TokioRuntime --> BloxideSpawn
-    TestImpl --> BloxideSpawn
-    PoolBlox --> BloxideSpawn
+    BloxidePeers --> BloxideCore
+    TokioRuntime --> BloxideCore
     PoolBlox --> BloxideCore
+    PoolBlox --> BloxidePeers
     WiringBinary --> TokioRuntime
     WiringBinary --> PoolBlox
 ```
 
-Blox crates depend on `bloxide-spawn` (for `SpawnCap`, `DynamicChannelCap`)
-and `bloxide-core` but never on `bloxide-tokio`. Blox crates declare `R: BloxRuntime`
+Blox crates depend on `bloxide-core` (for `BloxRuntime`) and `bloxide-peers`
+(for peer introduction) but never on `bloxide-tokio`. Blox crates declare `R: BloxRuntime`
 
 ## Domain-Specific Peer Control Types
 
@@ -128,7 +128,7 @@ pub struct RemoveWorkerPeer {
 **Key characteristics:**
 - Only `R` is generic — the message type (`WorkerMsg`) is fixed
 - Named for the specific actor type (e.g., WorkerCtrl)
-- Lives in the domain's message crate, not `bloxide-spawn`
+- Lives in the domain's message crate, not `bloxide-peers`
 
 ### Defining a Peer Accessor Trait
 
@@ -646,7 +646,7 @@ where
 }
 ```
 
-`introduce_peers` (from `bloxide-spawn`) sends `WorkerCtrl::AddPeer` to both actors,
+`introduce_peers` (from `bloxide-peers`) sends `WorkerCtrl::AddPeer` to both actors,
 each receiving the other's domain `ActorRef`. The control channel is separate from
 the domain channel so existing message ordering is unaffected.
 
@@ -783,7 +783,7 @@ same factory interface the production wiring binary uses.
 ```rust
 use bloxide_core::{capability::DynamicChannelCap, StateMachine};
 use bloxide_core::test_utils::TestRuntime;
-use bloxide_spawn::SpawnCap;
+use bloxide_core::SpawnCap;
 use pool_messages::WorkerCtrl;
 
 fn test_spawn_worker(
@@ -942,6 +942,6 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
 ## Related Docs
 
 - **Priority mailboxes** → `spec/architecture/07-typed-mailboxes.md`
-- **Peer introduction API** → `crates/bloxide-spawn/src/peer.rs`
+- **Peer introduction API** → `crates/bloxide-peers/src/lib.rs`
 - **Pool/Worker blox specs** → `spec/bloxes/pool.md`, `spec/bloxes/worker.md`
-- **Runtime SpawnCap impl** → `runtimes/tokio/src/spawn.rs`, `crates/bloxide-spawn/src/test_impl.rs`
+- **Runtime SpawnCap impl** → `runtimes/bloxide-tokio/src/spawn.rs`, `crates/bloxide-core/src/spawn.rs` (TestRuntime impl, `std` feature)

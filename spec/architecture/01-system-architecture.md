@@ -32,7 +32,9 @@ flowchart TB
         direction LR
         TIMER[bloxide-timer\nTimerCommand\nTimerQueue\nTimerService]
         SUP[bloxide-supervisor\nChildGroup\nChildPolicy\nSupervisedRunLoop]
-        SPAWN[bloxide-spawn\nSpawnCap\nDynamicChannelCap]
+        SUPCTX[bloxide-supervisor-context\nSupervisorCtx\nSpawnFactory\nChildRegistrar]
+        PEERS[bloxide-peers\nPeerCtrl\nintroduce_peers]
+        MSG[bloxide-messaging\nHasSelfRef\nHasPeerRef]
         TEST_RT[TestRuntime\nin bloxide-core]
     end
 
@@ -71,7 +73,9 @@ flowchart LR
     log[bloxide-log]
     timer[bloxide-timer]
     supervisor[bloxide-supervisor]
-    spawn[bloxide-spawn]
+    supctx[bloxide-supervisor-context]
+    peers[bloxide-peers]
+    messaging[bloxide-messaging]
     embassy[bloxide-embassy]
     tokio[bloxide-tokio]
     demo[embassy-demo]
@@ -79,12 +83,13 @@ flowchart LR
     macros --> core
     core --> timer
     core --> supervisor
-    core --> spawn
+    core --> supctx
+    core --> peers
+    core --> messaging
     timer --> embassy
     timer --> tokio
     supervisor --> embassy
     supervisor --> tokio
-    spawn --> tokio
     macros --> embassy
     macros --> tokio
 
@@ -126,8 +131,10 @@ flowchart LR
 | Blox crates | `MachineSpec` impl, `Ctx`, state handlers, `Event` enum | Runtime imports, executor types |
 | `bloxide-core` | `MachineSpec`, `StateMachine`, `ActorRef`, `BloxRuntime`, `StaticChannelCap`, `DynamicChannelCap`, `Mailboxes` | Tokio, Embassy, OS imports |
 | `bloxide-timer` | `TimerCommand`, `TimerId`, `TimerQueue`, `HasTimerRef`, `set_timer`, `cancel_timer`, `TimerService` trait | Runtime imports, executor types |
-| `bloxide-supervisor` | `LifecycleCommand`, `ChildLifecycleEvent`, `ChildGroup`, `ChildPolicy`, `GroupShutdown`, `HasChildren`, action functions | Runtime imports, executor types |
-| `bloxide-spawn` | `SpawnCap` trait, `DynamicChannelCap`, `SpawnCap` impl for `TestRuntime` | Runtime imports, executor types |
+| `bloxide-supervisor` | `LifecycleCommand`, `ChildLifecycleEvent`, `ChildGroup`, `ChildPolicy`, `GroupShutdown`, `HasChildGroup`, action functions | Runtime imports, executor types |
+| `bloxide-supervisor-context` | `SupervisorCtx`, `SpawnFactory`, `SpawnOutput`, `SpawnPolicy`, `SupervisorControl`, `ChildRegistrar` | Runtime imports, executor types |
+| `bloxide-peers` | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` | Runtime imports, executor types |
+| `bloxide-messaging` | `HasSelfRef<R,M>`, `HasPeerRef<R,M>` accessor traits | Runtime imports, executor types |
 | Runtime crates | `BloxRuntime` + `StaticChannelCap` + `TimerService` impls, actor task functions | Domain logic |
 | Application/Wiring | Channel creation, `ActorRef` injection, task spawning | Business logic |
 
@@ -151,7 +158,7 @@ See [08-supervision.md](08-supervision.md).
 |---------|----------|----------|
 | `bloxide-embassy` | Embedded systems, `no_std` targets | `StaticChannelCap`, `TimerService` |
 | `bloxide-tokio` | Server applications, native targets | `StaticChannelCap`, `DynamicChannelCap`, `TimerService`, `SpawnCap` |
-| `TestRuntime` | Unit tests, no executor needed | `DynamicChannelCap`, `SpawnCap` (via `bloxide-spawn/test_impl`) |
+| `TestRuntime` | Unit tests, no executor needed | `DynamicChannelCap`, `SpawnCap` (in `bloxide-core`, `std` feature) |
 
 ## User-Land Application Layout
 

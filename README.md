@@ -77,14 +77,18 @@ The blox crates (`PingSpec`, `PongSpec`) are generic over `R: BloxRuntime` — t
 ```
 bloxide/
 ├── crates/            # framework + layered application crates
-│   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, std-gated TestRuntime
+│   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, SpawnCap, KillCapability, std-gated TestRuntime
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
 │   ├── bloxide-macros/    # proc macros: #[derive(BloxCtx)], #[delegatable]
+│   ├── bloxide-messaging/ # accessor traits: HasSelfRef, HasPeerRef
+│   ├── bloxide-peers/     # peer introduction: PeerCtrl, introduce_peers
 │   ├── bloxide-supervisor/ # reusable OTP-style supervisor
+│   ├── bloxide-supervisor-context/ # supervisor context: SpawnFactory, ChildRegistrar
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
-│   ├── messages/          # shared message crates (ping-pong, pool, counter)
-│   ├── actions/           # action trait crates (ping-pong, pool, counter)
-│   ├── bloxes/            # ping, pong, worker, pool, counter
+│   ├── messages/          # shared message crates (ping-pong, pool, counter, bhsm-tst)
+│   ├── actions/           # action trait crates (ping-pong, pool, counter, bhsm-tst)
+│   ├── context/           # composable context crates (rounds, timer, task, workers, etc.)
+│   ├── bloxes/            # ping, pong, worker, pool, counter, bhsm-tst
 │   ├── impl/              # concrete behavior/factory crates for wiring demos
 │   └── tools/             # codegen and CLI tools
 │       ├── bloxide-codegen/ # TOML-driven code generator library
@@ -151,13 +155,16 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 
 | Crate | Path | `no_std` | Purpose |
 |---|---|:---:|---|
-| `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, std-gated `TestRuntime` |
-| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(BloxCtx)]`, `#[delegatable]` |
+| `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, `SpawnCap`, `KillCapability`, std-gated `TestRuntime` |
+| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(BloxCtx)]`, `#[delegatable]`, `#[blox_event]` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `VirtualClock` |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `ChildGroup`, `ChildPolicy`, `GroupShutdown` |
+| `bloxide-supervisor-context` | `crates/bloxide-supervisor-context` | ✅ | `SupervisorCtx`, `SpawnFactory`, `SpawnOutput`, `SupervisorControl`, `ChildRegistrar` |
+| `bloxide-peers` | `crates/bloxide-peers` | ✅ | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` |
+| `bloxide-messaging` | `crates/bloxide-messaging` | ✅ | `HasSelfRef<R,M>`, `HasPeerRef<R,M>` accessor traits |
 | `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
-| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
+| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, `SpawnCap`, `KillCapability`, task macros |
 
 ¹ Proc-macro crates compile for the host; they have no `no_std` impact on the target binary.
 

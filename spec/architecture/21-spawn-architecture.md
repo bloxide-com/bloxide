@@ -1,6 +1,12 @@
 # Spawn Architecture — Design Spec
 
-> Status: **DRAFT** — July 2026
+> Status: **SUPERSEDED** by [spec 22](22-spawn-architecture-v2.md) — July 2026
+> This document is retained for historical context. The implemented architecture
+> follows spec 22, which simplified spawning by decoupling it from the supervisor,
+> replacing the `SpawnFactory` trait with `fn` pointers, and moving `SpawnCap` and
+> `KillCapability` into `bloxide-core`.
+>
+> Original status: DRAFT — July 2026
 > Supersedes: specs 15 (supervisor-owned-spawning), 16 (spawn-service), 17 (spawn-cap-design)
 > Related: 08 (supervision), 11 (dynamic-actors), 18 (composable-context-crates)
 

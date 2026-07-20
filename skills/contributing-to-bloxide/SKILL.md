@@ -12,16 +12,18 @@ This guide is for modifying the bloxide framework itself — the HSM engine, pro
 ## Crate Map
 
 ```
-bloxide-core        HSM engine, BloxRuntime, channel traits, TestRuntime     (no_std)
-bloxide-macros      Proc macros: BloxCtx                                 (host-compiled)
+bloxide-core        HSM engine, BloxRuntime, channel traits, SpawnCap, KillCapability, TestRuntime  (no_std)
+bloxide-macros      Proc macros: BloxCtx, delegatable, blox_event                          (host-compiled)
 bloxide-codegen     TOML-driven code generator library                        (host-compiled)
 cargo-blox          CLI: cargo blox generate / new / build / check / test / run  (host-compiled)
 bloxide-log         Feature-gated logging macros                              (no_std)
 bloxide-timer       Timer service: commands, queue, accessor traits           (no_std)
 bloxide-supervisor  Reusable supervisor: ChildGroup, policies, run loop       (no_std)
-bloxide-spawn       Dynamic actor spawning and peer introduction              (no_std)
+bloxide-supervisor-context  Supervisor context struct, SpawnFactory, ChildRegistrar  (no_std)
+bloxide-peers       Peer introduction: PeerCtrl, introduce_peers              (no_std)
+bloxide-messaging   Accessor traits: HasSelfRef, HasPeerRef                   (no_std)
 bloxide-embassy     Embassy runtime: channels, tasks, timer bridge            (no_std)
-bloxide-tokio       Tokio runtime: channels, tasks, SpawnCap                  (std)
+bloxide-tokio       Tokio runtime: channels, tasks, SpawnCap, KillCapability  (std)
 ```
 
 **Dependency direction:** `bloxide-core` is the root. Standard library crates depend on `bloxide-core`. Runtime crates depend on `bloxide-core` + standard library crates. Domain crates (bloxes) depend only on `bloxide-core` and standard library crates — never on runtime crates.
@@ -58,7 +60,8 @@ These traits formalize the contract runtimes must fulfill:
 | `DynamicChannelCap` | `bloxide-core` | Runtime-configurable channel creation (used by `TestRuntime`) |
 | `TimerService` | `bloxide-timer` | Timer service run loop; bridges `TimerQueue` to native timer |
 | `SupervisedRunLoop` | `bloxide-supervisor` | Supervised actor run loop; merges lifecycle with domain mailboxes |
-| `SpawnCap` | `bloxide-spawn` | Dynamic actor spawning; extends `DynamicChannelCap` |
+| `SpawnCap` | `bloxide-core` | Dynamic actor spawning; extends `DynamicChannelCap` |
+| `KillCapability` | `bloxide-core` | Immediately aborts actor tasks for dynamic actor cleanup |
 
 When adding a new capability, decide which tier it belongs to. If blox crates need it, it is Tier 1 (accessor traits, action functions). If only runtimes implement it, it is Tier 2 (service trait).
 
@@ -70,11 +73,11 @@ When adding a new capability, decide which tier it belongs to. If blox crates ne
 4. **Only leaf states as transition targets** — the engine `debug_assert`s this.
 5. **Lifecycle commands flow through dispatch()** — actors handle them as domain events via `root_transitions()`.
 6. **`is_error` takes precedence over `is_terminal`** — if both return `true`, supervisor reports `Failed`, not `Done`.
-7. **KillCap immediately aborts** — no callbacks fire, task is dropped in-place.
+7. **KillCapability immediately aborts** — no callbacks fire, task is dropped in-place.
 
 ## Adding a Standard Library Crate
 
-Follow the `bloxide-timer` / `bloxide-supervisor` / `bloxide-spawn` pattern.
+Follow the `bloxide-timer` / `bloxide-supervisor` / `bloxide-peers` pattern.
 
 ### 1. Create the crate
 

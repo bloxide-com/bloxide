@@ -10,7 +10,7 @@ The Pool actor demonstrates dynamic actor spawning and peer introduction:
 
 This blox showcases:
 - **Factory injection**: Worker spawn function injected at wiring time
-- **Peer introduction**: Using `bloxide-spawn` to wire workers together
+- **Peer introduction**: Using `bloxide-peers` to wire workers together
 - **Dynamic actor creation**: Tokio runtime's `SpawnCap` capability
 
 ## Crate Location

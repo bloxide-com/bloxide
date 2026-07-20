@@ -40,8 +40,8 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
 |----------|--------|----------------|
 | Does the binary need to inject it? | Yes | Behavior trait + `#[delegates]` on field |
 | Is it specific to this blox only? | Yes | Direct field, no annotation (Default::default()) |
-| Is it an ActorRef? | — | `#[provides(HasXRef<R>)]` |
-| Is it the ActorId? | — | `#[self_id]` |
+| Is it an ActorRef? | — | `foo_ref: ActorRef<M, R>` (auto-detected) |
+| Is it the ActorId? | — | `self_id: ActorId` (auto-detected) |
 
 ---
 
@@ -137,10 +137,9 @@ Use `bloxide-timer` action functions instead of manual message construction.
    ```rust
    #[derive(BloxCtx)]
    pub struct MyCtx<R: BloxRuntime> {
-       #[self_id]
+       pub self_id: ActorId,
        pub self_ref: ActorRef<MyMsg, R>,
-       #[provides(TimerRef)]
-       pub timer_ref: ActorRef<TimerCommand, R>,  // Required
+       pub timer_ref: ActorRef<TimerCommand, R>,  // Auto-detected (matches HasTimerRef::timer_ref)
    }
    ```
 
@@ -248,12 +247,19 @@ This means supervisors can safely send `Start` multiple times without state corr
 
 ### `#[derive(BloxCtx)]` Annotations
 
-| Annotation | Generates | Use When |
-|------------|-----------|----------|
-| `#[self_id]` | `fn self_id(&self) -> ActorId` | Always (required) |
-| `#[provides(HasXRef<R>)]` | `fn x_ref(&self) -> &ActorRef<Msg, R>` | Field is an ActorRef |
-| `#[delegates(Trait)]` | Delegates trait impl to field | Binary injects behavior |
-| `#[ctor]` | Marks for constructor injection | Custom initialization |
+Most annotations are auto-detected by field naming convention. Explicit annotations remain for backward compatibility but are not required.
+
+| Convention / Annotation | Generates | Use When |
+|--------------------------|-----------|----------|
+| `self_id: ActorId` | `fn self_id(&self) -> ActorId` | Always (required field) |
+| `foo_ref: ActorRef<M, R>` | `fn foo_ref(&self) -> &ActorRef<Msg, R>` | Auto-detected from `_ref` suffix |
+| `foo_factory: fn(...) -> ...` | `fn foo_factory(&self) -> ...` | Auto-detected from `_factory` suffix |
+| `#[delegates(Trait1, Trait2)]` | Delegates trait impls to field | Required for behavior fields |
+
+**Legacy explicit annotations** (still work, auto-detected if omitted):
+- `#[self_id]` — on the `self_id: ActorId` field
+- `#[provides(HasXRef<R>)]` — on `ActorRef` fields matching the `_ref` convention
+- `#[ctor]` — on non-`_ref` fields like factories
 
 ### Declarative Transitions (`blox.toml`)
 
