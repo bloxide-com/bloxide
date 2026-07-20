@@ -11,7 +11,7 @@
 > stay, transition targets, action-then-guard ordering) are unchanged —
 > only the *syntax* moved from a Rust proc-macro to TOML. The code
 > blocks below show the TOML syntax for each pattern. See
-> `spec/architecture/20-blox-toml-source-of-truth.md` for the current
+> `spec/architecture/17-blox-toml-source-of-truth.md` for the current
 > TOML schema and `QUICK_REFERENCE.md` → "Declarative Transitions
 > (blox.toml)" for a worked example.
 
@@ -372,6 +372,6 @@ The `reset` target triggers the full LCA exit chain (leaf → root) followed by 
 ## Related Docs
 
 - **Action functions** → `spec/architecture/06-actions.md`
-- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/20-blox-toml-source-of-truth.md`
+- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/17-blox-toml-source-of-truth.md`
 - **Dispatch algorithm and lifecycle** → `spec/architecture/02-hsm-engine.md`
 - **Examples in practice** → `spec/bloxes/ping.md`, `spec/bloxes/pong.md`

@@ -1,6 +1,6 @@
 # Spawn Architecture
 
-> Related: 08 (supervision), 11 (dynamic-actors), 14 (unified-lifecycle), 18 (composable-context-crates), 19 (declarative-wiring)
+> Related: 08 (supervision), 11 (dynamic-actors), 14 (unified-lifecycle), 15 (composable-context-crates), 16 (declarative-wiring)
 
 ## 1. Overview
 

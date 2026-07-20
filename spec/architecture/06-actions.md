@@ -11,7 +11,7 @@
 > blox) and the `TransitionRule` struct shape described here are
 > unchanged — only the *syntax* for producing rules moved to TOML.
 > The code blocks below show the TOML syntax. See
-> `spec/architecture/20-blox-toml-source-of-truth.md` for the current
+> `spec/architecture/17-blox-toml-source-of-truth.md` for the current
 > TOML schema and `QUICK_REFERENCE.md` → "Declarative Transitions
 > (blox.toml)" for a worked example.
 
@@ -243,4 +243,4 @@ No changes to the blox crates are needed. Cargo's additive feature resolution en
 - **Handler patterns** → `spec/architecture/05-handler-patterns.md`
 - **Action crate pattern** → `spec/architecture/12-action-crate-pattern.md`
 - **Logging macros** → `crates/bloxide-log/src/lib.rs`
-- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/20-blox-toml-source-of-truth.md`
+- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/17-blox-toml-source-of-truth.md`

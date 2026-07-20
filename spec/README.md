@@ -46,10 +46,10 @@ spec/
     12-action-crate-pattern.md       ← action crate pattern, five-layer architecture
     13-factory-injection-and-supervision.md ← factory injection, two-stream lifecycle, constructor fields
     14-unified-lifecycle.md          ← unified lifecycle model, VirtualRoot interception
-    18-composable-context-crates.md  ← composable context crates, trait-with-data pattern
-    19-declarative-wiring.md         ← declarative wiring, handle injection, system.toml
-    20-blox-toml-source-of-truth.md  ← blox.toml as single source of truth for codegen
-    22-spawn-architecture-v2.md      ← spawn architecture (fn pointers, decoupled spawning)
+    15-composable-context-crates.md  ← composable context crates, trait-with-data pattern
+    16-declarative-wiring.md         ← declarative wiring, handle injection, system.toml
+    17-blox-toml-source-of-truth.md  ← blox.toml as single source of truth for codegen
+    18-spawn-architecture.md         ← spawn architecture (fn pointers, decoupled spawning)
   templates/
     blox-spec.md                     ← copy this to start a new blox spec
   bloxes/
@@ -81,10 +81,10 @@ spec/
 | Understand the action crate pattern (five-layer architecture) | [architecture/12-action-crate-pattern.md](architecture/12-action-crate-pattern.md) |
 | How does factory injection interact with supervision? | [architecture/13-factory-injection-and-supervision.md](architecture/13-factory-injection-and-supervision.md) |
 | How does the unified lifecycle model work? | [architecture/14-unified-lifecycle.md](architecture/14-unified-lifecycle.md) |
-| How do composable context crates work? | [architecture/18-composable-context-crates.md](architecture/18-composable-context-crates.md) |
-| How does declarative wiring and handle injection work? | [architecture/19-declarative-wiring.md](architecture/19-declarative-wiring.md) |
-| How does blox.toml serve as the source of truth? | [architecture/20-blox-toml-source-of-truth.md](architecture/20-blox-toml-source-of-truth.md) |
-| How does spawning work? | [architecture/22-spawn-architecture-v2.md](architecture/22-spawn-architecture-v2.md) |
+| How do composable context crates work? | [architecture/15-composable-context-crates.md](architecture/15-composable-context-crates.md) |
+| How does declarative wiring and handle injection work? | [architecture/16-declarative-wiring.md](architecture/16-declarative-wiring.md) |
+| How does blox.toml serve as the source of truth? | [architecture/17-blox-toml-source-of-truth.md](architecture/17-blox-toml-source-of-truth.md) |
+| How does spawning work? | [architecture/18-spawn-architecture.md](architecture/18-spawn-architecture.md) |
 | Create a new blox | Copy [templates/blox-spec.md](templates/blox-spec.md) to `spec/bloxes/<name>.md` |
 | Read the Ping spec | [bloxes/ping.md](bloxes/ping.md) |
 | Read the Pong spec | [bloxes/pong.md](bloxes/pong.md) |

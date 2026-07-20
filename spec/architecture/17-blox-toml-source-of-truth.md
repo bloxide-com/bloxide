@@ -179,7 +179,7 @@ delegates = ["HasCurrentTimer", "CountsRounds"]
 - `extra_where` predicates appended to the `MachineSpec` impl.
 - `on_init` body for `on_init_entry`.
 - `actions_crate` for default imports from the actions crate.
-- `[[context.uses]]` for composable context crates (see `spec/architecture/18-composable-context-crates.md`).
+- `[[context.uses]]` for composable context crates (see `spec/architecture/15-composable-context-crates.md`).
 
 The `role` field tells the codegen how to emit each field:
 
@@ -202,7 +202,7 @@ This controls how many mailbox tuple variants the generated `mailboxes_impls.rs`
 
 #### `[wiring]` — generated binary
 
-`[wiring]` is the in-spec wiring section. For real applications, use the separate `system.toml` manifest described in `spec/architecture/19-declarative-wiring.md`. Both are parsed from the same `WiringConfig` / `SystemConfig` schema.
+`[wiring]` is the in-spec wiring section. For real applications, use the separate `system.toml` manifest described in `spec/architecture/16-declarative-wiring.md`. Both are parsed from the same `WiringConfig` / `SystemConfig` schema.
 
 ```toml
 [wiring]
@@ -378,7 +378,7 @@ where
 
 #### `wiring_main.rs`
 
-From `[wiring]` or `system.toml`, the codegen emits a complete `main.rs` that creates channels, constructs contexts, builds machines, wires the supervisor tree, and starts the system. See `spec/architecture/19-declarative-wiring.md` for the generated structure.
+From `[wiring]` or `system.toml`, the codegen emits a complete `main.rs` that creates channels, constructs contexts, builds machines, wires the supervisor tree, and starts the system. See `spec/architecture/16-declarative-wiring.md` for the generated structure.
 
 ### What remains hand-written
 
@@ -512,8 +512,8 @@ The only hand-written Rust the UI cannot produce is action function bodies, beha
 
 ## Related documents
 
-- `spec/architecture/18-composable-context-crates.md` — how `[[context.uses]]` pulls in reusable context crates.
-- `spec/architecture/19-declarative-wiring.md` — the `system.toml` wiring manifest and handle injection.
+- `spec/architecture/15-composable-context-crates.md` — how `[[context.uses]]` pulls in reusable context crates.
+- `spec/architecture/16-declarative-wiring.md` — the `system.toml` wiring manifest and handle injection.
 - `spec/architecture/02-hsm-engine.md` — `MachineSpec`, `StateTopology`, and the declarative `[[topology.transitions]]` schema.
 - `spec/architecture/05-handler-patterns.md` — transition patterns and guard semantics.
 - `spec/architecture/12-action-crate-pattern.md` — the relationship between actions crates, impl crates, and bloxes.
