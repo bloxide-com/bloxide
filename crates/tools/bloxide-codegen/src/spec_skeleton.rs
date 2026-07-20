@@ -61,7 +61,7 @@ struct VariantParams {
     /// The cfg attribute string (e.g. "not(feature = \"dynamic\")" or "feature = \"dynamic\"").
     /// None when no feature-gating.
     cfg_attr: Option<String>,
-    /// The spec generics for this variant (e.g. `<R: BloxRuntime>` or `<R: BloxRuntime, F: SpawnFactory<R> + 'static>`).
+    /// The spec generics for this variant (e.g. `<R: BloxRuntime>` or `<R: BloxRuntime, B: SomeTrait + 'static>`).
     spec_generics: syn::Generics,
     /// The ctx type for this variant (e.g. `SupervisorCtx<R>` or `SupervisorCtx<R, F>`).
     ctx_ty: proc_macro2::TokenStream,
@@ -692,18 +692,9 @@ pub fn generate(
                 }
             }
         }
-        // Add 'static to all non-behavior type params as well (spec must be 'static)
-        // Actually, only add 'static to params that need it. The old code had
-        // F: SpawnFactory<R> + 'static in the spec impl. Let's add 'static to
-        // all type params in the feature variant.
-        // Actually no — only F needs 'static in the old code. R doesn't.
-        // The old spec_skeleton had:
-        //   impl<R: BloxRuntime, F: SpawnFactory<R> + 'static> SupervisorSpec<R, F>
-        // So we need to add 'static to the feature variant's extra params.
-        // The feature_generics already has "F: SpawnFactory<R>" — we need to
-        // add "+ 'static" to F.
-        // But we can't know which params need 'static. Let's use feature_where
-        // for this.
+        // Add 'static to feature-variant type params that need it.
+        // Feature variants may need 'static bounds on extra type params
+        // (beyond R: BloxRuntime). Use feature_where for this.
         if !context.feature_where.is_empty() {
             let mut preds = syn::punctuated::Punctuated::new();
             if let Some(ref wc) = feature_spec_generics.where_clause {

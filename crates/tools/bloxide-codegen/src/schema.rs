@@ -52,7 +52,7 @@ pub struct EventConfig {
     /// the feature variant uses `feature_generics`.
     #[serde(default)]
     pub feature: Option<String>,
-    /// Generics for the feature-gated variant (e.g. `"<R, F: SpawnFactory<R>>"`).
+    /// Generics for the feature-gated variant (e.g. `"<R: BloxRuntime, B: SomeTrait>"`).
     #[serde(default)]
     pub feature_generics: Option<String>,
     #[serde(default)]
@@ -196,7 +196,7 @@ pub struct ContextConfig {
     /// Feature name for paired generation (e.g. `"dynamic"`).
     #[serde(default)]
     pub feature: Option<String>,
-    /// Generics for the feature-gated variant (e.g. `"<R: BloxRuntime, F: SpawnFactory<R>>"`).
+    /// Generics for the feature-gated variant (e.g. `"<R: BloxRuntime, B: SomeTrait>"`).
     #[serde(default)]
     pub feature_generics: Option<String>,
     /// Extra `where`-clause predicates for the feature-gated variant.

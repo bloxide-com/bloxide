@@ -279,7 +279,7 @@ pub fn generate(
     });
 
     // (No feature-gated imports needed — unified SupervisorSpec<R> has no
-    // SpawnFactory type parameter, no SupervisorMailboxes, no NoSpawnRequest.)
+    // extra type parameters beyond R.)
 
     // Blox crate imports.
     for actor in &config.actors {
