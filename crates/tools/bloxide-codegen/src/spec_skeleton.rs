@@ -500,9 +500,13 @@ pub fn generate(
             syn::parse_str::<syn::Generics>(context.generics.as_deref().unwrap_or("<>"))
                 .map_err(|e| anyhow::anyhow!("invalid generics: {}", e))?;
 
-        let base_event_generics =
+        let base_event_generics = if let Some(ev) = event {
+            syn::parse_str::<syn::Generics>(ev.generics.as_deref().unwrap_or("<>"))
+                .map_err(|e| anyhow::anyhow!("invalid [event].generics: {}", e))?
+        } else {
             syn::parse_str::<syn::Generics>(context.event_generics.as_deref().unwrap_or("<>"))
-                .map_err(|e| anyhow::anyhow!("invalid event_generics: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("invalid event_generics: {}", e))?
+        };
 
         let base_ctx_params: Vec<String> = base_generics
             .type_params()
@@ -530,14 +534,37 @@ pub fn generate(
             quote! { #event_ident<#(#params),*> }
         };
 
-        let base_mailboxes = context.mailboxes_type.as_deref().ok_or_else(|| {
-            anyhow::anyhow!(
-                "context.mailboxes_type required for feature-gated specs without [event] section"
-            )
-        })?;
-        let base_mailboxes_ty: proc_macro2::TokenStream = base_mailboxes
-            .parse()
-            .map_err(|e| anyhow::anyhow!("invalid mailboxes_type '{}': {}", base_mailboxes, e))?;
+        // Derive base mailboxes type from [event] section when present,
+        // falling back to context.mailboxes_type for hand-written events.
+        let base_mailboxes_ty: proc_macro2::TokenStream = if let Some(ev) = event {
+            let mailboxes_tys: Vec<_> = ev
+                .mailboxes
+                .iter()
+                .filter(|mb| mb.feature.is_none())
+                .map(|mb| {
+                    let msg_type = if let Some(ref path) = mb.message_path {
+                        syn::parse_str::<syn::Path>(path).map_err(|e| {
+                            anyhow::anyhow!("invalid message_path '{}': {}", path, e)
+                        })?
+                    } else {
+                        syn::parse_str::<syn::Path>(&mb.message).map_err(|e| {
+                            anyhow::anyhow!("invalid message '{}': {}", mb.message, e)
+                        })?
+                    };
+                    Ok::<_, anyhow::Error>(quote! { Rt::Stream<#msg_type> })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            quote! { (#(#mailboxes_tys,)*) }
+        } else {
+            let base_mailboxes = context.mailboxes_type.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "context.mailboxes_type required for feature-gated specs without [event] section"
+                )
+            })?;
+            base_mailboxes.parse().map_err(|e| {
+                anyhow::anyhow!("invalid mailboxes_type '{}': {}", base_mailboxes, e)
+            })?
+        };
 
         // Build spec generics for base variant (add 'static to behavior params)
         let mut base_spec_generics =
@@ -582,10 +609,15 @@ pub fn generate(
             syn::parse_str::<syn::Generics>(context.feature_generics.as_deref().unwrap_or("<>"))
                 .map_err(|e| anyhow::anyhow!("invalid feature_generics: {}", e))?;
 
-        let feature_event_generics = syn::parse_str::<syn::Generics>(
-            context.feature_event_generics.as_deref().unwrap_or("<>"),
-        )
-        .map_err(|e| anyhow::anyhow!("invalid feature_event_generics: {}", e))?;
+        let feature_event_generics = if let Some(ev) = event {
+            syn::parse_str::<syn::Generics>(ev.feature_generics.as_deref().unwrap_or("<>"))
+                .map_err(|e| anyhow::anyhow!("invalid [event].feature_generics: {}", e))?
+        } else {
+            syn::parse_str::<syn::Generics>(
+                context.feature_event_generics.as_deref().unwrap_or("<>"),
+            )
+            .map_err(|e| anyhow::anyhow!("invalid feature_event_generics: {}", e))?
+        };
 
         let feature_ctx_params: Vec<String> = feature_generics
             .type_params()
@@ -613,17 +645,39 @@ pub fn generate(
             quote! { #event_ident<#(#params),*> }
         };
 
-        let feature_mailboxes = context.feature_mailboxes_type.as_deref().ok_or_else(|| {
-            anyhow::anyhow!("context.feature_mailboxes_type required for feature-gated specs")
-        })?;
-        let feature_mailboxes_ty: proc_macro2::TokenStream =
+        // Derive feature mailboxes type from [event] section when present
+        // (all mailboxes, including feature-gated ones), falling back to
+        // context.feature_mailboxes_type for hand-written events.
+        let feature_mailboxes_ty: proc_macro2::TokenStream = if let Some(ev) = event {
+            let mailboxes_tys: Vec<_> = ev
+                .mailboxes
+                .iter()
+                .map(|mb| {
+                    let msg_type = if let Some(ref path) = mb.message_path {
+                        syn::parse_str::<syn::Path>(path).map_err(|e| {
+                            anyhow::anyhow!("invalid message_path '{}': {}", path, e)
+                        })?
+                    } else {
+                        syn::parse_str::<syn::Path>(&mb.message).map_err(|e| {
+                            anyhow::anyhow!("invalid message '{}': {}", mb.message, e)
+                        })?
+                    };
+                    Ok::<_, anyhow::Error>(quote! { Rt::Stream<#msg_type> })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            quote! { (#(#mailboxes_tys,)*) }
+        } else {
+            let feature_mailboxes = context.feature_mailboxes_type.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("context.feature_mailboxes_type required for feature-gated specs")
+            })?;
             feature_mailboxes.parse().map_err(|e| {
                 anyhow::anyhow!(
                     "invalid feature_mailboxes_type '{}': {}",
                     feature_mailboxes,
                     e
                 )
-            })?;
+            })?
+        };
 
         // Build spec generics for feature variant (add 'static to behavior params + 'static to F)
         let mut feature_spec_generics =

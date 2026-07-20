@@ -178,12 +178,15 @@ fn generate_variant(
     // ── Imports from `[[context.uses]]` ────────────────────────────────────
     {
         // Filter uses by feature gate.
+        // Non-feature variant: include uses with no `feature` attribute.
+        // Feature variant: include ALL uses (both non-gated and feature-gated),
+        // matching the same paired-#[cfg] pattern used for fields and imports.
         let filtered_uses: Vec<&ContextUse> = config
             .uses
             .iter()
             .filter(|u| match feature_filter {
                 None => u.feature.is_none(),
-                Some(feat) => u.feature.as_deref() == Some(feat),
+                Some(_feat) => true,
             })
             .collect();
 

@@ -21,14 +21,32 @@ struct CtorField {
 
 /// Collect the constructor fields of a blox context in the order they appear
 /// in the generated `Ctx::new(...)` signature.
-fn collect_ctor_fields(blox_config: &BloxConfig) -> Vec<CtorField> {
+///
+/// `active_features` maps blox crate names (e.g. `"pool-blox"`) to the set of
+/// Cargo features enabled on that dependency in the app's Cargo.toml. Fields
+/// with a `feature` attribute that is not in the active set are silently
+/// skipped — they don't exist in the compiled struct when the feature is off.
+fn collect_ctor_fields(
+    blox_config: &BloxConfig,
+    blox_crate_name: &str,
+    active_features: &BTreeMap<String, BTreeSet<String>>,
+) -> Vec<CtorField> {
     let mut fields = Vec::new();
+
+    // Resolve the set of enabled features for this blox crate.
+    let enabled = active_features.get(blox_crate_name);
 
     if let Some(context) = &blox_config.context {
         // 1. context.uses entries that contribute a field.
         for u in &context.uses {
             if u.role.as_deref() == Some("state") {
                 continue;
+            }
+            // Skip uses whose feature is not enabled.
+            if let Some(feat) = &u.feature {
+                if !enabled.map(|s| s.contains(feat)).unwrap_or(false) {
+                    continue;
+                }
             }
             if let Some(field_name) = &u.field {
                 fields.push(CtorField {
@@ -43,6 +61,12 @@ fn collect_ctor_fields(blox_config: &BloxConfig) -> Vec<CtorField> {
         for f in &context.fields {
             if f.role.as_deref() == Some("state") {
                 continue;
+            }
+            // Skip fields whose feature is not enabled.
+            if let Some(feat) = &f.feature {
+                if !enabled.map(|s| s.contains(feat)).unwrap_or(false) {
+                    continue;
+                }
             }
 
             let is_self_id =
@@ -120,8 +144,13 @@ fn primary_message(blox_config: &BloxConfig) -> Option<(String, String)> {
 fn validate(
     config: &SystemConfig,
     blox_configs: &BTreeMap<String, BloxConfig>,
+    active_features: &BTreeMap<String, BTreeSet<String>>,
 ) -> anyhow::Result<()> {
     let actor_names: BTreeSet<String> = config.actors.iter().map(|a| a.name.clone()).collect();
+
+    // The supervisor is an implicit actor — its control_ref and notify_ref are
+    // available for injection via `source = "actor", actor = "supervisor"`.
+    let has_supervisor = !config.supervision.is_empty();
 
     for actor in &config.actors {
         if actor.kind.as_deref() == Some("timer") {
@@ -140,6 +169,10 @@ fn validate(
         for (field_name, source) in &actor.inject {
             if source.source == "actor" {
                 let src = source.actor.as_deref().unwrap_or("");
+                if src == "supervisor" && has_supervisor {
+                    // OK — implicit supervisor actor.
+                    continue;
+                }
                 if !actor_names.contains(src) {
                     anyhow::bail!(
                         "actor '{}' inject field '{}' references unknown actor '{}'",
@@ -157,17 +190,15 @@ fn validate(
             continue;
         }
         let blox_config = blox_configs.get(&actor.blox).unwrap();
-        let ctor_fields = collect_ctor_fields(blox_config);
+        let ctor_fields = collect_ctor_fields(blox_config, &actor.blox, active_features);
         let ctor_names: BTreeSet<String> = ctor_fields.iter().map(|f| f.name.clone()).collect();
 
         for (field_name, _) in &actor.inject {
             if !ctor_names.contains(field_name) {
-                anyhow::bail!(
-                    "actor '{}' inject field '{}' is not a constructor field of blox '{}'",
-                    actor.name,
-                    field_name,
-                    actor.blox
-                );
+                // The field may be feature-gated and the feature is not active.
+                // Silently skip — the injection targets a field that doesn't
+                // exist in the compiled struct when the feature is off.
+                continue;
             }
         }
 
@@ -198,8 +229,9 @@ fn validate(
 pub fn generate(
     config: &SystemConfig,
     blox_configs: &BTreeMap<String, BloxConfig>,
+    active_features: &BTreeMap<String, BTreeSet<String>>,
 ) -> anyhow::Result<String> {
-    validate(config, blox_configs)?;
+    validate(config, blox_configs, active_features)?;
 
     let is_tokio = config.system.runtime == "tokio";
     let is_embassy = config.system.runtime == "embassy";
@@ -364,12 +396,18 @@ pub fn generate(
             )
         })?;
 
-        // Collect all non-feature-gated mailboxes (or all if no feature filtering).
-        // For the pool demo, both mailboxes are always present.
+        // Collect mailboxes, respecting feature gates.
+        // A mailbox is included when:
+        //   - it has no feature gate, OR
+        //   - its feature is enabled in the app's Cargo.toml for this blox.
+        let enabled = active_features.get(&actor.blox);
         let mailboxes: Vec<_> = event
             .mailboxes
             .iter()
-            .filter(|m| m.feature.is_none())
+            .filter(|m| match &m.feature {
+                None => true,
+                Some(feat) => enabled.map(|s| s.contains(feat)).unwrap_or(false),
+            })
             .collect();
 
         if mailboxes.is_empty() {
@@ -683,7 +721,7 @@ pub fn generate(
         let ctx_var_ident = format_ident!("{}_ctx", actor.name);
         let id_ident = format_ident!("{}_id", actor.name);
 
-        let ctor_fields = collect_ctor_fields(blox_config);
+        let ctor_fields = collect_ctor_fields(blox_config, &actor.blox, active_features);
         let mut ctor_args = Vec::new();
         for field in &ctor_fields {
             if field.is_self_id {
@@ -701,18 +739,6 @@ pub fn generate(
                     // and named after this inject field name.
                     let ref_ident = format_ident!("{}", field.name);
                     ctor_args.push(quote! { #ref_ident.clone() });
-                } else if source.source == "supervisor_spawn" {
-                    // Removed in spawn-architecture-v2 — dynamic spawning is now
-                    // handled via factory injection in the blox's context.
-                    // If you see this error, update your system.toml to use
-                    // `source = "actor"` with the supervisor's control ref instead.
-                    anyhow::bail!(
-                        "actor '{}' inject field '{}' uses source = 'supervisor_spawn' \
-                         which was removed in spawn-architecture-v2. \
-                         Use source = \"actor\" with actor = \"supervisor\" instead.",
-                        actor.name,
-                        field.name
-                    );
                 } else if source.source == "factory" {
                     let factory_crate = source.crate_name.as_deref().ok_or_else(|| {
                         anyhow::anyhow!(

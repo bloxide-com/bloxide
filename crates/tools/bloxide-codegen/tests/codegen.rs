@@ -1705,7 +1705,6 @@ children = ["ping", "pong"]
     assert_eq!(timer.blox, "bloxide-timer");
     assert!(timer.behavior.is_none());
     assert!(timer.inject.is_empty());
-    assert!(timer.spawn_factory.is_none());
 
     // Ping actor — has behavior, traits, and 3 inject entries
     let ping = &config.actors[1];
@@ -1790,31 +1789,6 @@ behavior_traits = ["HasCurrentTask", "HasWorkerPeers"]
 }
 
 #[test]
-fn test_parse_system_toml_spawn_factory() {
-    // Pool actor with spawn factory for dynamic worker spawning.
-    let toml = r#"
-[system]
-runtime = "tokio"
-
-[[actors]]
-name = "pool"
-blox = "pool-blox"
-
-  [actors.spawn_factory]
-  crate = "tokio_pool_demo_impl"
-  function = "spawn_worker_tokio"
-"#;
-
-    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
-    let pool = &config.actors[0];
-    assert_eq!(pool.name, "pool");
-
-    let factory = pool.spawn_factory.as_ref().expect("spawn_factory missing");
-    assert_eq!(factory.crate_name, "tokio_pool_demo_impl");
-    assert_eq!(factory.function, "spawn_worker_tokio");
-}
-
-#[test]
 fn test_parse_system_toml_embassy_runtime() {
     // Runtime selection: embassy.
     let toml = r#"
@@ -1883,7 +1857,6 @@ blox = "bloxide-timer"
     assert!(timer.behavior.is_none());
     assert!(timer.behavior_traits.is_empty());
     assert!(timer.inject.is_empty());
-    assert!(timer.spawn_factory.is_none());
 }
 
 #[test]

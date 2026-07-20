@@ -251,7 +251,7 @@ pub struct ContextFieldConfig {
     pub feature: Option<String>,
     /// `#[provides(TraitPath)]` annotation for the BloxCtx derive macro.
     /// Generates `impl TraitPath for Struct` that returns `&self.field`.
-    /// May include associated type bindings: `"HasSpawnFactory<R>, type Factory = F"`.
+    /// May include associated type bindings: `"SomeTrait<R>, type Assoc = T"`.
     #[serde(default)]
     pub provides: Option<String>,
     /// `#[provides_mut(TraitPath, method_name)]` annotation for BloxCtx.
@@ -507,14 +507,6 @@ pub struct ActorInstance {
     /// ```
     #[serde(default)]
     pub inject: BTreeMap<String, InjectSource>,
-    /// Spawn factory for dynamic actors.
-    ///
-    /// ```toml
-    /// [actors.spawn_factory]
-    /// crate = "tokio_pool_demo_impl"
-    /// function = "spawn_worker_tokio"
-    /// ```
-    pub spawn_factory: Option<SpawnFactoryConfig>,
 }
 
 /// A value in `[actors.inject]` — where a constructor param's handle comes from.
@@ -550,16 +542,6 @@ pub struct InjectSource {
     pub index: Option<usize>,
 }
 
-/// `[actors.spawn_factory]` — dynamic spawn factory reference.
-#[derive(Debug, Deserialize, Clone)]
-pub struct SpawnFactoryConfig {
-    /// Crate that provides the factory function (e.g. `"tokio_pool_demo_impl"`).
-    #[serde(rename = "crate")]
-    pub crate_name: String,
-    /// Factory function path (e.g. `"spawn_worker_tokio"`).
-    pub function: String,
-}
-
 /// A `[[supervision]]` entry — one supervisor group.
 #[derive(Debug, Deserialize, Clone)]
 pub struct SupervisionConfig {
@@ -580,45 +562,6 @@ pub struct SupervisionConfig {
     pub policies: BTreeMap<String, ChildPolicyConfig>,
     /// Optional health-check interval in milliseconds.
     pub health_check_interval_ms: Option<u64>,
-    /// Spawn factory for dynamic actor spawning.
-    ///
-    /// ```toml
-    /// factory = { crate = "tokio_pool_demo_impl", type = "AppSpawnFactory" }
-    /// ```
-    ///
-    /// When present, the wiring codegen:
-    /// 1. Creates a spawn request channel (typed by the factory's `Request` assoc type)
-    /// 2. Wires the tx side to the child actor's `spawn_ref` constructor field
-    /// 3. Wires the rx side to the supervisor's third mailbox (Spawn)
-    /// 4. Constructs the factory struct and passes it to `SupervisorCtx::new` as the 4th arg
-    /// 5. Uses `SupervisorMailboxes` with 3 streams instead of the 2-stream tuple
-    #[serde(default)]
-    pub factory: Option<SupervisionFactoryConfig>,
-}
-
-/// Spawn factory configuration in a `[[supervision]]` entry.
-#[derive(Debug, Deserialize, Clone)]
-pub struct SupervisionFactoryConfig {
-    /// Crate that provides the factory type (e.g. `"tokio_pool_demo_impl"`).
-    #[serde(rename = "crate")]
-    pub crate_name: String,
-    /// Factory type name (e.g. `"AppSpawnFactory"`).
-    pub r#type: String,
-    /// Spawn request message type (e.g. `"AppSpawnRequest<R>"`).
-    /// The `<R>` generic is substituted with the concrete runtime type.
-    /// Used to type the spawn channel.
-    pub request_type: String,
-    /// Constructor arguments for the factory, keyed by the factory's
-    /// constructor field name. Each value is an `InjectSource` that
-    /// resolves to a concrete expression (e.g. `pool_ref` via
-    /// `source = "actor"`).
-    ///
-    /// ```toml
-    /// [supervision.factory.args]
-    /// pool_ref = { source = "actor", actor = "pool" }
-    /// ```
-    #[serde(default)]
-    pub args: BTreeMap<String, InjectSource>,
 }
 
 /// A value in `[supervision.policies]` — restart or stop policy for a child.

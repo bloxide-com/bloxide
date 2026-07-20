@@ -383,7 +383,7 @@ fn parse_provides_args(attr: &syn::Attribute) -> Result<(TokenStream, Vec<AssocT
     // `type Name = Ty` bindings, all comma-separated.
     let (trait_tokens, assoc_types) = syn::parse::Parser::parse2(
         |input: syn::parse::ParseStream| {
-            // First: trait path (e.g. HasSpawnFactory<R>)
+            // First: trait path (e.g. SomeTrait<R>)
             let trait_path: syn::Path = input.parse()?;
             let trait_tokens = quote!( #trait_path );
 

@@ -2,19 +2,21 @@
 //! Pool action functions.
 use blox_ctx_workers::HasWorkers;
 use bloxide_core::{capability::BloxRuntime, transition::ActionResult, HasSelfId};
-use bloxide_supervisor_context::spawn_supervised_child;
-use pool_actions::actions::introduce_new_worker;
-use pool_messages::{DoWork, PoolMsg, SpawnRequest, SpawnWorker, WorkerMsg};
+use pool_messages::PoolMsg;
 
 use crate::{PoolCtx, PoolEvent};
 
+// Dynamic-only imports and action functions.
+#[cfg(feature = "dynamic")]
+use bloxide_supervisor_context::spawn_supervised_child;
+#[cfg(feature = "dynamic")]
+use pool_actions::actions::introduce_new_worker;
+#[cfg(feature = "dynamic")]
+use pool_messages::{DoWork, SpawnRequest, SpawnWorker, WorkerMsg};
+
 /// Handle a SpawnWorker request: call the spawn helper to create a child,
 /// then transition to the Spawning state to wait for the reply.
-///
-/// The Pool owns the `spawn_fn` (fn pointer) and the supervisor's
-/// `spawn_ref` (control mailbox) + `notify_ref` (child-notify mailbox).
-/// `spawn_supervised_child` calls the fn, then sends `RegisterDynamicChild`
-/// to the supervisor's control mailbox.
+#[cfg(feature = "dynamic")]
 pub fn handle_spawn_worker<R: BloxRuntime>(
     ctx: &mut PoolCtx<R>,
     ev: &PoolEvent<R>,
@@ -49,6 +51,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
 
 /// Buffer a SpawnWorker request while already in Spawning state.
 /// The task_id is queued and will be processed after the current spawn reply arrives.
+#[cfg(feature = "dynamic")]
 pub fn handle_spawn_worker_queued<R: BloxRuntime>(
     ctx: &mut PoolCtx<R>,
     ev: &PoolEvent<R>,
@@ -66,6 +69,7 @@ pub fn handle_spawn_worker_queued<R: BloxRuntime>(
 
 /// Handle a SpawnedWorker reply: store the worker refs, introduce peers,
 /// send DoWork, and transition to Active (or back to Spawning if queue is non-empty).
+#[cfg(feature = "dynamic")]
 pub fn handle_spawned_worker<R: BloxRuntime>(
     ctx: &mut PoolCtx<R>,
     ev: &PoolEvent<R>,

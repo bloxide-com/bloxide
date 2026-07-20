@@ -13,7 +13,7 @@ pub mod util;
 pub mod wiring;
 
 use schema::{BloxConfig, SystemConfig};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 /// Generate all artifacts from a parsed `BloxConfig`.
@@ -170,6 +170,11 @@ pub fn generate_to_dir(
 /// Reads the system.toml at `system_path`, discovers all blox.toml files in the
 /// workspace, parses them into BloxConfig entries, and calls
 /// `system_wiring::generate` to produce the main.rs content.
+///
+/// Feature awareness: reads the Cargo.toml in the same directory as
+/// `system_path` to determine which Cargo features are enabled on each blox
+/// dependency. Feature-gated context fields whose feature is not active are
+/// silently skipped during wiring — the system.toml is feature-agnostic.
 pub fn generate_system_wiring_from_toml(
     system_path: &Path,
     workspace_root: &Path,
@@ -217,6 +222,55 @@ pub fn generate_system_wiring_from_toml(
         }
     }
 
-    let generated = system_wiring::generate(&config, &blox_configs)?;
+    // Read the app's Cargo.toml to determine which features are enabled on
+    // each blox dependency. This lets collect_ctor_fields skip feature-gated
+    // fields that don't exist when the feature is off.
+    let active_features = read_app_cargo_features(system_path)?;
+
+    let generated = system_wiring::generate(&config, &blox_configs, &active_features)?;
     Ok(generated)
+}
+
+/// Parse the Cargo.toml in the same directory as `system_path` and extract
+/// the features enabled on each dependency.
+///
+/// Returns a map from crate name (e.g. `"pool-blox"`) to the set of enabled
+/// feature names (e.g. `{"std", "dynamic"}`).
+fn read_app_cargo_features(
+    system_path: &Path,
+) -> anyhow::Result<BTreeMap<String, BTreeSet<String>>> {
+    let cargo_toml_path = system_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("system.toml has no parent directory"))?
+        .join("Cargo.toml");
+
+    if !cargo_toml_path.exists() {
+        // No Cargo.toml — assume all features are enabled (generous default).
+        return Ok(BTreeMap::new());
+    }
+
+    let content = std::fs::read_to_string(&cargo_toml_path)?;
+    let parsed: toml::Value = toml::from_str(&content)?;
+
+    let mut result = BTreeMap::new();
+
+    // Walk [dependencies] and [dev-dependencies] tables.
+    for section in ["dependencies", "dev-dependencies"] {
+        if let Some(deps) = parsed.get(section).and_then(|v| v.as_table()) {
+            for (crate_name, dep_value) in deps {
+                // Format: crate = { workspace = true, features = ["std", "dynamic"] }
+                if let Some(features) = dep_value.get("features").and_then(|f| f.as_array()) {
+                    let feature_set: BTreeSet<String> = features
+                        .iter()
+                        .filter_map(|f| f.as_str().map(|s| s.to_string()))
+                        .collect();
+                    if !feature_set.is_empty() {
+                        result.insert(crate_name.clone(), feature_set);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(result)
 }

@@ -93,10 +93,46 @@ fn generate_variant(
         });
     }
 
+    // If the enum has generic type params but none of the variants use them
+    // (e.g. non-dynamic variant where the only R-using mailbox is feature-gated
+    // away), add a PhantomData variant to satisfy the borrow checker.
+    let type_param_idents: Vec<String> = generics
+        .type_params()
+        .map(|tp| tp.ident.to_string())
+        .collect();
+    let any_msg_uses_generic = mailboxes.iter().any(|mb| {
+        let msg_ref = mb.message_path.as_deref().unwrap_or(&mb.message);
+        type_param_idents.iter().any(|ident| {
+            msg_ref.contains(&format!("<{ident}")) || msg_ref.contains(&format!("< {ident}"))
+        })
+    });
+    let phantom_marker = if !type_param_idents.is_empty() && !any_msg_uses_generic {
+        let phantom_ty = if type_param_idents.len() == 1 {
+            let id = format_ident!("{}", type_param_idents[0]);
+            quote! { ::core::marker::PhantomData<#id> }
+        } else {
+            let fields: Vec<_> = type_param_idents
+                .iter()
+                .map(|ident| {
+                    let id = format_ident!("{}", ident);
+                    quote! { #id }
+                })
+                .collect();
+            quote! { ::core::marker::PhantomData<(#(#fields),*)> }
+        };
+        Some(quote! {
+            /// Marker for unused generic type parameters.
+            _Phantom(#phantom_ty)
+        })
+    } else {
+        None
+    };
+
     let enum_def = quote! {
         #derive_attr
         pub enum #event_ident #generics {
-            #(#enum_variants),*
+            #(#enum_variants,)*
+            #phantom_marker
         }
     };
 
@@ -134,6 +170,12 @@ fn generate_variant(
             Self::#variant_ident(..) => #tag
         });
     }
+    // Add wildcard arm for _Phantom marker variant if present
+    if phantom_marker.is_some() {
+        event_tag_arms.push(quote! {
+            Self::_Phantom(..) => 0u8
+        });
+    }
 
     let event_tag_impl = quote! {
         impl #impl_generics ::bloxide_core::event_tag::EventTag for #event_ident #ty_generics #where_clause {
@@ -146,7 +188,8 @@ fn generate_variant(
         }
     };
 
-    // LifecycleEvent impl
+    // LifecycleEvent impl — wildcard _ arm handles all non-Lifecycle variants
+    // (including _Phantom if present)
     let lifecycle_impl = quote! {
         impl #impl_generics ::bloxide_core::event_tag::LifecycleEvent for #event_ident #ty_generics #where_clause {
             fn as_lifecycle_command(&self) -> ::core::option::Option<::bloxide_core::lifecycle::LifecycleCommand> {
@@ -222,35 +265,41 @@ fn generate_variant(
         }
     };
 
-    let body = quote! {
-        #(#use_statements)*
-        #enum_def
-        #(#from_impls)*
-        #from_lifecycle
-        #event_tag_impl
-        #lifecycle_impl
-        #impl_block
-    };
+    // Build a list of top-level items so #[cfg] can be applied to each one.
+    // Applying #[cfg] to a combined token stream only attaches it to the first
+    // item; we need it on every item (use, enum, impl, etc.).
+    let items: Vec<proc_macro2::TokenStream> = use_statements
+        .iter()
+        .map(|s| quote! { #s })
+        .chain(std::iter::once(quote! { #enum_def }))
+        .chain(from_impls.iter().map(|f| quote! { #f }))
+        .chain(std::iter::once(quote! { #from_lifecycle }))
+        .chain(std::iter::once(quote! { #event_tag_impl }))
+        .chain(std::iter::once(quote! { #lifecycle_impl }))
+        .chain(std::iter::once(quote! { #impl_block }))
+        .collect();
 
     Ok(match feature_cfg {
         Some(feat) => {
-            // Feature-gated variant of a paired set
-            quote! {
-                #[cfg(feature = #feat)]
-                #body
-            }
+            // Feature-gated variant — wrap each item in #[cfg(feature)]
+            let gated: Vec<_> = items
+                .iter()
+                .map(|item| quote! { #[cfg(feature = #feat)] #item })
+                .collect();
+            quote! { #(#gated)* }
         }
         None if config.feature.is_some() => {
-            // Non-feature variant of a paired set — wrap in cfg(not(...))
+            // Non-feature variant — wrap each item in #[cfg(not(feature))]
             let feat_name = config.feature.as_deref().unwrap_or("dynamic");
-            quote! {
-                #[cfg(not(feature = #feat_name))]
-                #body
-            }
+            let gated: Vec<_> = items
+                .iter()
+                .map(|item| quote! { #[cfg(not(feature = #feat_name))] #item })
+                .collect();
+            quote! { #(#gated)* }
         }
         None => {
-            // Single-variant mode — no feature gating at all, no cfg wrapper
-            body
+            // Single-variant mode — no feature gating
+            quote! { #(#items)* }
         }
     })
 }

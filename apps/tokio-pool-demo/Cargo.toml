@@ -10,7 +10,7 @@ bloxide-core       = { workspace = true, features = ["std"] }
 bloxide-tokio      = { workspace = true }
 bloxide-log        = { workspace = true, features = ["log"] }
 bloxide-supervisor = { workspace = true, features = ["std"] }
-pool-blox          = { workspace = true }
+pool-blox          = { workspace = true, features = ["std", "dynamic"] }
 pool-messages      = { workspace = true }
 pool-actions       = { workspace = true }
 worker-blox        = { workspace = true }

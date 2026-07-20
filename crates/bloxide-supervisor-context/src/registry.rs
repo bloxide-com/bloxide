@@ -7,7 +7,7 @@
 
 use alloc::vec::Vec;
 use bloxide_core::{
-    capability::BloxRuntime,
+    capability::{BloxRuntime, KillCapability},
     lifecycle::LifecycleCommand,
     messaging::{ActorId, ActorRef},
 };
@@ -44,6 +44,12 @@ struct ChildEntry<R: BloxRuntime> {
     stopped: bool,
     phase: ChildPhase,
     awaiting_alive: bool,
+    /// Kill capability mailbox (send side). `None` for static children
+    /// registered via `RegisterChild` (no kill capability).
+    kill_ref: Option<ActorRef<KillCommand, R>>,
+    /// Task handle for external abort. `None` for static children.
+    /// Consumed by `R::Kill::kill(handle)` when the kill policy fires.
+    task_handle: Option<<R::Kill as KillCapability<R>>::Handle>,
 }
 
 pub struct ChildGroup<R: BloxRuntime> {
@@ -101,6 +107,36 @@ impl<R: BloxRuntime> ChildGroup<R> {
             stopped: false,
             phase: ChildPhase::Init,
             awaiting_alive: false,
+            kill_ref: None,
+            task_handle: None,
+        });
+    }
+
+    /// Register a dynamically spawned child that has a kill capability.
+    ///
+    /// Stores the `kill_ref` so the supervisor can send `KillCommand::Kill`
+    /// when `ChildPolicy::Kill` fires. The `task_handle` ripcord is not
+    /// available through this path — the action function receives `&Event`
+    /// and `JoinHandle<()>` is not `Clone`, so the handle cannot be moved
+    /// out. The kill mailbox (fast path) is fully functional.
+    pub fn add_dynamic(
+        &mut self,
+        id: ActorId,
+        lifecycle_ref: ActorRef<LifecycleCommand, R>,
+        kill_ref: ActorRef<KillCommand, R>,
+        policy: ChildPolicy,
+    ) {
+        self.children.push(ChildEntry {
+            id,
+            lifecycle_ref,
+            policy,
+            restarts: 0,
+            permanently_done: false,
+            stopped: false,
+            phase: ChildPhase::Init,
+            awaiting_alive: false,
+            kill_ref: Some(kill_ref),
+            task_handle: None,
         });
     }
 
@@ -171,13 +207,35 @@ impl<R: BloxRuntime> ChildGroup<R> {
             return ChildAction::Continue;
         }
 
-        // Handle Kill policy - the KillCommand mailbox + task_handle ripcord
-        // will be added to ChildEntry in a later step. For now, Kill policy
-        // is treated as Stop (clean shutdown).
+        // Handle Kill policy: send KillCommand on kill_ref (fast path) and
+        // call R::Kill::kill(task_handle) (the ripcord). This immediately
+        // terminates the child — no callbacks fire, no graceful shutdown.
         if policy == ChildPolicy::Kill {
-            // TODO (spec 22 Step 2/6): send KillCommand on kill_ref and
-            // call R::Kill::kill(task_handle). For now, fall through to
-            // permanent-done behavior.
+            // Take the task_handle out — kill() consumes it by value.
+            let task_handle = self.children[idx].task_handle.take();
+            if let Some(handle) = task_handle {
+                R::Kill::kill(handle);
+            }
+
+            // Send KillCommand on the kill mailbox (fast path — the child's
+            // task may self-terminate on receipt before the ripcord fires).
+            if let Some(kill_ref) = &self.children[idx].kill_ref {
+                if kill_ref
+                    .try_send(from, KillCommand::Kill { child_id })
+                    .is_err()
+                {
+                    bloxide_log::blox_log_warn!(
+                        from,
+                        "try_send KillCommand::Kill to child {} failed (channel full)",
+                        self.children[idx].id
+                    );
+                }
+            }
+
+            self.children[idx].permanently_done = true;
+            self.children[idx].phase = ChildPhase::PermanentlyDone;
+            self.children[idx].awaiting_alive = false;
+            return self.check_shutdown();
         }
 
         if let ChildPolicy::Restart { max } = policy {

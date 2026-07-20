@@ -13,6 +13,10 @@ std = [
     "bloxide-core/std",
     "pool-actions/std",
 ]
+# Dynamic spawning support: gates spawn_fn, spawn_ref, notify_ref, and
+# spawn-related transitions. The Pool is the example of a conditionally-
+# dynamic blox — without this feature it compiles but cannot spawn workers.
+dynamic = []
 
 [dependencies]
 bloxide-core    = { workspace = true, features = ["alloc"] }

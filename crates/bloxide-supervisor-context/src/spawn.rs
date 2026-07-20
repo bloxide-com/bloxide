@@ -3,12 +3,8 @@
 //!
 //! The managing blox (supervisor or custom) needs a reference to the
 //! child-event mailbox so spawned children can report lifecycle events back.
-//!
-//! All spawn-factory types (`SpawnFactory`, `HasSpawnFactory`,
-//! `NoSpawnFactory`, `NoSpawnRequest`, `SpawnPolicy`, `SpawnOutput`) have
-//! been removed. Spawning is now decoupled from the supervisor — see
-//! `bloxide_core::spawn` for `SpawnOutput`, `ChildRegistrar`, and the
-//! `spawn_child` generic helper.
+//! Spawning is decoupled from the supervisor — see `bloxide_core::spawn`
+//! for `SpawnOutput`, `ChildRegistrar`, and the `spawn_child` generic helper.
 
 use bloxide_core::{
     capability::BloxRuntime, lifecycle::ChildLifecycleEvent, messaging::ActorRef, spawn::SpawnFn,

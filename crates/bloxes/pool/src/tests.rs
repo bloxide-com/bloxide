@@ -7,7 +7,7 @@
 //!
 //! Run with: `cargo test -p pool-blox --features std`
 
-#[cfg(all(test, feature = "std"))]
+#[cfg(all(test, feature = "std", feature = "dynamic"))]
 mod pool_tests {
     use bloxide_core::child_management::ChildPolicy;
     use bloxide_core::lifecycle::ChildLifecycleEvent;
