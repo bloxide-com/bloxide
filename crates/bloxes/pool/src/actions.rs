@@ -2,13 +2,19 @@
 //! Pool action functions.
 use blox_ctx_workers::HasWorkers;
 use bloxide_core::{capability::BloxRuntime, transition::ActionResult, HasSelfId};
+use bloxide_supervisor_context::spawn_supervised_child;
 use pool_actions::actions::introduce_new_worker;
-use pool_messages::{AppSpawnRequest, DoWork, PoolMsg, SpawnWorker, WorkerMsg};
+use pool_messages::{DoWork, PoolMsg, SpawnRequest, SpawnWorker, WorkerMsg};
 
 use crate::{PoolCtx, PoolEvent};
 
-/// Handle a SpawnWorker request: send an AppSpawnRequest to the supervisor
-/// and transition to the Spawning state.
+/// Handle a SpawnWorker request: call the spawn helper to create a child,
+/// then transition to the Spawning state to wait for the reply.
+///
+/// The Pool owns the `spawn_fn` (fn pointer) and the supervisor's
+/// `spawn_ref` (control mailbox) + `notify_ref` (child-notify mailbox).
+/// `spawn_supervised_child` calls the fn, then sends `RegisterDynamicChild`
+/// to the supervisor's control mailbox.
 pub fn handle_spawn_worker<R: BloxRuntime>(
     ctx: &mut PoolCtx<R>,
     ev: &PoolEvent<R>,
@@ -17,16 +23,22 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
         bloxide_log::blox_log_info!(ctx.self_id(), "spawning worker for task_id={}", task_id);
         ctx.pending_task_id = *task_id;
         ctx.spawn_in_flight = true;
-        let req = AppSpawnRequest::Worker {
+        let req = SpawnRequest::Worker {
             task_id: *task_id,
             reply_to: ctx.spawn_reply_ref.clone(),
             pool_ref: ctx.self_ref.clone(),
         };
-        let self_id = ctx.self_id();
-        if ctx.spawn_ref.try_send(self_id, req).is_err() {
+        let result = spawn_supervised_child(
+            ctx.spawn_fn,
+            req,
+            &ctx.spawn_ref,
+            &ctx.notify_ref,
+            ctx.self_id(),
+        );
+        if result.is_err() {
             bloxide_log::blox_log_warn!(
-                self_id,
-                "spawn mailbox full, dropping task_id={}",
+                ctx.self_id(),
+                "spawn failed (supervisor control mailbox full), dropping task_id={}",
                 task_id
             );
             ctx.spawn_in_flight = false;
@@ -100,16 +112,22 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
             );
             ctx.pending_task_id = next_task_id;
             ctx.spawn_in_flight = true;
-            let req = AppSpawnRequest::Worker {
+            let req = SpawnRequest::Worker {
                 task_id: next_task_id,
                 reply_to: ctx.spawn_reply_ref.clone(),
                 pool_ref: ctx.self_ref.clone(),
             };
-            let self_id = ctx.self_id();
-            if ctx.spawn_ref.try_send(self_id, req).is_err() {
+            let result = spawn_supervised_child(
+                ctx.spawn_fn,
+                req,
+                &ctx.spawn_ref,
+                &ctx.notify_ref,
+                ctx.self_id(),
+            );
+            if result.is_err() {
                 bloxide_log::blox_log_warn!(
-                    self_id,
-                    "spawn mailbox full, dropping queued task_id={}",
+                    ctx.self_id(),
+                    "spawn failed (supervisor control mailbox full), dropping queued task_id={}",
                     next_task_id
                 );
                 ctx.spawn_in_flight = false;

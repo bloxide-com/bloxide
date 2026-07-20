@@ -533,6 +533,13 @@ pub struct InjectSource {
     pub function: Option<String>,
     /// Name of the source actor when `source = "actor"`.
     pub actor: Option<String>,
+    /// Named ref selector when `source = "actor"`. Defaults to `"primary"`.
+    /// The codegen maintains a symbol table mapping `(actor, field)` to
+    /// variable idents. Common values: `"primary"` (default channel ref),
+    /// `"control"` (supervisor's control_ref), `"notify"` (supervisor's
+    /// notify_ref).
+    #[serde(default)]
+    pub field: Option<String>,
     /// Mailbox index for multi-mailbox actors (0-based).
     /// When absent, defaults to 0 (the primary mailbox).
     pub mailbox: Option<usize>,

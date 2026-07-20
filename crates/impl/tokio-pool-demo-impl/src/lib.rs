@@ -5,7 +5,7 @@
 //! that knows about concrete worker context/spec types and task spawning.
 //!
 //! Per spec 22 Step 5, the old `AppSpawnFactory` struct was replaced with a
-//! stateless `fn spawn_worker`. All state comes from the `AppSpawnRequest`
+//! stateless `fn spawn_worker`. All state comes from the `SpawnRequest`
 //! message — no captured struct fields.
 
 extern crate alloc;
@@ -21,7 +21,7 @@ use bloxide_core::{
 };
 use bloxide_tokio::{run_supervised_actor_with_kill, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasWorkerPeers};
-use pool_messages::{AppSpawnRequest, SpawnedWorker, WorkerCtrl, WorkerMsg};
+use pool_messages::{SpawnRequest, SpawnedWorker, WorkerCtrl, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
 
 /// Behavior type for Worker actors holding task state and peer list.
@@ -69,16 +69,16 @@ impl<R: BloxRuntime> HasWorkerPeers<R> for WorkerBehavior<R> {
 ///
 /// Creates a worker actor and returns the handles the supervisor needs.
 /// This is a plain function (not a trait impl) — the wiring layer passes
-/// it to `spawn_child()` as a `SpawnFn<R, AppSpawnRequest<R>>`.
+/// it to `spawn_child()` as a `SpawnFn<R, SpawnRequest<R>>`.
 ///
 /// All state comes from the request — `pool_ref` is in the message, not
 /// captured from a struct field.
 pub fn spawn_worker(
-    req: AppSpawnRequest<TokioRuntime>,
+    req: SpawnRequest<TokioRuntime>,
     notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
 ) -> SpawnOutput<TokioRuntime> {
     match req {
-        AppSpawnRequest::Worker {
+        SpawnRequest::Worker {
             task_id: _,
             reply_to,
             pool_ref,

@@ -453,6 +453,167 @@ pub fn generate(
 
     // (Factory construction removed — see spawn-architecture-v2.)
 
+    // ── Supervisor phase 1: create builders, extract refs ──────────────────
+    //
+    // The supervisor's control_ref and notify_ref must be available BEFORE
+    // context construction so actors (e.g. the Pool) can inject them.
+    // Children are added in phase 2 (after machine construction).
+    //
+    // Symbol table: maps (actor_name, field_name) → variable ident.
+    // - (supervisor, "primary") → {supervisor}_ref (not used, but registered)
+    // - (supervisor, "control") → extracted control_ref from ChildGroupBuilder
+    // - (supervisor, "notify")  → extracted notify_ref from ChildGroupBuilder
+    let mut symbol_table: BTreeMap<(String, String), String> = BTreeMap::new();
+    let mut supervisor_setup_stmts = Vec::new();
+    let mut supervisor_finish_stmts = Vec::new();
+    let mut root_task_decls = Vec::new();
+
+    for (idx, sup) in config.supervision.iter().enumerate() {
+        let group_ident = if config.supervision.len() == 1 {
+            format_ident!("group")
+        } else {
+            format_ident!("group_{}", idx)
+        };
+        let sup_ctx_ident = if config.supervision.len() == 1 {
+            format_ident!("sup_ctx")
+        } else {
+            format_ident!("sup_ctx_{}", idx)
+        };
+        let sup_machine_ident = if config.supervision.len() == 1 {
+            format_ident!("sup_machine")
+        } else {
+            format_ident!("sup_machine_{}", idx)
+        };
+        let sup_notify_rx_ident = if config.supervision.len() == 1 {
+            format_ident!("sup_notify_rx")
+        } else {
+            format_ident!("sup_notify_rx_{}", idx)
+        };
+        let sup_control_rx_ident = if config.supervision.len() == 1 {
+            format_ident!("sup_control_rx")
+        } else {
+            format_ident!("sup_control_rx_{}", idx)
+        };
+        let sup_id_ident = if config.supervision.len() == 1 {
+            format_ident!("sup_id")
+        } else {
+            format_ident!("sup_id_{}", idx)
+        };
+        let task_ident = if config.supervision.len() == 1 {
+            format_ident!("supervisor_task")
+        } else {
+            format_ident!("supervisor_task_{}", idx)
+        };
+        let control_ref_ident = format_ident!("sup_control_ref_{}", idx);
+        let notify_ref_ident = format_ident!("sup_notify_ref_{}", idx);
+
+        // Map strategy to GroupShutdown.
+        let shutdown_strategy = if sup.strategy == "all_for_one" {
+            quote! { GroupShutdown::WhenAllDone }
+        } else {
+            quote! { GroupShutdown::WhenAnyDone }
+        };
+
+        // Phase 1: create builder + extract control_ref and notify_ref.
+        supervisor_setup_stmts.push(quote! {
+            let mut #group_ident = ChildGroupBuilder::new(#shutdown_strategy);
+            let #control_ref_ident = #group_ident.control_ref();
+            let #notify_ref_ident = #group_ident.notify_ref();
+        });
+
+        // Register refs in symbol table.
+        // The supervisor actor name comes from the supervision entry —
+        // we use "supervisor" as the canonical name (matching the system.toml
+        // `actor = "supervisor"` convention).
+        let sup_name = "supervisor".to_string();
+        symbol_table.insert(
+            (sup_name.clone(), "control".to_string()),
+            control_ref_ident.to_string(),
+        );
+        symbol_table.insert(
+            (sup_name.clone(), "notify".to_string()),
+            notify_ref_ident.to_string(),
+        );
+
+        // Phase 2: add children, finish, construct supervisor (after machines).
+        for child_name in &sup.children {
+            let child_actor = config
+                .actors
+                .iter()
+                .find(|a| &a.name == child_name)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("supervision child '{}' not declared", child_name)
+                })?;
+            let child_mbox_ident = format_ident!("{}_mbox", child_actor.name);
+            let child_id_ident = format_ident!("{}_id", child_actor.name);
+            let child_machine_ident = format_ident!("{}_machine", child_actor.name);
+            let child_task_ident = format_ident!("{}_task", child_actor.name);
+
+            let policy = if let Some(policy_config) = sup.policies.get(child_name) {
+                if let Some(restart) = &policy_config.restart {
+                    let max = restart.max;
+                    quote! { ChildPolicy::Restart { max: #max as usize } }
+                } else if policy_config.stop == Some(true) {
+                    quote! { ChildPolicy::Stop }
+                } else {
+                    quote! { ChildPolicy::Stop }
+                }
+            } else {
+                quote! { ChildPolicy::Stop }
+            };
+
+            if is_tokio {
+                supervisor_finish_stmts.push(quote! {
+                    ::#runtime_crate_ident::spawn_child!(
+                        #group_ident,
+                        #child_task_ident(#child_machine_ident, #child_mbox_ident, #child_id_ident),
+                        #policy
+                    );
+                });
+            } else {
+                supervisor_finish_stmts.push(quote! {
+                    ::#runtime_crate_ident::spawn_child!(
+                        spawner,
+                        #group_ident,
+                        #child_task_ident(#child_machine_ident, #child_mbox_ident, #child_id_ident),
+                        #policy
+                    );
+                });
+            }
+        }
+
+        supervisor_finish_stmts.push(quote! {
+            let #sup_id_ident = ::#runtime_crate_ident::next_actor_id!();
+            let (children, #sup_notify_rx_ident, #sup_control_rx_ident) = #group_ident.finish();
+        });
+
+        let supervisor_spec_path: syn::Path =
+            syn::parse_str("::bloxide_supervisor::supervisor::SupervisorSpec")
+                .expect("valid supervisor spec path");
+        let supervisor_ctx_path: syn::Path =
+            syn::parse_str("::bloxide_supervisor::supervisor::SupervisorCtx")
+                .expect("valid supervisor ctx path");
+        let supervisor_event_path: syn::Path =
+            syn::parse_str("::bloxide_supervisor::event::SupervisorEvent")
+                .expect("valid supervisor event path");
+
+        supervisor_finish_stmts.push(quote! {
+            let #sup_ctx_ident = #supervisor_ctx_path::new(children, #sup_id_ident, #notify_ref_ident);
+            let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident>>::new(#sup_ctx_ident);
+            #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident>::Lifecycle(LifecycleCommand::Start));
+        });
+
+        if is_tokio {
+            root_task_decls.push(quote! {
+                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
+            });
+        } else {
+            root_task_decls.push(quote! {
+                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>, std::process::exit(0));
+            });
+        }
+    }
+
     // ── Actor task declarations (file level) ──────────────────────────────
     let mut task_decls = Vec::new();
     for actor in &config.actors {
@@ -578,8 +739,26 @@ pub fn generate(
                             field.name
                         )
                     })?;
-                    let ref_ident = format_ident!("{}_ref", src_actor);
-                    ctor_args.push(quote! { #ref_ident.clone() });
+                    let field_selector = source.field.as_deref().unwrap_or("primary");
+                    if field_selector == "primary" {
+                        // Default: inject the actor's primary channel ref.
+                        let ref_ident = format_ident!("{}_ref", src_actor);
+                        ctor_args.push(quote! { #ref_ident.clone() });
+                    } else {
+                        // Named ref: look up in symbol table (e.g. supervisor's
+                        // "control" or "notify" refs).
+                        let sym = symbol_table
+                            .get(&(src_actor.to_string(), field_selector.to_string()))
+                            .ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "actor '{}' has no ref '{}'",
+                                    src_actor,
+                                    field_selector
+                                )
+                            })?;
+                        let ref_ident = format_ident!("{}", sym);
+                        ctor_args.push(quote! { #ref_ident.clone() });
+                    }
                 } else {
                     anyhow::bail!(
                         "actor '{}' inject field '{}' has unsupported source '{}'",
@@ -607,148 +786,6 @@ pub fn generate(
         machine_stmts.push(quote! {
             let #machine_ident = ::bloxide_core::StateMachine::new(#ctx_var_ident);
         });
-    }
-
-    // ── Supervisor wiring ───────────────────────────────────────────────────
-    let mut supervisor_stmts = Vec::new();
-    let mut root_task_decls = Vec::new();
-
-    for (idx, sup) in config.supervision.iter().enumerate() {
-        let group_ident = if config.supervision.len() == 1 {
-            format_ident!("group")
-        } else {
-            format_ident!("group_{}", idx)
-        };
-        let sup_ctx_ident = if config.supervision.len() == 1 {
-            format_ident!("sup_ctx")
-        } else {
-            format_ident!("sup_ctx_{}", idx)
-        };
-        let sup_machine_ident = if config.supervision.len() == 1 {
-            format_ident!("sup_machine")
-        } else {
-            format_ident!("sup_machine_{}", idx)
-        };
-        let sup_notify_rx_ident = if config.supervision.len() == 1 {
-            format_ident!("sup_notify_rx")
-        } else {
-            format_ident!("sup_notify_rx_{}", idx)
-        };
-        let sup_control_rx_ident = if config.supervision.len() == 1 {
-            format_ident!("sup_control_rx")
-        } else {
-            format_ident!("sup_control_rx_{}", idx)
-        };
-        let sup_id_ident = if config.supervision.len() == 1 {
-            format_ident!("sup_id")
-        } else {
-            format_ident!("sup_id_{}", idx)
-        };
-        let task_ident = if config.supervision.len() == 1 {
-            format_ident!("supervisor_task")
-        } else {
-            format_ident!("supervisor_task_{}", idx)
-        };
-        let control_ref_ident = format_ident!("_sup_control_ref_{}", idx);
-        let notify_ident = format_ident!("sup_notify_{}", idx);
-
-        // Map strategy to GroupShutdown.
-        // "one_for_one" / "one_for_all" / "rest_for_one" → WhenAnyDone (shut down on first failure)
-        // "all_for_one" → WhenAllDone (wait for all children, including dynamic spawns, to finish)
-        let shutdown_strategy = if sup.strategy == "all_for_one" {
-            quote! { GroupShutdown::WhenAllDone }
-        } else {
-            quote! { GroupShutdown::WhenAnyDone }
-        };
-
-        supervisor_stmts.push(quote! {
-            let mut #group_ident = ChildGroupBuilder::new(
-                #shutdown_strategy,
-            );
-        });
-
-        for child_name in &sup.children {
-            let child_actor = config
-                .actors
-                .iter()
-                .find(|a| &a.name == child_name)
-                .ok_or_else(|| {
-                    anyhow::anyhow!("supervision child '{}' not declared", child_name)
-                })?;
-            let child_mbox_ident = format_ident!("{}_mbox", child_actor.name);
-            let child_id_ident = format_ident!("{}_id", child_actor.name);
-            let child_machine_ident = format_ident!("{}_machine", child_actor.name);
-            let child_task_ident = format_ident!("{}_task", child_actor.name);
-
-            let policy = if let Some(policy_config) = sup.policies.get(child_name) {
-                if let Some(restart) = &policy_config.restart {
-                    let max = restart.max;
-                    quote! { ChildPolicy::Restart { max: #max as usize } }
-                } else if policy_config.stop == Some(true) {
-                    quote! { ChildPolicy::Stop }
-                } else {
-                    quote! { ChildPolicy::Stop }
-                }
-            } else {
-                quote! { ChildPolicy::Stop }
-            };
-
-            if is_tokio {
-                supervisor_stmts.push(quote! {
-                    ::#runtime_crate_ident::spawn_child!(
-                        #group_ident,
-                        #child_task_ident(#child_machine_ident, #child_mbox_ident, #child_id_ident),
-                        #policy
-                    );
-                });
-            } else {
-                supervisor_stmts.push(quote! {
-                    ::#runtime_crate_ident::spawn_child!(
-                        spawner,
-                        #group_ident,
-                        #child_task_ident(#child_machine_ident, #child_mbox_ident, #child_id_ident),
-                        #policy
-                    );
-                });
-            }
-        }
-
-        supervisor_stmts.push(quote! {
-            let #control_ref_ident = #group_ident.control_ref();
-            let #notify_ident = #group_ident.notify_ref();
-            let #sup_id_ident = ::#runtime_crate_ident::next_actor_id!();
-            let (children, #sup_notify_rx_ident, #sup_control_rx_ident) = #group_ident.finish();
-        });
-
-        let supervisor_spec_path: syn::Path =
-            syn::parse_str("::bloxide_supervisor::supervisor::SupervisorSpec")
-                .expect("valid supervisor spec path");
-        let supervisor_ctx_path: syn::Path =
-            syn::parse_str("::bloxide_supervisor::supervisor::SupervisorCtx")
-                .expect("valid supervisor ctx path");
-        let supervisor_event_path: syn::Path =
-            syn::parse_str("::bloxide_supervisor::event::SupervisorEvent")
-                .expect("valid supervisor event path");
-
-        // Unified supervisor context + machine construction (no feature gating).
-        // SupervisorSpec<R> has no factory type parameter.
-        // SupervisorCtx::new(children, id, notify) has no factory argument.
-        supervisor_stmts.push(quote! {
-            let #sup_ctx_ident = #supervisor_ctx_path::new(children, #sup_id_ident, #notify_ident);
-            let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident>>::new(#sup_ctx_ident);
-            #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident>::Lifecycle(LifecycleCommand::Start));
-        });
-
-        // Unified root_task! declaration (no feature gating).
-        if is_tokio {
-            root_task_decls.push(quote! {
-                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
-            });
-        } else {
-            root_task_decls.push(quote! {
-                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>, std::process::exit(0));
-            });
-        }
     }
 
     // ── Supervisor run statements ───────────────────────────────────────────
@@ -850,9 +887,10 @@ pub fn generate(
 
                 #(#timer_stmts)*
                 #(#channel_stmts)*
+                #(#supervisor_setup_stmts)*
                 #(#ctx_stmts)*
                 #(#machine_stmts)*
-                #(#supervisor_stmts)*
+                #(#supervisor_finish_stmts)*
                 #(#bootstrap_send_stmts)*
                 #(#supervisor_run_stmts)*
                 println!(#done_lit);
@@ -870,9 +908,10 @@ pub fn generate(
             fn setup(spawner: ::embassy_executor::Spawner) {
                 #(#timer_stmts)*
                 #(#channel_stmts)*
+                #(#supervisor_setup_stmts)*
                 #(#ctx_stmts)*
                 #(#machine_stmts)*
-                #(#supervisor_stmts)*
+                #(#supervisor_finish_stmts)*
                 #(#bootstrap_send_stmts)*
                 #(#supervisor_run_stmts)*
                 println!(#done_lit);

@@ -6,7 +6,7 @@
 //! handle, and policy from a spawn operation. See spec/architecture/
 //! 22-spawn-architecture-v2.md §4.2, §4.4, §4.4a, §4.11.
 
-use crate::capability::{BloxRuntime, DynamicChannelCap, KillCapability, SpawnCap};
+use crate::capability::{BloxRuntime, KillCapability};
 use crate::child_management::{ChildPolicy, KillCommand};
 use crate::lifecycle::ChildLifecycleEvent;
 use crate::lifecycle::LifecycleCommand;
@@ -125,7 +125,7 @@ pub fn spawn_child<R, Req, C>(
     from: ActorId,
 ) -> Result<(), R::TrySendError>
 where
-    R: BloxRuntime + SpawnCap + DynamicChannelCap,
+    R: BloxRuntime,
     Req: Send + Clone + 'static,
     C: ChildRegistrar<R>,
 {

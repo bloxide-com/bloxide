@@ -21,8 +21,11 @@ name = "PoolCtx"
 generics = "<R: BloxRuntime>"
 on_init = "ctx.worker_refs_mut().clear(); ctx.worker_ctrls_mut().clear(); ctx.set_pending(0); ctx.spawn_queue.clear(); ctx.spawn_in_flight = false;"
 imports = [
-    "pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg, AppSpawnRequest, SpawnedWorker}",
+    "pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg, SpawnRequest, SpawnedWorker}",
     "alloc::vec::Vec",
+    "bloxide_core::spawn::SpawnFn",
+    "bloxide_core::lifecycle::ChildLifecycleEvent",
+    "bloxide_supervisor_context::SupervisorControl",
 ]
 
 # Accessor trait from bloxide-messaging (2-param, requires #[provides])
@@ -59,13 +62,26 @@ impl_macro = "impl_has_workers"
 name = "self_id"
 ty = "ActorId"
 
-# Ref to the supervisor's spawn mailbox — Pool sends AppSpawnRequest here
+# Spawn function (fn pointer, provided at wiring time)
 [[context.fields]]
-name = "spawn_ref"
-ty = "ActorRef<AppSpawnRequest<R>, R>"
+name = "spawn_fn"
+ty = "SpawnFn<R, SpawnRequest<R>>"
 role = "ctor"
 
-# Ref to the Pool's own spawn-reply mailbox — included in AppSpawnRequest as reply_to
+# Ref to the supervisor's control mailbox — Pool sends RegisterDynamicChild here
+# (via the spawn_child helper, not directly)
+[[context.fields]]
+name = "spawn_ref"
+ty = "ActorRef<SupervisorControl<R>, R>"
+role = "ctor"
+
+# Ref to the supervisor's child-notify mailbox — passed to the spawn helper
+[[context.fields]]
+name = "notify_ref"
+ty = "ActorRef<ChildLifecycleEvent, R>"
+role = "ctor"
+
+# Ref to the Pool's own spawn-reply mailbox — included in SpawnRequest as reply_to
 [[context.fields]]
 name = "spawn_reply_ref"
 ty = "ActorRef<SpawnedWorker<R>, R>"

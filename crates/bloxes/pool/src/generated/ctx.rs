@@ -6,9 +6,12 @@ use ::bloxide_macros::BloxCtx;
 use alloc::vec::Vec;
 #[allow(unused_imports)]
 use blox_ctx_workers::{impl_has_workers, HasWorkers};
+use bloxide_core::lifecycle::ChildLifecycleEvent;
+use bloxide_core::spawn::SpawnFn;
 #[allow(unused_imports)]
 use bloxide_messaging::HasSelfRef;
-use pool_messages::{AppSpawnRequest, PoolMsg, SpawnedWorker, WorkerCtrl, WorkerMsg};
+use bloxide_supervisor_context::SupervisorControl;
+use pool_messages::{PoolMsg, SpawnRequest, SpawnedWorker, WorkerCtrl, WorkerMsg};
 #[derive(BloxCtx)]
 pub struct PoolCtx<R: BloxRuntime> {
     #[provides(HasSelfRef<R, PoolMsg>)]
@@ -18,7 +21,11 @@ pub struct PoolCtx<R: BloxRuntime> {
     pub pending: u32,
     pub self_id: ActorId,
     #[blox_ctx(skip)]
-    pub spawn_ref: ActorRef<AppSpawnRequest<R>, R>,
+    pub spawn_fn: SpawnFn<R, SpawnRequest<R>>,
+    #[blox_ctx(skip)]
+    pub spawn_ref: ActorRef<SupervisorControl<R>, R>,
+    #[blox_ctx(skip)]
+    pub notify_ref: ActorRef<ChildLifecycleEvent, R>,
     #[blox_ctx(skip)]
     pub spawn_reply_ref: ActorRef<SpawnedWorker<R>, R>,
     pub pending_task_id: u32,

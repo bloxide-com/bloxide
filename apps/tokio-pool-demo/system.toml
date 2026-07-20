@@ -9,6 +9,9 @@ blox = "pool-blox"
 
   [actors.inject]
   self_ref = { source = "self" }
+  spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "spawn_worker" }
+  spawn_ref = { source = "actor", actor = "supervisor", field = "control" }
+  notify_ref = { source = "actor", actor = "supervisor", field = "notify" }
   spawn_reply_ref = { source = "self_secondary", index = 1 }
 
   # Bootstrap: send 3 SpawnWorker messages to trigger Idle→Active→AllDone

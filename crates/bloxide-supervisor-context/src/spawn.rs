@@ -11,10 +11,7 @@
 //! `spawn_child` generic helper.
 
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap, SpawnCap},
-    lifecycle::ChildLifecycleEvent,
-    messaging::ActorRef,
-    spawn::SpawnFn,
+    capability::BloxRuntime, lifecycle::ChildLifecycleEvent, messaging::ActorRef, spawn::SpawnFn,
 };
 
 use crate::control::{SupervisorControl, SupervisorRegistrar};
@@ -42,7 +39,7 @@ pub fn spawn_supervised_child<R, Req>(
     from: bloxide_core::messaging::ActorId,
 ) -> Result<(), R::TrySendError>
 where
-    R: BloxRuntime + SpawnCap + DynamicChannelCap,
+    R: BloxRuntime,
     Req: Send + Clone + 'static,
 {
     bloxide_core::spawn::spawn_child::<R, Req, SupervisorRegistrar>(

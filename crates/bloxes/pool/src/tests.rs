@@ -9,6 +9,9 @@
 
 #[cfg(all(test, feature = "std"))]
 mod pool_tests {
+    use bloxide_core::child_management::ChildPolicy;
+    use bloxide_core::lifecycle::ChildLifecycleEvent;
+    use bloxide_core::spawn::{SpawnFn, SpawnOutput};
     use bloxide_core::test_utils::TestRuntime;
     use bloxide_core::{
         capability::{BloxRuntime, DynamicChannelCap},
@@ -17,8 +20,9 @@ mod pool_tests {
         spec::MachineSpec,
         Envelope, MachineState, StateMachine,
     };
+    use bloxide_supervisor_context::SupervisorControl;
     use pool_messages::{
-        AppSpawnRequest, PoolMsg, SpawnWorker, SpawnedWorker, WorkDone, WorkerCtrl, WorkerMsg,
+        PoolMsg, SpawnRequest, SpawnWorker, SpawnedWorker, WorkDone, WorkerCtrl, WorkerMsg,
     };
 
     use crate::{PoolCtx, PoolEvent, PoolSpec, PoolState};
@@ -27,8 +31,56 @@ mod pool_tests {
 
     struct PoolHarness {
         machine: StateMachine<PoolSpec<TestRuntime>>,
-        _spawn_rx: <TestRuntime as BloxRuntime>::Receiver<AppSpawnRequest<TestRuntime>>,
+        _control_rx: <TestRuntime as BloxRuntime>::Receiver<SupervisorControl<TestRuntime>>,
         _spawn_reply_ref: ActorRef<SpawnedWorker<TestRuntime>, TestRuntime>,
+    }
+
+    /// Dummy spawn function for tests.
+    ///
+    /// Creates channels for the worker, sends a `SpawnedWorker` reply on the
+    /// request's `reply_to` channel, and returns a `SpawnOutput` with the
+    /// lifecycle/kill refs. The actual worker task is not spawned — tests
+    /// only verify the Pool's state-machine transitions.
+    fn test_spawn_worker(
+        req: SpawnRequest<TestRuntime>,
+        _notify: ActorRef<ChildLifecycleEvent, TestRuntime>,
+    ) -> SpawnOutput<TestRuntime> {
+        match req {
+            SpawnRequest::Worker {
+                task_id: _,
+                reply_to,
+                pool_ref: _,
+            } => {
+                let worker_id = TestRuntime::alloc_actor_id();
+                let (domain_ref, _domain_rx) =
+                    <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
+                let (ctrl_ref, _ctrl_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+                    WorkerCtrl<TestRuntime>,
+                >(worker_id, 16);
+                let (lifecycle_ref, _lifecycle_rx) =
+                    <TestRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(worker_id, 4);
+                let (kill_ref, _kill_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+                    bloxide_core::child_management::KillCommand,
+                >(worker_id, 4);
+
+                let _ = reply_to.try_send(
+                    worker_id,
+                    SpawnedWorker {
+                        child_id: worker_id,
+                        domain_ref: domain_ref.clone(),
+                        ctrl_ref: ctrl_ref.clone(),
+                    },
+                );
+
+                SpawnOutput {
+                    child_id: worker_id,
+                    lifecycle_ref,
+                    kill_ref,
+                    task_handle: (),
+                    policy: ChildPolicy::Stop,
+                }
+            }
+        }
     }
 
     impl PoolHarness {
@@ -37,27 +89,34 @@ mod pool_tests {
             let (pool_ref, _pool_rx) =
                 <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
 
-            let spawn_id = TestRuntime::alloc_actor_id();
-            let (spawn_ref, spawn_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-                AppSpawnRequest<TestRuntime>,
-            >(spawn_id, 16);
+            let control_id = TestRuntime::alloc_actor_id();
+            let (control_ref, control_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+                SupervisorControl<TestRuntime>,
+            >(control_id, 16);
+
+            let notify_id = TestRuntime::alloc_actor_id();
+            let (notify_ref, _notify_rx) =
+                <TestRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(notify_id, 16);
 
             let reply_id = TestRuntime::alloc_actor_id();
             let (spawn_reply_ref, _reply_rx) = <TestRuntime as DynamicChannelCap>::channel::<
                 SpawnedWorker<TestRuntime>,
             >(reply_id, 16);
 
+            let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<TestRuntime>> = test_spawn_worker;
             let ctx = PoolCtx::new(
                 pool_ref.clone(),
                 pool_id,
-                spawn_ref,
+                spawn_fn,
+                control_ref,
+                notify_ref,
                 spawn_reply_ref.clone(),
             );
             let machine = StateMachine::<PoolSpec<TestRuntime>>::new(ctx);
 
             PoolHarness {
                 machine,
-                _spawn_rx: spawn_rx,
+                _control_rx: control_rx,
                 _spawn_reply_ref: spawn_reply_ref.clone(),
             }
         }
@@ -240,16 +299,28 @@ mod pool_tests {
         let (pool_ref, _pool_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
 
-        let spawn_id = TestRuntime::alloc_actor_id();
-        let (spawn_ref, _spawn_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-            AppSpawnRequest<TestRuntime>,
-        >(spawn_id, 16);
+        let control_id = TestRuntime::alloc_actor_id();
+        let (control_ref, _control_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+            SupervisorControl<TestRuntime>,
+        >(control_id, 16);
+
+        let notify_id = TestRuntime::alloc_actor_id();
+        let (notify_ref, _notify_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(notify_id, 16);
 
         let reply_id = TestRuntime::alloc_actor_id();
         let (spawn_reply_ref, _reply_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<SpawnedWorker<TestRuntime>>(reply_id, 16);
 
-        let ctx = PoolCtx::new(pool_ref.clone(), pool_id, spawn_ref, spawn_reply_ref);
+        let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<TestRuntime>> = test_spawn_worker;
+        let ctx = PoolCtx::new(
+            pool_ref.clone(),
+            pool_id,
+            spawn_fn,
+            control_ref,
+            notify_ref,
+            spawn_reply_ref,
+        );
         let mut machine = StateMachine::<PoolSpec<TestRuntime>>::new(ctx);
         machine.dispatch(PoolEvent::Lifecycle(LifecycleCommand::Start));
 
