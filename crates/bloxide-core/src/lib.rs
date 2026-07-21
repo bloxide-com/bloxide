@@ -20,6 +20,7 @@ pub mod mailboxes;
 pub mod messaging;
 pub mod prelude;
 pub mod spec;
+pub mod supervision;
 pub mod topology;
 pub mod transition;
 
@@ -32,12 +33,14 @@ pub use capability::{BloxRuntime, DynamicChannelCap, KillCapability, NoKill, Sta
 pub use engine::{DispatchOutcome, MachineState, StateMachine};
 pub use event_tag::{EventTag, LifecycleEvent, LIFECYCLE_TAG, WILDCARD_TAG};
 pub use lifecycle::{ChildLifecycleEvent, LifecycleCommand};
+pub use supervision::report_outcome;
 pub use mailboxes::{Mailboxes, NoMailboxes};
 pub use messaging::{ActorId, ActorRef, Envelope};
 pub use spec::{MachineSpec, StateFns};
 pub use topology::{LeafState, StateTopology};
 pub use transition::{ActionResult, ActionResults, Guard, StateRule};
-// Note: TransitionRule is an implementation detail. Use StateRule<S> as the public type.
+// Note: TransitionRule is public because StateRule is a type alias over it. Use
+// StateRule<S> in user code.
 
 // Re-export proc macros as canonical public API
 pub use bloxide_macros::next_actor_id;

@@ -1,12 +1,13 @@
 // Copyright 2025 Bloxide, all rights reserved
 use bloxide_child_management::{ChildGroup, ChildPolicy, GroupShutdown};
 use bloxide_core::{
-    capability::{BloxRuntime, StaticChannelCap},
-    engine::{DispatchOutcome, MachineState, StateMachine},
+    capability::StaticChannelCap,
+    engine::{DispatchOutcome, StateMachine},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     mailboxes::Mailboxes,
     messaging::{ActorId, ActorRef, Envelope},
     spec::MachineSpec,
+    report_outcome,
 };
 use core::future::poll_fn;
 use core::pin::Pin;
@@ -40,7 +41,7 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
                 Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
                 Poll::Ready(Some(Envelope(_, cmd))) => {
                     let outcome = handle_lifecycle_via_dispatch(&mut machine, cmd);
-                    report_outcome::<S>(&outcome, actor_id, &supervisor_notify);
+                    report_outcome::<S, EmbassyRuntime>(&outcome, actor_id, &supervisor_notify);
 
                     return match outcome {
                         DispatchOutcome::Stopped => Poll::Ready(LoopAction::Stop),
@@ -54,7 +55,7 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
             match domain_mailboxes.poll_next(cx) {
                 Poll::Ready(Some(event)) => {
                     let outcome = machine.dispatch(event);
-                    report_outcome::<S>(&outcome, actor_id, &supervisor_notify);
+                    report_outcome::<S, EmbassyRuntime>(&outcome, actor_id, &supervisor_notify);
                     Poll::Ready(LoopAction::Continue)
                 }
                 Poll::Ready(None) => Poll::Ready(LoopAction::Stop),
@@ -78,56 +79,6 @@ fn handle_lifecycle_via_dispatch<S: MachineSpec>(
     cmd: LifecycleCommand,
 ) -> DispatchOutcome<S::State> {
     machine.handle_lifecycle(cmd)
-}
-fn report_outcome<S: MachineSpec>(
-    outcome: &DispatchOutcome<S::State>,
-    actor_id: ActorId,
-    notify: &EmbassySender<ChildLifecycleEvent>,
-) {
-    let send = |event| {
-        if <EmbassyRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)).is_err()
-        {
-            bloxide_log::blox_log_warn!(
-                actor_id,
-                "failed to send lifecycle event to supervisor (channel full or closed)"
-            );
-        }
-    };
-
-    match outcome {
-        DispatchOutcome::Started(MachineState::State(s)) => {
-            if S::is_error(s) {
-                send(ChildLifecycleEvent::Failed { child_id: actor_id });
-            } else if S::is_terminal(s) {
-                send(ChildLifecycleEvent::Done { child_id: actor_id });
-            } else {
-                send(ChildLifecycleEvent::Started { child_id: actor_id });
-            }
-        }
-        DispatchOutcome::Transition(MachineState::State(s)) => {
-            if S::is_error(s) {
-                send(ChildLifecycleEvent::Failed { child_id: actor_id });
-            } else if S::is_terminal(s) {
-                send(ChildLifecycleEvent::Done { child_id: actor_id });
-            }
-        }
-        DispatchOutcome::Done(MachineState::State(_)) => {
-            send(ChildLifecycleEvent::Done { child_id: actor_id });
-        }
-        DispatchOutcome::Failed => {
-            send(ChildLifecycleEvent::Failed { child_id: actor_id });
-        }
-        DispatchOutcome::Stopped => {
-            send(ChildLifecycleEvent::Stopped { child_id: actor_id });
-        }
-        DispatchOutcome::Aborted => {
-            send(ChildLifecycleEvent::Aborted { child_id: actor_id });
-        }
-        DispatchOutcome::Alive => {
-            send(ChildLifecycleEvent::Alive { child_id: actor_id });
-        }
-        _ => {}
-    }
 }
 
 // ── ChildGroupBuilder ─────────────────────────────────────────────────────────
@@ -298,7 +249,7 @@ mod tests {
         let notify = notify_ref.sender();
         let actor_id: ActorId = 42;
 
-        report_outcome::<TestSpec>(
+        report_outcome::<TestSpec, EmbassyRuntime>(
             &DispatchOutcome::Started(MachineState::State(TestState::Done)),
             actor_id,
             &notify,

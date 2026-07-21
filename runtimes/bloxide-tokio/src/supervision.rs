@@ -1,13 +1,12 @@
 // Copyright 2025 Bloxide, all rights reserved
 use bloxide_child_management::AbortCommand;
-#[allow(unused_imports)]
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap},
-    engine::{DispatchOutcome, MachineState, StateMachine},
+    engine::{DispatchOutcome, StateMachine},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     mailboxes::Mailboxes,
     messaging::{ActorId, Envelope},
     spec::MachineSpec,
+    report_outcome,
 };
 use core::future::poll_fn;
 use core::pin::Pin;
@@ -41,7 +40,7 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
                 Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
                 Poll::Ready(Some(Envelope(_, cmd))) => {
                     let outcome = handle_lifecycle_direct(&mut machine, cmd);
-                    report_outcome::<S>(&outcome, actor_id, &supervisor_notify);
+                    report_outcome::<S, TokioRuntime>(&outcome, actor_id, &supervisor_notify);
 
                     return match outcome {
                         DispatchOutcome::Stopped => Poll::Ready(LoopAction::Stop),
@@ -55,7 +54,7 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
             match domain_mailboxes.poll_next(cx) {
                 Poll::Ready(Some(event)) => {
                     let outcome = machine.dispatch(event);
-                    report_outcome::<S>(&outcome, actor_id, &supervisor_notify);
+                    report_outcome::<S, TokioRuntime>(&outcome, actor_id, &supervisor_notify);
                     Poll::Ready(LoopAction::Continue)
                 }
                 Poll::Ready(None) => Poll::Ready(LoopAction::Stop),
@@ -79,56 +78,6 @@ pub fn handle_lifecycle_direct<S: MachineSpec>(
     cmd: LifecycleCommand,
 ) -> DispatchOutcome<S::State> {
     machine.handle_lifecycle(cmd)
-}
-
-fn report_outcome<S: MachineSpec>(
-    outcome: &DispatchOutcome<S::State>,
-    actor_id: ActorId,
-    notify: &TokioSender<ChildLifecycleEvent>,
-) {
-    let send = |event| {
-        if <TokioRuntime as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)).is_err() {
-            bloxide_log::blox_log_warn!(
-                actor_id,
-                "failed to send lifecycle event to supervisor (channel full or closed)"
-            );
-        }
-    };
-
-    match outcome {
-        DispatchOutcome::Started(MachineState::State(s)) => {
-            if S::is_error(s) {
-                send(ChildLifecycleEvent::Failed { child_id: actor_id });
-            } else if S::is_terminal(s) {
-                send(ChildLifecycleEvent::Done { child_id: actor_id });
-            } else {
-                send(ChildLifecycleEvent::Started { child_id: actor_id });
-            }
-        }
-        DispatchOutcome::Transition(MachineState::State(s)) => {
-            if S::is_error(s) {
-                send(ChildLifecycleEvent::Failed { child_id: actor_id });
-            } else if S::is_terminal(s) {
-                send(ChildLifecycleEvent::Done { child_id: actor_id });
-            }
-        }
-        DispatchOutcome::Done(MachineState::State(_)) => {
-            send(ChildLifecycleEvent::Done { child_id: actor_id });
-        }
-        DispatchOutcome::Failed => {
-            send(ChildLifecycleEvent::Failed { child_id: actor_id });
-        }
-        DispatchOutcome::Stopped => {
-            send(ChildLifecycleEvent::Stopped { child_id: actor_id });
-        }
-        DispatchOutcome::Aborted => {
-            send(ChildLifecycleEvent::Aborted { child_id: actor_id });
-        }
-        DispatchOutcome::Alive => {
-            send(ChildLifecycleEvent::Alive { child_id: actor_id });
-        }
-        _ => {}
-    }
 }
 
 // ── Abort-aware supervised actor runner ──────────────────────────────────────
@@ -168,7 +117,7 @@ pub async fn run_supervised_actor_with_abort<S: MachineSpec + 'static>(
                 Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
                 Poll::Ready(Some(Envelope(_, cmd))) => {
                     let outcome = handle_lifecycle_direct(&mut machine, cmd);
-                    report_outcome::<S>(&outcome, actor_id, &supervisor_notify);
+                    report_outcome::<S, TokioRuntime>(&outcome, actor_id, &supervisor_notify);
 
                     return match outcome {
                         DispatchOutcome::Stopped => Poll::Ready(LoopAction::Stop),
@@ -187,7 +136,11 @@ pub async fn run_supervised_actor_with_abort<S: MachineSpec + 'static>(
                     // Self-termination: report Aborted, then break out of the
                     // loop and return. No lifecycle callback fires — abort
                     // is cooperative but immediate.
-                    report_outcome::<S>(&DispatchOutcome::Aborted, actor_id, &supervisor_notify);
+                    report_outcome::<S, TokioRuntime>(
+                        &DispatchOutcome::Aborted,
+                        actor_id,
+                        &supervisor_notify,
+                    );
                     return Poll::Ready(LoopAction::Stop);
                 }
                 Poll::Pending => {}
@@ -197,7 +150,7 @@ pub async fn run_supervised_actor_with_abort<S: MachineSpec + 'static>(
             match domain_mailboxes.poll_next(cx) {
                 Poll::Ready(Some(event)) => {
                     let outcome = machine.dispatch(event);
-                    report_outcome::<S>(&outcome, actor_id, &supervisor_notify);
+                    report_outcome::<S, TokioRuntime>(&outcome, actor_id, &supervisor_notify);
                     Poll::Ready(LoopAction::Continue)
                 }
                 Poll::Ready(None) => Poll::Ready(LoopAction::Stop),
@@ -229,6 +182,7 @@ pub use bloxide_child_management::ChildGroupBuilder as GenericChildGroupBuilder;
 mod tests {
     use super::*;
     use bloxide_core::{
+        capability::{BloxRuntime, DynamicChannelCap},
         event_tag::{EventTag, LifecycleEvent},
         mailboxes::NoMailboxes,
         spec::{MachineSpec, StateFns},
@@ -240,9 +194,12 @@ mod tests {
     // ── Minimal test MachineSpec for report_outcome tests ─────────────────────
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    #[allow(dead_code)]
     enum TestState {
         Running,
+        // TODO: wire this up — `Done` is the terminal state required by the
+        // `MachineSpec` impl (`is_terminal`, `HANDLER_TABLE`) but no test in
+        // this module transitions to it yet.
+        #[allow(dead_code)]
         Done,
     }
 
@@ -336,7 +293,7 @@ mod tests {
 
         // Now call report_outcome with a Failed event — this should fail to send
         // (channel full) and log a warning instead of panicking.
-        report_outcome::<TestSpec>(&DispatchOutcome::Failed, actor_id, &notify);
+        report_outcome::<TestSpec, TokioRuntime>(&DispatchOutcome::Failed, actor_id, &notify);
 
         // Drain the channel — we should see exactly `capacity` Alive events,
         // not the Failed event that was dropped.
