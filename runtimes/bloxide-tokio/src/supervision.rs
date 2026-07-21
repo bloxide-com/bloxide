@@ -39,7 +39,7 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
             match Pin::new(&mut lifecycle_stream).poll_next(cx) {
                 Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
                 Poll::Ready(Some(Envelope(_, cmd))) => {
-                    let outcome = handle_lifecycle_direct(&mut machine, cmd);
+                    let outcome = handle_lifecycle(&mut machine, cmd);
                     report_outcome::<S, TokioRuntime>(&outcome, actor_id, &supervisor_notify);
 
                     return match outcome {
@@ -73,7 +73,7 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
 /// Handle lifecycle command by delegating to engine's lifecycle handler.
 ///
 /// This ensures state transitions fire their `on_entry`/`on_exit` callbacks.
-pub fn handle_lifecycle_direct<S: MachineSpec>(
+fn handle_lifecycle<S: MachineSpec>(
     machine: &mut StateMachine<S>,
     cmd: LifecycleCommand,
 ) -> DispatchOutcome<S::State> {
@@ -116,7 +116,7 @@ pub async fn run_supervised_actor_with_abort<S: MachineSpec + 'static>(
             match Pin::new(&mut lifecycle_stream).poll_next(cx) {
                 Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
                 Poll::Ready(Some(Envelope(_, cmd))) => {
-                    let outcome = handle_lifecycle_direct(&mut machine, cmd);
+                    let outcome = handle_lifecycle(&mut machine, cmd);
                     report_outcome::<S, TokioRuntime>(&outcome, actor_id, &supervisor_notify);
 
                     return match outcome {
