@@ -43,7 +43,8 @@ __delegate_CountsRounds! {
     field_type: Inner,
     impl_generics: {},
     ty_generics: {},
-    where_clause: {}
+    where_clause: {},
+    trait_args: {}
 }
 
 #[test]
@@ -88,7 +89,8 @@ __delegate_TracksName! {
     field_type: NamedInner,
     impl_generics: {},
     ty_generics: {},
-    where_clause: {}
+    where_clause: {},
+    trait_args: {}
 }
 
 #[test]
@@ -109,7 +111,8 @@ __delegate_CountsRounds! {
     field_type: T,
     impl_generics: { <T> },
     ty_generics: { <T> },
-    where_clause: {}
+    where_clause: {},
+    trait_args: {}
 }
 
 #[test]

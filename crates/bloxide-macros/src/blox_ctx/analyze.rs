@@ -40,7 +40,9 @@ pub enum FieldRole {
     /// Requires `#[delegates(Trait1, Trait2, ...)]`.
     Delegates(Vec<syn::Path>),
     /// State field — no trait impl, zero-initialized in constructor.
-    /// These are deprecated: all state should go in behavior objects.
+    /// Used for internal state that belongs in the context (e.g., pending
+    /// task IDs, spawn queues) rather than in a behavior object. Emitted by
+    /// codegen from `role = "state"` in blox.toml.
     State,
 }
 
@@ -296,17 +298,16 @@ fn infer_role_from_convention(name: &Ident, ty: &Type) -> Result<FieldRole> {
         }
     }
 
-    // Rule 4: Any other field type → treat as state (deprecated)
-    // Users should move state to behavior objects.
-    // For backward compatibility, we treat this as a constructor parameter
-    // if it's an ActorRef (for self_ref patterns) or factory, otherwise state.
+    // Rule 4: Any other field type → treat as state.
+    // Catches fields that don't match any naming convention and treats them
+    // as zero-initialized state. This is a reasonable default for hand-written
+    // context structs.
     if is_actor_ref_type(ty) {
         // e.g., `self_ref` without annotation → constructor param
         return Ok(FieldRole::Ctor);
     }
 
-    // Default: treat as state field (zero-initialized)
-    // This is deprecated but supported for backward compatibility.
+    // Default: treat as state field (zero-initialized).
     Ok(FieldRole::State)
 }
 

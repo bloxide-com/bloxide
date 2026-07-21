@@ -268,24 +268,6 @@ pub fn delegatable_inner(item: TokenStream) -> Result<TokenStream> {
                         #(#method_items)*
                     }
                 };
-                // Backward compatibility: allow omitting trait_args
-                (
-                    struct_name: $struct_name:ident,
-                    field: $field:ident,
-                    field_type: $field_type:ty,
-                    impl_generics: { $($impl_generics:tt)* },
-                    ty_generics: { $($ty_generics:tt)* },
-                    where_clause: { $($where_clause:tt)* }
-                ) => {
-                    impl $($impl_generics)* #trait_name for $struct_name $($ty_generics)*
-                    where
-                        $field_type: #trait_name,
-                        $($where_clause)*
-                    {
-                        #(#assoc_type_items)*
-                        #(#method_items)*
-                    }
-                };
             }
         }
     };
