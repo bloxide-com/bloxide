@@ -44,14 +44,14 @@ use blox_ctx_workers::{impl_has_workers, HasWorkers};
 #[cfg(feature = "dynamic")]
 use bloxide_core::lifecycle::ChildLifecycleEvent;
 #[cfg(feature = "dynamic")]
-use bloxide_spawn::SpawnFn;
-#[cfg(feature = "dynamic")]
 #[allow(unused_imports)]
 use bloxide_messaging::HasSelfRef;
 #[cfg(feature = "dynamic")]
-use bloxide_supervisor::SupervisorControl;
-#[cfg(feature = "dynamic")]
 use bloxide_peers::PeerCtrl;
+#[cfg(feature = "dynamic")]
+use bloxide_spawn::SpawnFn;
+#[cfg(feature = "dynamic")]
+use bloxide_supervisor::SupervisorControl;
 #[cfg(feature = "dynamic")]
 use pool_messages::{PoolMsg, WorkerMsg};
 #[cfg(feature = "dynamic")]

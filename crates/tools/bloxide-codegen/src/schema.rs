@@ -93,7 +93,7 @@ pub struct TopologyConfig {
     pub exit: Vec<EntryExitConfig>,
     /// Raw `use` statements for the spec_skeleton module. These import the
     /// action functions referenced in transitions/entry/exit.
-    /// e.g. `["bloxide_supervisor_context::{start_children, stop_all_children, handle_done_or_failed, ...}"]`
+    /// e.g. `["bloxide_child_management::{start_children, stop_all_children, handle_done_or_failed, ...}"]`
     #[serde(default)]
     pub spec_imports: Vec<String>,
     /// Feature-gated raw `use` statements for the spec_skeleton module.

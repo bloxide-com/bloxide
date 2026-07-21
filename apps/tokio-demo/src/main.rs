@@ -12,7 +12,7 @@ use ::pong_blox::prelude::*;
 ::bloxide_tokio::actor_task_supervised!(pong_task, PongSpec<TokioRuntime>);
 ::bloxide_tokio::root_task!(
     supervisor_task,
-    ::bloxide_supervisor::supervisor::SupervisorSpec<TokioRuntime>
+    ::bloxide_supervisor::SupervisorSpec<TokioRuntime>
 );
 #[tokio::main]
 async fn main() {
@@ -34,7 +34,7 @@ async fn main() {
     };
     let pong_id = pong_ref.id();
     let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-    let sup_control_ref_0 = group.control_ref();
+    let _sup_control_ref_0 = group.control_ref();
     let sup_notify_ref_0 = group.notify_ref();
     let ping_ctx = PingCtx::new(
         pong_ref.clone(),
@@ -58,15 +58,12 @@ async fn main() {
     );
     let sup_id = ::bloxide_tokio::next_actor_id!();
     let (children, sup_notify_rx, sup_control_rx) = group.finish();
-    let sup_ctx =
-        ::bloxide_supervisor::supervisor::SupervisorCtx::new(children, sup_id, sup_notify_ref_0);
+    let sup_ctx = ::bloxide_supervisor::SupervisorCtx::new(children, sup_id, sup_notify_ref_0);
     let mut sup_machine = ::bloxide_core::StateMachine::<
-        ::bloxide_supervisor::supervisor::SupervisorSpec<TokioRuntime>,
+        ::bloxide_supervisor::SupervisorSpec<TokioRuntime>,
     >::new(sup_ctx);
     sup_machine.dispatch(
-        ::bloxide_supervisor::event::SupervisorEvent::<TokioRuntime>::Lifecycle(
-            LifecycleCommand::Start,
-        ),
+        ::bloxide_supervisor::SupervisorEvent::<TokioRuntime>::Lifecycle(LifecycleCommand::Start),
     );
     supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
     println!("tokio-demo complete");

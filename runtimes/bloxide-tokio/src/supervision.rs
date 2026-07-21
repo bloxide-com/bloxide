@@ -1,11 +1,11 @@
 // Copyright 2025 Bloxide, all rights reserved
-use bloxide_child_management::{AbortCommand, ChildGroup, ChildPolicy, GroupShutdown};
+use bloxide_child_management::AbortCommand;
 use bloxide_core::{
     capability::{BloxRuntime, DynamicChannelCap},
     engine::{DispatchOutcome, MachineState, StateMachine},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     mailboxes::Mailboxes,
-    messaging::{ActorId, ActorRef, Envelope},
+    messaging::{ActorId, Envelope},
     spec::MachineSpec,
 };
 use core::future::poll_fn;

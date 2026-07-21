@@ -45,8 +45,8 @@ stateDiagram-v2
 
 | Event | Handled by | Rule pattern | Guard outcome | Side effects |
 |-------|-----------|--------------|--------------|--------------|
-| `PoolMsg::SpawnWorker(task_id)` | `Idle` | Action-Then-Transition | `Active` | `spawn_worker`, `introduce_new_worker` |
-| `PoolMsg::SpawnWorker(task_id)` | `Active` | Action-Then-Stay | `Stay` | `spawn_worker`, `introduce_new_worker` |
+| `PoolMsg::SpawnWorker(task_id)` | `Idle` | Action-Then-Transition | `Active` | `spawn_worker`, `introduce_peers` (inline) |
+| `PoolMsg::SpawnWorker(task_id)` | `Active` | Action-Then-Stay | `Stay` | `spawn_worker`, `introduce_peers` (inline) |
 | `PoolMsg::WorkDone(_)` | `Active` | Action-Then-Guard | `AllDone` if pending==0, else `Stay` | decrement pending count |
 | any unhandled | root (no rules) | — | dropped | none |
 
@@ -93,7 +93,7 @@ pub struct PoolCtx<R: BloxRuntime> {
 | Target | Message | When |
 |--------|---------|------|
 | New worker domain ref | `WorkerMsg::DoWork(DoWork { task_id })` | After spawn and peer introduction |
-| Worker ctrl refs | `PeerCtrl::AddPeer(...)` | Via `introduce_new_worker` |
+| Worker ctrl refs | `PeerCtrl::AddPeer(...)` | Inline in `handle_spawned_worker` via `introduce_peers` |
 
 ## Entry / Exit Actions
 

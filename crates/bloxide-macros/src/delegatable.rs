@@ -25,7 +25,7 @@
 /// ```
 ///
 /// For non-generic traits, `trait_args` can be empty.
-use proc_macro2::{Delimiter, Group, Ident, Punct, Spacing, TokenStream, TokenTree};
+use proc_macro2::{Group, Ident, Punct, Spacing, TokenStream, TokenTree};
 use quote::{format_ident, quote};
 use syn::{FnArg, GenericParam, ItemTrait, Pat, Result, TraitItem};
 

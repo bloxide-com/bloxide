@@ -11,8 +11,8 @@ mod pong_tests {
     use crate::{PongCtx, PongEvent, PongSpec, PongState};
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::Envelope;
-    use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use bloxide_core::{DynamicChannelCap, MachineState, StateMachine};
+    use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use ping_pong_messages::{Ping, PingPongMsg, Pong};
     use std::vec::Vec;
 

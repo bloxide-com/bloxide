@@ -55,8 +55,8 @@ impl VirtualClock {
 mod tests {
     use super::VirtualClock;
     use crate::{next_timer_id, TimerCommand};
-    use bloxide_test_runtime::TestRuntime;
     use bloxide_core::DynamicChannelCap;
+    use bloxide_test_runtime::TestRuntime;
     use std::boxed::Box;
     use std::sync::{Arc, Mutex};
     use std::vec;

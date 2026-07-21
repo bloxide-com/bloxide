@@ -6,10 +6,10 @@
 extern crate alloc;
 
 use bloxide_core::{accessor::HasSelfId, capability::BloxRuntime};
-use bloxide_peers::{introduce_peers, PeerCtrl};
+use bloxide_peers::PeerCtrl;
 use pool_messages::{PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
-use crate::traits::{HasCurrentTask, HasPoolRef, HasPeers, HasWorkers};
+use crate::traits::{HasCurrentTask, HasPeers, HasPoolRef};
 
 /// Send `WorkDone` to the pool when the worker finishes its task.
 ///
@@ -49,40 +49,6 @@ where
                 from_id: from,
                 result,
             }),
-        );
-    }
-}
-
-/// Introduce the most recently added worker to all previously added workers.
-///
-/// Call this after adding a new worker's refs to `HasWorkers` to wire only
-/// the new worker to existing peers — avoiding the duplicate introductions
-/// that would result from calling `introduce_all_workers` repeatedly.
-///
-/// Uses the generic `bloxide-peers::introduce_peers` helper with the
-/// domain-specific `WorkerMsg` type.
-pub fn introduce_new_worker<R, C>(ctx: &C)
-where
-    R: BloxRuntime,
-    C: HasSelfId + HasWorkers<R>,
-{
-    let n = ctx.worker_refs().len();
-    if n < 2 {
-        return;
-    }
-    let new_idx = n - 1;
-    let from = ctx.self_id();
-    let new_id = ctx.worker_refs()[new_idx].id();
-    let new_ref = ctx.worker_refs()[new_idx].clone();
-    let new_ctrl = ctx.worker_ctrls()[new_idx].clone();
-    for i in 0..new_idx {
-        let old_id = ctx.worker_refs()[i].id();
-        let old_ref = ctx.worker_refs()[i].clone();
-        let old_ctrl = ctx.worker_ctrls()[i].clone();
-        introduce_peers(
-            from,
-            new_id, new_ref.clone(), new_ctrl.clone(),
-            old_id, old_ref.clone(), old_ctrl.clone(),
         );
     }
 }

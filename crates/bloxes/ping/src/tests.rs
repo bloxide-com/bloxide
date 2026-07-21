@@ -16,10 +16,10 @@ mod ping_tests {
     use blox_ctx_rounds::CountsRounds;
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::ActorId;
-    use bloxide_test_runtime::{TestReceiver, TestRuntime, TestSender};
     use bloxide_core::{
         spec::MachineSpec, DynamicChannelCap, Envelope, MachineState, StateMachine,
     };
+    use bloxide_test_runtime::{TestReceiver, TestRuntime, TestSender};
     use bloxide_timer::{test_utils::VirtualClock, TimerCommand, TimerId};
     use ping_pong_messages::{Ping, PingPongMsg, Pong};
     use std::vec::Vec;

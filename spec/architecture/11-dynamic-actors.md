@@ -477,7 +477,25 @@ fn spawn_worker(ctx: &mut PoolCtx<R>, task_id: u32) {
     ctx.worker_ctrls.push(ctrl_ref);
     ctx.pending += 1;
 
-    introduce_new_worker(ctx);  // wire new worker to all existing workers
+    // Introduce the new worker to all existing workers (inline).
+    let n = ctx.worker_refs.len();
+    if n >= 2 {
+        let new_idx = n - 1;
+        let from = ctx.self_id();
+        let new_id = ctx.worker_refs[new_idx].id();
+        let new_ref = ctx.worker_refs[new_idx].clone();
+        let new_ctrl = ctx.worker_ctrls[new_idx].clone();
+        for i in 0..new_idx {
+            let old_id = ctx.worker_refs[i].id();
+            let old_ref = ctx.worker_refs[i].clone();
+            let old_ctrl = ctx.worker_ctrls[i].clone();
+            introduce_peers(
+                from,
+                new_id, &new_ref, &new_ctrl,
+                old_id, &old_ref, &old_ctrl,
+            );
+        }
+    }
 
     // Send DoWork after peer introduction — ctrl priority ensures AddPeer
     // commands arrive before DoWork is dispatched by the worker.
@@ -619,7 +637,7 @@ sequenceDiagram
     Pool->>Pool: worker_ctrls.push(ctrl_ref_N)
     Pool->>Pool: pending += 1
 
-    Note over Pool: introduce_new_worker(ctx)
+    Note over Pool: introduce_peers (inline in handle_spawned_worker)
     loop for each existing worker i in 0..N-1
         Pool->>NewWorker: PeerCtrl::AddPeer(domain_ref_i) via ctrl_ref_N
         Pool->>OldWorker: PeerCtrl::AddPeer(domain_ref_N) via ctrl_ref_i
@@ -629,23 +647,27 @@ sequenceDiagram
     Note over NewWorker: ctrl channel priority ensures AddPeer<br/>arrives before DoWork is dispatched
 ```
 
-`introduce_new_worker` is defined in `pool-actions`:
+The peer-introduction logic is inlined in pool-blox's `handle_spawned_worker`,
+calling `introduce_peers` (from `bloxide-peers`) for each existing worker:
 
 ```rust
-pub fn introduce_new_worker<R, C>(ctx: &C)
-where
-    R: BloxRuntime,
-    C: HasSelfId + HasWorkers<R>,
-{
-    let n = ctx.worker_refs().len();
-    if n < 2 { return; }
+// In pool-blox — inline peer introduction
+let n = ctx.worker_refs().len();
+if n >= 2 {
     let new_idx = n - 1;
+    let from = ctx.self_id();
+    let new_id = ctx.worker_refs()[new_idx].id();
     let new_ref = ctx.worker_refs()[new_idx].clone();
     let new_ctrl = ctx.worker_ctrls()[new_idx].clone();
     for i in 0..new_idx {
+        let old_id = ctx.worker_refs()[i].id();
         let old_ref = ctx.worker_refs()[i].clone();
         let old_ctrl = ctx.worker_ctrls()[i].clone();
-        introduce_peers(ctx, &new_ctrl, &new_ref, &old_ctrl, &old_ref);
+        introduce_peers(
+            from,
+            new_id, &new_ref, &new_ctrl,
+            old_id, &old_ref, &old_ctrl,
+        );
     }
 }
 ```

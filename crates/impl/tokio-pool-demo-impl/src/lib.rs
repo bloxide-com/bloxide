@@ -14,10 +14,10 @@ use bloxide_core::{
     messaging::ActorRef,
     StateMachine,
 };
+use bloxide_peers::PeerCtrl;
 use bloxide_spawn::{SpawnCap, SpawnOutput};
 use bloxide_tokio::{run_supervised_actor_with_abort, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasPeers};
-use bloxide_peers::PeerCtrl;
 use pool_messages::{SpawnRequest, SpawnedWorker, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
 

@@ -8,19 +8,20 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
+use crate::RegisterDynamicChild;
 use crate::{
     control::{RegisterChild, SupervisorControl},
-    registry::{ChildAction, ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy},
     SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState,
 };
-use bloxide_child_management::AbortCommand;
+use bloxide_child_management::{
+    AbortCommand, ChildAction, ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy,
+};
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
-use bloxide_test_runtime::{TestReceiver, TestRuntime};
 use bloxide_core::{
     capability::DynamicChannelCap, engine::DispatchOutcome, engine::MachineState, StateMachine,
 };
-use crate::RegisterDynamicChild;
+use bloxide_test_runtime::{TestReceiver, TestRuntime};
 
 type Spec = SupervisorSpec<TestRuntime>;
 

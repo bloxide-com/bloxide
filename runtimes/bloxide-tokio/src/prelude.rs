@@ -10,11 +10,9 @@
 /// `use bloxide_supervisor::*;`
 pub use crate::{
     run_actor, run_actor_auto_start, run_actor_to_completion, run_root,
-    run_supervised_actor_with_abort, GenericChildGroupBuilder, SpawnCap, TokioRuntime,
-    TokioSender, TokioStream,
+    run_supervised_actor_with_abort, GenericChildGroupBuilder, SpawnCap, TokioRuntime, TokioSender,
+    TokioStream,
 };
-pub use bloxide_child_management::{
-    ChildGroup, ChildGroupBuilder, ChildPolicy, GroupShutdown,
-};
+pub use bloxide_child_management::{ChildGroup, ChildGroupBuilder, ChildPolicy, GroupShutdown};
 pub use bloxide_core::prelude::*;
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};

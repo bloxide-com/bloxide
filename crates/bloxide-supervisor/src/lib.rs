@@ -7,7 +7,7 @@ extern crate alloc;
 // SupervisorControl, SupervisorRegistrar)
 pub mod control;
 
-// Spawn convenience wrapper (spawn_supervised_child, HasChildNotify)
+// Spawn accessor trait (HasChildNotify)
 pub mod spawn;
 
 // Hand-written action functions (concrete, take &SupervisorEvent<R> directly)
@@ -28,7 +28,7 @@ pub use bloxide_child_management::{
 
 // Re-export supervisor-specific types from local modules
 pub use control::{RegisterChild, RegisterDynamicChild, SupervisorControl, SupervisorRegistrar};
-pub use spawn::{spawn_supervised_child, HasChildNotify};
+pub use spawn::HasChildNotify;
 
 // Re-export from generated (SupervisorEvent now codegen-generated, not hand-written)
 pub use generated::{SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState};
@@ -39,23 +39,3 @@ pub use actions::{
     record_alive, record_started, record_stopped, register_child, start_children,
     stop_all_children,
 };
-
-// Backward-compat module aliases so existing `bloxide_supervisor::registry::*`
-// and `bloxide_supervisor::control::*` and `bloxide_supervisor::event::*`
-// and `bloxide_supervisor::supervisor::*` paths still resolve.
-pub mod registry {
-    pub use bloxide_child_management::{
-        ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup, HasChildGroupMut,
-        HasPending, RestartStrategy,
-    };
-}
-
-// Backward-compat module alias for `bloxide_supervisor::supervisor::*`
-pub mod supervisor {
-    pub use crate::generated::{SupervisorCtx, SupervisorSpec, SupervisorState};
-}
-
-// Backward-compat module alias for `bloxide_supervisor::event::*`
-pub mod event {
-    pub use crate::SupervisorEvent;
-}

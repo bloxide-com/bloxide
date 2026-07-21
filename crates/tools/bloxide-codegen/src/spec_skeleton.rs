@@ -412,7 +412,7 @@ pub fn generate(
                 // Determine the crate: if the trait path starts with a crate name,
                 // use that; otherwise use the context's actions crate.
                 // For provides, the trait is typically from the context crate.
-                // We'll add it from the context crate (bloxide_supervisor_context).
+                // We'll add it from the context crate (bloxide_child_management).
                 // Actually, we can't know which crate — the provides annotation
                 // uses a bare trait name. The blox.toml imports handle this.
             }

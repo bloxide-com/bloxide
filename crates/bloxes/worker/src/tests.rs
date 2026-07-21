@@ -10,12 +10,12 @@ mod worker_tests {
 
     use blox_ctx_current_task::HasCurrentTask;
     use bloxide_core::lifecycle::LifecycleCommand;
-    use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use bloxide_core::{
         capability::DynamicChannelCap, messaging::ActorRef, spec::MachineSpec, Envelope,
         MachineState, StateMachine,
     };
     use bloxide_peers::{AddPeer, HasPeers, PeerCtrl};
+    use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use pool_messages::{DoWork, PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
     use crate::prelude::*;
@@ -84,8 +84,16 @@ mod worker_tests {
             &mut self,
             peer_ref: bloxide_core::messaging::ActorRef<WorkerMsg, TestRuntime>,
         ) {
-            self.machine
-                .dispatch(Envelope(0, PeerCtrl::AddPeer(AddPeer { peer_id: peer_ref.id(), peer_ref })).into());
+            self.machine.dispatch(
+                Envelope(
+                    0,
+                    PeerCtrl::AddPeer(AddPeer {
+                        peer_id: peer_ref.id(),
+                        peer_ref,
+                    }),
+                )
+                .into(),
+            );
         }
 
         fn current_state(&self) -> MachineState<WorkerState> {

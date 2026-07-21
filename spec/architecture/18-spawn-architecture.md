@@ -131,7 +131,7 @@ bloxide-supervisor/       ← the supervisor blox (codegen-ed from blox.toml)
   src/generated/           ← codegen output (ctx.rs, topology.rs, spec_skeleton.rs, events.rs)
   src/lib.rs               ← re-exports
   src/control.rs           ← SupervisorControl, RegisterChild, RegisterDynamicChild, SupervisorRegistrar
-  src/spawn.rs             ← spawn_supervised_child (convenience wrapper fixing C = SupervisorRegistrar)
+  src/spawn.rs             ← HasChildNotify trait (accessor for child-event mailbox)
 
 bloxide-supervisor/src/actions.rs  ← in-crate action functions (concrete &SupervisorEvent<R>)
   start_children, stop_all_children
@@ -733,29 +733,29 @@ where
 }
 ```
 
-The standard supervisor's convenience wrapper fixes `C = SupervisorRegistrar`:
+The requesting blox (e.g., the Pool) calls `spawn_child` directly, specifying
+`C = SupervisorRegistrar` as the type parameter to wire the `SpawnOutput` into
+the supervisor's `SupervisorControl::RegisterDynamicChild` message:
 
 ```rust
-// In bloxide-supervisor
+// In pool-blox — the Pool calls spawn_child directly
 
-/// Convenience wrapper around spawn_child that fixes C = SupervisorRegistrar.
-pub fn spawn_supervised_child<R, Req>(
-    spawn_fn: SpawnFn<R, Req>,
-    req: Req,
-    control_ref: &ActorRef<SupervisorControl<R>, R>,
-    notify_ref: &ActorRef<ChildLifecycleEvent, R>,
-    from: ActorId,
-) -> Result<(), R::TrySendError>
-where
-    R: BloxRuntime,
-    Req: Send + Clone + 'static,
-{
-    spawn_child::<R, Req, SupervisorRegistrar>(spawn_fn, req, control_ref, notify_ref, from)
-}
+use bloxide_spawn::{spawn_child, ChildRegistrar};
+use bloxide_supervisor::SupervisorRegistrar;
+
+let result = spawn_child::<_, _, SupervisorRegistrar>(
+    ctx.spawn_fn,
+    req,
+    &ctx.spawn_ref,   // supervisor control mailbox
+    &ctx.notify_ref,  // child lifecycle event mailbox
+    ctx.self_id(),
+);
 ```
 
 `SpawnFn` and `ChildRegistrar` are both defined in `bloxide-spawn` so any blox can name
-them without a runtime or supervisor dependency.
+them without a runtime or supervisor dependency. The `SupervisorRegistrar` is the only
+type the pool needs from `bloxide-supervisor` — it implements `ChildRegistrar` to wrap
+`SpawnOutput` into `SupervisorControl::RegisterDynamicChild`.
 
 ### 3.13 run_supervised_actor_with_abort
 
@@ -858,9 +858,9 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
             reply_to: ctx.spawn_reply_ref.clone(),
         };
 
-        // Call the runtime spawn helper — the Pool owns the spawn_fn
+        // Call spawn_child directly — the Pool owns the spawn_fn
         // and the managing blox's control_ref (wired as spawn_ref).
-        let result = spawn_supervised_child(
+        let result = spawn_child::<_, _, SupervisorRegistrar>(
             ctx.spawn_fn,           // fn pointer from wiring
             req,
             &ctx.spawn_ref,         // managing blox's control mailbox
@@ -1037,15 +1037,15 @@ sequenceDiagram
     participant NewWorker as Worker N
     participant OldWorker as Workers 1..N-1
 
-    Pool->>Factory: spawn_supervised_child(spawn_fn, req, ...)
+    Pool->>Factory: spawn_child::<_, _, SupervisorRegistrar>(spawn_fn, req, ...)
     Factory->>NewWorker: channels!, WorkerCtx::new, R::spawn
-    Factory-->>Pool: SpawnOutput { child_id, lifecycle_ref, abort_ref, abort_handle }
+    Factory-->>Pool: SpawnOutput { child_id, lifecycle_ref, abort_ref, kill_handle }
     Factory->>Pool: SpawnedWorker reply via reply_to
 
     Pool->>Pool: worker_refs.push(domain_ref_N)
     Pool->>Pool: worker_ctrls.push(ctrl_ref_N)
 
-    Note over Pool: introduce_new_worker(ctx)
+    Note over Pool: introduce_peers (inline in handle_spawned_worker)
     loop for each existing worker i in 0..N-1
         Pool->>NewWorker: PeerCtrl::AddPeer(domain_ref_i) via ctrl_ref_N
         Pool->>OldWorker: PeerCtrl::AddPeer(domain_ref_N) via ctrl_ref_i
@@ -1055,24 +1055,29 @@ sequenceDiagram
     Note over NewWorker: ctrl priority ensures AddPeer<br/>arrives before DoWork is dispatched
 ```
 
-`introduce_new_worker` sends bidirectional `AddPeer` messages so the new worker knows
-about all existing workers and vice versa:
+The Pool inlines the peer-introduction loop directly in `handle_spawned_worker`,
+calling `bloxide_peers::introduce_peers` for each existing worker. This sends
+bidirectional `AddPeer` messages so the new worker knows about all existing
+workers and vice versa:
 
 ```rust
-pub fn introduce_new_worker<R, C>(ctx: &C)
-where
-    R: BloxRuntime,
-    C: HasSelfId + HasWorkers<R>,
-{
-    let n = ctx.worker_refs().len();
-    if n < 2 { return; }
+// In pool-blox handle_spawned_worker — inline peer introduction
+let n = ctx.worker_refs().len();
+if n >= 2 {
     let new_idx = n - 1;
+    let from = ctx.self_id();
+    let new_id = ctx.worker_refs()[new_idx].id();
     let new_ref = ctx.worker_refs()[new_idx].clone();
     let new_ctrl = ctx.worker_ctrls()[new_idx].clone();
     for i in 0..new_idx {
+        let old_id = ctx.worker_refs()[i].id();
         let old_ref = ctx.worker_refs()[i].clone();
         let old_ctrl = ctx.worker_ctrls()[i].clone();
-        introduce_peers(ctx, &new_ctrl, &new_ref, &old_ctrl, &old_ref);
+        introduce_peers(
+            from,
+            new_id, new_ref.clone(), new_ctrl.clone(),
+            old_id, old_ref.clone(), old_ctrl.clone(),
+        );
     }
 }
 ```
@@ -1277,7 +1282,8 @@ Pool                      Spawn Helper            Managing Blox            Child
   |     another actor)         |                       |                       |
   |                            |                       |                       |
   | 2. Pool calls              |                       |                       |
-  |    spawn_supervised_child  |                       |                       |
+  |    spawn_child::<_,_,      |                       |                       |
+  |    SupervisorRegistrar>    |                       |                       |
   |    (spawn_fn, req,         |                       |                       |
   |     spawn_ref, notify_ref, |                       |                       |
   |     self_id)               |                       |                       |
@@ -1462,7 +1468,7 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
 - `spawn_fn: SpawnFn<R, SpawnRequest<R>>` field in **the Pool's** context (not the
   supervisor's)
 - `spawn_ref` points to supervisor's control mailbox (for `RegisterDynamicChild`)
-- The Pool calls `spawn_supervised_child` (runtime helper) directly
+- The Pool calls `spawn_child::<_, _, SupervisorRegistrar>` (from `bloxide-spawn`) directly
 - `R: BloxRuntime + SpawnCap` — runtime supports task spawning
 - Application provides `spawn_fn` at wiring time
 - The spawn helper creates children (including abort mailbox) and sends

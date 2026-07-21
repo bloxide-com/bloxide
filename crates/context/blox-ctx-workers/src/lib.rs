@@ -53,12 +53,15 @@ macro_rules! impl_has_workers {
             ) -> &mut $crate::Vec<$crate::ActorRef<$crate::WorkerMsg, $R>> {
                 &mut self.worker_refs
             }
-            fn worker_ctrls(&self) -> &[$crate::ActorRef<$crate::PeerCtrl<$crate::WorkerMsg, $R>, $R>] {
+            fn worker_ctrls(
+                &self,
+            ) -> &[$crate::ActorRef<$crate::PeerCtrl<$crate::WorkerMsg, $R>, $R>] {
                 &self.worker_ctrls
             }
             fn worker_ctrls_mut(
                 &mut self,
-            ) -> &mut $crate::Vec<$crate::ActorRef<$crate::PeerCtrl<$crate::WorkerMsg, $R>, $R>> {
+            ) -> &mut $crate::Vec<$crate::ActorRef<$crate::PeerCtrl<$crate::WorkerMsg, $R>, $R>>
+            {
                 &mut self.worker_ctrls
             }
             fn pending(&self) -> u32 {

@@ -6,6 +6,8 @@ use crate::actions::{
     record_alive, record_started, record_stopped, register_child, start_children,
     stop_all_children,
 };
+#[allow(unused_imports)]
+use crate::control::SupervisorControl;
 pub use crate::generated::topology::SupervisorState;
 use crate::SupervisorCtx;
 use crate::SupervisorEvent;
@@ -15,11 +17,9 @@ use ::bloxide_core::messaging::Envelope;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use ::core::marker::PhantomData;
 #[allow(unused_imports)]
-use bloxide_core::lifecycle::ChildLifecycleEvent;
-#[allow(unused_imports)]
 use bloxide_child_management::ChildAction;
 #[allow(unused_imports)]
-use crate::SupervisorControl;
+use bloxide_core::lifecycle::ChildLifecycleEvent;
 pub struct SupervisorSpec<R: BloxRuntime> {
     _phantom: PhantomData<R>,
 }
@@ -216,7 +216,7 @@ impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
     type Ctx = SupervisorCtx<R>;
     type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> = (
         Rt::Stream<bloxide_core::lifecycle::ChildLifecycleEvent>,
-        Rt::Stream<crate::SupervisorControl<R>>,
+        Rt::Stream<crate::control::SupervisorControl<R>>,
     );
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = supervisor_state_handler_table!(Self);
     fn initial_state() -> SupervisorState {

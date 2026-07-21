@@ -11,8 +11,6 @@
 mod pool_tests {
     use bloxide_child_management::ChildPolicy;
     use bloxide_core::lifecycle::ChildLifecycleEvent;
-    use bloxide_spawn::{SpawnFn, SpawnOutput};
-    use bloxide_test_runtime::TestRuntime;
     use bloxide_core::{
         capability::{BloxRuntime, DynamicChannelCap},
         lifecycle::LifecycleCommand,
@@ -20,11 +18,11 @@ mod pool_tests {
         spec::MachineSpec,
         Envelope, MachineState, StateMachine,
     };
-    use bloxide_supervisor::SupervisorControl;
     use bloxide_peers::PeerCtrl;
-    use pool_messages::{
-        PoolMsg, SpawnRequest, SpawnWorker, SpawnedWorker, WorkDone, WorkerMsg,
-    };
+    use bloxide_spawn::{SpawnFn, SpawnOutput};
+    use bloxide_supervisor::SupervisorControl;
+    use bloxide_test_runtime::TestRuntime;
+    use pool_messages::{PoolMsg, SpawnRequest, SpawnWorker, SpawnedWorker, WorkDone, WorkerMsg};
 
     use crate::{PoolCtx, PoolEvent, PoolSpec, PoolState};
 
@@ -179,8 +177,9 @@ mod pool_tests {
     ) {
         let (domain_ref, _domain_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
-        let (ctrl_ref, _ctrl_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<PeerCtrl<WorkerMsg, TestRuntime>>(worker_id, 16);
+        let (ctrl_ref, _ctrl_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+            PeerCtrl<WorkerMsg, TestRuntime>,
+        >(worker_id, 16);
         (domain_ref, ctrl_ref)
     }
 
@@ -333,8 +332,9 @@ mod pool_tests {
         let worker_id = 1usize;
         let (domain_ref, _domain_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
-        let (ctrl_ref, _ctrl_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<PeerCtrl<WorkerMsg, TestRuntime>>(worker_id, 16);
+        let (ctrl_ref, _ctrl_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+            PeerCtrl<WorkerMsg, TestRuntime>,
+        >(worker_id, 16);
         domain_ref.sender().set_full(true);
 
         machine.dispatch(PoolEvent::SpawnReply(Envelope(

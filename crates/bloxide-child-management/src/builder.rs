@@ -41,8 +41,7 @@ where
     /// `Ctrl` messages (e.g. `RegisterChild`, `RegisterDynamicChild`).
     pub fn new(shutdown: GroupShutdown) -> Self {
         let notify_id = R::alloc_actor_id();
-        let (notify_ref, notify_rx) =
-            R::channel::<ChildLifecycleEvent>(notify_id, 32);
+        let (notify_ref, notify_rx) = R::channel::<ChildLifecycleEvent>(notify_id, 32);
 
         let control_id = R::alloc_actor_id();
         let (control_ref, control_rx) = R::channel::<Ctrl>(control_id, 16);

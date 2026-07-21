@@ -149,10 +149,9 @@ impl<Ctrl: Send + 'static> ChildGroupBuilder<Ctrl> {
             ChildLifecycleEvent,
             32,
         >(bloxide_macros::next_actor_id!());
-        let (control_ref, control_rx) = <EmbassyRuntime as StaticChannelCap>::channel::<
-            Ctrl,
-            16,
-        >(bloxide_macros::next_actor_id!());
+        let (control_ref, control_rx) = <EmbassyRuntime as StaticChannelCap>::channel::<Ctrl, 16>(
+            bloxide_macros::next_actor_id!(),
+        );
         Self {
             group: ChildGroup::new(shutdown),
             notify_ref,

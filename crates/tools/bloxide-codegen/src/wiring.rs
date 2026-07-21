@@ -189,8 +189,8 @@ pub fn generate(config: &WiringConfig, _crate_name: &str) -> anyhow::Result<Stri
     let has_supervisors = !config.supervisors.is_empty();
     if has_supervisors {
         supervisor_stmts.push(quote! {
-            let mut group = ::bloxide_supervisor::registry::ChildGroupBuilder::new(
-                ::bloxide_supervisor::registry::GroupShutdown::WhenAnyDone,
+            let mut group = ::bloxide_child_management::ChildGroupBuilder::new(
+                ::bloxide_child_management::GroupShutdown::WhenAnyDone,
             );
         });
 
@@ -208,9 +208,9 @@ pub fn generate(config: &WiringConfig, _crate_name: &str) -> anyhow::Result<Stri
                 let machine_ident = format_ident!("{}_machine", child_actor.name);
                 let task_ident = format_ident!("{}_task", child_actor.name);
                 let policy = if let Some(max) = child.restart_max {
-                    quote! { ::bloxide_supervisor::registry::ChildPolicy::Restart { max: #max } }
+                    quote! { ::bloxide_child_management::ChildPolicy::Restart { max: #max } }
                 } else {
-                    quote! { ::bloxide_supervisor::registry::ChildPolicy::Stop }
+                    quote! { ::bloxide_child_management::ChildPolicy::Stop }
                 };
 
                 if is_tokio {
@@ -242,13 +242,12 @@ pub fn generate(config: &WiringConfig, _crate_name: &str) -> anyhow::Result<Stri
         });
 
         let supervisor_spec_path: syn::Path =
-            syn::parse_str("::bloxide_supervisor::supervisor::SupervisorSpec")
+            syn::parse_str("::bloxide_supervisor::SupervisorSpec")
                 .expect("valid supervisor spec path");
-        let supervisor_ctx_path: syn::Path =
-            syn::parse_str("::bloxide_supervisor::supervisor::SupervisorCtx")
-                .expect("valid supervisor ctx path");
+        let supervisor_ctx_path: syn::Path = syn::parse_str("::bloxide_supervisor::SupervisorCtx")
+            .expect("valid supervisor ctx path");
         let supervisor_event_path: syn::Path =
-            syn::parse_str("::bloxide_supervisor::event::SupervisorEvent")
+            syn::parse_str("::bloxide_supervisor::SupervisorEvent")
                 .expect("valid supervisor event path");
 
         supervisor_stmts.push(quote! {
@@ -307,7 +306,7 @@ pub fn generate(config: &WiringConfig, _crate_name: &str) -> anyhow::Result<Stri
     // Root task is only needed when there is a supervisor tree.
     let root_task_decl = if has_supervisors {
         let supervisor_spec_path: syn::Path =
-            syn::parse_str("::bloxide_supervisor::supervisor::SupervisorSpec")
+            syn::parse_str("::bloxide_supervisor::SupervisorSpec")
                 .expect("valid supervisor spec path");
         if is_tokio {
             quote! {

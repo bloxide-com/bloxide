@@ -510,8 +510,12 @@ mod lifecycle_dispatch {
 
     impl StateTopology for TestState {
         const STATE_COUNT: usize = 3;
-        fn parent(self) -> Option<Self> { None }
-        fn is_leaf(self) -> bool { true }
+        fn parent(self) -> Option<Self> {
+            None
+        }
+        fn is_leaf(self) -> bool {
+            true
+        }
         fn path(self) -> &'static [Self] {
             match self {
                 TestState::Init => &[TestState::Init],
@@ -519,7 +523,9 @@ mod lifecycle_dispatch {
                 TestState::Done => &[TestState::Done],
             }
         }
-        fn as_index(self) -> usize { self as usize }
+        fn as_index(self) -> usize {
+            self as usize
+        }
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -552,7 +558,9 @@ mod lifecycle_dispatch {
     }
 
     impl From<Envelope<u32>> for TestEvent {
-        fn from(env: Envelope<u32>) -> Self { TestEvent::Msg(env.1) }
+        fn from(env: Envelope<u32>) -> Self {
+            TestEvent::Msg(env.1)
+        }
     }
 
     #[derive(Default)]
@@ -565,10 +573,18 @@ mod lifecycle_dispatch {
 
     struct TestSpec<R>(PhantomData<R>);
 
-    fn running_entry(ctx: &mut SpyCtx) { ctx.running_entry_count.fetch_add(1, Ordering::SeqCst); }
-    fn running_exit(ctx: &mut SpyCtx) { ctx.running_exit_count.fetch_add(1, Ordering::SeqCst); }
-    fn done_entry(ctx: &mut SpyCtx) { ctx.done_entry_count.fetch_add(1, Ordering::SeqCst); }
-    fn init_entry(ctx: &mut SpyCtx) { ctx.init_entry_count.fetch_add(1, Ordering::SeqCst); }
+    fn running_entry(ctx: &mut SpyCtx) {
+        ctx.running_entry_count.fetch_add(1, Ordering::SeqCst);
+    }
+    fn running_exit(ctx: &mut SpyCtx) {
+        ctx.running_exit_count.fetch_add(1, Ordering::SeqCst);
+    }
+    fn done_entry(ctx: &mut SpyCtx) {
+        ctx.done_entry_count.fetch_add(1, Ordering::SeqCst);
+    }
+    fn init_entry(ctx: &mut SpyCtx) {
+        ctx.init_entry_count.fetch_add(1, Ordering::SeqCst);
+    }
 
     impl<R: bloxide_core::capability::BloxRuntime> MachineSpec for TestSpec<R> {
         type State = TestState;
@@ -577,7 +593,11 @@ mod lifecycle_dispatch {
         type Mailboxes<Rt: bloxide_core::capability::BloxRuntime> = (Rt::Stream<u32>,);
 
         const HANDLER_TABLE: &'static [&'static bloxide_core::spec::StateFns<Self>] = &[
-            &bloxide_core::spec::StateFns { on_entry: &[], on_exit: &[], transitions: &[] },
+            &bloxide_core::spec::StateFns {
+                on_entry: &[],
+                on_exit: &[],
+                transitions: &[],
+            },
             &bloxide_core::spec::StateFns {
                 on_entry: &[running_entry],
                 on_exit: &[running_exit],
@@ -604,10 +624,18 @@ mod lifecycle_dispatch {
             },
         ];
 
-        fn initial_state() -> TestState { TestState::Running }
-        fn is_terminal(state: &TestState) -> bool { matches!(state, TestState::Done) }
-        fn is_error(_state: &TestState) -> bool { false }
-        fn on_init_entry(ctx: &mut SpyCtx) { init_entry(ctx); }
+        fn initial_state() -> TestState {
+            TestState::Running
+        }
+        fn is_terminal(state: &TestState) -> bool {
+            matches!(state, TestState::Done)
+        }
+        fn is_error(_state: &TestState) -> bool {
+            false
+        }
+        fn on_init_entry(ctx: &mut SpyCtx) {
+            init_entry(ctx);
+        }
     }
 
     #[test]
@@ -616,8 +644,14 @@ mod lifecycle_dispatch {
         let mut machine = StateMachine::<TestSpec<TestRuntime>>::new(ctx);
         assert!(machine.current_state().is_init());
         let outcome = machine.handle_lifecycle(LifecycleCommand::Start);
-        assert!(matches!(outcome, DispatchOutcome::Started(MachineState::State(TestState::Running))));
-        assert!(matches!(machine.current_state(), MachineState::State(TestState::Running)));
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TestState::Running))
+        ));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Running)
+        ));
         assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 1);
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 0);
     }
@@ -629,7 +663,10 @@ mod lifecycle_dispatch {
         machine.handle_lifecycle(LifecycleCommand::Start);
         let outcome = machine.handle_lifecycle(LifecycleCommand::Start);
         assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
-        assert!(matches!(machine.current_state(), MachineState::State(TestState::Running)));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Running)
+        ));
         assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 1);
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 0);
     }
@@ -639,10 +676,19 @@ mod lifecycle_dispatch {
         let ctx = SpyCtx::default();
         let mut machine = StateMachine::<TestSpec<TestRuntime>>::new(ctx);
         machine.handle_lifecycle(LifecycleCommand::Start);
-        assert!(matches!(machine.current_state(), MachineState::State(TestState::Running)));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Running)
+        ));
         let outcome = machine.handle_lifecycle(LifecycleCommand::Reset);
-        assert!(matches!(outcome, DispatchOutcome::Started(MachineState::State(TestState::Running))));
-        assert!(matches!(machine.current_state(), MachineState::State(TestState::Running)));
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TestState::Running))
+        ));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Running)
+        ));
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);
         assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 2);
         assert_eq!(machine.ctx().init_entry_count.load(Ordering::SeqCst), 0);
@@ -667,7 +713,10 @@ mod lifecycle_dispatch {
         machine.handle_lifecycle(LifecycleCommand::Start);
         let outcome = machine.handle_lifecycle(LifecycleCommand::Ping);
         assert!(matches!(outcome, DispatchOutcome::Alive));
-        assert!(matches!(machine.current_state(), MachineState::State(TestState::Running)));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Running)
+        ));
         assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 1);
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 0);
     }
@@ -679,8 +728,14 @@ mod lifecycle_dispatch {
         machine.handle_lifecycle(LifecycleCommand::Start);
         assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 1);
         let outcome = machine.dispatch(TestEvent::Complete);
-        assert!(matches!(outcome, DispatchOutcome::Done(MachineState::State(TestState::Done))));
-        assert!(matches!(machine.current_state(), MachineState::State(TestState::Done)));
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Done(MachineState::State(TestState::Done))
+        ));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Done)
+        ));
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);
         assert_eq!(machine.ctx().done_entry_count.load(Ordering::SeqCst), 1);
     }
@@ -690,8 +745,14 @@ mod lifecycle_dispatch {
         let ctx = SpyCtx::default();
         let mut machine = StateMachine::<TestSpec<TestRuntime>>::new(ctx);
         let outcome = machine.dispatch(TestEvent::Lifecycle(LifecycleCommand::Start));
-        assert!(matches!(outcome, DispatchOutcome::Started(MachineState::State(TestState::Running))));
-        assert!(matches!(machine.current_state(), MachineState::State(TestState::Running)));
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TestState::Running))
+        ));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Running)
+        ));
     }
 
     #[test]
@@ -705,7 +766,10 @@ mod lifecycle_dispatch {
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);
         let outcome = machine.dispatch(TestEvent::GoRunning);
         assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
-        assert!(matches!(machine.current_state(), MachineState::State(TestState::Done)));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(TestState::Done)
+        ));
         assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 1);
         assert_eq!(machine.ctx().done_entry_count.load(Ordering::SeqCst), 1);
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);

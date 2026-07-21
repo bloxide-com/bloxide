@@ -552,14 +552,11 @@ impl<R: BloxRuntime> ChildGroup<R> {
 mod tests {
     use super::*;
     use bloxide_core::capability::DynamicChannelCap;
-    use bloxide_test_runtime::{TestRuntime, TestReceiver};
+    use bloxide_test_runtime::{TestReceiver, TestRuntime};
 
     fn setup_one_child(
         policy: ChildPolicy,
-    ) -> (
-        ChildGroup<TestRuntime>,
-        TestReceiver<LifecycleCommand>,
-    ) {
+    ) -> (ChildGroup<TestRuntime>, TestReceiver<LifecycleCommand>) {
         let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
         let id = 1usize;
         let (lifecycle_ref, rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);

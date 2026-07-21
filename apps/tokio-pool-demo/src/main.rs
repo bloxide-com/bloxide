@@ -8,7 +8,7 @@ use ::pool_messages::SpawnWorker;
 ::bloxide_tokio::actor_task_supervised!(pool_task, PoolSpec<TokioRuntime>);
 ::bloxide_tokio::root_task!(
     supervisor_task,
-    ::bloxide_supervisor::supervisor::SupervisorSpec<TokioRuntime>
+    ::bloxide_supervisor::SupervisorSpec<TokioRuntime>
 );
 #[tokio::main]
 async fn main() {
@@ -43,15 +43,12 @@ async fn main() {
     );
     let sup_id = ::bloxide_tokio::next_actor_id!();
     let (children, sup_notify_rx, sup_control_rx) = group.finish();
-    let sup_ctx =
-        ::bloxide_supervisor::supervisor::SupervisorCtx::new(children, sup_id, sup_notify_ref_0);
+    let sup_ctx = ::bloxide_supervisor::SupervisorCtx::new(children, sup_id, sup_notify_ref_0);
     let mut sup_machine = ::bloxide_core::StateMachine::<
-        ::bloxide_supervisor::supervisor::SupervisorSpec<TokioRuntime>,
+        ::bloxide_supervisor::SupervisorSpec<TokioRuntime>,
     >::new(sup_ctx);
     sup_machine.dispatch(
-        ::bloxide_supervisor::event::SupervisorEvent::<TokioRuntime>::Lifecycle(
-            LifecycleCommand::Start,
-        ),
+        ::bloxide_supervisor::SupervisorEvent::<TokioRuntime>::Lifecycle(LifecycleCommand::Start),
     );
     let _ = pool_ref
         .send(pool_id, PoolMsg::SpawnWorker(SpawnWorker { task_id: 0 }))

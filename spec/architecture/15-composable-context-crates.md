@@ -38,7 +38,7 @@ domain context crates ← domain-specific data composition (optional)
 
 actions crates        ← generic functions (depend on context crates for traits)
   ping-pong-actions   ← send_ping, increment_round, etc.
-  pool-actions        ← introduce_new_worker, notify_pool_done, etc.
+  pool-actions        ← notify_pool_done, etc. (peer introduction inlined in pool-blox)
   counter-actions    ← increment_count, etc.
 
 blox crates           ← TOML → codegen (depend on context + actions crates)

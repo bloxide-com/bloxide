@@ -8,9 +8,11 @@ use crate::{PoolCtx, PoolEvent};
 
 // Dynamic-only imports and action functions.
 #[cfg(feature = "dynamic")]
-use bloxide_supervisor::spawn_supervised_child;
+use bloxide_peers::introduce_peers;
 #[cfg(feature = "dynamic")]
-use pool_actions::actions::introduce_new_worker;
+use bloxide_spawn::spawn_child;
+#[cfg(feature = "dynamic")]
+use bloxide_supervisor::SupervisorRegistrar;
 #[cfg(feature = "dynamic")]
 use pool_messages::{DoWork, SpawnRequest, SpawnWorker, WorkerMsg};
 
@@ -30,7 +32,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
             reply_to: ctx.spawn_reply_ref.clone(),
             pool_ref: ctx.self_ref.clone(),
         };
-        let result = spawn_supervised_child(
+        let result = spawn_child::<_, _, SupervisorRegistrar>(
             ctx.spawn_fn,
             req,
             &ctx.spawn_ref,
@@ -90,7 +92,31 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
         ctx.worker_refs_mut().push(domain_ref.clone());
         ctx.worker_ctrls_mut().push(ctrl_ref);
         ctx.set_pending(ctx.pending() + 1);
-        introduce_new_worker(ctx);
+        // Introduce the newest worker to all existing workers (bidirectional).
+        {
+            let n = ctx.worker_refs().len();
+            if n >= 2 {
+                let new_idx = n - 1;
+                let from = ctx.self_id();
+                let new_id = ctx.worker_refs()[new_idx].id();
+                let new_ref = ctx.worker_refs()[new_idx].clone();
+                let new_ctrl = ctx.worker_ctrls()[new_idx].clone();
+                for i in 0..new_idx {
+                    let old_id = ctx.worker_refs()[i].id();
+                    let old_ref = ctx.worker_refs()[i].clone();
+                    let old_ctrl = ctx.worker_ctrls()[i].clone();
+                    introduce_peers(
+                        from,
+                        new_id,
+                        new_ref.clone(),
+                        new_ctrl.clone(),
+                        old_id,
+                        old_ref.clone(),
+                        old_ctrl.clone(),
+                    );
+                }
+            }
+        }
         let self_id = ctx.self_id();
         if domain_ref
             .try_send(self_id, WorkerMsg::DoWork(DoWork { task_id }))
@@ -121,7 +147,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
                 reply_to: ctx.spawn_reply_ref.clone(),
                 pool_ref: ctx.self_ref.clone(),
             };
-            let result = spawn_supervised_child(
+            let result = spawn_child::<_, _, SupervisorRegistrar>(
                 ctx.spawn_fn,
                 req,
                 &ctx.spawn_ref,
