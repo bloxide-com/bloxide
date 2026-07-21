@@ -17,14 +17,6 @@ pub fn export_workspace(workspace_path: &Path) -> Result<Vec<BloxSpec>, String> 
     let blox_tomls = find_blox_tomls(workspace_path);
 
     if blox_tomls.is_empty() {
-        // Fallback: check if any spec.rs files exist (old-style) and warn
-        if has_spec_rs_files(workspace_path) {
-            return Err(
-                "No blox.toml files found, but spec.rs files were detected. \
-                 Run `cargo blox generate` to create blox.toml files from existing specs."
-                    .to_string(),
-            );
-        }
         return Err("No blox.toml files found.".to_string());
     }
 
@@ -620,45 +612,6 @@ fn walk_dir_recursive(path: &Path, depth: usize, max_depth: usize, results: &mut
         if entry_path.is_dir() {
             walk_dir_recursive(&entry_path, depth + 1, max_depth, results);
         } else if entry_path.file_name() == Some(std::ffi::OsStr::new("blox.toml")) {
-            results.push(entry_path);
-        }
-    }
-}
-
-/// Check if any spec.rs files exist in the workspace (for the fallback warning).
-fn has_spec_rs_files(workspace_path: &Path) -> bool {
-    let mut found = Vec::new();
-    walk_dir_recursive_spec(workspace_path, 0, 6, &mut found);
-    !found.is_empty()
-}
-
-fn walk_dir_recursive_spec(
-    path: &Path,
-    depth: usize,
-    max_depth: usize,
-    results: &mut Vec<PathBuf>,
-) {
-    if depth > max_depth {
-        return;
-    }
-
-    let entries = match fs::read_dir(path) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let entry_path = entry.path();
-
-        if let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('.') || name == "target" {
-                continue;
-            }
-        }
-
-        if entry_path.is_dir() {
-            walk_dir_recursive_spec(&entry_path, depth + 1, max_depth, results);
-        } else if entry_path.file_name() == Some(std::ffi::OsStr::new("spec.rs")) {
             results.push(entry_path);
         }
     }
