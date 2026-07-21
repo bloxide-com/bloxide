@@ -170,18 +170,28 @@ fn cancel_timeout<R: BloxRuntime>(ctx: &mut MyCtx<R>, timer_id: TimerId) {
 ### Handling Timer Expiration
 
 ```toml
-# In blox.toml — declare a transition that matches the timer message by ID.
-# The codegen emits a `matches` closure that filters on the timer id; the
-# guard inspects context to decide the next state.
+# In blox.toml — declare a transition that matches the timer message.
+# The action extracts the timer id from the event and stores it in context;
+# the guard then inspects context (not the event) to decide the next state.
 [[topology.transitions]]
 state = "Active"
-event = "MyMsg::Timeout { id }"
-actions = ["handle_timeout"]
+event = "MyMsg::Timeout { .. }"
+actions = ["record_timer_id"]
 guards = [
-  { condition = "*id == ctx.expected_id", target = "TimedOut" },
+  { condition = "ctx.last_timer_id() == ctx.expected_id", target = "TimedOut" },
   { condition = "_", target = "stay" },
 ]
 ```
+
+> **Why the guard reads context, not a bound variable:** the codegen emits
+> the `matches` predicate and the `guard` closure as **separate** function
+> pointers (`fn(&Event) -> bool` and `fn(&Ctx, &ActionResults, &Event) -> Guard`).
+> A binding like `{ id }` is scoped to the `matches!` macro inside the
+> `matches` closure and is **not** visible in the guard or in actions.
+> To act on a field's value, have an action extract it from `&Event` and
+> store it in `&mut Ctx`; the guard then reads it from `&Ctx`.
+> The `{ .. }` struct-rest pattern (shown above) is the idiomatic way to
+> match a struct variant without binding — see "Event Pattern Forms" below.
 
 ### Spawn a Child Actor
 
@@ -284,6 +294,44 @@ guards = [
 # Multiple patterns for the same state are expressed as separate
 # [[topology.transitions]] entries with the same `state`.
 ```
+
+### Event Pattern Forms
+
+The `event` field is a Rust pattern string. The codegen classifies it by the
+first identifier's suffix and emits the appropriate `matches` closure:
+
+| Pattern form | Example | Classification | Generated `matches` closure |
+|---|---|---|---|
+| Tuple-variant wildcard | `PingPongMsg::Ping(_)` | `*Msg` shorthand | `msg_payload().is_some_and(\|m\| matches!(m, PingPongMsg::Ping(_)))` |
+| Struct-variant rest | `MyMsg::Timeout { .. }` | `*Msg` shorthand | `msg_payload().is_some_and(\|m\| matches!(m, MyMsg::Timeout { .. }))` |
+| Struct-variant field binding | `MyMsg::Timeout { id }` | `*Msg` shorthand | `msg_payload().is_some_and(\|m\| matches!(m, MyMsg::Timeout { id }))` |
+| Full-event (envelope) | `SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))` | `FullEvent` | `matches!(ev, SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. })))` |
+| Ctrl shorthand | `PeerCtrl::AddPeer(_)` | `*Ctrl` shorthand | `ctrl_payload().is_some_and(\|m\| matches!(m, PeerCtrl::AddPeer(_)))` |
+| Or-pattern | `PeerCtrl::AddPeer(_) \| PeerCtrl::RemovePeer(_)` | `*Ctrl` shorthand | single `ctrl_payload()` closure matching both arms |
+| Wildcard | `_` | `FullEvent` | `matches!(ev, _)` (always true) |
+
+**`{ field_name }` binding syntax.** For struct-variant enums, the pattern
+`MyMsg::Timeout { id }` binds the `id` field. The codegen passes the pattern
+verbatim to `matches!`, so any valid Rust struct pattern is accepted —
+including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
+`{ id, .. }` (bind one, ignore the rest).
+
+> **Binding scope — important.** A `{ field_name }` binding is scoped to the
+> `matches!` macro inside the `matches` closure. It is **not** visible in the
+> `guard` closure or in `actions`, which are separate function pointers with
+> their own parameter lists (`|ctx, results, _ev|` for guards,
+> `fn(&mut Ctx, &Event)` for actions). The `matches` closure returns `bool`;
+> the bound name cannot escape it.
+>
+> To use a field's value in a guard or action:
+> 1. Use `{ .. }` (no binding) in the `event` pattern — it matches the
+>    variant without creating an unused binding.
+> 2. Write an action that destructures `&Event` and stores the value in
+>    `&mut Ctx` (e.g. `ctx.set_last_timer_id(id)`).
+> 3. Reference `ctx.*` in the guard condition.
+>
+> If you do write `{ id }` in the pattern, the bound `id` is unused and will
+> trigger an `unused variable` warning unless suppressed; prefer `{ .. }`.
 
 **Event pattern classification** (handled by the codegen, not the user):
 - `Enum::Variant(...)` → full-event match closure
