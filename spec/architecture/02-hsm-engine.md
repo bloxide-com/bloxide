@@ -10,9 +10,9 @@ The engine lives in `bloxide-core`. It implements hierarchical state machine (HS
 
 Neither `VirtualRoot` nor `Init` appear in the user's `State` enum. Both are engine-managed:
 
-- **VirtualRoot** is implicit. Top-level user states return `None` from `parent()`. The engine prepends VirtualRoot when building state paths for LCA computation — VirtualRoot contains the lifecycle handler table (`root_transitions()` from `MachineSpec`) and intercepts `LifecycleCommand` variants *before* user-declared states see them. If `root_transitions()` returns `&[]`, all lifecycle commands are handled by the engine's default rules: `Start` → exit Init, enter `initial_state()`; `Reset` → full exit chain, fire `on_init_entry` for domain reset, then entry chain for `initial_state()` (immediately operational, returns `Started`); `Stop` → full exit chain to Init, fire `on_init_entry`, returns `Stopped`; `Ping` → respond with `ChildLifecycleEvent::Alive`. `Abort` and `Kill` are not lifecycle commands — see [Four-Level Lifecycle](#four-level-lifecycle-reset--stop--abort--kill) below.
+- **VirtualRoot** is implicit. Top-level user states return `None` from `parent()`. The engine prepends VirtualRoot when building state paths for LCA computation — VirtualRoot contains the lifecycle handler table (`root_transitions()` from `MachineSpec`) and intercepts `LifecycleCommand` variants *before* user-declared states see them. If `root_transitions()` returns `&[]`, all lifecycle commands are handled by the engine's default rules: `Start` → exit Init, enter `initial_state()`; `Reset` → full exit chain, then entry chain for `initial_state()` (immediately operational, no `on_init_entry`, returns `Started`); `Stop` → full exit chain to Init, fire `on_init_entry`, returns `Stopped`; `Ping` → respond with `ChildLifecycleEvent::Alive`. `Abort` and `Kill` are not lifecycle commands — see [Four-Level Lifecycle](#four-level-lifecycle-reset--stop--abort--kill) below.
 
-- **Init** is implicit. Construction is **silent** — no callbacks fire. The machine starts in `Init` and waits for a `LifecycleCommand::Start` event to be dispatched. `on_init_entry` fires when the machine re-enters `Init` via `LifecycleCommand::Stop` AND during `Reset` (to reset domain state before re-entering `initial_state()`). It does **not** fire on `Guard::Fail` (which goes to `error_state()`). All non-lifecycle events dispatched while in `Init` are **silently dropped**. Lifecycle commands are handled at VirtualRoot level, so the machine in Init still processes Start/Reset/Stop/Ping via the engine's lifecycle handler.
+- **Init** is implicit. Construction is **silent** — no callbacks fire. The machine starts in `Init` and waits for a `LifecycleCommand::Start` event to be dispatched. `on_init_entry` fires **only** when the machine re-enters `Init` via `LifecycleCommand::Stop` — it is for resetting domain state (counters, timers, etc.) only. It does **not** fire on `Reset` (which goes directly to `initial_state()`) or on `Guard::Fail` (which goes to `error_state()`). All non-lifecycle events dispatched while in `Init` are **silently dropped**. Lifecycle commands are handled at VirtualRoot level, so the machine in Init still processes Start/Reset/Stop/Ping via the engine's lifecycle handler.
 
 ## Four-Level Lifecycle: `reset → stop → abort → kill`
 
@@ -20,7 +20,7 @@ Bloxide has four distinct lifecycle levels, ordered from gentlest to most forcef
 
 | Level | Mechanism | Through dispatch? | Exit callbacks? | `on_init_entry`? | End state | `DispatchOutcome` | Restartable? |
 |-------|-----------|-------------------|-----------------|------------------|-----------|-------------------|--------------|
-| **Reset** | `LifecycleCommand::Reset` | ✅ | ✅ Full exit chain | ✅ (domain reset) | `initial_state()` — immediately operational | `Started(initial)` | ✅ immediately |
+| **Reset** | `LifecycleCommand::Reset` | ✅ | ✅ Full exit chain | ❌ (skips Init) | `initial_state()` — immediately operational | `Started(initial)` | ✅ immediately |
 | **Stop** | `LifecycleCommand::Stop` | ✅ | ✅ Full exit chain | ✅ (cleanup) | `Init` — suspended | `Stopped` | ✅ via `Start` |
 | **Abort** | `AbortCommand::Abort { child_id }` | ❌ (run loop breaks) | ❌ None | ❌ | Task ends (cooperative) | `Aborted` | ✅ via respawning |
 | **Kill** | `R::Kill::kill(abort_handle)` | ❌ (runtime ripcord) | ❌ None | ❌ | Task gone — permanently dead | (nothing) | ❌ permanently |
@@ -33,7 +33,7 @@ Bloxide has four distinct lifecycle levels, ordered from gentlest to most forcef
 3. Sets current state to `initial_state()`
 4. Returns `DispatchOutcome::Started(initial_state)`
 
-**Reset goes directly to `initial_state()`** (not Init as a state), but fires `on_init_entry` to reset domain state. No `on_init_exit` fires. The `on_entry` callbacks for `initial_state()` then run as normal. The actor is immediately operational — the supervisor does not need to send `Start` separately.
+**Reset skips Init entirely.** No `on_init_entry` or `on_init_exit` fires. The `on_entry` callbacks for `initial_state()` are responsible for resetting domain state. The actor is immediately operational — the supervisor does not need to send `Start` separately.
 
 ### Stop
 
@@ -185,7 +185,7 @@ impl<S: MachineSpec> StateMachine<S> {
     /// Lifecycle outcomes:
     /// - Start (from Init) → Started(initial_state)
     /// - Start (already operational) → HandledNoTransition (idempotent)
-    /// - Reset → Started(initial_state) (full exit chain, on_init_entry for domain reset, then entry chain for initial_state())
+    /// - Reset → Started(initial_state) (full exit chain, then entry chain for initial_state(); no on_init_entry)
     /// - Stop → Stopped (full exit chain to Init, fires on_init_entry, task stays alive)
     /// - Ping → HandledNoTransition (emits Alive event)
     /// 

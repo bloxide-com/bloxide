@@ -265,10 +265,8 @@ mod tests {
         // CRITICAL: on_entry fired again for Running (entry chain for initial_state)
         assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 2);
 
-        // CRITICAL: on_init_entry DID fire during Reset — this is the
-        // "reset domain state" semantic. on_init_entry resets behavior to
-        // B::default(), ensuring the actor starts fresh after reset.
-        assert_eq!(machine.ctx().init_entry_count.load(Ordering::SeqCst), 1);
+        // CRITICAL: on_init_entry did NOT fire — Reset skips Init
+        assert_eq!(machine.ctx().init_entry_count.load(Ordering::SeqCst), 0);
     }
 
     #[test]

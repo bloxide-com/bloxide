@@ -22,7 +22,7 @@ forceful. Each level is appropriate for a different situation:
 
 | Level | Mechanism | Through dispatch? | Exit callbacks? | `on_init_entry`? | End state | `DispatchOutcome` | Restartable? |
 |-------|-----------|-------------------|-----------------|------------------|-----------|-------------------|--------------|
-| **Reset** | `LifecycleCommand::Reset` | ✅ | ✅ Full exit chain | ✅ (domain reset) | `initial_state()` — immediately operational | `Started(initial)` | ✅ immediately |
+| **Reset** | `LifecycleCommand::Reset` | ✅ | ✅ Full exit chain | ❌ (skips Init) | `initial_state()` — immediately operational | `Started(initial)` | ✅ immediately |
 | **Stop** | `LifecycleCommand::Stop` | ✅ | ✅ Full exit chain | ✅ (cleanup) | `Init` — suspended | `Stopped` | ✅ via `Start` |
 | **Abort** | `AbortCommand` on abort mailbox | ❌ (run loop breaks) | ❌ None | ❌ | Task ends (cooperative) | `Aborted` | ✅ via respawning |
 | **Kill** | `R::Kill::kill(abort_handle)` | ❌ (runtime ripcord) | ❌ None | ❌ | Task gone — permanently dead | (nothing) | ❌ permanently |
@@ -34,9 +34,9 @@ then enters the **user-defined initial operational state** (defined by
 `MachineSpec::initial_state()`). The actor is immediately running again — no
 separate `Start` command is needed.
 
-**Reset goes directly to `initial_state()`** (not Init as a state), but fires
-`on_init_entry` to reset domain state. No `on_init_exit` fires. The `on_entry`
-callbacks for `initial_state()` then run as normal.
+**Reset skips Init entirely.** No `on_init_entry` or `on_init_exit` fires. The
+`on_entry` callbacks for `initial_state()` are responsible for resetting domain
+state (counters, cancel timers, etc.).
 
 Use for: restart cycles where the actor should continue operating.
 
@@ -157,10 +157,10 @@ states return `None` from `parent()`, which makes them direct children of
 
 `Init` is an engine-implicit leaf state, separate from the user's `State` enum.
 A freshly constructed `StateMachine` begins in `Init` **silently** — no
-`on_entry` callbacks fire at construction time. `on_init_entry` fires when
-the machine enters `Init` via `Stop` (for resource cleanup) AND during `Reset`
-(to reset domain state before re-entering `initial_state()`). It does **not**
-fire on `Abort`/`Kill` (which bypass dispatch).
+`on_entry` callbacks fire at construction time. `on_init_entry` fires only when
+the machine enters `Init` via `Stop` (for resource cleanup). It does **not**
+fire on `Reset` (which skips Init entirely) or `Abort`/`Kill` (which bypass
+dispatch).
 
 The current state is tracked by the `MachineState<S>` wrapper, which is the
 moral equivalent of `Option<S>` but semantically distinguishes the engine's
@@ -295,13 +295,12 @@ When a state handler returns `Reset`, the engine:
 
 1. Runs `on_exit` for every state from the current leaf up to the root (the
    full exit chain).
-2. Runs `on_init_entry` to reset domain state (e.g. `behavior = B::default()`).
-3. Runs `on_entry` for the `initial_state()` path (root-to-leaf).
-4. Sets the current state to `initial_state()`.
-5. Returns `DispatchOutcome::Started(initial_state)`.
+2. Runs `on_entry` for the `initial_state()` path (root-to-leaf).
+3. Sets the current state to `initial_state()`.
+4. Returns `DispatchOutcome::Started(initial_state)`.
 
-**Reset goes directly to `initial_state()`** (not Init as a state), but fires
-`on_init_entry` to reset domain state. The actor is immediately operational.
+**Reset skips Init entirely.** No `on_init_entry` fires. The actor is
+immediately operational.
 
 ### Guard::Fail
 

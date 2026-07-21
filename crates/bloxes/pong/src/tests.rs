@@ -116,12 +116,22 @@ mod pong_tests {
 
         h.terminate();
 
-        // Reset goes directly to initial_state() (Ready), not Init.
-        // The machine is immediately operational after reset.
+        // In the four-level lifecycle model, Reset goes directly to
+        // initial_state() (Ready) — not Init. The machine is immediately
+        // operational.
         assert_eq!(
             h.current_state(),
             MachineState::State(PongState::Ready),
             "machine must be in Ready (initial_state) after reset"
+        );
+
+        // Ready can still handle pings after reset
+        h.send_ping(42);
+        let replies = h.drain_to_ping_rx();
+        assert_eq!(
+            replies.len(),
+            1,
+            "Ready should reply with a Pong after reset"
         );
     }
 }

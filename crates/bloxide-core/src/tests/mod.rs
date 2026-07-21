@@ -144,12 +144,8 @@ mod hsm_engine {
     fn reset_from_shallow_state_exits_then_enters_initial_state() {
         let mut m = machine_in_a();
         let outcome = m.dispatch(TEvent::Reset);
-        // A is initial_state — reset exits ALL ancestors, fires on_init_entry,
-        // then enters ALL ancestors. A's path is [Top, A].
-        assert_eq!(
-            take_log(),
-            vec!["A:exit", "Top:exit", "Init:entry", "Top:entry", "A:entry"]
-        );
+        // A is initial_state — self-transition: exit A, enter A
+        assert_eq!(take_log(), vec!["A:exit", "A:entry"]);
         assert!(matches!(
             outcome,
             DispatchOutcome::Started(MachineState::State(TState::A))
@@ -160,11 +156,8 @@ mod hsm_engine {
     fn reset_from_deep_state_exits_all_ancestors_enters_initial_state() {
         let mut m = machine_in_c();
         let outcome = m.dispatch(TEvent::Reset);
-        // C→A: exit C, Other; fire on_init_entry; enter Top, A
-        assert_eq!(
-            take_log(),
-            vec!["C:exit", "Other:exit", "Init:entry", "Top:entry", "A:entry"]
-        );
+        // C→A: exit C, Other; enter Top, A
+        assert_eq!(take_log(), vec!["C:exit", "Other:exit", "Top:entry", "A:entry"]);
         assert!(matches!(
             outcome,
             DispatchOutcome::Started(MachineState::State(TState::A))
@@ -179,12 +172,7 @@ mod hsm_engine {
             outcome,
             DispatchOutcome::Started(MachineState::State(TState::A))
         ));
-        // Reset exits ALL ancestors, fires on_init_entry, then enters ALL
-        // ancestors of initial_state. A's path is [Top, A].
-        assert_eq!(
-            take_log(),
-            vec!["A:exit", "Top:exit", "Init:entry", "Top:entry", "A:entry"]
-        );
+        assert_eq!(take_log(), vec!["A:exit", "A:entry"]);
         assert!(matches!(m.current_state(), MachineState::State(TState::A)));
     }
 
@@ -212,10 +200,7 @@ mod hsm_engine {
         let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Reset));
         // Reset from Init is a no-op — there's nothing to reset.
         assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
-        assert!(
-            take_log().is_empty(),
-            "Reset from Init must not fire callbacks"
-        );
+        assert!(take_log().is_empty(), "Reset from Init must not fire callbacks");
         assert!(m.current_state().is_init());
     }
 

@@ -295,20 +295,18 @@ mod ping_tests {
 
         // In the four-level lifecycle model, Reset goes directly to
         // initial_state() (Active) — not Init. The machine is immediately
-        // operational. on_init_entry fires to reset domain state (behavior =
-        // B::default()), then Active::on_entry runs increment_round (round=1)
-        // and send_initial_ping.
+        // operational. on_init_entry does NOT fire on Reset (per spec),
+        // so the behavior is NOT reset — Active::on_entry runs
+        // increment_round, advancing the stale round counter.
         assert_eq!(
             h.current_state(),
             MachineState::State(PingState::Active),
             "machine must be in Active (initial_state) after reset"
         );
 
-        assert_eq!(
-            h.ctx().round(),
-            1,
-            "round must be 1 after reset (Active entry increments)"
-        );
+        // Round is incremented by Active::on_entry (not reset — on_init_entry
+        // does not fire on Reset per the four-level lifecycle spec).
+        assert_eq!(h.ctx().round(), u32::from(MAX_ROUNDS) + 1);
     }
 
     #[test]
