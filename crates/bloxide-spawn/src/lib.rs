@@ -35,7 +35,10 @@ pub use bloxide_core::capability::{KillCapability, NoKill};
 /// Tier 2 capability for runtimes that support spawning actor tasks at runtime.
 ///
 /// Extends `DynamicChannelCap` (which provides `alloc_actor_id` and `channel`).
-/// Blox crates that need dynamic spawning declare `R: SpawnCap`.
+/// This is a Tier 2 runtime-facing trait — blox crates never declare `R: SpawnCap`
+/// directly. Blox crates that need dynamic spawning use factory injection
+/// (see AGENTS.md invariant #15 and spec doc 13). The trait is implemented by
+/// runtimes (Tokio) and consumed by the spawn infrastructure and wiring layer.
 /// Embassy does NOT implement this trait — use static wiring for Embassy.
 ///
 /// The associated `TaskHandle` type is returned by `spawn` and is used to
