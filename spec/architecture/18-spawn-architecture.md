@@ -113,25 +113,25 @@ never sees the application's concrete spawn request type.
 bloxide-core              ← engine + runtime capabilities
   BloxRuntime, MachineSpec, lifecycle types
   DynamicChannelCap, StaticChannelCap
-  SpawnCap (TaskHandle, AbortHandle, spawn, abort_handle, abort)
   KillCapability<R> trait + NoKill / Kill type-level enum
   AbortCommand, ChildPolicy, GroupShutdown, RestartStrategy (child_management module)
-  SpawnOutput<R>, SpawnFn<R, Req>, ChildRegistrar<R>, spawn_child<R, Req, C> (spawn module)
+
+bloxide-spawn/            ← spawn capability (separate crate)
+  SpawnCap (TaskHandle, AbortHandle, spawn, abort_handle, abort)
+  SpawnOutput<R>, SpawnFn<R, Req>, ChildRegistrar<R>, spawn_child<R, Req, C>
+
+bloxide-child-management/ ← reusable child tracking (separate crate)
+  ChildGroup<R>             ← per-child tracking, restart strategy, phase management
+  ChildEntry<R>, ChildPhase
+  HasChildGroup<R>, HasChildGroupMut<R>, HasPending accessor traits
 
 bloxide-supervisor/       ← the supervisor blox (codegen-ed from blox.toml)
   blox.toml                ← source of truth: states, context, transitions, events
   Cargo.toml               ← NO dynamic feature. Supervisor is feature-free.
   src/generated/           ← codegen output (ctx.rs, topology.rs, spec_skeleton.rs, events.rs)
   src/lib.rs               ← re-exports
-
-bloxide-supervisor-context/  ← context crate (hand-written data types + traits)
-  ChildGroup<R>             ← per-child abort_ref + abort_handle
-  HasChildGroup<R>, HasChildGroupMut<R>, HasPending, HasChildNotify<R> accessor traits
-  SupervisorControl<R> (RegisterChild, RegisterDynamicChild, HealthCheckTick)
-  RegisterChild<R>          ← static child registration (no abort capability)
-  RegisterDynamicChild<R>   ← dynamic child registration (abort_ref + abort_handle)
-  SupervisorRegistrar       ← ChildRegistrar impl for standard supervisor
-  spawn_supervised_child    ← convenience wrapper fixing C = SupervisorRegistrar
+  src/control.rs           ← SupervisorControl, RegisterChild, RegisterDynamicChild, SupervisorRegistrar
+  src/spawn.rs             ← spawn_supervised_child (convenience wrapper fixing C = SupervisorRegistrar)
 
 bloxide-supervisor/src/actions.rs  ← in-crate action functions (concrete &SupervisorEvent<R>)
   start_children, stop_all_children
@@ -155,7 +155,7 @@ bloxide-embassy/          ← Embassy runtime (no dynamic spawning)
 bloxide-peers/            ← peer introduction (PeerCtrl, AddPeer, RemovePeer, introduce_peers)
 
 pool-messages/            ← Pool's message types (owns concrete spawn types)
-  PoolMsg, WorkerMsg, WorkerCtrl, SpawnedWorker
+  PoolMsg, WorkerMsg, SpawnedWorker
   SpawnRequest<R>          ← concrete request enum
 
 tokio-pool-demo-impl/     ← Pool's impl crate (owns the spawn function)
@@ -171,13 +171,14 @@ crate. It is a `fn` pointer — concrete, monomorphized, no captured state.
 // In the application's impl crate (e.g., tokio-pool-demo-impl)
 
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap, SpawnCap},
+    capability::{BloxRuntime, DynamicChannelCap},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::{ActorId, ActorRef},
     child_management::{AbortCommand, ChildPolicy},
-    spawn::SpawnOutput,
 };
-use pool_messages::{SpawnRequest, SpawnedWorker, WorkerCtrl, WorkerMsg};
+use bloxide_spawn::{SpawnCap, SpawnOutput};
+use bloxide_peers::PeerCtrl;
+use pool_messages::{SpawnRequest, SpawnedWorker, WorkerMsg};
 
 /// The concrete spawn function. A stateless `fn` pointer — no captured state.
 /// All per-request state comes through SpawnRequest.
@@ -204,7 +205,7 @@ where
             let worker_id = R::alloc_actor_id();
 
             // Create channels for the child
-            let (ctrl_ref, ctrl_rx) = R::channel::<WorkerCtrl<R>>(worker_id, 16);
+            let (ctrl_ref, ctrl_rx) = R::channel::<PeerCtrl<WorkerMsg, R>>(worker_id, 16);
             let (domain_ref, domain_rx) = R::channel::<WorkerMsg>(worker_id, 16);
             let (lifecycle_ref, lifecycle_rx) = R::channel::<LifecycleCommand>(worker_id, 4);
             let (abort_ref, abort_rx) = R::channel::<AbortCommand>(worker_id, 4);
@@ -262,7 +263,7 @@ The `SpawnFn` type alias is defined in `bloxide-core` so any blox can name the t
 without depending on a specific runtime:
 
 ```rust
-// In bloxide-core (alongside SpawnCap, DynamicChannelCap)
+// In bloxide-spawn (alongside SpawnCap)
 
 /// A spawn function creates a child actor and returns the handles the
 /// supervisor needs for lifecycle management and capability control.
@@ -305,11 +306,11 @@ pub enum SpawnRequest<R: BloxRuntime> {
 pub struct SpawnedWorker<R: BloxRuntime> {
     pub child_id: ActorId,
     pub domain_ref: ActorRef<WorkerMsg, R>,
-    pub ctrl_ref: ActorRef<WorkerCtrl<R>, R>,
+    pub ctrl_ref: ActorRef<PeerCtrl<WorkerMsg, R>, R>,
 }
 ```
 
-`SpawnRequest<R>` lives in `pool-messages`, not in `bloxide-supervisor-context`. The
+`SpawnRequest<R>` lives in `pool-messages`, not in `bloxide-supervisor`. The
 supervisor never imports it, never names it, never matches on it. The Pool calls the
 runtime spawn helper directly, passing the request by value (§3.12). The supervisor's
 control channel only carries `RegisterDynamicChild`, which the spawn helper sends after
@@ -317,18 +318,18 @@ the child is created.
 
 ### 3.4 SpawnOutput
 
-`SpawnOutput<R>` lives in `bloxide-core` because it is not supervisor-specific. Any blox
+`SpawnOutput<R>` lives in `bloxide-spawn` because it is not supervisor-specific. Any blox
 that manages children — the standard supervisor, a user's custom job dispatcher, a load
 balancer — needs the same lifecycle refs, kill ref, abort handle, and policy from a spawn
 operation.
 
 ```rust
-// In bloxide-core
+// In bloxide-spawn
 
-use crate::capability::{BloxRuntime, KillCapability};
-use crate::lifecycle::LifecycleCommand;
-use crate::messaging::{ActorId, ActorRef};
-use crate::child_management::{AbortCommand, ChildPolicy};
+use bloxide_core::capability::{BloxRuntime, KillCapability};
+use bloxide_core::lifecycle::LifecycleCommand;
+use bloxide_core::messaging::{ActorId, ActorRef};
+use bloxide_core::child_management::{AbortCommand, ChildPolicy};
 
 /// What a spawn function returns — the lifecycle and capability refs needed
 /// to register the child with whatever blox manages it.
@@ -372,7 +373,7 @@ The `ChildRegistrar` trait bridges the generic spawn helper to a blox-specific
 registration protocol:
 
 ```rust
-// In bloxide-core
+// In bloxide-spawn
 
 /// A blox that manages spawned children implements this to define how
 /// `SpawnOutput` is wrapped into its own control-plane message type.
@@ -390,10 +391,10 @@ pub trait ChildRegistrar<R: BloxRuntime> {
 }
 ```
 
-The standard supervisor's implementation (in `bloxide-supervisor-context`):
+The standard supervisor's implementation (in `bloxide-supervisor`):
 
 ```rust
-// In bloxide-supervisor-context
+// In bloxide-supervisor
 
 impl<R: BloxRuntime> ChildRegistrar<R> for SupervisorRegistrar {
     type RegisterMsg = SupervisorControl<R>;
@@ -455,7 +456,7 @@ supervisor. This enum is specific to the standard supervisor; a user's custom
 child-managing blox defines its own control enum (see §3.5 `ChildRegistrar`).
 
 ```rust
-// In bloxide-supervisor-context
+// In bloxide-supervisor
 
 /// Supervisor control-plane events delivered through the control mailbox.
 ///
@@ -493,7 +494,7 @@ Two separate structs avoid `Option` on the kill fields — the type system encod
 capability (static children don't have `abort_ref`):
 
 ```rust
-// In bloxide-supervisor-context
+// In bloxide-supervisor
 
 /// Register a static child (wired at startup). No kill capability.
 /// Used by the wiring layer for Embassy and static Tokio children.
@@ -584,7 +585,7 @@ and dynamic apps. The supervisor doesn't spawn — it only registers and manages
 children registered via `RegisterDynamicChild`.
 
 ```rust
-// In bloxide-supervisor-context
+// In bloxide-child-management
 
 struct ChildEntry<R: BloxRuntime> {
     id: ActorId,
@@ -681,13 +682,13 @@ calling a trait method for abort — the capability-as-mailbox pattern.
 
 ### 3.12 The Runtime Spawn Helper
 
-The spawn helper lives in `bloxide-core` (the `spawn` module). It is the bridge between
+The spawn helper lives in `bloxide-spawn`. It is the bridge between
 the requesting blox and whatever blox manages children. It calls the app's spawn function
 and sends the registration message (typed by `C: ChildRegistrar<R>`) to the managing
 blox's control mailbox.
 
 ```rust
-// In bloxide-core (spawn module)
+// In bloxide-spawn
 
 /// Spawn a supervised child actor.
 ///
@@ -735,7 +736,7 @@ where
 The standard supervisor's convenience wrapper fixes `C = SupervisorRegistrar`:
 
 ```rust
-// In bloxide-supervisor-context
+// In bloxide-supervisor
 
 /// Convenience wrapper around spawn_child that fixes C = SupervisorRegistrar.
 pub fn spawn_supervised_child<R, Req>(
@@ -753,7 +754,7 @@ where
 }
 ```
 
-`SpawnFn` and `ChildRegistrar` are both defined in `bloxide-core` so any blox can name
+`SpawnFn` and `ChildRegistrar` are both defined in `bloxide-spawn` so any blox can name
 them without a runtime or supervisor dependency.
 
 ### 3.13 run_supervised_actor_with_abort
@@ -979,26 +980,29 @@ pub fn introduce_peers<M, R>(
 Each actor receives the other's domain `ActorRef` on its control channel. The control
 channel is separate from the domain channel, so existing message ordering is unaffected.
 
-### Domain-Specific Peer Control (Recommended)
+### Domain-Specific Peer Control via `bloxide-peers`
 
-The recommended pattern is defining **domain-specific control types** in the message
-crate (e.g., `WorkerCtrl<R>` with `AddPeer`/`RemovePeer` variants), which enables the
-`#[delegates]` annotation and provides better type safety than the generic `PeerCtrl`.
+The pool and worker use the generic `PeerCtrl<WorkerMsg, R>` from the `bloxide-peers`
+crate directly — no domain-specific control enum is needed. The `PeerCtrl` type is
+generic over the domain message type (`WorkerMsg`), so it carries the right `ActorRef`
+type for peer introduction. The `#[delegates]` annotation on the context crate
+(`blox-ctx-worker-peers`) provides accessor traits (`HasWorkerPeers<R>`) that expose
+the peer list to action functions.
 
 ```rust
-// In pool-messages/src/lib.rs
-pub enum WorkerCtrl<R: BloxRuntime> {
-    AddPeer(AddWorkerPeer<R>),
-    RemovePeer(RemoveWorkerPeer),
+// In bloxide-peers
+pub enum PeerCtrl<M, R: BloxRuntime> {
+    AddPeer(AddPeer<M, R>),
+    RemovePeer(RemovePeer),
 }
 
-pub struct AddWorkerPeer<R: BloxRuntime> {
+pub struct AddPeer<M, R: BloxRuntime> {
     pub peer_id: ActorId,
-    pub peer_ref: ActorRef<WorkerMsg, R>,
+    pub peer_ref: ActorRef<M, R>,
 }
 ```
 
-`WorkerCtrl<R>` is a second mailbox entry in the actor's `Mailboxes` tuple. There is no
+`PeerCtrl<WorkerMsg, R>` is a second mailbox entry in the actor's `Mailboxes` tuple. There is no
 new recv loop: the same single `poll_next` / dispatch cycle handles both domain messages
 and control messages.
 
@@ -1010,7 +1014,7 @@ distinct `ActorRef`s**:
 | Ref | Type | Purpose |
 |-----|------|---------|
 | Domain ref | `ActorRef<WorkerMsg, R>` | Application messages (DoWork, etc.) |
-| Ctrl ref | `ActorRef<WorkerCtrl<R>, R>` | Peer control (AddPeer, RemovePeer) |
+| Ctrl ref | `ActorRef<PeerCtrl<WorkerMsg, R>, R>` | Peer control (AddPeer, RemovePeer) |
 
 The parent stores both in its context and uses them for different purposes:
 - Domain ref: send work messages and keep the channel alive (self-sender invariant)
@@ -1043,8 +1047,8 @@ sequenceDiagram
 
     Note over Pool: introduce_new_worker(ctx)
     loop for each existing worker i in 0..N-1
-        Pool->>NewWorker: WorkerCtrl::AddPeer(domain_ref_i) via ctrl_ref_N
-        Pool->>OldWorker: WorkerCtrl::AddPeer(domain_ref_N) via ctrl_ref_i
+        Pool->>NewWorker: PeerCtrl::AddPeer(domain_ref_i) via ctrl_ref_N
+        Pool->>OldWorker: PeerCtrl::AddPeer(domain_ref_N) via ctrl_ref_i
     end
 
     Pool->>NewWorker: WorkerMsg::DoWork(task_id) via domain_ref_N
@@ -1081,8 +1085,8 @@ time, wire them directly at construction without a control channel:
 ```rust
 // Both actors are constructed before either is spawned.
 // Cross-refs are injected directly into each Ctx.
-let ((ctrl_a, domain_a), mbox_a) = channels! { WorkerCtrl<R>(16), WorkerMsg(16) };
-let ((ctrl_b, domain_b), mbox_b) = channels! { WorkerCtrl<R>(16), WorkerMsg(16) };
+let ((ctrl_a, domain_a), mbox_a) = channels! { PeerCtrl<WorkerMsg, R>(16), WorkerMsg(16) };
+let ((ctrl_b, domain_b), mbox_b) = channels! { PeerCtrl<WorkerMsg, R>(16), WorkerMsg(16) };
 
 R::spawn(run_actor_to_completion(StateMachine::new(ctx_a), mbox_a));
 R::spawn(run_actor_to_completion(StateMachine::new(ctx_b), mbox_b));
@@ -1178,7 +1182,7 @@ runtime. It extends `DynamicChannelCap` and provides the task handle types and m
 that `KillCapability` builds upon.
 
 ```rust
-// In bloxide-core
+// In bloxide-spawn
 
 /// Tier 2 capability for runtimes that support spawning actor tasks at runtime.
 ///

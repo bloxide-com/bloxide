@@ -41,7 +41,7 @@ pub type WorkerSpawnFn<R> = fn(
     &ActorRef<PoolMsg, R>,
 ) -> (
     ActorRef<WorkerMsg, R>,
-    ActorRef<WorkerCtrl<R>, R>,
+    ActorRef<PeerCtrl<WorkerMsg, R>, R>,
 );
 
 /// Accessor for contexts that hold a worker spawn factory.
@@ -62,11 +62,11 @@ pub fn spawn_worker_tokio(
     pool_ref: &ActorRef<PoolMsg, TokioRuntime>,
 ) -> (
     ActorRef<WorkerMsg, TokioRuntime>,
-    ActorRef<WorkerCtrl<TokioRuntime>, TokioRuntime>,
+    ActorRef<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
 ) {
     // Create channels with Tokio-native types
     let ((ctrl_ref, domain_ref), worker_mbox) =
-        channels! { WorkerCtrl<TokioRuntime>(16), WorkerMsg(16) };
+        channels! { PeerCtrl<WorkerMsg, TokioRuntime>(16), WorkerMsg(16) };
     let worker_id = ctrl_ref.id();
 
     // Construct worker with Tokio-specific types
@@ -102,7 +102,7 @@ pub struct PoolCtx<R: BloxRuntime> {
     
     // Fields without matching conventions use Default::default() in constructor
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
-    pub worker_ctrls: Vec<ActorRef<WorkerCtrl<R>, R>>,
+    pub worker_ctrls: Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>,
     pub pending: u32,
 }
 

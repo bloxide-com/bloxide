@@ -108,12 +108,12 @@ actions = ["log_pong", "forward_ping"]
 
 # Multiple patterns — one entry per pattern
 [[topology.transitions]]
-pattern = "WorkerCtrl::AddPeer(_)"
+pattern = "PeerCtrl::AddPeer(_)"
 actions = ["handle_ctrl"]
 to = "stay"
 
 [[topology.transitions]]
-pattern = "WorkerCtrl::RemovePeer(_)"
+pattern = "PeerCtrl::RemovePeer(_)"
 actions = ["handle_ctrl"]
 to = "stay"
 
@@ -252,16 +252,16 @@ PingPongMsg::Pong(_) => {
 pub struct PoolCtx<R: BloxRuntime> {
     pub self_id: ActorId,
     pub self_ref: ActorRef<PoolMsg, R>,
-    pub worker_factory: WorkerSpawnFn<R>,  // fn(ActorId, &ActorRef<PoolMsg, R>) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>)
+    pub worker_factory: WorkerSpawnFn<R>,  // fn(ActorId, &ActorRef<PoolMsg, R>) -> (ActorRef<WorkerMsg, R>, ActorRef<PeerCtrl<WorkerMsg, R>, R>)
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
 }
 
 // Binary provides factory
 fn spawn_worker_tokio(pool_id: ActorId, pool_ref: &ActorRef<PoolMsg, TokioRuntime>) 
-    -> (ActorRef<WorkerMsg, TokioRuntime>, ActorRef<WorkerCtrl<TokioRuntime>, TokioRuntime>) 
+    -> (ActorRef<WorkerMsg, TokioRuntime>, ActorRef<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>) 
 {
     let ((domain_ref,), domain_mbox) = bloxide_tokio::channels! { WorkerMsg(8) };
-    let ((ctrl_ref,), ctrl_mbox) = bloxide_tokio::channels! { WorkerCtrl<TokioRuntime>(4) };
+    let ((ctrl_ref,), ctrl_mbox) = bloxide_tokio::channels! { PeerCtrl<WorkerMsg, TokioRuntime>(4) };
     let worker_id = domain_ref.id();
     // ... spawn worker task ...
     (domain_ref, ctrl_ref)
@@ -283,7 +283,7 @@ where
     for ctrl_ref in ctx.worker_ctrls() {
         let _ = ctrl_ref.try_send(
             ctx.self_id(),
-            WorkerCtrl::AddPeer(AddWorkerPeer { peer_ref: new_peer.clone() }),
+            PeerCtrl::AddPeer(AddPeer { peer_ref: new_peer.clone() }),
         );
     }
 }

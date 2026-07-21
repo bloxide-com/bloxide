@@ -5,7 +5,7 @@
 The Pool actor demonstrates dynamic actor spawning and peer introduction:
 - Receives `SpawnWorker` commands to create workers at runtime
 - Tracks spawned workers and their completion status
-- Introduces new workers to existing peers via `WorkerCtrl`
+- Introduces new workers to existing peers via `PeerCtrl`
 - Reaches terminal state when all workers report done
 
 This blox showcases:
@@ -64,7 +64,7 @@ pub struct PoolCtx<R: BloxRuntime> {
     #[ctor]
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
     #[ctor]
-    pub worker_ctrls: Vec<ActorRef<WorkerCtrl<R>, R>>,
+    pub worker_ctrls: Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>,
     #[ctor]
     pub pending: u32,
 }
@@ -76,7 +76,7 @@ pub struct PoolCtx<R: BloxRuntime> {
 | `self_ref` | `ActorRef<PoolMsg, R>` | `#[provides(HasSelfRef<R>)]` | Self reference (for worker callbacks) |
 | `worker_factory` | `WorkerSpawnFn<R>` | `#[provides(HasWorkerFactory<R>)]` | Injected spawn function |
 | `worker_refs` | `Vec<...>` | `#[ctor]` | Domain refs to spawned workers |
-| `worker_ctrls` | `Vec<ActorRef<WorkerCtrl<R>, R>>` | `#[ctor]` | Ctrl refs for peer introduction via `WorkerCtrl` |
+| `worker_ctrls` | `Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>` | `#[ctor]` | Ctrl refs for peer introduction via `PeerCtrl` |
 | `pending` | `u32` | `#[ctor]` | Count of running workers |
 
 ## Message Contracts
@@ -93,7 +93,7 @@ pub struct PoolCtx<R: BloxRuntime> {
 | Target | Message | When |
 |--------|---------|------|
 | New worker domain ref | `WorkerMsg::DoWork(DoWork { task_id })` | After spawn and peer introduction |
-| Worker ctrl refs | `WorkerCtrl::AddPeer(...)` | Via `introduce_new_worker` |
+| Worker ctrl refs | `PeerCtrl::AddPeer(...)` | Via `introduce_new_worker` |
 
 ## Entry / Exit Actions
 
@@ -136,7 +136,7 @@ pub struct PoolCtx<R: BloxRuntime> {
 ## Implementation Notes
 
 - The factory pattern remains unchanged: `worker_factory: WorkerSpawnFn<R>` is injected at wiring time
-- Pool uses `WorkerCtrl` for peer introduction between workers
+- Pool uses `PeerCtrl` for peer introduction between workers
 - Pool is generic over `R: BloxRuntime` but requires `SpawnCap` at wiring time (Tokio only)
 - Worker type is abstract — pool only knows the factory signature
 - See `spec/architecture/11-dynamic-actors.md` for the dynamic spawning pattern

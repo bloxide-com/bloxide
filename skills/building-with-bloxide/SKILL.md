@@ -219,8 +219,8 @@ generics = "<R: BloxRuntime>"
 
 [[event.mailboxes]]
 variant = "Ctrl"
-message = "WorkerCtrl"
-message_path = "pool_messages::WorkerCtrl"
+message = "PeerCtrl"
+message_path = "bloxide_peers::PeerCtrl"
 
 [[event.mailboxes]]
 variant = "Msg"
@@ -298,7 +298,7 @@ actions = ["log_pong", "forward_ping"]
 PingPongMsg::Ping(ping) => { ... }
 
 // Multiple patterns
-WorkerCtrl::AddPeer(_) | WorkerCtrl::RemovePeer(_) => { ... }
+PeerCtrl::AddPeer(_) | PeerCtrl::RemovePeer(_) => { ... }
 
 // Wildcard (matches any variant)
 _ => stay,

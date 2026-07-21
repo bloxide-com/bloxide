@@ -40,11 +40,12 @@ general case. All Embassy actors use the static wiring pattern described in
 
 ## Dynamic Spawning Crates
 
-Dynamic actor spawning and peer introduction are handled by two standard library
+Dynamic actor spawning and peer introduction are handled by three standard library
 crates that parallel `bloxide-supervisor` (supervision) and `bloxide-timer`
 (timers):
 
-- **`bloxide-core`** — defines the `SpawnCap` and `KillCapability` Tier 2 traits
+- **`bloxide-spawn`** — defines the `SpawnCap` Tier 2 trait, `ChildRegistrar`, `SpawnFn`, `spawn_child`
+- **`bloxide-core`** — defines `KillCapability` Tier 2 trait (used by the engine)
 - **`bloxide-peers`** — defines peer introduction (`PeerCtrl`, `introduce_peers`)
 
 This keeps all dynamic-spawning concerns out of blox crates while remaining
@@ -54,36 +55,40 @@ runtime-agnostic.
 
 | Crate | Module | Contents |
 |-------|--------|----------|
-| `bloxide-core` | `spawn` | `SpawnCap` trait — Tier 2, extends `DynamicChannelCap`; `KillCapability` trait |
+| `bloxide-spawn` | `lib` | `SpawnCap` trait — Tier 2, extends `DynamicChannelCap`; `ChildRegistrar`, `SpawnFn`, `spawn_child` |
+| `bloxide-core` | `capability` | `KillCapability` trait |
 | `bloxide-peers` | `lib` | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` |
 
-Both crates are `no_std`.
+All three crates are `no_std`.
 
-### Domain-Specific Peer Control (Recommended)
+### Generic Peer Control via `bloxide-peers`
 
-For peer introduction, use domain-specific control types defined in your message and action crates. This enables the `#[delegates]` annotation and provides better type safety.
+For peer introduction, use the generic `PeerCtrl<M, R>` from `bloxide-peers` directly. The `#[delegates]` annotation on the context crate provides domain-specific accessor traits.
 
-**Why domain-specific?**
-1. **Enables `#[delegates]`** — When your context has a `peers` field implementing `HasWorkerPeers<R>`, you can annotate it with `#[delegates(HasWorkerPeers)]` and the macro generates forwarding impls. 
-2. **Type safety** — `WorkerCtrl<R>` is specific to worker actors; you can't accidentally send it to a pool actor's ctrl channel.
-3. **Clearer names** — `HasWorkerPeers<R>` is domain-specific and self-documenting.
+**Why generic `PeerCtrl`?**
+1. **Enables `#[delegates]`** — When your context has a `peers` field implementing `HasWorkerPeers<R>`, you can annotate it with `#[delegates(HasWorkerPeers)]` and the macro generates forwarding impls.
+2. **No duplication** — `PeerCtrl<WorkerMsg, R>` is defined once in `bloxide-peers`, reused by any actor that needs peer introduction.
+3. **Clearer names** — `HasWorkerPeers<R>` is domain-specific and self-documenting, while the control message type is generic.
 
 **Where to define types:**
-- **Control message types** (`WorkerCtrl<R>`) — in the **message crate** alongside domain messages
+- **Control message types** (`PeerCtrl<M, R>`) — in **`bloxide-peers`**, imported by blox crates
 - **Peer accessor traits** (`HasWorkerPeers<R>`) — in the **action crate** with `#[delegatable]` annotation
 
 ### Dependency Graph
 
 ```mermaid
 flowchart TD
-    BloxideCore["bloxide-core\n(BloxRuntime, DynamicChannelCap,\nSpawnCap, KillCapability,\nrun_actor_to_completion)"]
+    BloxideCore["bloxide-core\n(BloxRuntime, DynamicChannelCap,\nKillCapability,\nrun_actor_to_completion)"]
+    BloxideSpawn["bloxide-spawn\n(SpawnCap, ChildRegistrar,\nspawn_child)"]
     BloxidePeers["bloxide-peers\n(PeerCtrl, introduce_peers)"]
     TokioRuntime["bloxide-tokio\n(impl SpawnCap, KillCapability)"]
     PoolBlox["pool-blox / worker-blox\n(R: BloxRuntime only)"]
     WiringBinary["wiring binary\n(uses SpawnCap inside factory fn)"]
 
+    BloxideSpawn --> BloxideCore
     BloxidePeers --> BloxideCore
     TokioRuntime --> BloxideCore
+    TokioRuntime --> BloxideSpawn
     PoolBlox --> BloxideCore
     PoolBlox --> BloxidePeers
     WiringBinary --> TokioRuntime
@@ -93,42 +98,41 @@ flowchart TD
 Blox crates depend on `bloxide-core` (for `BloxRuntime`) and `bloxide-peers`
 (for peer introduction) but never on `bloxide-tokio`. Blox crates declare `R: BloxRuntime`
 
-## Domain-Specific Peer Control Types
+## Peer Control Types via `bloxide-peers`
 
-The recommended pattern for peer control is defining domain-specific types in your
-message and action crates. This section shows the full pattern with concrete examples.
+The recommended pattern for peer control is using the generic `PeerCtrl<M, R>` from
+`bloxide-peers` with domain-specific accessor traits in your action crate. This section
+shows the full pattern with concrete examples.
 
-### Defining a Control Message Type
+### Control Message Type
 
-Control messages are defined in the **message crate** alongside domain messages:
+Control messages are defined in `bloxide-peers` and imported by blox crates:
 
 ```rust
-// In pool-messages/src/lib.rs
+// In bloxide-peers/src/lib.rs
 use bloxide_core::actor::{ActorId, ActorRef};
 use bloxide_core::capability::BloxRuntime;
 
-/// Domain-specific control message for worker actors.
-/// Domain-specific control type for workers
-/// and provides better type safety.
-pub enum WorkerCtrl<R: BloxRuntime> {
-    AddPeer(AddWorkerPeer<R>),
-    RemovePeer(RemoveWorkerPeer),
+/// Generic peer control message, parameterized by domain message type.
+pub enum PeerCtrl<M, R: BloxRuntime> {
+    AddPeer(AddPeer<M, R>),
+    RemovePeer(RemovePeer),
 }
 
-pub struct AddWorkerPeer<R: BloxRuntime> {
+pub struct AddPeer<M, R: BloxRuntime> {
     pub peer_id: ActorId,
-    pub peer_ref: ActorRef<WorkerMsg, R>,
+    pub peer_ref: ActorRef<M, R>,
 }
 
-pub struct RemoveWorkerPeer {
+pub struct RemovePeer {
     pub peer_id: ActorId,
 }
 ```
 
 **Key characteristics:**
-- Only `R` is generic — the message type (`WorkerMsg`) is fixed
-- Named for the specific actor type (e.g., WorkerCtrl)
-- Lives in the domain's message crate, not `bloxide-peers`
+- Generic over both message type (`M`) and runtime (`R`) — `PeerCtrl<WorkerMsg, R>` for workers
+- Defined once in `bloxide-peers`, reused by any actor that needs peer introduction
+- No domain-specific control enum needed — the `#[delegates]` annotation on the context crate provides type-safe accessor traits
 
 ### Defining a Peer Accessor Trait
 
@@ -152,7 +156,7 @@ pub trait HasWorkerPeers<R: BloxRuntime> {
     fn peer_refs_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, R>>;
     
     /// Ctrl refs for sending peer control messages.
-    fn peer_ctrls(&self) -> &Vec<ActorRef<WorkerCtrl<R>, R>>;
+    fn peer_ctrls(&self) -> &Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>;
 }
 ```
 
@@ -180,7 +184,7 @@ pub struct WorkerCtx<R: BloxRuntime> {
 // impl<R: BloxRuntime> HasWorkerPeers<R> for WorkerCtx<R> {
 //     fn peer_refs(&self) -> &Vec<ActorRef<WorkerMsg, R>> { self.peers.peer_refs() }
 //     fn peer_refs_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, R>> { self.peers.peer_refs_mut() }
-//     fn peer_ctrls(&self) -> &Vec<ActorRef<WorkerCtrl<R>, R>> { self.peers.peer_ctrls() }
+//     fn peer_ctrls(&self) -> &Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>> { self.peers.peer_ctrls() }
 // }
 ```
 
@@ -190,16 +194,16 @@ Handlers for domain-specific control messages are defined in the blox:
 
 ```rust
 // In worker-blox/src/spec.rs
-use pool_messages::WorkerCtrl;
+use bloxide_peers::PeerCtrl;
 use pool_actions::HasWorkerPeers;
 
-fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionResult {
+fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &PeerCtrl<WorkerMsg, R>) -> ActionResult {
     match ctrl {
-        WorkerCtrl::AddPeer(add) => {
+        PeerCtrl::AddPeer(add) => {
             ctx.peer_refs_mut().push(add.peer_ref.clone());
             blox_log_info!("worker {:?}: added peer {:?}", ctx.self_id, add.peer_id);
         }
-        WorkerCtrl::RemovePeer(remove) => {
+        PeerCtrl::RemovePeer(remove) => {
             ctx.peer_refs_mut().retain(|r| r.id() != remove.peer_id);
             blox_log_info!("worker {:?}: removed peer {:?}", ctx.self_id, remove.peer_id);
         }
@@ -210,7 +214,7 @@ fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionRes
 ```toml
 # In the [[topology.transitions]] table in blox.toml:
 [[topology.transitions]]
-pattern = "WorkerCtrl(add)"
+pattern = "PeerCtrl(add)"
 actions = ["handle_worker_ctrl_inline"]
 to = "stay"
 ```
@@ -224,7 +228,7 @@ The spawn factory returns the domain-specific control type:
 pub type WorkerSpawnFn<R> = fn(
     ActorId,
     &ActorRef<PoolMsg, R>,
-) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>);
+) -> (ActorRef<WorkerMsg, R>, ActorRef<PeerCtrl<WorkerMsg, R>, R>);
 ```
 
 
@@ -399,7 +403,7 @@ domain ref and a ctrl ref for the spawned child.
 pub type ChildSpawnFn<ParentMsg, ChildMsg, R> = fn(
     ActorId,                                     // parent's own ActorId
     &ActorRef<ParentMsg, R>,                     // parent's ActorRef (child stores for replies)
-) -> (ActorRef<ChildMsg, R>, ActorRef<WorkerCtrl<R>, R>);
+) -> (ActorRef<ChildMsg, R>, ActorRef<PeerCtrl<WorkerMsg, R>, R>);
 ```
 
 The concrete pool example specializes this:
@@ -409,7 +413,7 @@ The concrete pool example specializes this:
 pub type WorkerSpawnFn<R> = fn(
     ActorId,
     &ActorRef<PoolMsg, R>,
-) -> (ActorRef<WorkerMsg, R>, ActorRef<WorkerCtrl<R>, R>);
+) -> (ActorRef<WorkerMsg, R>, ActorRef<PeerCtrl<WorkerMsg, R>, R>);
 ```
 
 ### Factory Implementation (Wiring Layer)
@@ -424,12 +428,12 @@ fn spawn_worker_tokio(
     pool_ref: &ActorRef<PoolMsg, TokioRuntime>,
 ) -> (
     ActorRef<WorkerMsg, TokioRuntime>,
-    ActorRef<WorkerCtrl<TokioRuntime>, TokioRuntime>,
+    ActorRef<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
 ) {
     // Ctrl channel at index 0 (higher priority) so AddPeer messages are
     // processed before DoWork arrives on the domain channel.
     let ((ctrl_ref, domain_ref), worker_mbox) =
-        channels! { WorkerCtrl<TokioRuntime>(16), WorkerMsg(16) };
+        channels! { PeerCtrl<WorkerMsg, TokioRuntime>(16), WorkerMsg(16) };
     let worker_id = ctrl_ref.id();
 
     let worker_ctx = WorkerCtx::new(worker_id, pool_ref.clone());
@@ -491,7 +495,7 @@ Each dynamically spawned child actor that participates in peer-to-peer messaging
 | Ref | Type | Purpose |
 |-----|------|---------|
 | Domain ref | `ActorRef<WorkerMsg, R>` | Application messages (DoWork, etc.) |
-| Ctrl ref | `ActorRef<WorkerCtrl<R>, R>` | Peer control (AddPeer, RemovePeer) |
+| Ctrl ref | `ActorRef<PeerCtrl<WorkerMsg, R>, R>` | Peer control (AddPeer, RemovePeer) |
 
 The parent stores both in its context and uses them for different purposes:
 - Domain ref: send work messages and keep the channel alive (self-sender invariant)
@@ -513,7 +517,7 @@ impl<R: BloxRuntime> MachineSpec for WorkerSpec<R> {
     /// Ctrl stream at index 0 (higher priority) ensures AddPeer commands are
     /// processed before DoWork arrives on the domain stream at index 1.
     type Mailboxes<Rt: BloxRuntime> = (
-        R::Stream<WorkerCtrl<R>>,   // index 0 — ctrl (higher priority)
+        R::Stream<PeerCtrl<WorkerMsg, R>>,   // index 0 — ctrl (higher priority)
         R::Stream<WorkerMsg>,                 // index 1 — domain
     );
     // ...
@@ -535,23 +539,23 @@ The control message type is defined in the **message crate** with only `R` as a 
 parameter:
 
 ```rust
-// In pool-messages/src/lib.rs
-pub enum WorkerCtrl<R: BloxRuntime> {
-    AddPeer(AddWorkerPeer<R>),
-    RemovePeer(RemoveWorkerPeer),
+// In bloxide-peers/src/lib.rs
+pub enum PeerCtrl<M, R: BloxRuntime> {
+    AddPeer(AddPeer<M, R>),
+    RemovePeer(RemovePeer),
 }
 
-pub struct AddWorkerPeer<R: BloxRuntime> {
+pub struct AddPeer<M, R: BloxRuntime> {
     pub peer_id: ActorId,
-    pub peer_ref: ActorRef<WorkerMsg, R>,
+    pub peer_ref: ActorRef<M, R>,
 }
 
-pub struct RemoveWorkerPeer {
+pub struct RemovePeer {
     pub peer_id: ActorId,
 }
 ```
 
-`WorkerCtrl<R>` is a second mailbox entry in the actor's `Mailboxes` tuple. There is
+`PeerCtrl<WorkerMsg, R>` is a second mailbox entry in the actor's `Mailboxes` tuple. There is
 no new recv loop: the same single `poll_next` / dispatch cycle handles both domain
 messages and control messages.
 
@@ -569,20 +573,20 @@ message_path = "pool_messages::WorkerMsg"
 
 [[event.mailboxes]]
 variant = "Ctrl"
-message = "WorkerCtrl"
-message_path = "pool_messages::WorkerCtrl"
+message = "PeerCtrl"
+message_path = "bloxide_peers::PeerCtrl"
 ```
 
-**Handling `WorkerCtrl` in a transition rule:**
+**Handling `PeerCtrl` in a transition rule:**
 
 ```rust
 // In worker-blox/src/spec.rs
-fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionResult {
+fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &PeerCtrl<WorkerMsg, R>) -> ActionResult {
     match ctrl {
-        WorkerCtrl::AddPeer(add) => {
+        PeerCtrl::AddPeer(add) => {
             ctx.peer_refs_mut().push(add.peer_ref.clone());
         }
-        WorkerCtrl::RemovePeer(remove) => {
+        PeerCtrl::RemovePeer(remove) => {
             ctx.peer_refs_mut().retain(|r| r.id() != remove.peer_id);
         }
     }
@@ -592,7 +596,7 @@ fn handle_worker_ctrl(ctx: &mut WorkerCtx<R>, ctrl: &WorkerCtrl<R>) -> ActionRes
 ```toml
 # In the [[topology.transitions]] table in blox.toml:
 [[topology.transitions]]
-pattern = "WorkerCtrl(_)"
+pattern = "PeerCtrl(_)"
 actions = ["handle_worker_ctrl_inline"]
 to = "stay"
 ```
@@ -617,8 +621,8 @@ sequenceDiagram
 
     Note over Pool: introduce_new_worker(ctx)
     loop for each existing worker i in 0..N-1
-        Pool->>NewWorker: WorkerCtrl::AddPeer(domain_ref_i) via ctrl_ref_N
-        Pool->>OldWorker: WorkerCtrl::AddPeer(domain_ref_N) via ctrl_ref_i
+        Pool->>NewWorker: PeerCtrl::AddPeer(domain_ref_i) via ctrl_ref_N
+        Pool->>OldWorker: PeerCtrl::AddPeer(domain_ref_N) via ctrl_ref_i
     end
 
     Pool->>NewWorker: WorkerMsg::DoWork(task_id) via domain_ref_N
@@ -646,7 +650,7 @@ where
 }
 ```
 
-`introduce_peers` (from `bloxide-peers`) sends `WorkerCtrl::AddPeer` to both actors,
+`introduce_peers` (from `bloxide-peers`) sends `PeerCtrl::AddPeer` to both actors,
 each receiving the other's domain `ActorRef`. The control channel is separate from
 the domain channel so existing message ordering is unaffected.
 
@@ -658,8 +662,8 @@ spawn time, wire them directly at construction without a control channel:
 ```rust
 // Both actors are constructed before either is spawned.
 // Cross-refs are injected directly into each Ctx.
-let ((ctrl_a, domain_a), mbox_a) = channels! { WorkerCtrl<R>(16), WorkerMsg(16) };
-let ((ctrl_b, domain_b), mbox_b) = channels! { WorkerCtrl<R>(16), WorkerMsg(16) };
+let ((ctrl_a, domain_a), mbox_a) = channels! { PeerCtrl<WorkerMsg, R>(16), WorkerMsg(16) };
+let ((ctrl_b, domain_b), mbox_b) = channels! { PeerCtrl<WorkerMsg, R>(16), WorkerMsg(16) };
 
 let ctx_a = WorkerCtx::new(ctrl_a.id(), pool_ref.clone());
 let ctx_b = WorkerCtx::new(ctrl_b.id(), pool_ref.clone());
@@ -702,7 +706,7 @@ pub struct PoolCtx<R: BloxRuntime> {
     /// Domain ActorRefs for all spawned workers (keeps their channels alive).
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
     /// Ctrl ActorRefs for all spawned workers (used for peer introduction).
-    pub worker_ctrls: Vec<ActorRef<WorkerCtrl<R>, R>>,
+    pub worker_ctrls: Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>,
     /// Number of workers whose `WorkDone` we are still waiting for.
     pub pending: u32,
 }
@@ -783,17 +787,17 @@ same factory interface the production wiring binary uses.
 use bloxide_core::{capability::DynamicChannelCap, StateMachine};
 use bloxide_core::test_utils::TestRuntime;
 use bloxide_core::SpawnCap;
-use pool_messages::WorkerCtrl;
+use bloxide_peers::PeerCtrl;
 
 fn test_spawn_worker(
     _pool_id: ActorId,
     pool_ref: &ActorRef<PoolMsg, TestRuntime>,
 ) -> (
     ActorRef<WorkerMsg, TestRuntime>,
-    ActorRef<WorkerCtrl<TestRuntime>, TestRuntime>,
+    ActorRef<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
 ) {
     let worker_id = TestRuntime::alloc_actor_id();
-    let (ctrl_ref, ctrl_rx) = TestRuntime::channel::<WorkerCtrl<TestRuntime>>(worker_id, 8);
+    let (ctrl_ref, ctrl_rx) = TestRuntime::channel::<PeerCtrl<WorkerMsg, TestRuntime>>(worker_id, 8);
     let (domain_ref, domain_rx) = TestRuntime::channel::<WorkerMsg>(worker_id, 8);
 
     let worker_ctx = WorkerCtx::new(worker_id, pool_ref.clone());
@@ -892,9 +896,9 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
    `R`, and must never contain `ActorRef`. A worker that needs to reply to its parent
    stores the parent's `ActorRef<ReplyMsg, R>` in its `Ctx`, not in the message.
 
-2. **Control messages can carry ActorRef** — domain-specific control message types
-   (e.g., `WorkerCtrl<R>`) may contain `ActorRef` fields. These are defined in message
-   actor's lifetime.
+2. **Control messages can carry ActorRef** — peer control message types
+   (e.g., `PeerCtrl<WorkerMsg, R>`) may contain `ActorRef` fields. These are defined in `bloxide-peers`
+   and are safe because `ActorRef` is a clonable handle, not a borrow.
 
 4. **One recv loop per actor** — control channels are merged into the
    actor's `Mailboxes` tuple. There is one `poll_next` → `dispatch` cycle regardless
@@ -909,8 +913,7 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
     Only the wiring binary
    and test helpers use `SpawnCap` directly.
 
-7. **Prefer domain-specific peer types** — define `WorkerCtrl<R>` in your message crate (with `AddPeer`/`RemovePeer` variants)
-   and `HasWorkerPeers<R>` in your action crate with `#[delegatable]`.
+7. **Use `bloxide-peers` for peer control** — import `PeerCtrl<M, R>` from `bloxide-peers` (with `AddPeer`/`RemovePeer` variants), define accessor traits like `HasWorkerPeers<R>` in your action crate with `#[delegatable]`.
 
 8. **Peer accessor traits in action crates** — traits like `HasWorkerPeers<R>` must be
    defined in action crates (not message or blox crates) with the `#[delegatable]`
@@ -943,4 +946,4 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
 - **Priority mailboxes** → `spec/architecture/07-typed-mailboxes.md`
 - **Peer introduction API** → `crates/bloxide-peers/src/lib.rs`
 - **Pool/Worker blox specs** → `spec/bloxes/pool.md`, `spec/bloxes/worker.md`
-- **Runtime SpawnCap impl** → `runtimes/bloxide-tokio/src/spawn.rs`, `crates/bloxide-core/src/spawn.rs` (TestRuntime impl, `std` feature)
+- **Runtime SpawnCap impl** → `runtimes/bloxide-tokio/src/spawn.rs`, `crates/bloxide-spawn/src/lib.rs` (TestRuntime impl, `std` feature)

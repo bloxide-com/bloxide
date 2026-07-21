@@ -12,15 +12,16 @@ This guide is for modifying the bloxide framework itself — the HSM engine, pro
 ## Crate Map
 
 ```
-bloxide-core        HSM engine, BloxRuntime, channel traits, SpawnCap, KillCapability, TestRuntime  (no_std)
+bloxide-core        HSM engine, BloxRuntime, channel traits, KillCapability, TestRuntime  (no_std)
 bloxide-macros      Proc macros: BloxCtx, delegatable, blox_event                          (host-compiled)
 bloxide-codegen     TOML-driven code generator library                        (host-compiled)
 cargo-blox          CLI: cargo blox generate / new / build / check / test / run  (host-compiled)
 bloxide-log         Feature-gated logging macros                              (no_std)
 bloxide-timer       Timer service: commands, queue, accessor traits           (no_std)
-bloxide-supervisor  Reusable supervisor: ChildGroup, policies, run loop       (no_std)
-bloxide-supervisor-context  Supervisor context struct, SpawnFactory, ChildRegistrar  (no_std)
-bloxide-peers       Peer introduction: PeerCtrl, introduce_peers              (no_std)
+bloxide-spawn       Spawn capability: SpawnCap, ChildRegistrar, spawn_child   (no_std)
+bloxide-child-management  Child tracking: ChildGroup, ChildEntry, ChildPhase  (no_std)
+bloxide-supervisor  Supervisor blox: SupervisorSpec, SupervisorControl, actions  (no_std)
+bloxide-peers       Peer introduction: PeerCtrl, AddPeer, RemovePeer, introduce_peers  (no_std)
 bloxide-messaging   Accessor traits: HasSelfRef, HasPeerRef                   (no_std)
 bloxide-embassy     Embassy runtime: channels, tasks, timer bridge            (no_std)
 bloxide-tokio       Tokio runtime: channels, tasks, SpawnCap, KillCapability  (std)
@@ -60,7 +61,7 @@ These traits formalize the contract runtimes must fulfill:
 | `DynamicChannelCap` | `bloxide-core` | Runtime-configurable channel creation (used by `TestRuntime`) |
 | `TimerService` | `bloxide-timer` | Timer service run loop; bridges `TimerQueue` to native timer |
 | `SupervisedRunLoop` | `bloxide-supervisor` | Supervised actor run loop; merges lifecycle with domain mailboxes |
-| `SpawnCap` | `bloxide-core` | Dynamic actor spawning; extends `DynamicChannelCap` |
+| `SpawnCap` | `bloxide-spawn` | Dynamic actor spawning; extends `DynamicChannelCap` |
 | `KillCapability` | `bloxide-core` | Immediately aborts actor tasks for dynamic actor cleanup |
 
 When adding a new capability, decide which tier it belongs to. If blox crates need it, it is Tier 1 (accessor traits, action functions). If only runtimes implement it, it is Tier 2 (service trait).

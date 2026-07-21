@@ -16,8 +16,8 @@ Layer 3: Bloxes
 Layer 2: Standard Library (patterns)
   Message types, accessor traits, action functions, shared data structures,
   and runtime-facing service traits.
-  Only depend on BloxRuntime. Crates: bloxide-timer, bloxide-supervisor,
-  bloxide-supervisor-context, bloxide-peers, bloxide-messaging.
+  Only depend on BloxRuntime. Crates: bloxide-timer, bloxide-child-management,
+  bloxide-supervisor, bloxide-spawn, bloxide-peers, bloxide-messaging.
 
 Layer 1: Runtime (primitives + bridges)
   Primitives: channels (BloxRuntime), native timers, spawning, I/O.
@@ -40,7 +40,7 @@ These traits formalize the contract that runtime crates must fulfill. They enabl
 - `StaticChannelCap: BloxRuntime` (in `bloxide-core`) — compile-time capacity channel creation. Used by `channels!` macro.
 - `DynamicChannelCap: BloxRuntime` (in `bloxide-core`) — runtime-configurable channel creation. Used by `TestRuntime`.
 - `TimerService: BloxRuntime` (in `bloxide-timer`) — timer service run loop. Each runtime bridges `TimerQueue` to its native timer.
-- `SpawnCap: DynamicChannelCap` (in `bloxide-core`) — dynamic actor spawning. Extends `DynamicChannelCap` for runtimes that can spawn futures at runtime (Tokio, TestRuntime).
+- `SpawnCap: DynamicChannelCap` (in `bloxide-spawn`) — dynamic actor spawning. Extends `DynamicChannelCap` for runtimes that can spawn futures at runtime (Tokio, TestRuntime).
 - `KillCapability: BloxRuntime` (in `bloxide-core`) — runtime capability for immediately aborting actor tasks. Used by supervisors for policy-driven cleanup of dynamic actors.
 
 ### Standard Library Crate Pattern
@@ -81,13 +81,15 @@ bloxide-timer (depends on bloxide-core)
   Blox-facing: TimerCommand, TimerQueue, HasTimerRef, set_timer, cancel_timer
   Runtime-facing: trait TimerService
 
-bloxide-supervisor (depends on bloxide-core, bloxide-supervisor-context)
-  Blox-facing: LifecycleCommand, ChildLifecycleEvent, ChildGroup, HasChildGroup, actions
+bloxide-supervisor (depends on bloxide-core, bloxide-child-management, bloxide-spawn)
+  Blox-facing: SupervisorSpec, SupervisorControl, RegisterChild, action functions
   Runtime-facing: trait SupervisedRunLoop
 
-bloxide-supervisor-context (depends on bloxide-core)
-  Supervisor context struct, SpawnFactory, SpawnOutput, SpawnPolicy, SupervisorControl,
-  ChildRegistrar, SupervisorRegistrar
+bloxide-child-management (depends on bloxide-core)
+  ChildGroup, ChildEntry, ChildPhase, HasChildGroup, RestartStrategy
+
+bloxide-spawn (depends on bloxide-core)
+  SpawnCap, SpawnFn, SpawnOutput, ChildRegistrar, spawn_child helper
 
 bloxide-peers (depends on bloxide-core)
   Peer introduction: PeerCtrl, AddPeer, RemovePeer, HasPeers, introduce_peers
@@ -95,13 +97,13 @@ bloxide-peers (depends on bloxide-core)
 bloxide-messaging (depends on bloxide-core)
   Accessor traits: HasSelfRef<R,M>, HasPeerRef<R,M> for peer/self messaging
 
-bloxide-embassy (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-supervisor)
+bloxide-embassy (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-supervisor, bloxide-child-management)
   impl BloxRuntime + StaticChannelCap + TimerService
   macros: channels!, next_actor_id!, actor_task!, actor_task_supervised!, root_task!,
           timer_task!, spawn_child!, spawn_timer!
   Note: StaticChannelCap only (no DynamicChannelCap, no SpawnCap).
 
-bloxide-tokio (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-supervisor)
+bloxide-tokio (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-supervisor, bloxide-child-management, bloxide-spawn)
   impl BloxRuntime + DynamicChannelCap + TimerService + SpawnCap + KillCapability
   macros: channels!, next_actor_id!, actor_task!, actor_task_supervised!, spawn_timer!, spawn_child_dynamic!
 ```
@@ -124,11 +126,11 @@ This table shows which runtime implements each Tier 2 capability.
 |---------|---------|---------|
 | bloxide-embassy | (default) | `StaticChannelCap`, `TimerService` |
 | bloxide-tokio | (default) | `TimerService` |
-| bloxide-tokio | `dynamic` | `DynamicChannelCap`, `SpawnCap` |
+| bloxide-tokio | `dynamic` | `DynamicChannelCap`, `SpawnCap` (via `bloxide-spawn`) |
 
 ### TestRuntime (in bloxide-core)
 
-TestRuntime implements `DynamicChannelCap` and `SpawnCap` for test ergonomics. Both are in `bloxide-core` (the `SpawnCap` impl is gated behind the `std` feature). This keeps `bloxide-core` as the single source of channel and spawn traits while allowing tests to exercise dynamic spawning without a real executor.
+TestRuntime implements `DynamicChannelCap` and `SpawnCap` for test ergonomics. `DynamicChannelCap` is in `bloxide-core`; `SpawnCap` is in `bloxide-spawn` (the `SpawnCap` impl for `TestRuntime` is gated behind the `std` feature). This keeps capabilities in their own crates while allowing tests to exercise dynamic spawning without a real executor.
 
 ### Tier 2 Trait Naming Convention
 

@@ -39,7 +39,7 @@ stateDiagram-v2
 
 | Event | Handled by | Rule pattern | Guard outcome | Side effects |
 |-------|-----------|--------------|--------------|--------------|
-| `WorkerCtrl::AddPeer(_)` | `Waiting` | Action-Then-Stay | `Stay` | `apply_worker_ctrl` |
+| `PeerCtrl::AddPeer(_)` | `Waiting` | Action-Then-Stay | `Stay` | `apply_worker_ctrl` |
 | `WorkerMsg::DoWork(_)` | `Waiting` | Action-Then-Transition | `Done` | `process_work` |
 | `WorkerMsg::PeerResult(_)` | `Waiting` | Sink | `Stay` | none (absorbed) |
 | any unhandled | root (no rules) | — | dropped | none |
@@ -49,13 +49,13 @@ stateDiagram-v2
 The Worker's `Mailboxes` tuple is ordered for priority poll:
 
 ```rust
-type Mailboxes<Rt: BloxRuntime> = (R::Stream<WorkerCtrl<R>>, R::Stream<WorkerMsg>);
+type Mailboxes<Rt: BloxRuntime> = (R::Stream<PeerCtrl<WorkerMsg, R>>, R::Stream<WorkerMsg>);
 //                                  ^-- index 0 (ctrl)                     ^-- index 1 (domain)
 ```
 
 The runtime polls index 0 first, ensuring all `AddPeer` commands arrive before `DoWork`.
 
-> The behavior type parameter `B` must implement `HasWorkerPeers<R>`. This trait provides the concrete peer vector that `WorkerCtrl::AddPeer` appends to.
+> The behavior type parameter `B` must implement `HasWorkerPeers<R>`. This trait provides the concrete peer vector that `PeerCtrl::AddPeer` appends to.
 
 ## Context
 
@@ -89,7 +89,7 @@ pub struct WorkerCtx<R: BloxRuntime> {
 
 | Variant | Stream | Payload | Source |
 |---------|--------|---------|--------|
-| `WorkerCtrl::AddPeer(ActorRef<WorkerMsg, R>)` | Ctrl (index 0) | peer ref | Pool (via introduce_peers) |
+| `PeerCtrl::AddPeer(ActorRef<WorkerMsg, R>)` | Ctrl (index 0) | peer ref | Pool (via introduce_peers) |
 | `WorkerMsg::DoWork(DoWork { task_id })` | Domain (index 1) | task ID | Pool |
 | `WorkerMsg::PeerResult(PeerResult { from_id, result })` | Domain (index 1) | peer result | Other workers |
 
@@ -111,7 +111,7 @@ pub struct WorkerCtx<R: BloxRuntime> {
 ## Acceptance Criteria
 
 - [ ] `dispatch(WorkerEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Waiting`
-- [ ] `WorkerCtrl::AddPeer` in `Waiting` adds peer to list, stays in `Waiting`
+- [ ] `PeerCtrl::AddPeer` in `Waiting` adds peer to list, stays in `Waiting`
 - [ ] `WorkerMsg::DoWork` in `Waiting` sets task_id and result, transitions to `Done`
 - [ ] `Done::on_entry` broadcasts result to all accumulated peers
 - [ ] `Done::on_entry` sends `WorkDone` to pool

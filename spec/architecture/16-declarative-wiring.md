@@ -87,7 +87,7 @@ The wiring manifest tells the supervisor:
 - `self_ref = { source = "self" }` → create a channel for this actor, inject the ref
 - `peer_ref = { source = "actor", actor = "pong" }` → use pong's `self_ref` channel
 
-For actors with multiple mailboxes (like worker: `WorkerMsg` + `WorkerCtrl`), the wiring manifest specifies which channel maps to which field:
+For actors with multiple mailboxes (like worker: `WorkerMsg` + `PeerCtrl<WorkerMsg, R>`), the wiring manifest specifies which channel maps to which field:
 
 ```toml
 [[actors]]

@@ -188,7 +188,7 @@ pub enum RestartStrategy {
 | **`OneForAll`** | The failed child AND all other active children are sent `Reset` simultaneously. Use when children are tightly coupled and cannot operate correctly without all peers being in a clean state. |
 | **`RestForOne`** | The failed child AND all children declared after it (higher indices in `ChildGroup`) are sent `Reset`. Children declared before the failed child are left running. Use when children have dependencies on earlier siblings but not vice versa. |
 
-Only children in `Init` or `Running` phase are affected by the strategy. Children that are already `ResetPending`, `PermanentlyDone`, or `Stopped` are skipped. (Aborted and killed children are both recorded under the `PermanentlyDone` phase — see `ChildPhase` in `bloxide-supervisor-context/src/registry.rs`.)
+Only children in `Init` or `Running` phase are affected by the strategy. Children that are already `ResetPending`, `PermanentlyDone`, or `Stopped` are skipped. (Aborted and killed children are both recorded under the `PermanentlyDone` phase — see `ChildPhase` in `bloxide-child-management/src/lib.rs`.)
 
 The strategy is set on `ChildGroup` via the builder pattern:
 
@@ -648,7 +648,7 @@ Supervision-specific invariants:
 - `GroupShutdown` controls when the supervisor enters shutdown, not which children are affected.
 - `RestartStrategy` (OneForOne / OneForAll / RestForOne) controls which siblings are restarted alongside a failed child. Default is `OneForOne` (only the failed child).
 - `ChildPhase` tracks each child's state: `Init`, `Running`, `ResetPending` (Reset sent, awaiting `Started`), `PermanentlyDone`, `Stopped`. Health checks (`is_health_monitored`) skip `ResetPending` and `PermanentlyDone` children.
-- `LifecycleCommand` and `ChildLifecycleEvent` are defined in `bloxide-core` (and re-exported by `bloxide-supervisor`). `ChildPolicy`, `AbortCommand`, `GroupShutdown`, and `RestartStrategy` are defined in `bloxide-core/src/child_management.rs`.
+- `LifecycleCommand` and `ChildLifecycleEvent` are defined in `bloxide-core` (and re-exported by `bloxide-supervisor`). `ChildPolicy`, `AbortCommand`, `GroupShutdown`, and `RestartStrategy` are defined in `bloxide-core/src/child_management.rs`. `ChildGroup`, `ChildEntry`, and `ChildPhase` are defined in `bloxide-child-management`. `SupervisorControl`, `RegisterChild`, and `SupervisorRegistrar` are defined in `bloxide-supervisor/src/control.rs`.
 - No custom supervisor implementation is needed — `SupervisorSpec<R>` is a generic, reusable `MachineSpec`.
 
 ## Related Docs

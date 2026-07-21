@@ -288,7 +288,7 @@ guards = [
 **Event pattern classification** (handled by the codegen, not the user):
 - `Enum::Variant(...)` → full-event match closure
 - `*Msg` suffix (e.g. `PingPongMsg::Ping(_)`) → `msg_payload()` closure
-- `*Ctrl` suffix (e.g. `WorkerCtrl::AddPeer(_)`) → `ctrl_payload()` closure
+- `*Ctrl` suffix (e.g. `PeerCtrl::AddPeer(_)`) → `ctrl_payload()` closure
 
 **Target vocabulary**: `"StateName"` → `Guard::Transition(LeafState::new(...))`; `"stay"` → `Guard::Stay`; `"reset"` → `Guard::Reset`; `"fail"` → `Guard::Fail`.
 

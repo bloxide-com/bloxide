@@ -106,13 +106,14 @@ For traits with multiple methods backed by multiple fields (like `HasWorkers`), 
 ```rust
 // crates/blox-ctx-workers/src/lib.rs
 use bloxide_core::{BloxRuntime, messaging::ActorRef};
-use pool_messages::{WorkerCtrl, WorkerMsg};
+use pool_messages::WorkerMsg;
+use bloxide_peers::PeerCtrl;
 
 pub trait HasWorkers<R: BloxRuntime> {
     fn worker_refs(&self) -> &[ActorRef<WorkerMsg, R>];
     fn worker_refs_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, R>>;
-    fn worker_ctrls(&self) -> &[ActorRef<WorkerCtrl<R>, R>];
-    fn worker_ctrls_mut(&mut self) -> &mut Vec<ActorRef<WorkerCtrl<R>, R>>;
+    fn worker_ctrls(&self) -> &[ActorRef<PeerCtrl<WorkerMsg, R>, R>];
+    fn worker_ctrls_mut(&mut self) -> &mut Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>;
     fn pending(&self) -> u32;
     fn set_pending(&mut self, count: u32);
 }
@@ -127,8 +128,8 @@ macro_rules! impl_has_workers {
         impl<$R: BloxRuntime> HasWorkers<$R> for $ctx<$R> {
             fn worker_refs(&self) -> &[ActorRef<WorkerMsg, $R>] { &self.worker_refs }
             fn worker_refs_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, $R>> { &mut self.worker_refs }
-            fn worker_ctrls(&self) -> &[ActorRef<WorkerCtrl<$R>, $R>] { &self.worker_ctrls }
-            fn worker_ctrls_mut(&mut self) -> &mut Vec<ActorRef<WorkerCtrl<$R>, $R>> { &mut self.worker_ctrls }
+            fn worker_ctrls(&self) -> &[ActorRef<PeerCtrl<WorkerMsg, $R>, $R>] { &self.worker_ctrls }
+            fn worker_ctrls_mut(&mut self) -> &mut Vec<ActorRef<PeerCtrl<WorkerMsg, $R>, $R>> { &mut self.worker_ctrls }
             fn pending(&self) -> u32 { self.pending }
             fn set_pending(&mut self, count: u32) { self.pending = count; }
         }
@@ -226,7 +227,7 @@ impl_macro = "impl_has_workers"
 
   [[context.uses.fields]]
   name = "worker_ctrls"
-  ty = "Vec<ActorRef<WorkerCtrl<R>, R>>"
+  ty = "Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>"
   role = "state"
 
   [[context.uses.fields]]

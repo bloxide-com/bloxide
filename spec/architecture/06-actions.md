@@ -106,7 +106,7 @@ of how the arm is visually arranged.
 
 **Event pattern shorthand:**
 - **`*Msg`** — patterns on types ending in `Msg` (e.g. `PingPongMsg::Ping(ping)`) use `msg_payload()` for matching. The macro expands to `ev.msg_payload().map_or(false, |m| matches!(m, ...))`. Bindings like `ping` are extracted via `msg_payload()` in actions/guards.
-- **`*Ctrl`** — patterns on types ending in `Ctrl` (e.g. `WorkerCtrl::AddPeer(p)`) use `ctrl_payload()` for matching. Bindings are extracted via `ctrl_payload()`.
+- **`*Ctrl`** — patterns on types ending in `Ctrl` (e.g. `PeerCtrl::AddPeer(p)`) use `ctrl_payload()` for matching. Bindings are extracted via `ctrl_payload()`.
 
 ```toml
 # Sink — absorb without side-effects
