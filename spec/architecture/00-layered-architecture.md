@@ -6,6 +6,22 @@
 
 This document defines the foundational architecture of Bloxide: the three-layer principle, the two-tier trait system, and the decision rule for classifying new capabilities.
 
+## Suggested Reading Path
+
+The docs in this directory are numbered 00–18 but are not meant to be read strictly in order. For a first read, follow this path:
+
+1. [01 — System Architecture](01-system-architecture.md)
+2. [02 — HSM Engine](02-hsm-engine.md)
+3. [03 — Actor Messaging](03-actor-messaging.md)
+4. [05 — Handler Patterns](05-handler-patterns.md)
+5. [08 — Supervision](08-supervision.md)
+6. [14 — Unified Lifecycle](14-unified-lifecycle.md)
+7. [13 — Factory Injection](13-factory-injection-and-supervision.md)
+8. [15 — Composable Context Crates](15-composable-context-crates.md)
+9. [18 — Spawn Architecture](18-spawn-architecture.md)
+
+The remaining docs (04, 06, 07, 09, 10, 11, 12, 16, 17) are reference material — read them as needed when working on a related area.
+
 ## Three-Layer Principle
 
 ```
