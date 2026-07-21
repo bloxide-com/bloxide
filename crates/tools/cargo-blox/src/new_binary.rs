@@ -18,55 +18,26 @@ pub fn new_binary(name: &str, runtime: &str) -> Result<()> {
 
     let (runtime_dep, main_rs) = match runtime {
         "embassy" => (
-            "bloxide-embassy = { workspace = true }",
+            "bloxide-embassy = { workspace = true }\nembassy-executor = { version = \"0.9\", features = [\"arch-std\", \"executor-thread\"] }",
             format!(
                 r#"// Copyright 2025 Bloxide, all rights reserved
 //! {name_camel} wiring binary — Embassy runtime.
 
-use bloxide_core::lifecycle::LifecycleCommand;
-use bloxide_embassy::prelude::*;
 use embassy_executor::Spawner;
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) {{
-    // TODO: Create channels
-    // TODO: Build machines
-    // TODO: Set up supervision
-    // TODO: Start actors via spawner
-
-    // TODO: Main loop or join handles
+async fn main(_spawner: Spawner) {{
 }}
 "#
             ),
         ),
         _ => (
-            "bloxide-tokio = { workspace = true }",
+            "bloxide-tokio = { workspace = true }\ntokio = { workspace = true }",
             format!(
                 r#"// Copyright 2025 Bloxide, all rights reserved
 //! {name_camel} wiring binary — Tokio runtime.
-//!
-//! TODO: Wire your actors here. See the bloxide documentation for examples.
-
-use bloxide_core::lifecycle::LifecycleCommand;
-use bloxide_tokio::prelude::*;
-
-// TODO: use your_blox::prelude::*;
-// TODO: use your_messages::prelude::*;
-
 #[tokio::main]
 async fn main() {{
-    tracing_log::LogTracer::init().ok();
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
-        .try_init()
-        .ok();
-
-    // TODO: Create channels
-    // TODO: Build machines
-    // TODO: Set up supervision
-    // TODO: Start supervisor
-
-    tracing::info!("{name_snake} binary started — TODO: wire actors");
 }}
 "#
             ),
