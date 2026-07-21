@@ -37,7 +37,7 @@ async fn main() {
     );
     let sup_id = ::bloxide_tokio::next_actor_id!();
     let (children, sup_notify_rx, sup_control_rx) = group.finish();
-    let sup_ctx = ::bloxide_supervisor::SupervisorCtx::new(children, sup_id, sup_notify_ref_0);
+    let sup_ctx = ::bloxide_supervisor::SupervisorCtx::new(sup_id, children, sup_notify_ref_0);
     let mut sup_machine = ::bloxide_core::StateMachine::<
         ::bloxide_supervisor::SupervisorSpec<TokioRuntime>,
     >::new(sup_ctx);

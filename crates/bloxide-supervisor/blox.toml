@@ -15,8 +15,7 @@ on_init = "ctx.children.clear_counters(); ctx.pending = ChildAction::default();"
 # ActorRef, BloxRuntime) are auto-detected by the codegen from field types.
 imports = [
     "bloxide_core::lifecycle::ChildLifecycleEvent",
-    "bloxide_child_management::{ChildAction, ChildGroup, HasChildGroup, HasChildGroupMut, HasPending}",
-    "crate::HasChildNotify",
+    "bloxide_child_management::{ChildAction, ChildGroup, HasChildGroupMut, HasPending}",
 ]
 
 # Extra impl blocks emitted after the struct. {ctx} is replaced with the
@@ -42,30 +41,33 @@ variant = "Control"
 message = "SupervisorControl"
 message_path = "crate::control::SupervisorControl<R>"
 
-# ── Context fields ───────────────────────────────────────────────────────────
+# ── Context fields (via composable context crates) ──────────────────────────
 
-[[context.fields]]
-name = "children"
-ty = "ChildGroup<R>"
+# children: ChildGroup<R> from bloxide-child-management
+[[context.uses]]
+crate = "bloxide_child_management"
+trait = "HasChildGroup<R>"
+field = "children"
+field_type = "ChildGroup<R>"
 role = "ctor"
 provides = "HasChildGroup<R>"
 provides_mut = "HasChildGroupMut<R>, children_mut"
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-role = "self_id"
-
-[[context.fields]]
-name = "child_notify"
-ty = "ActorRef<ChildLifecycleEvent, R>"
+# child_notify: ActorRef<ChildLifecycleEvent, R> from bloxide-supervisor
+[[context.uses]]
+crate = "crate"
+trait = "HasChildNotify<R>"
+field = "child_notify"
+field_type = "ActorRef<ChildLifecycleEvent, R>"
 role = "ctor"
 provides = "HasChildNotify<R>"
 
-[[context.fields]]
-name = "pending"
-ty = "ChildAction"
-role = "state"
+# pending: ChildAction — state field, HasPending impl via extra_impls
+[[context.uses]]
+crate = "bloxide_child_management"
+fields = [
+    { name = "pending", ty = "ChildAction", role = "state" },
+]
 
 # ── Topology ─────────────────────────────────────────────────────────────────
 # 2 states, 12 transitions, 2 entry actions. Fully declarative — no handler_fns.

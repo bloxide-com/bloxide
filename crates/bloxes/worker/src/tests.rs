@@ -64,7 +64,7 @@ mod worker_tests {
             let (pool_ref, pool_rx) =
                 <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 16);
 
-            let ctx = WorkerCtx::new(pool_ref, worker_id, TestBehavior::default());
+            let ctx = WorkerCtx::new(worker_id, pool_ref, TestBehavior::default());
             let machine = StateMachine::<WorkerSpec<TestRuntime, TestBehavior>>::new(ctx);
 
             WorkerHarness { machine, pool_rx }

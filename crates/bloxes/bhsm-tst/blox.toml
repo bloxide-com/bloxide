@@ -6,10 +6,6 @@ name = "BhsmTst"
 name = "BhsmTstCtx"
 generics = ""
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
 [event]
 name = "BhsmTstEvent"
 

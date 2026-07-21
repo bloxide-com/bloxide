@@ -19,6 +19,15 @@ use bloxide_core::messaging::{ActorId, ActorRef};
 use core::fmt;
 use core::future::Future;
 
+/// Accessor trait for the child-notify channel ref.
+///
+/// A blox that manages spawned children needs a reference to the
+/// child-event mailbox so spawned children can report lifecycle events
+/// back. This trait provides read-only access to that ref.
+pub trait HasNotifyRef<R: BloxRuntime> {
+    fn notify_ref(&self) -> &ActorRef<ChildLifecycleEvent, R>;
+}
+
 // Re-export KillCapability and NoKill so downstream crates can get everything
 // from one place.
 pub use bloxide_core::capability::{KillCapability, NoKill};

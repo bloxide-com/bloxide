@@ -55,16 +55,6 @@ crate = "blox_ctx_current_task"
 trait = "HasCurrentTask"
 delegatable = true
 
-# Blox-specific fields
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["HasPeers<WorkerMsg, R>", "HasCurrentTask"]
-
 # --- Declarative transitions ---
 
 # Waiting: entry logs; handles ctrl (AddPeer/RemovePeer), DoWork → Done, PeerResult stays

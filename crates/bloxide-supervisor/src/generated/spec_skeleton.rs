@@ -9,6 +9,8 @@ use crate::actions::{
 #[allow(unused_imports)]
 use crate::control::SupervisorControl;
 pub use crate::generated::topology::SupervisorState;
+#[allow(unused_imports)]
+use crate::HasChildNotify;
 use crate::SupervisorCtx;
 use crate::SupervisorEvent;
 use ::bloxide_core::capability::BloxRuntime;
@@ -18,6 +20,8 @@ use ::bloxide_core::spec::{MachineSpec, StateFns};
 use ::core::marker::PhantomData;
 #[allow(unused_imports)]
 use bloxide_child_management::ChildAction;
+#[allow(unused_imports)]
+use bloxide_child_management::HasChildGroup;
 #[allow(unused_imports)]
 use bloxide_core::lifecycle::ChildLifecycleEvent;
 pub struct SupervisorSpec<R: BloxRuntime> {

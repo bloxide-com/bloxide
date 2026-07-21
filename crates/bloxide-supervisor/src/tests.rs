@@ -38,7 +38,7 @@ fn make_supervisor(
         receivers.push(rx);
     }
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
-    let ctx = SupervisorCtx::new(group, 100, notify_ref);
+    let ctx = SupervisorCtx::new(100, group, notify_ref);
     (StateMachine::new(ctx), receivers)
 }
 
@@ -56,7 +56,7 @@ fn make_supervisor_with_strategy(
         receivers.push(rx);
     }
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
-    let ctx = SupervisorCtx::new(group, 100, notify_ref);
+    let ctx = SupervisorCtx::new(100, group, notify_ref);
     (StateMachine::new(ctx), receivers)
 }
 

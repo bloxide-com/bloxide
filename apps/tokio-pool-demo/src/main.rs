@@ -28,8 +28,8 @@ async fn main() {
     let sup_control_ref_0 = group.control_ref();
     let sup_notify_ref_0 = group.notify_ref();
     let pool_ctx = PoolCtx::new(
-        pool_ref.clone(),
         pool_id,
+        pool_ref.clone(),
         ::tokio_pool_demo_impl::spawn_worker as _,
         sup_control_ref_0.clone(),
         sup_notify_ref_0.clone(),
@@ -43,7 +43,7 @@ async fn main() {
     );
     let sup_id = ::bloxide_tokio::next_actor_id!();
     let (children, sup_notify_rx, sup_control_rx) = group.finish();
-    let sup_ctx = ::bloxide_supervisor::SupervisorCtx::new(children, sup_id, sup_notify_ref_0);
+    let sup_ctx = ::bloxide_supervisor::SupervisorCtx::new(sup_id, children, sup_notify_ref_0);
     let mut sup_machine = ::bloxide_core::StateMachine::<
         ::bloxide_supervisor::SupervisorSpec<TokioRuntime>,
     >::new(sup_ctx);

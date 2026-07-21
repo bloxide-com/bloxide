@@ -279,12 +279,19 @@ fn test_context_preserved() {
                 spec.name
             );
 
-            // Verify each field from the TOML appears in the exported context
-            for field in &ctx.fields {
+            // Verify auto-emitted fields (self_id, behavior) appear in the exported context
+            let expected_fields: Vec<&str> = {
+                let mut v: Vec<&str> = vec!["self_id"];
+                if ctx.uses.iter().any(|u| u.delegatable) {
+                    v.push("behavior");
+                }
+                v
+            };
+            for field_name in &expected_fields {
                 assert!(
-                    exported_ctx.fields.iter().any(|f| f.name == field.name),
+                    exported_ctx.fields.iter().any(|f| f.name == *field_name),
                     "field '{}' missing from exported context for {}",
-                    field.name,
+                    field_name,
                     spec.name
                 );
             }
@@ -542,37 +549,33 @@ fn test_full_round_trip_no_data_loss() {
                 spec.name
             );
 
+            // Verify auto-emitted fields match the exported context.
+            let expected_fields: Vec<(&str, &str)> = {
+                let mut v: Vec<(&str, &str)> = vec![("self_id", "ActorId")];
+                if ctx.uses.iter().any(|u| u.delegatable) {
+                    v.push(("behavior", "B"));
+                }
+                v
+            };
+
             assert_eq!(
-                exported_ctx.fields.len(),
-                ctx.fields.len(),
+                exported_ctx.fields.len(), expected_fields.len(),
                 "context field count mismatch for {} (expected {}, got {})",
                 spec.name,
-                ctx.fields.len(),
+                expected_fields.len(),
                 exported_ctx.fields.len()
             );
 
-            for (i, field) in ctx.fields.iter().enumerate() {
+            for (i, (name, ty)) in expected_fields.iter().enumerate() {
                 assert_eq!(
-                    exported_ctx.fields[i].name, field.name,
+                    exported_ctx.fields[i].name, *name,
                     "context field {} name mismatch for {}",
                     i, spec.name
                 );
                 assert_eq!(
-                    exported_ctx.fields[i].ty, field.ty,
+                    exported_ctx.fields[i].ty, *ty,
                     "context field '{}' type mismatch for {}",
-                    field.name, spec.name
-                );
-
-                // Verify delegates annotation
-                let expected_delegates: Vec<String> = field
-                    .delegates
-                    .as_ref()
-                    .map(|ds| ds.iter().map(|d| format!("#[delegates({})]", d)).collect())
-                    .unwrap_or_default();
-                assert_eq!(
-                    exported_ctx.fields[i].annotations, expected_delegates,
-                    "context field '{}' delegates mismatch for {}",
-                    field.name, spec.name
+                    name, spec.name
                 );
             }
         }

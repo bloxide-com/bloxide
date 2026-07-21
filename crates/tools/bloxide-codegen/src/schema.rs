@@ -173,8 +173,6 @@ pub struct ContextConfig {
     #[serde(default)]
     pub extra_impls: Vec<String>,
     #[serde(default)]
-    pub fields: Vec<ContextFieldConfig>,
-    #[serde(default)]
     pub imports: Vec<String>,
     /// Composable context crate declarations.
     ///
@@ -234,30 +232,6 @@ pub struct ContextConfig {
     /// e.g. `"crate::dynamic_mailboxes::SupervisorMailboxes<R, Rt, F>"`.
     #[serde(default)]
     pub feature_mailboxes_type: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct ContextFieldConfig {
-    pub name: String,
-    pub ty: String,
-    pub delegates: Option<Vec<String>>,
-    /// Explicit field role for codegen: `"self_id"`, `"accessor"`, `"ctor"`,
-    /// `"state"`, or `"delegate"`. When absent, the codegen infers the role
-    /// from naming conventions (the legacy behaviour).
-    pub role: Option<String>,
-    /// Feature gate for this field. When set, the field is emitted only under
-    /// `#[cfg(feature = "...")]`.
-    #[serde(default)]
-    pub feature: Option<String>,
-    /// `#[provides(TraitPath)]` annotation for the BloxCtx derive macro.
-    /// Generates `impl TraitPath for Struct` that returns `&self.field`.
-    /// May include associated type bindings: `"SomeTrait<R>, type Assoc = T"`.
-    #[serde(default)]
-    pub provides: Option<String>,
-    /// `#[provides_mut(TraitPath, method_name)]` annotation for BloxCtx.
-    /// Generates `impl TraitPath for Struct` with a mutable accessor.
-    #[serde(default)]
-    pub provides_mut: Option<String>,
 }
 
 /// A `[[context.uses]]` entry — pulls traits and fields from a composable
@@ -322,6 +296,18 @@ pub struct ContextUse {
     /// Controls how the codegen emits the field and attributes.
     pub role: Option<String>,
 
+    /// `#[provides(TraitPath)]` annotation for the BloxCtx derive macro.
+    /// Generates `impl TraitPath for Struct` that returns `&self.field`.
+    /// May include associated type bindings.
+    /// Used when the trait name doesn't follow the `Has{FieldName}` convention.
+    #[serde(default)]
+    pub provides: Option<String>,
+
+    /// `#[provides_mut(TraitPath, method_name)]` annotation for BloxCtx.
+    /// Generates `impl TraitPath for Struct` with a mutable accessor.
+    #[serde(default)]
+    pub provides_mut: Option<String>,
+
     /// When `true`, the trait is `#[delegatable]` and the codegen should emit
     /// `__delegate_{Trait}` imports alongside the trait import.
     #[serde(default)]
@@ -350,6 +336,14 @@ pub struct ContextUseField {
     pub ty: String,
     /// Field role: `"state"` (zero-initialized) or `"ctor"` (constructor param).
     pub role: Option<String>,
+    /// `#[provides(TraitPath)]` annotation for the BloxCtx derive macro.
+    /// Generates `impl TraitPath for Struct` that returns `&self.field`.
+    #[serde(default)]
+    pub provides: Option<String>,
+    /// `#[provides_mut(TraitPath, method_name)]` annotation for BloxCtx.
+    /// Generates `impl TraitPath for Struct` with a mutable accessor.
+    #[serde(default)]
+    pub provides_mut: Option<String>,
     /// Feature gate for this sub-field. When set, the field is emitted only
     /// under `#[cfg(feature = "...")]`.
     #[serde(default)]

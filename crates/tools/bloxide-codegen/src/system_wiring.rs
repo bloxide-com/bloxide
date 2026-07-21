@@ -37,6 +37,13 @@ fn collect_ctor_fields(
     let enabled = active_features.get(blox_crate_name);
 
     if let Some(context) = &blox_config.context {
+        // 0. self_id is always FIRST in the constructor (matches struct order).
+        fields.push(CtorField {
+            name: "self_id".to_string(),
+            is_self_id: true,
+            is_delegate: false,
+        });
+
         // 1. context.uses entries that contribute a field.
         for u in &context.uses {
             if u.role.as_deref() == Some("state") {
@@ -57,26 +64,13 @@ fn collect_ctor_fields(
             }
         }
 
-        // 2. context.fields entries.
-        for f in &context.fields {
-            if f.role.as_deref() == Some("state") {
-                continue;
-            }
-            // Skip fields whose feature is not enabled.
-            if let Some(feat) = &f.feature {
-                if !enabled.map(|s| s.contains(feat)).unwrap_or(false) {
-                    continue;
-                }
-            }
-
-            let is_self_id =
-                f.role.as_deref() == Some("self_id") || (f.name == "self_id" && f.role.is_none());
-            let is_delegate = f.role.as_deref() == Some("delegate") || f.delegates.is_some();
-
+        // 2. behavior is LAST in the constructor (when delegatable uses exist).
+        let has_delegatable = context.uses.iter().any(|u| u.delegatable);
+        if has_delegatable {
             fields.push(CtorField {
-                name: f.name.clone(),
-                is_self_id,
-                is_delegate,
+                name: "behavior".to_string(),
+                is_self_id: false,
+                is_delegate: true,
             });
         }
     }

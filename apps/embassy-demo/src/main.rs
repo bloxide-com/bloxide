@@ -36,13 +36,13 @@ fn setup(spawner: ::embassy_executor::Spawner) {
     let _sup_control_ref_0 = group.control_ref();
     let sup_notify_ref_0 = group.notify_ref();
     let ping_ctx = PingCtx::new(
+        ping_id,
         pong_ref.clone(),
         ping_ref.clone(),
         timer_ref.clone(),
-        ping_id,
         PingBehavior::default(),
     );
-    let pong_ctx = PongCtx::new(ping_ref.clone(), pong_id);
+    let pong_ctx = PongCtx::new(pong_id, ping_ref.clone());
     let ping_machine = ::bloxide_core::StateMachine::new(ping_ctx);
     let pong_machine = ::bloxide_core::StateMachine::new(pong_ctx);
     ::bloxide_embassy::spawn_child!(
@@ -59,7 +59,7 @@ fn setup(spawner: ::embassy_executor::Spawner) {
     );
     let sup_id = ::bloxide_embassy::next_actor_id!();
     let (children, sup_notify_rx, sup_control_rx) = group.finish();
-    let sup_ctx = ::bloxide_supervisor::SupervisorCtx::new(children, sup_id, sup_notify_ref_0);
+    let sup_ctx = ::bloxide_supervisor::SupervisorCtx::new(sup_id, children, sup_notify_ref_0);
     let mut sup_machine = ::bloxide_core::StateMachine::<
         ::bloxide_supervisor::SupervisorSpec<EmbassyRuntime>,
     >::new(sup_ctx);

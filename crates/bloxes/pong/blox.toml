@@ -17,11 +17,6 @@ field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "accessor"
 
-# Blox-specific fields
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
 [event]
 name = "PongEvent"
 

@@ -92,7 +92,7 @@ pub fn spawn_worker(
                 <TokioRuntime as DynamicChannelCap>::channel::<AbortCommand>(worker_id, 4);
 
             let behavior = WorkerBehavior::<TokioRuntime>::default();
-            let worker_ctx = WorkerCtx::new(pool_ref, worker_id, behavior);
+            let worker_ctx = WorkerCtx::new(worker_id, pool_ref, behavior);
             let machine =
                 StateMachine::<WorkerSpec<TokioRuntime, WorkerBehavior<TokioRuntime>>>::new(
                     worker_ctx,

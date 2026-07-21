@@ -104,8 +104,8 @@ mod pool_tests {
 
             let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<TestRuntime>> = test_spawn_worker;
             let ctx = PoolCtx::new(
-                pool_ref.clone(),
                 pool_id,
+                pool_ref.clone(),
                 spawn_fn,
                 control_ref,
                 notify_ref,
@@ -314,8 +314,8 @@ mod pool_tests {
 
         let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<TestRuntime>> = test_spawn_worker;
         let ctx = PoolCtx::new(
-            pool_ref.clone(),
             pool_id,
+            pool_ref.clone(),
             spawn_fn,
             control_ref,
             notify_ref,

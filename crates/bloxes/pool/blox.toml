@@ -73,63 +73,21 @@ impl_macro = "impl_has_workers"
   ty = "u32"
   role = "state"
 
-# Blox-specific fields
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
-# ── Dynamic-only fields (gated by Pool's `dynamic` feature) ──────────────────
-
-# Spawn function (fn pointer, provided at wiring time)
-[[context.fields]]
-name = "spawn_fn"
-ty = "SpawnFn<R, SpawnRequest<R>>"
-role = "ctor"
+# Blox-specific dynamic spawn fields (gated by Pool's `dynamic` feature).
+# These are Pool-specific constructor params and state — no accessor traits.
+# Types are imported via feature_imports above.
+[[context.uses]]
+crate = "pool_messages"
 feature = "dynamic"
-
-# Ref to the supervisor's control mailbox — Pool sends RegisterDynamicChild here
-# (via the spawn_child helper, not directly)
-[[context.fields]]
-name = "spawn_ref"
-ty = "ActorRef<SupervisorControl<R>, R>"
-role = "ctor"
-feature = "dynamic"
-
-# Ref to the supervisor's child-notify mailbox — passed to the spawn helper
-[[context.fields]]
-name = "notify_ref"
-ty = "ActorRef<ChildLifecycleEvent, R>"
-role = "ctor"
-feature = "dynamic"
-
-# Ref to the Pool's own spawn-reply mailbox — included in SpawnRequest as reply_to
-[[context.fields]]
-name = "spawn_reply_ref"
-ty = "ActorRef<SpawnedWorker<R>, R>"
-role = "ctor"
-feature = "dynamic"
-
-# Pending task_id for the in-flight spawn request (Spawning state)
-[[context.fields]]
-name = "pending_task_id"
-ty = "u32"
-role = "state"
-feature = "dynamic"
-
-# True when a spawn request has been sent but the SpawnReply hasn't arrived yet.
-# Prevents premature AllDone transition while workers are still being spawned.
-[[context.fields]]
-name = "spawn_in_flight"
-ty = "bool"
-role = "state"
-feature = "dynamic"
-
-# Queue of task_ids waiting to be spawned (buffered while in Spawning state)
-[[context.fields]]
-name = "spawn_queue"
-ty = "Vec<u32>"
-role = "state"
-feature = "dynamic"
+fields = [
+    { name = "spawn_fn", ty = "SpawnFn<R, SpawnRequest<R>>", role = "ctor" },
+    { name = "spawn_ref", ty = "ActorRef<SupervisorControl<R>, R>", role = "ctor" },
+    { name = "notify_ref", ty = "ActorRef<ChildLifecycleEvent, R>", role = "ctor" },
+    { name = "spawn_reply_ref", ty = "ActorRef<SpawnedWorker<R>, R>", role = "ctor" },
+    { name = "pending_task_id", ty = "u32", role = "state" },
+    { name = "spawn_in_flight", ty = "bool", role = "state" },
+    { name = "spawn_queue", ty = "Vec<u32>", role = "state" },
+]
 
 [topology]
 spec_imports = [

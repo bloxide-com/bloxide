@@ -321,22 +321,29 @@ fn extract_entry_exit(spec: &mut BloxSpec, topology: &TopologyConfig) {
 }
 
 fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
-    let fields: Vec<model::ContextField> = context
-        .fields
+    // Auto-emitted fields: self_id (always) and behavior (when delegatable uses exist).
+    let delegatable_traits: Vec<String> = context
+        .uses
         .iter()
-        .map(|f| {
-            let annotations: Vec<String> = f
-                .delegates
-                .as_ref()
-                .map(|ds| ds.iter().map(|d| format!("#[delegates({})]", d)).collect())
-                .unwrap_or_default();
-            model::ContextField {
-                name: f.name.clone(),
-                ty: f.ty.clone(),
-                annotations,
-            }
-        })
+        .filter(|u| u.delegatable)
+        .filter_map(|u| u.trait_.clone())
         .collect();
+
+    let mut fields: Vec<model::ContextField> = vec![model::ContextField {
+        name: "self_id".to_string(),
+        ty: "ActorId".to_string(),
+        annotations: Vec::new(),
+    }];
+
+    if !delegatable_traits.is_empty() {
+        let delegates_annotation =
+            format!("#[delegates({})]", delegatable_traits.join(", "));
+        fields.push(model::ContextField {
+            name: "behavior".to_string(),
+            ty: "B".to_string(),
+            annotations: vec![delegates_annotation],
+        });
+    }
 
     // Fields contributed by composable context crates (`[[context.uses]]`).
     let mut uses: Vec<model::ContextField> = Vec::new();

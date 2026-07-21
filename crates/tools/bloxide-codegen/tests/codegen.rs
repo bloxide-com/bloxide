@@ -509,14 +509,10 @@ name = "CounterCtx"
 generics = "<B: CountsTicks>"
 actions_crate = "counter_actions"
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["CountsTicks"]
+[[context.uses]]
+crate = "blox_ctx_ticks"
+trait = "CountsTicks"
+delegatable = true
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -530,12 +526,11 @@ delegates = ["CountsTicks"]
 
     assert!(content.contains("#[derive(BloxCtx)]"));
     assert!(content.contains("pub struct CounterCtx"));
-    assert!(content.contains("pub self_id: ActorId"));
+    assert!(content.contains("pub self_id: ::bloxide_core::ActorId"));
     assert!(content.contains("#[delegates(CountsTicks)]"));
     assert!(content.contains("pub behavior: B"));
-    assert!(content.contains("use counter_actions::{CountsTicks, __delegate_CountsTicks}"));
-    assert!(content.contains("use ::bloxide_core::ActorId"));
-    assert!(content.contains("use ::bloxide_macros::BloxCtx"));
+    assert!(content.contains("blox_ctx_ticks"));
+        assert!(content.contains("use ::bloxide_macros::BloxCtx"));
 }
 
 #[test]
@@ -549,26 +544,36 @@ name = "PingCtx"
 generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
 actions_crate = "ping_pong_actions"
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasPeerRef<R, PingPongMsg>"
+field = "peer_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "accessor"
 
-[[context.fields]]
-name = "peer_ref"
-ty = "ActorRef<PingPongMsg, R>"
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasSelfRef<R, PingPongMsg>"
+field = "self_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "accessor"
 
-[[context.fields]]
-name = "self_ref"
-ty = "ActorRef<PingPongMsg, R>"
+[[context.uses]]
+crate = "bloxide_timer"
+trait = "HasTimerRef<R>"
+field = "timer_ref"
+field_type = "ActorRef<TimerCommand, R>"
+role = "accessor"
 
-[[context.fields]]
-name = "timer_ref"
-ty = "ActorRef<TimerCommand, R>"
+[[context.uses]]
+crate = "blox_ctx_current_timer"
+trait = "HasCurrentTimer"
+delegatable = true
 
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["HasCurrentTimer", "CountsRounds"]
+[[context.uses]]
+crate = "blox_ctx_rounds"
+trait = "CountsRounds"
+delegatable = true
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -584,7 +589,6 @@ delegates = ["HasCurrentTimer", "CountsRounds"]
     assert!(
         content.contains("pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>")
     );
-    assert!(content.contains("ping_pong_actions"));
     assert!(content.contains("HasCurrentTimer"));
     assert!(content.contains("CountsRounds"));
     assert!(content.contains("__delegate_HasCurrentTimer"));
@@ -604,14 +608,10 @@ name = "Counter"
 name = "CounterCtx"
 generics = "<B: CountsTicks>"
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["CountsTicks"]
+[[context.uses]]
+crate = "blox_ctx_ticks"
+trait = "CountsTicks"
+delegatable = true
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -623,7 +623,7 @@ delegates = ["CountsTicks"]
         .expect("ctx.rs missing");
     let content = &ctx_file.1;
 
-    assert!(content.contains("use counter_actions::{CountsTicks, __delegate_CountsTicks}"));
+    assert!(content.contains("blox_ctx_ticks"));
 }
 
 // ─── context.uses tests ──────────────────────────────────────────────────
@@ -658,14 +658,6 @@ crate = "blox_ctx_rounds"
 trait = "CountsRounds"
 delegatable = true
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["CountsRounds"]
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -703,8 +695,7 @@ delegates = ["CountsRounds"]
     assert!(content.contains("pub behavior: B"));
 
     // Framework imports
-    assert!(content.contains("use ::bloxide_core::ActorId"));
-    assert!(content.contains("use ::bloxide_macros::BloxCtx"));
+        assert!(content.contains("use ::bloxide_macros::BloxCtx"));
 }
 
 #[test]
@@ -722,14 +713,10 @@ crate = "blox_ctx_ticks"
 trait = "CountsTicks"
 delegatable = true
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["CountsTicks"]
+[[context.uses]]
+crate = "blox_ctx_ticks"
+trait = "CountsTicks"
+delegatable = true
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -769,13 +756,6 @@ impl_macro = "impl_has_workers"
   ty = "Vec<ActorRef<WorkerMsg, R>>"
   role = "state"
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
-[[context.fields]]
-name = "behavior"
-ty = "B"
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -866,14 +846,10 @@ name = "CounterCtx"
 generics = "<B: CountsTicks>"
 actions_crate = "counter_actions"
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["CountsTicks"]
+[[context.uses]]
+crate = "blox_ctx_ticks"
+trait = "CountsTicks"
+delegatable = true
 
 [topology]
 
@@ -927,18 +903,22 @@ name = "PingCtx"
 generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
 actions_crate = "ping_pong_actions"
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasPeerRef<R, PingPongMsg>"
+field = "peer_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "accessor"
 
-[[context.fields]]
-name = "peer_ref"
-ty = "ActorRef<PingPongMsg, R>"
+[[context.uses]]
+crate = "blox_ctx_current_timer"
+trait = "HasCurrentTimer"
+delegatable = true
 
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["HasCurrentTimer", "CountsRounds"]
+[[context.uses]]
+crate = "blox_ctx_rounds"
+trait = "CountsRounds"
+delegatable = true
 
 [topology]
 
@@ -1443,11 +1423,6 @@ crate = "blox_ctx_current_timer"
 trait = "HasCurrentTimer"
 delegatable = true
 
-[[context.fields]]
-name = "behavior"
-ty = "B"
-role = "delegate"
-delegates = ["HasCurrentTimer", "CountsRounds"]
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -1466,12 +1441,6 @@ delegates = ["HasCurrentTimer", "CountsRounds"]
     let u1 = &ctx.uses[1];
     assert_eq!(u1.trait_.as_deref(), Some("HasCurrentTimer"));
     assert!(u1.delegatable);
-
-    // role on context.fields
-    let f0 = &ctx.fields[0];
-    assert_eq!(f0.role.as_deref(), Some("delegate"));
-    let delegates = f0.delegates.as_ref().expect("delegates missing");
-    assert_eq!(delegates, &["HasCurrentTimer", "CountsRounds"]);
 }
 
 #[test]
@@ -1546,9 +1515,6 @@ name = "Counter"
 [context]
 name = "CounterCtx"
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -1556,33 +1522,7 @@ ty = "ActorId"
     assert!(ctx.uses.is_empty());
 }
 
-#[test]
-fn test_parse_context_field_role() {
-    // Verify the `role` field on [[context.fields]] parses correctly.
-    let toml = r#"
-[actor]
-name = "Test"
-
-[context]
-name = "TestCtx"
-
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-role = "self_id"
-
-[[context.fields]]
-name = "worker_refs"
-ty = "Vec<ActorRef<WorkerMsg, R>>"
-role = "state"
-"#;
-
-    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
-    let ctx = config.context.expect("context section missing");
-    assert_eq!(ctx.fields.len(), 2);
-    assert_eq!(ctx.fields[0].role.as_deref(), Some("self_id"));
-    assert_eq!(ctx.fields[1].role.as_deref(), Some("state"));
-}
+// test_parse_context_field_role removed — [[context.fields]] no longer exists
 
 #[test]
 fn test_declarative_reset_fail_targets() {
@@ -2235,10 +2175,6 @@ impl_macro = "impl_has_workers"
   name = "pending"
   ty = "u32"
   role = "state"
-
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
 
 [topology]
 
