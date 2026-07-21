@@ -28,7 +28,7 @@ bloxide/
     bloxide-messaging/         ← service crate: HasSelfRef<R,M>, HasPeerRef<R,M> for peer/self messaging
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-child-management/  ← reusable child tracking: ChildGroup, ChildEntry, ChildPhase, HasChildGroup (platform primitive)
-    bloxide-supervisor/        ← supervisor blox: SupervisorSpec, SupervisorControl, RegisterChild, action functions (in-crate)
+    bloxide-supervisor/        ← supervisor blox: SupervisorSpec, SupervisorControl, RegisterChild, action functions; re-exports ChildGroup/ChildPolicy/etc. from bloxide-child-management
     bloxide-peers/             ← peer introduction: PeerCtrl<M,R>, AddPeer, RemovePeer, HasPeers<M,R>, introduce_peers
     bloxide-spawn/             ← spawn capability: SpawnFn, SpawnOutput, SpawnCap (platform primitive)
     messages/
@@ -47,7 +47,6 @@ bloxide/
       blox-ctx-rounds/         ← CountsRounds delegatable domain context crate
       blox-ctx-current-timer/  ← HasCurrentTimer delegatable domain context crate
       blox-ctx-current-task/   ← HasCurrentTask delegatable domain context crate
-      blox-ctx-worker-peers/   ← HasWorkerPeers<R> delegatable domain context crate
       blox-ctx-ticks/          ← CountsTicks delegatable domain context crate
     bloxes/
       ping/                    ← declarative Ping actor; depends on ping-pong-actions
@@ -69,6 +68,7 @@ bloxide/
   runtimes/
     bloxide-embassy/           ← Embassy runtime implementation
     bloxide-tokio/             ← Tokio runtime implementation; implements SpawnCap and DynamicChannelCap
+    bloxide-test-runtime/      ← test runtime for executor-free unit testing (no async, no spawning)
   apps/
     embassy-demo/             ← system.toml + generated main.rs: ping/pong on Embassy
     tokio-demo/               ← system.toml + generated main.rs: ping/pong on Tokio
