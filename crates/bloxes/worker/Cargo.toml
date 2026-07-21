@@ -26,3 +26,4 @@ blox-ctx-current-task = { workspace = true }
 
 [dev-dependencies]
 bloxide-core    = { workspace = true, features = ["std"] }
+bloxide-test-runtime = { workspace = true }

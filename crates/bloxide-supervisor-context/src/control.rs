@@ -90,7 +90,7 @@ impl<R: BloxRuntime> fmt::Debug for RegisterDynamicChild<R> {
 /// Supervisor control-plane events delivered through a dedicated mailbox.
 ///
 /// There is no `Spawn` variant — spawning is decoupled from the supervisor.
-/// The spawn helper calls `spawn_child()` (in `bloxide-core`) which sends
+/// The spawn helper calls `spawn_child()` (in `bloxide-spawn`) which sends
 /// `RegisterDynamicChild` on the control mailbox after the child is created.
 ///
 /// Implements `Clone` because all variants are `Clone` (`RegisterDynamicChild`
@@ -134,10 +134,10 @@ impl<R: BloxRuntime> fmt::Debug for SupervisorControl<R> {
 /// injects this type when the supervisor is the managing blox.
 pub struct SupervisorRegistrar;
 
-impl<R: BloxRuntime> bloxide_core::spawn::ChildRegistrar<R> for SupervisorRegistrar {
+impl<R: BloxRuntime> bloxide_spawn::ChildRegistrar<R> for SupervisorRegistrar {
     type RegisterMsg = SupervisorControl<R>;
 
-    fn register(output: bloxide_core::spawn::SpawnOutput<R>) -> SupervisorControl<R> {
+    fn register(output: bloxide_spawn::SpawnOutput<R>) -> SupervisorControl<R> {
         SupervisorControl::RegisterDynamicChild(RegisterDynamicChild {
             id: output.child_id,
             lifecycle_ref: output.lifecycle_ref,

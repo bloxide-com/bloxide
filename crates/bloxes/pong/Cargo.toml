@@ -21,3 +21,4 @@ ping-pong-messages  = { workspace = true }
 
 [dev-dependencies]
 bloxide-core        = { workspace = true, features = ["std"] }
+bloxide-test-runtime = { workspace = true }

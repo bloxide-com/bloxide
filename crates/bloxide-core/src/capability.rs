@@ -1,6 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
 use crate::messaging::{ActorId, ActorRef, Envelope};
-use core::future::Future;
 
 /// Base trait for runtime-specific message sending and receiving.
 ///
@@ -125,47 +124,12 @@ pub trait DynamicChannelCap: BloxRuntime {
     ) -> (ActorRef<M, Self>, Self::Receiver<M>);
 }
 
-/// Tier 2 capability for runtimes that support spawning actor tasks at runtime.
-///
-/// Extends `DynamicChannelCap` (which provides `alloc_actor_id` and `channel`).
-/// Blox crates that need dynamic spawning declare `R: SpawnCap`.
-/// Embassy does NOT implement this trait — use static wiring for Embassy.
-///
-/// The associated `TaskHandle` type is returned by `spawn` and is used to
-/// produce a `KillHandle` (the cloneable ripcord). For Tokio,
-/// `TaskHandle = JoinHandle<()>` and `KillHandle = tokio::task::AbortHandle`.
-/// For a future Embassy task-pool runtime, `KillHandle` would be `()` (no
-/// external kill — the kill mailbox is sufficient) or whatever Embassy
-/// provides if [issue #3197](https://github.com/embassy-rs/embassy/issues/3197)
-/// is implemented.
-///
-/// All types are concrete, by-value — no `Arc<dyn>`, no dynamic dispatch.
-pub trait SpawnCap: DynamicChannelCap {
-    /// Handle to a spawned task. Used to derive a [`KillHandle`](Self::KillHandle).
-    /// Consumed by [`kill_handle`](Self::kill_handle).
-    type TaskHandle: Send + 'static;
-
-    /// Cloneable handle for external task kill. Must be `Clone` so it can
-    /// be extracted from `&Event` in action functions (the HSM engine passes
-    /// `&Event`, not `&mut Event`). `()` for runtimes without external kill.
-    type KillHandle: Clone + Send + 'static;
-
-    /// Spawn a future as an independent task and return a handle.
-    fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle;
-
-    /// Derive a cloneable kill handle from a task handle.
-    /// The task handle is consumed; the task continues running (drop does not kill).
-    fn kill_handle(handle: Self::TaskHandle) -> Self::KillHandle;
-
-    /// Kill a spawned task immediately via its kill handle. No callbacks fire —
-    /// the task is dropped in-place. The handle is consumed and cannot be reused.
-    fn kill(handle: Self::KillHandle);
-}
-
 /// Type-level kill capability for a runtime.
 ///
 /// `NoKill` — no external task kill (Embassy, static-only). `Handle = ()` (ZST).
 /// `Kill`   — external kill via `SpawnCap::kill(handle)` (Tokio, dynamic).
+///         `Kill` lives in `bloxide-spawn`, not here, because it requires the
+///         `SpawnCap` bound.
 ///
 /// This is a type-level enum, not a trait object. The runtime picks the
 /// variant; the supervisor is monomorphized for whichever it is.
@@ -186,13 +150,4 @@ pub struct NoKill;
 impl<R: BloxRuntime> KillCapability<R> for NoKill {
     type Handle = ();
     fn kill(_: ()) {}
-}
-
-/// Kill capability via `SpawnCap::kill`. Used by dynamic runtimes (Tokio).
-pub struct Kill;
-impl<R: BloxRuntime + SpawnCap> KillCapability<R> for Kill {
-    type Handle = R::KillHandle;
-    fn kill(handle: R::KillHandle) {
-        R::kill(handle);
-    }
 }

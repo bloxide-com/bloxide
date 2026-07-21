@@ -16,7 +16,7 @@ use crate::{
 use bloxide_core::child_management::AbortCommand;
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
-use bloxide_core::test_utils::{TestReceiver, TestRuntime};
+use bloxide_test_runtime::{TestReceiver, TestRuntime};
 use bloxide_core::{
     capability::DynamicChannelCap, engine::DispatchOutcome, engine::MachineState, StateMachine,
 };

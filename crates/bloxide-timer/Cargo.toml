@@ -10,9 +10,10 @@ license.workspace = true
 [features]
 default = ["alloc"]
 alloc = ["bloxide-core/alloc"]
-std = ["bloxide-core/std", "alloc"]
+std = ["bloxide-core/std", "alloc", "dep:bloxide-test-runtime"]
 
 [dependencies]
 bloxide-core = { workspace = true }
 bloxide-log = { workspace = true }
 critical-section = "1.2.0"
+bloxide-test-runtime = { workspace = true, optional = true }

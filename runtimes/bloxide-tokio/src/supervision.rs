@@ -421,7 +421,7 @@ mod tests {
     /// and verify the task is killed.
     #[tokio::test]
     async fn spawn_cap_kill_aborts_task() {
-        use bloxide_core::SpawnCap;
+        use bloxide_spawn::SpawnCap;
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
 
@@ -465,7 +465,7 @@ mod tests {
     ///      an `AtomicBool` when the future is dropped (killed mid-flight)
     #[tokio::test]
     async fn ripcord_aborts_unresponsive_child() {
-        use bloxide_core::SpawnCap;
+        use bloxide_spawn::SpawnCap;
         use bloxide_supervisor::registry::{ChildGroup, ChildPolicy, GroupShutdown};
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;

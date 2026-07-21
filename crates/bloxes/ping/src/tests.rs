@@ -16,7 +16,7 @@ mod ping_tests {
     use blox_ctx_rounds::CountsRounds;
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::ActorId;
-    use bloxide_core::test_utils::{TestReceiver, TestRuntime, TestSender};
+    use bloxide_test_runtime::{TestReceiver, TestRuntime, TestSender};
     use bloxide_core::{
         spec::MachineSpec, DynamicChannelCap, Envelope, MachineState, StateMachine,
     };

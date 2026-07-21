@@ -320,6 +320,3 @@ mod hsm_engine {
         assert!(take_log().is_empty());
     }
 }
-
-#[cfg(all(test, feature = "std"))]
-mod lifecycle_dispatch;

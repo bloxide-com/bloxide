@@ -20,10 +20,7 @@ pub mod lifecycle;
 pub mod mailboxes;
 pub mod messaging;
 pub mod prelude;
-pub mod spawn;
 pub mod spec;
-#[cfg(feature = "std")]
-pub mod test_utils;
 pub mod topology;
 pub mod transition;
 
@@ -33,7 +30,7 @@ mod tests;
 pub use accessor::HasSelfId;
 pub use actor::{run_actor, run_actor_auto_start, run_actor_to_completion};
 pub use capability::{
-    BloxRuntime, DynamicChannelCap, Kill, KillCapability, NoKill, SpawnCap, StaticChannelCap,
+    BloxRuntime, DynamicChannelCap, KillCapability, NoKill, StaticChannelCap,
 };
 pub use child_management::{AbortCommand, ChildPolicy, GroupShutdown, RestartStrategy};
 pub use engine::{DispatchOutcome, MachineState, StateMachine};
@@ -41,7 +38,6 @@ pub use event_tag::{EventTag, LifecycleEvent, LIFECYCLE_TAG, WILDCARD_TAG};
 pub use lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 pub use mailboxes::{Mailboxes, NoMailboxes};
 pub use messaging::{ActorId, ActorRef, Envelope};
-pub use spawn::{spawn_child, ChildRegistrar, SpawnFn, SpawnOutput};
 pub use spec::{MachineSpec, StateFns};
 pub use topology::{LeafState, StateTopology};
 pub use transition::{ActionResult, ActionResults, Guard, StateRule};

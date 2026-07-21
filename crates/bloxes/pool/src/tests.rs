@@ -11,8 +11,8 @@
 mod pool_tests {
     use bloxide_core::child_management::ChildPolicy;
     use bloxide_core::lifecycle::ChildLifecycleEvent;
-    use bloxide_core::spawn::{SpawnFn, SpawnOutput};
-    use bloxide_core::test_utils::TestRuntime;
+    use bloxide_spawn::{SpawnFn, SpawnOutput};
+    use bloxide_test_runtime::TestRuntime;
     use bloxide_core::{
         capability::{BloxRuntime, DynamicChannelCap},
         lifecycle::LifecycleCommand,

@@ -478,13 +478,14 @@ impl<R: BloxRuntime> ChildGroup<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bloxide_core::{capability::DynamicChannelCap, test_utils::TestRuntime};
+    use bloxide_core::capability::DynamicChannelCap;
+    use bloxide_test_runtime::{TestRuntime, TestReceiver};
 
     fn setup_one_child(
         policy: ChildPolicy,
     ) -> (
         ChildGroup<TestRuntime>,
-        bloxide_core::test_utils::TestReceiver<LifecycleCommand>,
+        TestReceiver<LifecycleCommand>,
     ) {
         let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
         let id = 1usize;

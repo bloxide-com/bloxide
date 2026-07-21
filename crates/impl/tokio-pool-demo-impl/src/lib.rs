@@ -8,13 +8,13 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap, SpawnCap},
+    capability::{BloxRuntime, DynamicChannelCap},
     child_management::{AbortCommand, ChildPolicy},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::ActorRef,
-    spawn::SpawnOutput,
     StateMachine,
 };
+use bloxide_spawn::{SpawnCap, SpawnOutput};
 use bloxide_tokio::{run_supervised_actor_with_abort, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasWorkerPeers};
 use pool_messages::{SpawnRequest, SpawnedWorker, WorkerCtrl, WorkerMsg};

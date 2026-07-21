@@ -20,3 +20,5 @@ bloxide-supervisor-context = { workspace = true }
 
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std"] }
+bloxide-test-runtime = { workspace = true }
+bloxide-spawn = { workspace = true, features = ["std"] }

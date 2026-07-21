@@ -1,17 +1,78 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Spawn types — `SpawnOutput`, `ChildRegistrar`, `SpawnFn`, `spawn_child` helper.
+#![no_std]
+//! Spawn capability for bloxide — `SpawnCap`, `Kill`, and the `spawn_child` helper.
 //!
-//! These types live in `bloxide-core` because spawning is NOT supervisor-specific.
-//! Any blox that manages children needs the same lifecycle refs, abort ref, task
-//! handle, and policy from a spawn operation.
+//! This crate is a platform primitive: the ability to spawn actor tasks at
+//! runtime. Runtimes that support dynamic spawning (Tokio) implement
+//! `SpawnCap` and use `Kill` as their `KillCapability`. Runtimes that don't
+//! (Embassy) use `NoKill` from `bloxide-core` and never depend on this crate.
+//!
+//! The `spawn_child` helper and `ChildRegistrar` trait let any managing blox
+//! (supervisor or custom) register spawned children without depending on
+//! the supervisor.
 
-use crate::capability::{BloxRuntime, KillCapability};
-use crate::child_management::{AbortCommand, ChildPolicy};
-use crate::lifecycle::ChildLifecycleEvent;
-use crate::lifecycle::LifecycleCommand;
-use crate::messaging::{ActorId, ActorRef};
+use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
+use bloxide_core::child_management::{AbortCommand, ChildPolicy};
+use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
+use bloxide_core::messaging::{ActorId, ActorRef};
 
 use core::fmt;
+use core::future::Future;
+
+// Re-export KillCapability and NoKill so downstream crates can get everything
+// from one place.
+pub use bloxide_core::capability::{KillCapability, NoKill};
+
+/// Tier 2 capability for runtimes that support spawning actor tasks at runtime.
+///
+/// Extends `DynamicChannelCap` (which provides `alloc_actor_id` and `channel`).
+/// Blox crates that need dynamic spawning declare `R: SpawnCap`.
+/// Embassy does NOT implement this trait — use static wiring for Embassy.
+///
+/// The associated `TaskHandle` type is returned by `spawn` and is used to
+/// produce a `KillHandle` (the cloneable ripcord). For Tokio,
+/// `TaskHandle = JoinHandle<()>` and `KillHandle = tokio::task::AbortHandle`.
+/// For a future Embassy task-pool runtime, `KillHandle` would be `()` (no
+/// external kill — the kill mailbox is sufficient) or whatever Embassy
+/// provides if [issue #3197](https://github.com/embassy-rs/embassy/issues/3197)
+/// is implemented.
+///
+/// All types are concrete, by-value — no `Arc<dyn>`, no dynamic dispatch.
+pub trait SpawnCap: DynamicChannelCap {
+    /// Handle to a spawned task. Used to derive a [`KillHandle`](Self::KillHandle).
+    /// Consumed by [`kill_handle`](Self::kill_handle).
+    type TaskHandle: Send + 'static;
+
+    /// Cloneable handle for external task kill. Must be `Clone` so it can
+    /// be extracted from `&Event` in action functions (the HSM engine passes
+    /// `&Event`, not `&mut Event`). `()` for runtimes without external kill.
+    type KillHandle: Clone + Send + 'static;
+
+    /// Spawn a future as an independent task and return a handle.
+    fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle;
+
+    /// Derive a cloneable kill handle from a task handle.
+    /// The task handle is consumed; the task continues running (drop does not kill).
+    fn kill_handle(handle: Self::TaskHandle) -> Self::KillHandle;
+
+    /// Kill a spawned task immediately via its kill handle. No callbacks fire —
+    /// the task is dropped in-place. The handle is consumed and cannot be reused.
+    fn kill(handle: Self::KillHandle);
+}
+
+/// Kill capability via `SpawnCap::kill`. Used by dynamic runtimes (Tokio).
+///
+/// This lives in `bloxide-spawn` (not `bloxide-core`) because it requires the
+/// `SpawnCap` bound — only runtimes that can spawn can use this. Static
+/// runtimes (Embassy) use `NoKill` from `bloxide-core` instead.
+pub struct Kill;
+
+impl<R: BloxRuntime + SpawnCap> KillCapability<R> for Kill {
+    type Handle = R::KillHandle;
+    fn kill(handle: R::KillHandle) {
+        R::kill(handle);
+    }
+}
 
 /// What a spawn function returns — the lifecycle and capability refs needed
 /// to register the child with whatever blox manages it.
@@ -100,7 +161,7 @@ pub trait ChildRegistrar<R: BloxRuntime> {
     fn register(output: SpawnOutput<R>) -> Self::RegisterMsg;
 }
 
-/// Spawn a supervised child actor.
+/// Spawn a child actor and register it with the managing blox.
 ///
 /// Called by the requesting blox (e.g., the Pool) — NOT by the supervisor.
 /// The requesting blox provides the spawn function and the request.
@@ -110,8 +171,8 @@ pub trait ChildRegistrar<R: BloxRuntime> {
 ///   2. Sends the registration message (typed by `C::RegisterMsg`) to the
 ///      managing blox's control mailbox
 ///
-/// The supervisor receives the registration message and starts managing the
-/// child's lifecycle. The supervisor never sees the request type.
+/// The managing blox receives the registration message and starts managing the
+/// child's lifecycle. The managing blox never sees the request type.
 ///
 /// # Type Parameters
 ///

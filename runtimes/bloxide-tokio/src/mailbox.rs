@@ -3,9 +3,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap, Kill},
+    capability::{BloxRuntime, DynamicChannelCap},
     messaging::{ActorId, ActorRef, Envelope},
 };
+use bloxide_spawn::Kill;
 use tokio::sync::mpsc;
 
 use crate::{

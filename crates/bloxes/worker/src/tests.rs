@@ -11,7 +11,7 @@ mod worker_tests {
     use blox_ctx_current_task::HasCurrentTask;
     use blox_ctx_worker_peers::HasWorkerPeers;
     use bloxide_core::lifecycle::LifecycleCommand;
-    use bloxide_core::test_utils::{TestReceiver, TestRuntime};
+    use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use bloxide_core::{
         capability::DynamicChannelCap, messaging::ActorRef, spec::MachineSpec, Envelope,
         MachineState, StateMachine,

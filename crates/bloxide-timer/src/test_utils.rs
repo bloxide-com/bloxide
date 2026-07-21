@@ -1,6 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
 use crate::{TimerCommand, TimerQueue};
-use bloxide_core::test_utils::TestReceiver;
+use bloxide_test_runtime::TestReceiver;
 
 /// Deterministic timer harness for `TestRuntime`-based tests.
 ///
@@ -55,7 +55,7 @@ impl VirtualClock {
 mod tests {
     use super::VirtualClock;
     use crate::{next_timer_id, TimerCommand};
-    use bloxide_core::test_utils::TestRuntime;
+    use bloxide_test_runtime::TestRuntime;
     use bloxide_core::DynamicChannelCap;
     use std::boxed::Box;
     use std::sync::{Arc, Mutex};

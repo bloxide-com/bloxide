@@ -1,0 +1,16 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "bloxide-spawn"
+version.workspace = true
+edition.workspace = true
+description = "Spawn capability for bloxide — SpawnCap, Kill, spawn_child helper"
+repository.workspace = true
+license.workspace = true
+
+[features]
+default = ["alloc"]
+alloc = ["bloxide-core/alloc"]
+std = ["bloxide-core/std", "alloc"]
+
+[dependencies]
+bloxide-core = { workspace = true }

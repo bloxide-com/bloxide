@@ -3,12 +3,13 @@
 //!
 //! The managing blox (supervisor or custom) needs a reference to the
 //! child-event mailbox so spawned children can report lifecycle events back.
-//! Spawning is decoupled from the supervisor — see `bloxide_core::spawn`
+//! Spawning is decoupled from the supervisor — see `bloxide_spawn`
 //! for `SpawnOutput`, `ChildRegistrar`, and the `spawn_child` generic helper.
 
 use bloxide_core::{
-    capability::BloxRuntime, lifecycle::ChildLifecycleEvent, messaging::ActorRef, spawn::SpawnFn,
+    capability::BloxRuntime, lifecycle::ChildLifecycleEvent, messaging::ActorRef,
 };
+use bloxide_spawn::SpawnFn;
 
 use crate::control::{SupervisorControl, SupervisorRegistrar};
 
@@ -17,7 +18,7 @@ pub trait HasChildNotify<R: BloxRuntime> {
     fn child_notify(&self) -> &ActorRef<ChildLifecycleEvent, R>;
 }
 
-/// Convenience wrapper around [`bloxide_core::spawn::spawn_child`] that fixes
+/// Convenience wrapper around [`bloxide_spawn::spawn_child`] that fixes
 /// `C = SupervisorRegistrar` — i.e. the standard supervisor is the managing
 /// blox.
 ///
@@ -38,7 +39,7 @@ where
     R: BloxRuntime,
     Req: Send + Clone + 'static,
 {
-    bloxide_core::spawn::spawn_child::<R, Req, SupervisorRegistrar>(
+    bloxide_spawn::spawn_child::<R, Req, SupervisorRegistrar>(
         spawn_fn,
         req,
         control_ref,

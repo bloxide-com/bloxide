@@ -3,7 +3,7 @@ use core::future::Future;
 
 use crate::TokioRuntime;
 
-impl bloxide_core::SpawnCap for TokioRuntime {
+impl bloxide_spawn::SpawnCap for TokioRuntime {
     type TaskHandle = tokio::task::JoinHandle<()>;
     type KillHandle = tokio::task::AbortHandle;
 
