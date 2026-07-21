@@ -22,10 +22,10 @@ bloxide/
     contributing-to-bloxide/
       SKILL.md                 ← how to evolve the framework: engine, runtimes, stdlib crates, macros
   crates/
-    bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits (no_std)
+    bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits, messaging data types (ActorRef, Envelope, ActorId) (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
     bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[delegatable], #[blox_event], etc.
-    bloxide-messaging/         ← service crate: HasSelfRef<R,M>, HasPeerRef<R,M> for peer/self messaging
+    bloxide-messaging/         ← service crate: accessor traits (HasSelfRef<R,M>, HasPeerRef<R,M>) for peer/self messaging — data types live in bloxide-core::messaging
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-child-management/  ← reusable child tracking: ChildGroup, ChildEntry, ChildPhase, HasChildGroup (platform primitive)
     bloxide-supervisor/        ← supervisor blox: SupervisorSpec, SupervisorControl, RegisterChild, action functions; re-exports ChildGroup/ChildPolicy/etc. from bloxide-child-management
@@ -56,7 +56,7 @@ bloxide/
       counter/                 ← declarative Counter actor; depends on counter-actions
       bhsm-tst/                ← declarative Miro Samek HSM test blox (states S/S1/S11/S2/S21/S211); depends on bhsm-tst-actions
     impl/
-      embassy-demo-impl/       ← impl crate: PingBehavior (concrete behavior for Ping)
+      ping-pong-impl/          ← impl crate: PingBehavior (concrete behavior for Ping)
       counter-demo-impl/       ← impl crate: CounterBehavior for tokio-minimal-demo
       tokio-pool-demo-impl/    ← impl crate: tokio worker factory for pool demo
     tools/
