@@ -16,3 +16,13 @@ bloxide-supervisor = { workspace = true, features = ["std"] }
 pool-messages = { workspace = true }
 pool-actions = { workspace = true }
 worker-blox = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+bloxide-core = { workspace = true, features = ["std"] }
+bloxide-child-management = { workspace = true, features = ["std"] }
+bloxide-supervisor = { workspace = true, features = ["std"] }
+bloxide-tokio = { workspace = true }
+pool-blox = { workspace = true, features = ["std", "dynamic"] }
+pool-messages = { workspace = true }
+futures-core = { version = "0.3", default-features = false }
+tokio = { workspace = true }
