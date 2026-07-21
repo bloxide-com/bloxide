@@ -46,7 +46,9 @@ where
     | SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { child_id })) = ev
     {
         let from = ctx.self_id();
-        let action = ctx.children.handle_done_or_failed(*child_id, from);
+        let action = ctx
+            .children
+            .handle_done_or_failed(*child_id, from, &ctx.child_notify);
         ctx.pending = action;
     }
     ActionResult::Ok
@@ -88,6 +90,21 @@ where
 {
     if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { child_id })) = ev {
         ctx.children.record_aborted(*child_id);
+    }
+    ActionResult::Ok
+}
+
+/// Record a killed child.
+///
+/// Killed means the child's task was destroyed externally via
+/// `KillCapability::kill(handle)`. Permanently dead — cannot be restarted
+/// without respawning the task.
+pub fn record_killed<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
+where
+    R: bloxide_core::capability::BloxRuntime,
+{
+    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { child_id })) = ev {
+        ctx.children.record_killed(*child_id);
     }
     ActionResult::Ok
 }
@@ -153,7 +170,7 @@ where
 {
     if let SupervisorEvent::Control(Envelope(_, SupervisorControl::HealthCheckTick)) = ev {
         let from = ctx.self_id();
-        let action = ctx.children.health_check_tick(from);
+        let action = ctx.children.health_check_tick(from, &ctx.child_notify);
         ctx.pending = action;
     }
     ActionResult::Ok

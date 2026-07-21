@@ -166,6 +166,9 @@ pub enum DispatchOutcome<State> {
     /// No callbacks fired — the run loop self-terminated cooperatively.
     /// This outcome is synthesized by the run loop, not by dispatch().
     Aborted,
+    /// Actor was killed via KillCapability — external task destruction.
+    /// This outcome is synthesized by the supervisor, not by dispatch().
+    Killed,
     /// Actor responded to Ping.
     Alive,
 }

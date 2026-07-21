@@ -14,7 +14,7 @@ pub mod builder;
 use alloc::vec::Vec;
 use bloxide_core::{
     capability::{BloxRuntime, KillCapability},
-    lifecycle::LifecycleCommand,
+    lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::{ActorId, ActorRef},
 };
 
@@ -267,7 +267,12 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
     }
 
-    pub fn handle_done_or_failed(&mut self, child_id: ActorId, from: ActorId) -> ChildAction {
+    pub fn handle_done_or_failed(
+        &mut self,
+        child_id: ActorId,
+        from: ActorId,
+        notify: &ActorRef<ChildLifecycleEvent, R>,
+    ) -> ChildAction {
         let idx = match self.children.iter().position(|e| e.id == child_id) {
             Some(idx) => idx,
             None => return ChildAction::Continue,
@@ -294,6 +299,22 @@ impl<R: BloxRuntime> ChildGroup<R> {
             let kill_handle = self.children[idx].kill_handle.take();
             if let Some(handle) = kill_handle {
                 R::Kill::kill(handle);
+            }
+
+            // Emit the Killed lifecycle event so the supervisor (and any
+            // observers on the notify channel) learn the child was killed.
+            // This is analogous to how Abort sends AbortCommand on the abort
+            // mailbox and the run loop later reports Aborted — except here the
+            // kill is synchronous, so we emit the event directly.
+            if notify
+                .try_send(from, ChildLifecycleEvent::Killed { child_id })
+                .is_err()
+            {
+                bloxide_log::blox_log_warn!(
+                    from,
+                    "try_send Killed to supervisor for child {} failed (channel full or closed)",
+                    child_id
+                );
             }
 
             self.children[idx].permanently_done = true;
@@ -451,7 +472,11 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
     }
 
-    pub fn health_check_tick(&mut self, from: ActorId) -> ChildAction {
+    pub fn health_check_tick(
+        &mut self,
+        from: ActorId,
+        notify: &ActorRef<ChildLifecycleEvent, R>,
+    ) -> ChildAction {
         let stale_ids: Vec<ActorId> = self
             .children
             .iter()
@@ -461,7 +486,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
         let mut action = ChildAction::Continue;
         for child_id in stale_ids {
-            if self.handle_done_or_failed(child_id, from) == ChildAction::BeginShutdown {
+            if self.handle_done_or_failed(child_id, from, notify) == ChildAction::BeginShutdown {
                 action = ChildAction::BeginShutdown;
             }
         }
@@ -523,6 +548,16 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
     }
 
+    /// Record that a child was killed (external task destruction via
+    /// `KillCapability::kill`). The child's task is gone. Permanently dead.
+    pub fn record_killed(&mut self, child_id: ActorId) {
+        if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
+            entry.permanently_done = true;
+            entry.phase = ChildPhase::PermanentlyDone;
+            entry.awaiting_alive = false;
+        }
+    }
+
     pub fn all_stopped(&self) -> bool {
         self.stopped_count == self.children.len()
     }
@@ -556,40 +591,81 @@ mod tests {
 
     fn setup_one_child(
         policy: ChildPolicy,
-    ) -> (ChildGroup<TestRuntime>, TestReceiver<LifecycleCommand>) {
+    ) -> (
+        ChildGroup<TestRuntime>,
+        TestReceiver<LifecycleCommand>,
+        ActorRef<ChildLifecycleEvent, TestRuntime>,
+        TestReceiver<ChildLifecycleEvent>,
+    ) {
         let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
         let id = 1usize;
         let (lifecycle_ref, rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
+        let (notify_ref, notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
         group.add(id, lifecycle_ref, policy);
-        (group, rx)
+        (group, rx, notify_ref, notify_rx)
     }
 
     #[test]
     fn duplicate_done_while_awaiting_restart_is_coalesced() {
-        let (mut group, mut rx) = setup_one_child(ChildPolicy::Restart { max: 2 });
+        let (mut group, mut rx, notify_ref, _notify_rx) =
+            setup_one_child(ChildPolicy::Restart { max: 2 });
         let from = 100usize;
 
         // First Done → triggers Reset
-        let action = group.handle_done_or_failed(1, from);
+        let action = group.handle_done_or_failed(1, from, &notify_ref);
         assert_eq!(action, ChildAction::Continue);
         assert_eq!(rx.drain_payloads().len(), 1); // Reset sent
 
         // Second Done while ResetPending → coalesced (no second Reset)
-        let action = group.handle_done_or_failed(1, from);
+        let action = group.handle_done_or_failed(1, from, &notify_ref);
         assert_eq!(action, ChildAction::Continue);
         assert_eq!(rx.drain_payloads().len(), 0); // nothing sent
     }
 
     #[test]
     fn health_tick_pings_child_and_marks_missed_alive_as_failed() {
-        let (mut group, mut rx) = setup_one_child(ChildPolicy::Restart { max: 1 });
+        let (mut group, mut rx, notify_ref, _notify_rx) =
+            setup_one_child(ChildPolicy::Restart { max: 1 });
         let from = 100usize;
         // Start the child first
         group.handle_started(1);
         // Health check tick should ping the child
-        group.health_check_tick(from);
+        group.health_check_tick(from, &notify_ref);
         let cmds = rx.drain_payloads();
         assert_eq!(cmds.len(), 1);
         assert!(matches!(cmds[0], LifecycleCommand::Ping));
+    }
+
+    #[test]
+    fn kill_policy_emits_killed_event() {
+        // A child with ChildPolicy::Kill and a kill_handle should emit
+        // ChildLifecycleEvent::Killed when handle_done_or_failed fires.
+        let (mut group, _rx, notify_ref, mut notify_rx) = {
+            let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+            let id = 1usize;
+            let (lifecycle_ref, rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
+            // For TestRuntime, Kill::Handle = (), so we use add_dynamic with
+            // a dummy abort_ref to get a kill_handle.
+            let (abort_ref, _abort_rx) = TestRuntime::channel::<AbortCommand>(id + 100, 16);
+            group.add_dynamic(id, lifecycle_ref, abort_ref, (), ChildPolicy::Kill);
+            let (notify_ref, notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
+            (group, rx, notify_ref, notify_rx)
+        };
+        let from = 100usize;
+
+        // Start the child so it's in Running phase (not skipped).
+        group.handle_started(1);
+
+        let action = group.handle_done_or_failed(1, from, &notify_ref);
+        assert_eq!(action, ChildAction::BeginShutdown);
+
+        // The Killed event should have been sent on the notify channel.
+        let events = notify_rx.drain_payloads();
+        assert_eq!(events.len(), 1, "exactly one Killed event expected");
+        assert!(
+            matches!(events[0], ChildLifecycleEvent::Killed { child_id: 1 }),
+            "expected Killed {{ child_id: 1 }}, got {:?}",
+            events[0]
+        );
     }
 }

@@ -59,6 +59,10 @@ pub enum ChildLifecycleEvent {
     /// No callbacks fired — the child's task self-terminated cooperatively.
     /// The task has ended; restarting requires respawning the task.
     Aborted { child_id: ActorId },
+    /// Child was killed via `KillCapability::kill(handle)` — the external ripcord.
+    /// No callbacks fired — the child's task was destroyed externally and immediately.
+    /// Permanently dead — cannot be restarted without respawning.
+    Killed { child_id: ActorId },
     /// Child responded to a Ping — its run loop is healthy.
     Alive { child_id: ActorId },
 }

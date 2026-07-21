@@ -36,6 +36,6 @@ pub use generated::{SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorSt
 // Re-export action functions from the local actions module
 pub use actions::{
     handle_done_or_failed, handle_health_check, handle_register_dynamic_child, record_aborted,
-    record_alive, record_started, record_stopped, register_child, start_children,
+    record_alive, record_killed, record_started, record_stopped, register_child, start_children,
     stop_all_children,
 };

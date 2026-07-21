@@ -410,8 +410,12 @@ mod tests {
             ChildPolicy::Kill,
         );
 
+        // Create a notify channel for the Killed event.
+        let (notify_ref, _notify_rx) =
+            <TokioRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(42, 16);
+
         // Fire the Kill policy — this calls R::Kill::kill(kill_handle)
-        group.handle_done_or_failed(child_id, 42);
+        group.handle_done_or_failed(child_id, 42, &notify_ref);
 
         // Wait for the kill to take effect.
         sleep(Duration::from_millis(50)).await;

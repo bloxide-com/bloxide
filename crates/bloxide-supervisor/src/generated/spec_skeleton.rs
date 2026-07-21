@@ -3,7 +3,7 @@
 #[allow(unused_imports)]
 use crate::actions::{
     handle_done_or_failed, handle_health_check, handle_register_dynamic_child, record_aborted,
-    record_alive, record_started, record_stopped, register_child, start_children,
+    record_alive, record_killed, record_started, record_stopped, register_child, start_children,
     stop_all_children,
 };
 #[allow(unused_imports)]
@@ -91,6 +91,17 @@ impl<R: BloxRuntime> SupervisorSpec<R> {
                     )
                 },
                 actions: &[record_aborted::<R>],
+                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
+            },
+            ::bloxide_core::transition::StateRule {
+                event_tag: SupervisorEvent::<R>::CHILD_TAG,
+                matches: |__ev| {
+                    ::core::matches!(
+                        __ev,
+                        SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))
+                    )
+                },
+                actions: &[record_killed::<R>],
                 guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
             },
             ::bloxide_core::transition::StateRule {

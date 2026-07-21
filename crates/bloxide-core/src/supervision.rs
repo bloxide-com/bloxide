@@ -71,6 +71,9 @@ pub fn report_outcome<S, R>(
         DispatchOutcome::Aborted => {
             send(ChildLifecycleEvent::Aborted { child_id: actor_id });
         }
+        DispatchOutcome::Killed => {
+            send(ChildLifecycleEvent::Killed { child_id: actor_id });
+        }
         DispatchOutcome::Alive => {
             send(ChildLifecycleEvent::Alive { child_id: actor_id });
         }
