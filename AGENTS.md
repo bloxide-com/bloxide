@@ -27,10 +27,10 @@ bloxide/
     bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[delegatable], #[blox_event], etc.
     bloxide-messaging/         ← service crate: HasSelfRef<R,M>, HasPeerRef<R,M> for peer/self messaging
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
-    bloxide-supervisor/        ← generic reusable supervisor: SupervisorSpec, ChildGroup, ChildPolicy, GroupShutdown, LifecycleCommand
-    bloxide-supervisor-context/ ← supervisor context struct + traits (split from bloxide-supervisor in Phase 1)
-    (bloxide-supervisor-actions deleted in Spec 22 — action functions are now in-crate in bloxide-supervisor/src/actions.rs)
-    bloxide-peers/             ← peer introduction support for wiring actors to peers
+    bloxide-child-management/  ← reusable child tracking: ChildGroup, ChildEntry, ChildPhase, HasChildGroup (platform primitive)
+    bloxide-supervisor/        ← supervisor blox: SupervisorSpec, SupervisorControl, RegisterChild, action functions (in-crate)
+    bloxide-peers/             ← peer introduction: PeerCtrl<M,R>, AddPeer, RemovePeer, HasPeers<M,R>, introduce_peers
+    bloxide-spawn/             ← spawn capability: SpawnFn, SpawnOutput, SpawnCap (platform primitive)
     messages/
       ping-pong-messages/      ← PingPongMsg shared by both ping and pong bloxes
       pool-messages/           ← PoolMsg, WorkerMsg, DoWork, WorkDone, etc. shared by pool and worker
