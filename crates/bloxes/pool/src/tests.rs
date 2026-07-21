@@ -20,7 +20,7 @@ mod pool_tests {
         spec::MachineSpec,
         Envelope, MachineState, StateMachine,
     };
-    use bloxide_supervisor_context::SupervisorControl;
+    use bloxide_supervisor::SupervisorControl;
     use pool_messages::{
         PoolMsg, SpawnRequest, SpawnWorker, SpawnedWorker, WorkDone, WorkerCtrl, WorkerMsg,
     };

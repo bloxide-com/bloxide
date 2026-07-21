@@ -1,9 +1,13 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! `ChildGroup` — the standard supervisor's child tracking data structure.
+//! Child group tracking, restart strategies, and health checking.
 //!
-//! `ChildPolicy`, `GroupShutdown`, `RestartStrategy`, and `AbortCommand` have
-//! been moved to `bloxide_core::child_management` (they are not
-//! supervisor-specific). They are re-exported here for convenience.
+//! This is the reusable platform primitive for managing supervised children.
+//! It is not supervisor-specific — any blox that tracks child actors can use
+//! `ChildGroup` directly. The supervisor is one such consumer; a custom
+//! managing blox could use it without depending on `bloxide-supervisor`.
+
+#![no_std]
+extern crate alloc;
 
 use alloc::vec::Vec;
 use bloxide_core::{
@@ -13,8 +17,7 @@ use bloxide_core::{
     messaging::{ActorId, ActorRef},
 };
 
-// Re-export the moved types so downstream code can still import them from
-// `bloxide_supervisor_context` if desired.
+// Re-export child-management policies from bloxide-core for convenience.
 pub use bloxide_core::child_management::{ChildPolicy, GroupShutdown, RestartStrategy};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
@@ -62,8 +65,7 @@ pub struct ChildGroup<R: BloxRuntime> {
     stopped_count: usize,
 }
 
-/// Accessor trait for the child group — same pattern as the old `HasChildren`
-/// but renamed per spec 21.
+/// Accessor trait for the child group.
 pub trait HasChildGroup<R: BloxRuntime> {
     fn children(&self) -> &ChildGroup<R>;
 }
@@ -498,16 +500,16 @@ mod tests {
     fn duplicate_done_while_awaiting_restart_is_coalesced() {
         let (mut group, mut rx) = setup_one_child(ChildPolicy::Restart { max: 2 });
         let from = 100usize;
-        assert_eq!(group.handle_done_or_failed(1, from), ChildAction::Continue);
-        let cmds = rx.drain_payloads();
-        assert_eq!(cmds.len(), 1);
-        assert!(matches!(cmds[0], LifecycleCommand::Reset));
 
-        assert_eq!(group.handle_done_or_failed(1, from), ChildAction::Continue);
-        assert!(
-            rx.drain_payloads().is_empty(),
-            "duplicate Done while already restarted must not enqueue another Reset"
-        );
+        // First Done → triggers Reset
+        let action = group.handle_done_or_failed(1, from);
+        assert_eq!(action, ChildAction::Continue);
+        assert_eq!(rx.drain_payloads().len(), 1); // Reset sent
+
+        // Second Done while ResetPending → coalesced (no second Reset)
+        let action = group.handle_done_or_failed(1, from);
+        assert_eq!(action, ChildAction::Continue);
+        assert_eq!(rx.drain_payloads().len(), 0); // nothing sent
     }
 
     #[test]

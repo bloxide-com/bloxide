@@ -27,7 +27,7 @@ pool-messages   = { workspace = true }
 pool-actions    = { workspace = true }
 bloxide-messaging  = { workspace = true }
 blox-ctx-workers   = { workspace = true }
-bloxide-supervisor-context = { workspace = true }
+bloxide-supervisor = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
 bloxide-core    = { workspace = true, features = ["std"] }

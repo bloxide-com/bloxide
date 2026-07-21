@@ -3,6 +3,13 @@
 
 extern crate alloc;
 
+// Supervisor-specific control-plane types (RegisterChild, RegisterDynamicChild,
+// SupervisorControl, SupervisorRegistrar)
+pub mod control;
+
+// Spawn convenience wrapper (spawn_supervised_child, HasChildNotify)
+pub mod spawn;
+
 // Hand-written action functions (concrete, take &SupervisorEvent<R> directly)
 pub mod actions;
 
@@ -13,12 +20,15 @@ pub mod generated;
 #[cfg(test)]
 mod tests;
 
-// Re-export types from bloxide-supervisor-context for backward compat
-pub use bloxide_supervisor_context::{
-    spawn_supervised_child, ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup,
-    HasChildGroupMut, HasChildNotify, HasPending, RegisterChild, RegisterDynamicChild,
-    RestartStrategy, SupervisorControl, SupervisorRegistrar,
+// Re-export child-management types from bloxide-child-management
+pub use bloxide_child_management::{
+    ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup, HasChildGroupMut,
+    HasPending, RestartStrategy,
 };
+
+// Re-export supervisor-specific types from local modules
+pub use control::{RegisterChild, RegisterDynamicChild, SupervisorControl, SupervisorRegistrar};
+pub use spawn::{spawn_supervised_child, HasChildNotify};
 
 // Re-export from generated (SupervisorEvent now codegen-generated, not hand-written)
 pub use generated::{SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState};
@@ -31,20 +41,21 @@ pub use actions::{
 };
 
 // Backward-compat module aliases so existing `bloxide_supervisor::registry::*`
-// and `bloxide_supervisor::supervisor::*` and `bloxide_supervisor::event::*`
-// and `bloxide_supervisor::control::*` paths still resolve.
+// and `bloxide_supervisor::control::*` and `bloxide_supervisor::event::*`
+// and `bloxide_supervisor::supervisor::*` paths still resolve.
 pub mod registry {
-    pub use bloxide_supervisor_context::{
+    pub use bloxide_child_management::{
         ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup, HasChildGroupMut,
         HasPending, RestartStrategy,
     };
 }
-pub mod control {
-    pub use bloxide_supervisor_context::{RegisterChild, RegisterDynamicChild, SupervisorControl};
-}
-pub mod event {
-    pub use crate::generated::SupervisorEvent;
-}
+
+// Backward-compat module alias for `bloxide_supervisor::supervisor::*`
 pub mod supervisor {
     pub use crate::generated::{SupervisorCtx, SupervisorSpec, SupervisorState};
+}
+
+// Backward-compat module alias for `bloxide_supervisor::event::*`
+pub mod event {
+    pub use crate::SupervisorEvent;
 }

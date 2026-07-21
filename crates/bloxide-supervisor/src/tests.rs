@@ -20,7 +20,7 @@ use bloxide_test_runtime::{TestReceiver, TestRuntime};
 use bloxide_core::{
     capability::DynamicChannelCap, engine::DispatchOutcome, engine::MachineState, StateMachine,
 };
-use bloxide_supervisor_context::RegisterDynamicChild;
+use crate::RegisterDynamicChild;
 
 type Spec = SupervisorSpec<TestRuntime>;
 

@@ -4,9 +4,10 @@ use ::bloxide_core::ActorId;
 use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef};
 use ::bloxide_macros::BloxCtx;
 use bloxide_core::lifecycle::ChildLifecycleEvent;
-use bloxide_supervisor_context::{
-    ChildAction, ChildGroup, HasChildGroup, HasChildGroupMut, HasChildNotify, HasPending,
+use bloxide_child_management::{
+    ChildAction, ChildGroup, HasChildGroup, HasChildGroupMut, HasPending,
 };
+use crate::HasChildNotify;
 #[derive(BloxCtx)]
 pub struct SupervisorCtx<R: BloxRuntime> {
     #[provides(HasChildGroup<R>)]

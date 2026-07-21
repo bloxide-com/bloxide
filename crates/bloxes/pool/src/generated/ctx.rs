@@ -47,7 +47,7 @@ use bloxide_spawn::SpawnFn;
 #[allow(unused_imports)]
 use bloxide_messaging::HasSelfRef;
 #[cfg(feature = "dynamic")]
-use bloxide_supervisor_context::SupervisorControl;
+use bloxide_supervisor::SupervisorControl;
 #[cfg(feature = "dynamic")]
 use pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg};
 #[cfg(feature = "dynamic")]

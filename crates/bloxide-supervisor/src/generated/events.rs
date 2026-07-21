@@ -7,7 +7,7 @@ pub enum SupervisorEvent<R: BloxRuntime> {
     /// Lifecycle command (Start/Reset/Stop/Ping).
     Lifecycle(::bloxide_core::lifecycle::LifecycleCommand),
     Child(Envelope<bloxide_core::lifecycle::ChildLifecycleEvent>),
-    Control(Envelope<bloxide_supervisor_context::SupervisorControl<R>>),
+    Control(Envelope<crate::SupervisorControl<R>>),
 }
 impl<R: BloxRuntime> ::core::convert::From<Envelope<bloxide_core::lifecycle::ChildLifecycleEvent>>
     for SupervisorEvent<R>
@@ -17,10 +17,10 @@ impl<R: BloxRuntime> ::core::convert::From<Envelope<bloxide_core::lifecycle::Chi
     }
 }
 impl<R: BloxRuntime>
-    ::core::convert::From<Envelope<bloxide_supervisor_context::SupervisorControl<R>>>
+    ::core::convert::From<Envelope<crate::SupervisorControl<R>>>
     for SupervisorEvent<R>
 {
-    fn from(envelope: Envelope<bloxide_supervisor_context::SupervisorControl<R>>) -> Self {
+    fn from(envelope: Envelope<crate::SupervisorControl<R>>) -> Self {
         SupervisorEvent::Control(envelope)
     }
 }
@@ -77,7 +77,7 @@ impl<R: BloxRuntime> SupervisorEvent<R> {
     /// Returns the envelope if this event matches this variant.
     pub fn control_envelope(
         &self,
-    ) -> ::core::option::Option<&Envelope<bloxide_supervisor_context::SupervisorControl<R>>> {
+    ) -> ::core::option::Option<&Envelope<crate::SupervisorControl<R>>> {
         match self {
             SupervisorEvent::Control(ref e) => ::core::option::Option::Some(e),
             _ => ::core::option::Option::None,
@@ -86,7 +86,7 @@ impl<R: BloxRuntime> SupervisorEvent<R> {
     /// Returns the message payload if this event matches this variant.
     pub fn control_payload(
         &self,
-    ) -> ::core::option::Option<&bloxide_supervisor_context::SupervisorControl<R>> {
+    ) -> ::core::option::Option<&crate::SupervisorControl<R>> {
         match self {
             SupervisorEvent::Control(ref e) => ::core::option::Option::Some(&e.1),
             _ => ::core::option::Option::None,

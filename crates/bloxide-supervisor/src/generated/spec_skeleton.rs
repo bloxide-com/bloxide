@@ -17,9 +17,9 @@ use ::core::marker::PhantomData;
 #[allow(unused_imports)]
 use bloxide_core::lifecycle::ChildLifecycleEvent;
 #[allow(unused_imports)]
-use bloxide_supervisor_context::ChildAction;
+use bloxide_child_management::ChildAction;
 #[allow(unused_imports)]
-use bloxide_supervisor_context::SupervisorControl;
+use crate::SupervisorControl;
 pub struct SupervisorSpec<R: BloxRuntime> {
     _phantom: PhantomData<R>,
 }
@@ -216,7 +216,7 @@ impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
     type Ctx = SupervisorCtx<R>;
     type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> = (
         Rt::Stream<bloxide_core::lifecycle::ChildLifecycleEvent>,
-        Rt::Stream<bloxide_supervisor_context::SupervisorControl<R>>,
+        Rt::Stream<crate::SupervisorControl<R>>,
     );
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = supervisor_state_handler_table!(Self);
     fn initial_state() -> SupervisorState {

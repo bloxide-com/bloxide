@@ -8,7 +8,7 @@ use crate::{PoolCtx, PoolEvent};
 
 // Dynamic-only imports and action functions.
 #[cfg(feature = "dynamic")]
-use bloxide_supervisor_context::spawn_supervised_child;
+use bloxide_supervisor::spawn_supervised_child;
 #[cfg(feature = "dynamic")]
 use pool_actions::actions::introduce_new_worker;
 #[cfg(feature = "dynamic")]

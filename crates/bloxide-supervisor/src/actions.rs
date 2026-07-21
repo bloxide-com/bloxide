@@ -9,7 +9,8 @@ use bloxide_core::{
     accessor::HasSelfId, lifecycle::ChildLifecycleEvent, messaging::Envelope,
     transition::ActionResult,
 };
-use bloxide_supervisor_context::{ChildAction, SupervisorControl};
+use bloxide_child_management::ChildAction;
+use crate::SupervisorControl;
 
 use crate::{SupervisorCtx, SupervisorEvent};
 
