@@ -30,7 +30,6 @@ mod delegatable;
 mod dyn_channels;
 mod event_tag;
 mod mailboxes_impls;
-mod state_topology;
 
 mod blox_event_new;
 mod blox_mailboxes;
@@ -96,53 +95,6 @@ mod blox_messages;
 pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
     let input = syn::parse_macro_input!(input as syn::DeriveInput);
     match blox_ctx::derive_blox_ctx_inner(&input) {
-        Ok(ts) => ts.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
-
-// ── StateTopology derive ──────────────────────────────────────────────────────
-
-/// Derive [`StateTopology`] for a state enum.
-///
-/// Requires `#[repr(u8)]` on the enum. Each variant must be a unit variant.
-///
-/// # Attributes
-///
-/// ## Variant attributes
-///
-/// - `#[composite]` — marks a state as having children (not a leaf).
-///   Composite states may not be transition targets.
-/// - `#[parent(ParentVariant)]` — declares the parent state for non-top-level
-///   states. Top-level states (no parent) require no attribute.
-///
-/// # Example
-///
-/// ```ignore
-/// // Doc test ignored: imports not resolvable in rustdoc compilation context
-/// #[derive(StateTopology, Copy, Clone, Eq, PartialEq, Debug)]
-/// #[repr(u8)]
-/// pub enum PingState {
-///     #[composite]
-///     Operating,
-///     #[parent(Operating)]
-///     Active,
-///     #[parent(Operating)]
-///     Paused,
-///     Done,
-/// }
-/// ```
-///
-/// Generates `impl StateTopology for PingState` with:
-/// - `STATE_COUNT = 4`
-/// - `parent()` returning the declared parent, or `None` for top-level
-/// - `is_leaf()` returning `true` for non-composite states
-/// - `path()` returning a statically-allocated root-first ancestor slice
-/// - `as_index()` returning the `repr(u8)` discriminant as `usize`
-#[proc_macro_derive(StateTopology, attributes(composite, parent))]
-pub fn derive_state_topology(input: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    match state_topology::derive_state_topology_inner(&input) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }

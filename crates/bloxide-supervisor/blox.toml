@@ -74,7 +74,7 @@ fields = [
 
 [topology]
 spec_imports = [
-    "crate::actions::{start_children, stop_all_children, handle_done_or_failed, record_aborted, record_started, record_alive, record_stopped, register_child, handle_health_check, handle_register_dynamic_child}",
+    "crate::actions::{start_children, stop_all_children, handle_done_or_failed, record_aborted, record_killed, record_started, record_alive, record_stopped, register_child, handle_health_check, handle_register_dynamic_child}",
     "bloxide_child_management::ChildAction",
 ]
 
@@ -104,6 +104,12 @@ state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { .. }))"
 target = "stay"
 actions = ["record_aborted::<{R}>"]
+
+[[topology.transitions]]
+state = "Running"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))"
+target = "stay"
+actions = ["record_killed::<{R}>"]
 
 [[topology.transitions]]
 state = "Running"
