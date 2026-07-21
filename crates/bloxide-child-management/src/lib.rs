@@ -339,7 +339,17 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 }
             }
             // The child will self-terminate; we'll get Aborted event later.
-            // For now, mark as permanently done since the task is ending.
+            //
+            // The child is marked PermanentlyDone immediately because the abort
+            // is fire-and-forget: once AbortCommand is queued on the abort
+            // mailbox there is no way to recall or observe its progress from
+            // here, so the ChildGroup's bookkeeping for this entry is already
+            // final. The Aborted lifecycle event will arrive later but is
+            // informational only — the ChildGroup state is already finalized
+            // (phase == PermanentlyDone), so `handle_aborted`/this method's
+            // early-return guard treat the late event as a no-op. The
+            // supervisor's state machine processes the Aborted event for its
+            // own transitions but does not re-enter the ChildGroup logic.
             self.children[idx].permanently_done = true;
             self.children[idx].phase = ChildPhase::PermanentlyDone;
             self.children[idx].awaiting_alive = false;
