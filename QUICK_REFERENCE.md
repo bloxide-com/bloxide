@@ -247,14 +247,14 @@ This means supervisors can safely send `Start` multiple times without state corr
 
 ### `#[derive(BloxCtx)]` Annotations
 
-Most annotations are auto-detected by field naming convention.
+Context fields are defined via `[[context.uses]]` in `blox.toml`. The codegen auto-emits `self_id` (first field) and `behavior` (last field, when delegatable uses exist).
 
-| Convention / Annotation | Generates | Use When |
-|--------------------------|-----------|----------|
-| `self_id: ActorId` | `fn self_id(&self) -> ActorId` | Always (required field) |
-| `foo_ref: ActorRef<M, R>` | `fn foo_ref(&self) -> &ActorRef<Msg, R>` | Auto-detected from `_ref` suffix |
-| `foo_factory: fn(...) -> ...` | `fn foo_factory(&self) -> ...` | Auto-detected from `_factory` suffix |
-| `#[delegates(Trait1, Trait2)]` | Delegates trait impls to field | Required for behavior fields |
+| Field | Source | Generates |
+|-------|--------|-----------|
+| `self_id: ActorId` | Auto-emitted (always) | `fn self_id(&self) -> ActorId` |
+| `foo_ref: ActorRef<M, R>` | `[[context.uses]]` with `field = "foo_ref"` | `fn foo_ref(&self) -> &ActorRef<Msg, R>` |
+| `foo_factory: fn(...) -> ...` | `[[context.uses]]` with `role = "ctor"` | `fn foo_factory(&self) -> ...` |
+| `behavior: B` | Auto-emitted (when delegatable uses exist) | `#[delegates(Trait1, Trait2)]` forwarding impls |
 
 ### Declarative Transitions (`blox.toml`)
 

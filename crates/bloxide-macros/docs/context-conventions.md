@@ -176,7 +176,7 @@ impl<R: BloxRuntime, B: CountsRounds> PingCtx<R, B> {
 
 ### Rule 6: Plain Constructor Fields
 
-**Pattern**: Fields that don't match any of the above conventions (not `_ref`, not `_factory`, not `self_id`, not a `behavior` field with `#[delegates]`).
+**Pattern**: Fields that don't match any of the above conventions (not `_ref`, not `_factory`, not `self_id`, not a `behavior` field with `#[delegates]`). In practice, these are emitted by the codegen from `[[context.uses]]` entries with `role = "ctor"` or `role = "state"`.
 
 ```rust
 pub config: Config,    // Plain constructor parameter

@@ -118,7 +118,7 @@ impl<R: BloxRuntime> HasWorkerFactory<R> for PoolCtx<R> {
 ```rust
 impl<R: BloxRuntime> PoolCtx<R> {
     pub fn new(
-        self_id: ActorId,                    // from self_id field
+        self_id: ActorId,                    // auto-emitted by codegen
         self_ref: ActorRef<PoolMsg, R>,      // from _ref field
         worker_factory: WorkerSpawnFn<R>,    // from _factory field
     ) -> Self {

@@ -140,7 +140,6 @@ From `crates/bloxes/ping/blox.toml`:
 [context]
 name = "PingCtx"
 generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
-actions_crate = "ping_pong_actions"
 extra_where = ["B: Default", "B::Round: Into<u32>"]
 on_init = "ctx.behavior = B::default();"
 imports = [
@@ -149,37 +148,49 @@ imports = [
     "bloxide_timer::{HasTimerRef, TimerCommand, TimerId}",
 ]
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
+# self_id and behavior are auto-emitted by the codegen — do NOT declare them.
+# Fields come from [[context.uses]] entries:
 
-[[context.fields]]
-name = "peer_ref"
-ty = "ActorRef<PingPongMsg, R>"
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasPeerRef<R, PingPongMsg>"
+field = "peer_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "accessor"
 
-[[context.fields]]
-name = "self_ref"
-ty = "ActorRef<PingPongMsg, R>"
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasSelfRef<R, PingPongMsg>"
+field = "self_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "accessor"
 
-[[context.fields]]
-name = "timer_ref"
-ty = "ActorRef<TimerCommand, R>"
+[[context.uses]]
+crate = "bloxide_timer"
+trait = "HasTimerRef<R>"
+field = "timer_ref"
+field_type = "ActorRef<TimerCommand, R>"
+role = "accessor"
 
-[[context.fields]]
-name = "behavior"
-ty = "B"
-delegates = ["HasCurrentTimer", "CountsRounds"]
+[[context.uses]]
+crate = "blox_ctx_current_timer"
+trait = "HasCurrentTimer"
+delegatable = true
+
+[[context.uses]]
+crate = "blox_ctx_rounds"
+trait = "CountsRounds"
+delegatable = true
 ```
 
 `[context]` declares:
 
 - The struct name and generics.
-- Fields with types, roles (`self_id`, `accessor`, `ctor`, `state`, `delegate`), and delegation lists.
+- `[[context.uses]]` entries that pull traits and fields from composable context crates.
+- `self_id: ActorId` (first field) and `behavior: B` (last field, with `#[delegates(...)]`) are auto-emitted by the codegen — never declared manually.
 - Imports needed by the generated `ctx.rs`.
 - `extra_where` predicates appended to the `MachineSpec` impl.
 - `on_init` body for `on_init_entry`.
-- `actions_crate` for default imports from the actions crate.
-- `[[context.uses]]` for composable context crates (see `spec/architecture/15-composable-context-crates.md`).
 
 The `role` field tells the codegen how to emit each field:
 
@@ -504,7 +515,7 @@ The UI is a `blox.toml` (and optionally `system.toml`) editor:
 
 - A state machine canvas that edits `[[topology.states]]` and `[[topology.transitions]]`.
 - A message designer that edits `[[messages]]` variants and fields.
-- A context panel that edits `[[context.fields]]` and `[[context.uses]]` from a library of composable context crates.
+- A context panel that edits `[[context.uses]]` entries from a library of composable context crates.
 - A wiring canvas that edits `[[wiring.actors]]`, `[[wiring.connections]]`, and `[[wiring.supervisors]]` (or the equivalent `system.toml` tables).
 - A "Generate" button that runs `cargo blox generate` and reports validation errors.
 

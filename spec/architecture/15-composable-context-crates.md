@@ -48,7 +48,7 @@ blox crates           ← TOML → codegen (depend on context + actions crates)
 ### What stays in bloxide-core
 
 Only what *every* blox needs, no exceptions:
-- `HasSelfId` + `self_id: ActorId` field pattern
+- `HasSelfId` + `self_id: ActorId` field pattern (auto-emitted by codegen)
 - `ActorId`, `ActorRef`, `BloxRuntime`
 - `MachineSpec`, `StateFns`, `StateTopology`
 - `StateRule`, `TransitionRule` (transition rules are declared in `blox.toml` via `[[topology.transitions]]` and emitted by `bloxide-codegen`)
@@ -165,7 +165,6 @@ The context section gains a `uses` array for pulling in context crates:
 [context]
 name = "PingCtx"
 generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
-actions_crate = "ping_pong_actions"
 
 # Pull in composable context pieces
 [[context.uses]]
@@ -199,17 +198,8 @@ crate = "blox_ctx_current_timer"
 trait = "HasCurrentTimer"
 delegatable = true     # used via #[delegates(HasCurrentTimer)]
 
-# This blox's own fields (not from a library)
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
-role = "self_id"       # auto-impl HasSelfId from bloxide-core
-
-[[context.fields]]
-name = "behavior"
-ty = "B"
-role = "delegate"
-delegates = ["HasCurrentTimer", "CountsRounds"]
+# self_id and behavior are auto-emitted by the codegen — do NOT declare them.
+# The #[delegates(...)] list is derived from all delegatable [[context.uses]] entries.
 ```
 
 For multi-field traits:
@@ -247,11 +237,14 @@ Each context field has an explicit `role` that tells the codegen what to emit:
 
 | Role | Codegen behavior | BloxCtx behavior |
 |------|-----------------|-----------------|
-| `self_id` | Add `self_id: ActorId` field | Auto-generate `impl HasSelfId` |
+| Role | Effect | Auto-impl |
+|------|-----------------|-----------------|
 | `accessor` | Add field, emit trait import | Auto-generate accessor impl from naming convention |
 | `ctor` | Add field to constructor signature | No auto-impl (use `#[ctor]`) |
 | `state` | Add field, zero-initialize | No auto-impl |
-| `delegate` | Add field, emit delegate macro imports | `#[delegates(...)]` — delegate to field's impls |
+| `delegatable = true` | Emit delegate macro imports | `#[delegates(...)]` — delegate to behavior field's impls |
+
+`self_id` and `behavior` are auto-emitted by the codegen — they are not declared in `blox.toml`.
 
 ### What the codegen does with `context.uses`
 

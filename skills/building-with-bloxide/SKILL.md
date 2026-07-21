@@ -153,7 +153,7 @@ A blox crate defines:
 
 ### Context Struct
 
-Use naming conventions — annotations are auto-detected:
+Context fields come from `[[context.uses]]` entries in `blox.toml`. The codegen auto-emits `self_id` (first) and `behavior` (last, with `#[delegates(...)]` derived from delegatable uses). The generated struct looks like:
 
 ```rust
 use bloxide_macros::BloxCtx;
@@ -161,24 +161,24 @@ use ping_pong_actions::{CountsRounds, HasCurrentTimer, __delegate_CountsRounds, 
 
 #[derive(BloxCtx)]
 pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds> {
-    pub self_id: ActorId,                              // → impl HasSelfId
-    pub peer_ref: ActorRef<PingPongMsg, R>,            // → impl HasPeerRef<R>
-    pub self_ref: ActorRef<PingPongMsg, R>,            // → impl HasSelfRef<R>
-    pub timer_ref: ActorRef<TimerCommand, R>,          // → impl HasTimerRef<R>
+    pub self_id: ::bloxide_core::ActorId,               // auto-emitted → impl HasSelfId
+    pub peer_ref: ActorRef<PingPongMsg, R>,            // from [[context.uses]] → impl HasPeerRef<R>
+    pub self_ref: ActorRef<PingPongMsg, R>,            // from [[context.uses]] → impl HasSelfRef<R>
+    pub timer_ref: ActorRef<TimerCommand, R>,          // from [[context.uses]] → impl HasTimerRef<R>
 
-    #[delegates(HasCurrentTimer, CountsRounds)]        // → forwarding impls
-    pub behavior: B,
+    #[delegates(HasCurrentTimer, CountsRounds)]        // auto-derived from delegatable uses
+    pub behavior: B,                                   // auto-emitted → forwarding impls
 }
 ```
 
-**Field conventions:**
+**Field sources:**
 
-| Field Pattern | Generated |
-|--------------|-----------|
-| `self_id: ActorId` | `impl HasSelfId` |
-| `foo_ref: ActorRef<M, R>` | `impl HasFooRef<R>` |
-| `foo_factory: fn(...) -> ...` | Constructor parameter only |
-| `behavior: B` with `#[delegates(...)]` | Forwarding impls via delegate macros |
+| Field | Source | Generated |
+|-------|--------|-----------|
+| `self_id: ActorId` | Auto-emitted (always) | `impl HasSelfId` |
+| `foo_ref: ActorRef<M, R>` | `[[context.uses]]` with `field = "foo_ref"` | `impl HasFooRef<R>` |
+| `foo_factory: fn(...) -> ...` | `[[context.uses]]` with `role = "ctor"` | Constructor parameter only |
+| `behavior: B` | Auto-emitted (when delegatable uses exist) | Forwarding impls via `#[delegates(...)]` |
 
 **Generated constructor:** `fn new(self_id, *_ref fields, factory fields, behavior) -> Self`
 

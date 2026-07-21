@@ -62,15 +62,16 @@ message_path = "domain_messages::DomainMsg"
 [context]
 name = "<BloxName>Ctx"
 generics = "<R: BloxRuntime>"
-actions_crate = "<blox>_actions"
 
-[[context.fields]]
-name = "self_id"
-ty = "ActorId"
+# Context fields come from [[context.uses]] entries.
+# self_id and behavior are auto-emitted by the codegen — do NOT declare them.
 
-[[context.fields]]
-name = "peer_ref"
-ty = "ActorRef<DomainMsg, R>"
+[[context.uses]]
+crate = "bloxide_messaging"
+trait = "HasPeerRef<R, DomainMsg>"
+field = "peer_ref"
+field_type = "ActorRef<DomainMsg, R>"
+role = "accessor"
 
 [topology]
 

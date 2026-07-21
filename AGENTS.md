@@ -183,15 +183,17 @@ The building guide is portable — downstream projects that depend on bloxide sh
 
 ## Context Definition Conventions
 
-Context structs use naming conventions instead of explicit field annotations.
-Only one annotation (`#[delegates]`) is required for behavior delegation fields.
+Context fields are defined entirely via `[[context.uses]]` entries in `blox.toml`.
+The codegen auto-emits `self_id: ActorId` (always, first field) and `behavior: B`
+(when delegatable `[[context.uses]]` entries exist, last field with `#[delegates(...)]`).
+These are never declared manually — they are implicit.
 
-| Field | Convention | Generates |
-|-------|-----------|-----------|
-| `self_id: ActorId` | Always present | `impl HasSelfId` |
-| `foo_ref: ActorRef<M, R>` | Matches `HasFooRef::foo_ref()` | Auto accessor impl |
-| `foo_factory: fn(...) -> ...` | Matches `HasFooFactory::foo_factory()` | Auto accessor impl |
-| `behavior: B` | Must have `#[delegates(Traits)]` | Forwarding impls |
+| Field | Source | Generates |
+|-------|--------|-----------|
+| `self_id: ActorId` | Auto-emitted by codegen (always) | `impl HasSelfId` |
+| `foo_ref: ActorRef<M, R>` | `[[context.uses]]` with `field = "foo_ref"` | `#[provides(HasFooRef)]` accessor impl |
+| `foo_factory: fn(...) -> ...` | `[[context.uses]]` with `role = "ctor"` | Constructor parameter |
+| `behavior: B` | Auto-emitted when delegatable uses exist | `#[delegates(...)]` forwarding impls |
 
 All mutable state belongs in the behavior object, not as direct context fields.
 
