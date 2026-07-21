@@ -5,7 +5,6 @@ use ::bloxide_core::lifecycle::LifecycleCommand;
 use ::bloxide_embassy::prelude::*;
 use ::embassy_demo_impl::PingBehavior;
 use ::ping_blox::prelude::*;
-use ::ping_pong_messages::PingPongMsg;
 use ::pong_blox::prelude::*;
 ::bloxide_embassy::actor_task_supervised!(
     ping_task, PingSpec < EmbassyRuntime, PingBehavior >

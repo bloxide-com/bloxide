@@ -90,6 +90,7 @@ pub(crate) fn replace_placeholders(
 }
 
 /// Generate the StateFns associated constants for a variant.
+#[allow(clippy::too_many_arguments)]
 fn generate_state_fns_impl(
     topology: &TopologyConfig,
     state_enum_ident: &syn::Ident,
@@ -435,7 +436,7 @@ pub fn generate(
     // message enum types (e.g. `CounterMsg::Tick(_)`) which must be in scope.
     // Collect unique crate-level import paths from mailbox message_path fields.
     let mut msg_import_paths: Vec<String> = Vec::new();
-    if let Some(ref ev) = event {
+    if let Some(ev) = event {
         for mb in &ev.mailboxes {
             if let Some(ref mp) = mb.message_path {
                 // message_path is like "counter_messages::CounterMsg" or

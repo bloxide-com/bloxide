@@ -82,10 +82,7 @@ fn find_workspace_root(start: &Path) -> Option<PathBuf> {
                 }
             }
         }
-        match current.parent() {
-            Some(parent) => current = parent,
-            None => return None,
-        }
+        current = current.parent()?;
     }
 }
 

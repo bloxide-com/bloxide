@@ -187,7 +187,7 @@ fn validate(
         let ctor_fields = collect_ctor_fields(blox_config, &actor.blox, active_features);
         let ctor_names: BTreeSet<String> = ctor_fields.iter().map(|f| f.name.clone()).collect();
 
-        for (field_name, _) in &actor.inject {
+        for field_name in actor.inject.keys() {
             if !ctor_names.contains(field_name) {
                 // The field may be feature-gated and the feature is not active.
                 // Silently skip — the injection targets a field that doesn't
@@ -585,8 +585,6 @@ pub fn generate(
                 if let Some(restart) = &policy_config.restart {
                     let max = restart.max;
                     quote! { ChildPolicy::Restart { max: #max as usize } }
-                } else if policy_config.stop == Some(true) {
-                    quote! { ChildPolicy::Stop }
                 } else {
                     quote! { ChildPolicy::Stop }
                 }

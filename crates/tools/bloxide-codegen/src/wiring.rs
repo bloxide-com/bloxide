@@ -160,7 +160,7 @@ pub fn generate(config: &WiringConfig, _crate_name: &str) -> anyhow::Result<Stri
         let id_ident = format_ident!("{}_id", actor.name);
 
         let mut ctor_args = vec![quote! { #id_ident }];
-        for (_field_name, source_actor) in &actor.context_fields {
+        for source_actor in actor.context_fields.values() {
             let source_ident = format_ident!("{}_ref", source_actor);
             ctor_args.push(quote! { #source_ident.clone() });
         }

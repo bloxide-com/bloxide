@@ -1,5 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
 use bloxide_child_management::AbortCommand;
+#[allow(unused_imports)]
 use bloxide_core::{
     capability::{BloxRuntime, DynamicChannelCap},
     engine::{DispatchOutcome, MachineState, StateMachine},
