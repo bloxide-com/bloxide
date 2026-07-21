@@ -184,7 +184,7 @@ pub enum RestartStrategy {
 
 | Strategy | Behavior |
 |---|---|
-| **`OneForOne`** | Only the failed child is sent `Reset`. All other children continue running undisturbed. This is the default and matches the pre-existing behavior. |
+| **`OneForOne`** | Only the failed child is sent `Reset`. All other children continue running undisturbed. This is the default. |
 | **`OneForAll`** | The failed child AND all other active children are sent `Reset` simultaneously. Use when children are tightly coupled and cannot operate correctly without all peers being in a clean state. |
 | **`RestForOne`** | The failed child AND all children declared after it (higher indices in `ChildGroup`) are sent `Reset`. Children declared before the failed child are left running. Use when children have dependencies on earlier siblings but not vice versa. |
 
@@ -244,8 +244,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
     pub fn clear_counters(&mut self);
 }
 ```
-
-> **Removed vs. old API**: `handle_reset` is gone — in the four-level model `Reset` returns `Started`, so the existing `handle_started` path covers it. `record_aborted` is new — it records a child as permanently done after an `Aborted` event (the task self-terminated cooperatively; it is not in `Init` like a `Stopped` child). `add_dynamic` is new — it stores the `abort_ref` (cooperative abort mailbox) and `abort_handle` (kill ripcord) for dynamically spawned children.
 
 `handle_done_or_failed` evaluates the child's `ChildPolicy` (four variants):
 - **`ChildPolicy::Kill`** → calls `R::Kill::kill(abort_handle)` (the ripcord). No callbacks. Marks the child `PermanentlyDone`. Evaluates `GroupShutdown`.

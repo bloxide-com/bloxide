@@ -1589,8 +1589,8 @@ This is general because:
   `notify` mailboxes; any spawning blox injects them the same way.
 - **Adding a new named ref to any blox** just means registering it in the symbol table —
   no new source type, no codegen change.
-- **The `field` parameter is the only schema change** — defaults to `"primary"`, fully
-  backward compatible.
+- **The `field` parameter is the only schema change** — defaults to `"primary"` if
+  omitted.
 - **Multiple managing bloxs** are handled by the actor name (each has a unique name in
   `system.toml`).
 

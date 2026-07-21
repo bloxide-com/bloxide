@@ -249,6 +249,9 @@ pub fn spawned_count() -> usize {
 // ── Waker tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
+// TODO: wire these up — several `WEvent` variants/fields below exist only to
+// satisfy the `EventTag`/`LifecycleEvent`/`From<Envelope>` trait impls and are
+// not directly constructed or read in the waker tests yet.
 #[allow(dead_code)]
 mod waker_tests {
     use bloxide_core::actor::run_actor_to_completion;
@@ -531,6 +534,9 @@ mod lifecycle_dispatch {
     #[derive(Debug, Clone, Copy)]
     enum TestEvent {
         Lifecycle(LifecycleCommand),
+        // TODO: wire this up — `Msg` is constructed by `From<Envelope<u32>>`
+        // (required for the mailbox type) but no test in this module dispatches
+        // a domain `Msg` event, so the payload field is never read.
         #[allow(dead_code)]
         Msg(u32),
         Complete,

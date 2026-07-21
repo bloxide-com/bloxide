@@ -579,7 +579,7 @@ pub fn generate(config: &ContextConfig, crate_name: &str) -> anyhow::Result<Stri
     let has_feature = config.feature.is_some();
 
     if !has_feature {
-        // Single-variant mode (backward compatible).
+        // Single-variant mode — no feature gating.
         let generics = if let Some(ref g) = config.generics {
             syn::parse_str::<syn::Generics>(g)
                 .map_err(|e| anyhow::anyhow!("invalid generics '{}': {}", g, e))?

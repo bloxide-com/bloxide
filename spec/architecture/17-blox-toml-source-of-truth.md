@@ -490,7 +490,7 @@ Additional validation that should be enforced (some by the Rust compiler after g
 The TOML schema is designed to be extended without breaking existing codegen:
 
 1. **New field roles** — adding a role such as `config` or `metric` only requires a new branch in `ctx.rs` generation; existing roles are unaffected.
-2. **New `[[context.uses]]` shapes** — the `ContextUse` struct already supports `trait`, `traits`, `field`, `field_type`, `role`, `delegatable`, `impl_macro`, and sub-fields. New optional fields can be added without invalidating old TOML.
+2. **New `[[context.uses]]` shapes** — the `ContextUse` struct already supports `trait`, `traits`, `field`, `field_type`, `role`, `delegatable`, `impl_macro`, and sub-fields. New optional fields can be added without breaking existing TOML files.
 3. **New topology attributes** — optional flags on `StateConfig` (like `composite`, `terminal`, `error`) can be extended with more optional booleans.
 4. **Custom annotations** — unknown keys in TOML are ignored by serde by default, so experimental annotations can be added to `blox.toml` and consumed by future codegen versions or UI tools without breaking current builds.
 5. **New generated file types** — `generate_all` can emit additional files; `mod.rs` is generated from the file list, so new modules are re-exported automatically.

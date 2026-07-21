@@ -103,8 +103,10 @@ impl core::iter::FromIterator<ActionResult> for ActionResults {
 /// **Users should not name this type directly.** Use the `StateRule<S>` type alias instead,
 /// which adds the `Guard<S>` type parameter.
 ///
-/// This type is kept public for proc-macro generated code compatibility, but
-/// the type alias is the preferred API surface.
+/// This struct is public because `StateRule<S>` is a type alias that expands
+/// to `TransitionRule<S, Guard<S>>`; Rust requires the aliased type to be at
+/// least as visible as the alias. Users should use `StateRule<S>` in their
+/// code.
 ///
 /// # Enforcement
 ///
