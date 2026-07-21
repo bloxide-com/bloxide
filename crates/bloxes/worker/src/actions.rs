@@ -1,14 +1,14 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Action functions for the Worker actor.
 use blox_ctx_current_task::HasCurrentTask;
-use blox_ctx_worker_peers::HasWorkerPeers;
 use bloxide_core::{accessor::HasSelfId, capability::BloxRuntime, transition::ActionResult};
+use bloxide_peers::HasPeers;
 use pool_actions::actions::{apply_worker_control, broadcast_to_peers, notify_pool_done};
 use pool_messages::WorkerMsg;
 
 use crate::{WorkerCtx, WorkerEvent, WorkerSpec};
 
-impl<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> WorkerSpec<R, B> {
+impl<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask + 'static> WorkerSpec<R, B> {
     pub(crate) fn handle_ctrl(ctx: &mut WorkerCtx<R, B>, ev: &WorkerEvent<R>) -> ActionResult {
         if let Some(ctrl) = ev.ctrl_payload() {
             apply_worker_control(ctx, ctrl);

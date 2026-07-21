@@ -13,4 +13,5 @@ alloc = ["bloxide-core/alloc"]
 std = ["bloxide-core/std", "alloc"]
 
 [dependencies]
+bloxide-child-management = { workspace = true }
 bloxide-core = { workspace = true }

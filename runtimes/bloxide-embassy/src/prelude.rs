@@ -8,9 +8,11 @@ pub use crate::{
 /// Re-exports everything from `bloxide_core::prelude` plus Embassy-specific
 /// runtime types and `Spawner`. A single `use bloxide_embassy::prelude::*;`
 /// covers all framework types needed in a wiring binary.
+///
+/// Supervisor types are NOT re-exported here — the runtime does not depend
+/// on `bloxide-supervisor`. Apps that use the supervisor import it directly:
+/// `use bloxide_supervisor::*;`
+pub use bloxide_child_management::{ChildGroup, ChildPolicy, GroupShutdown};
 pub use bloxide_core::prelude::*;
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
-pub use bloxide_supervisor::registry::{ChildGroup, ChildPolicy, GroupShutdown};
-pub use bloxide_supervisor::supervisor::{SupervisorCtx, SupervisorSpec, SupervisorState};
-pub use bloxide_supervisor::{RegisterChild, SupervisorControl, SupervisorEvent};
 pub use embassy_executor::Spawner;

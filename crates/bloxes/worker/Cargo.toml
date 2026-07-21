@@ -22,7 +22,6 @@ bloxide-peers   = { workspace = true }
 pool-messages   = { workspace = true }
 pool-actions    = { workspace = true }
 blox-ctx-pool-ref     = { workspace = true }
-blox-ctx-worker-peers = { workspace = true }
 blox-ctx-current-task = { workspace = true }
 
 [dev-dependencies]

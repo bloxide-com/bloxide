@@ -9,7 +9,7 @@
 
 #[cfg(all(test, feature = "std", feature = "dynamic"))]
 mod pool_tests {
-    use bloxide_core::child_management::ChildPolicy;
+    use bloxide_child_management::ChildPolicy;
     use bloxide_core::lifecycle::ChildLifecycleEvent;
     use bloxide_spawn::{SpawnFn, SpawnOutput};
     use bloxide_test_runtime::TestRuntime;
@@ -61,7 +61,7 @@ mod pool_tests {
                 let (lifecycle_ref, _lifecycle_rx) =
                     <TestRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(worker_id, 4);
                 let (abort_ref, _abort_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-                    bloxide_core::child_management::AbortCommand,
+                    bloxide_child_management::AbortCommand,
                 >(worker_id, 4);
 
                 let _ = reply_to.try_send(

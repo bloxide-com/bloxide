@@ -1,17 +1,12 @@
 // Copyright 2025 Bloxide, all rights reserved
-use bloxide_core::lifecycle::ChildLifecycleEvent;
+use bloxide_child_management::{ChildGroup, ChildPolicy, GroupShutdown};
 use bloxide_core::{
     capability::{BloxRuntime, StaticChannelCap},
     engine::{DispatchOutcome, MachineState, StateMachine},
-    lifecycle::LifecycleCommand,
+    lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     mailboxes::Mailboxes,
     messaging::{ActorId, ActorRef, Envelope},
     spec::MachineSpec,
-};
-
-use bloxide_supervisor::{
-    control::SupervisorControl,
-    registry::{ChildGroup, ChildPolicy, GroupShutdown},
 };
 use core::future::poll_fn;
 use core::pin::Pin;
@@ -136,23 +131,26 @@ fn report_outcome<S: MachineSpec>(
 }
 
 // ── ChildGroupBuilder ─────────────────────────────────────────────────────────
+//
+// Static-channel builder for Embassy. Generic over the control message type `Ctrl`
+// — the runtime does NOT know about `SupervisorControl`. The app chooses `Ctrl`.
 
-pub struct ChildGroupBuilder {
+pub struct ChildGroupBuilder<Ctrl: Send + 'static> {
     group: ChildGroup<EmbassyRuntime>,
     notify_ref: ActorRef<ChildLifecycleEvent, EmbassyRuntime>,
     notify_rx: EmbassyStream<ChildLifecycleEvent>,
-    control_ref: ActorRef<SupervisorControl<EmbassyRuntime>, EmbassyRuntime>,
-    control_rx: EmbassyStream<SupervisorControl<EmbassyRuntime>>,
+    control_ref: ActorRef<Ctrl, EmbassyRuntime>,
+    control_rx: EmbassyStream<Ctrl>,
 }
 
-impl ChildGroupBuilder {
+impl<Ctrl: Send + 'static> ChildGroupBuilder<Ctrl> {
     pub fn new(shutdown: GroupShutdown) -> Self {
         let (notify_ref, notify_rx) = <EmbassyRuntime as StaticChannelCap>::channel::<
             ChildLifecycleEvent,
             32,
         >(bloxide_macros::next_actor_id!());
         let (control_ref, control_rx) = <EmbassyRuntime as StaticChannelCap>::channel::<
-            SupervisorControl<EmbassyRuntime>,
+            Ctrl,
             16,
         >(bloxide_macros::next_actor_id!());
         Self {
@@ -178,7 +176,7 @@ impl ChildGroupBuilder {
         (cmd_rx, self.notify_ref.sender())
     }
 
-    pub fn control_ref(&self) -> ActorRef<SupervisorControl<EmbassyRuntime>, EmbassyRuntime> {
+    pub fn control_ref(&self) -> ActorRef<Ctrl, EmbassyRuntime> {
         self.control_ref.clone()
     }
 
@@ -195,7 +193,7 @@ impl ChildGroupBuilder {
     ) -> (
         ChildGroup<EmbassyRuntime>,
         EmbassyStream<ChildLifecycleEvent>,
-        EmbassyStream<SupervisorControl<EmbassyRuntime>>,
+        EmbassyStream<Ctrl>,
     ) {
         (self.group, self.notify_rx, self.control_rx)
     }

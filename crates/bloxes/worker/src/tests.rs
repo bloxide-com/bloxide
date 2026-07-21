@@ -9,14 +9,13 @@ mod worker_tests {
     use alloc::vec::Vec;
 
     use blox_ctx_current_task::HasCurrentTask;
-    use blox_ctx_worker_peers::HasWorkerPeers;
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use bloxide_core::{
         capability::DynamicChannelCap, messaging::ActorRef, spec::MachineSpec, Envelope,
         MachineState, StateMachine,
     };
-    use bloxide_peers::{AddPeer, PeerCtrl};
+    use bloxide_peers::{AddPeer, HasPeers, PeerCtrl};
     use pool_messages::{DoWork, PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
     use crate::prelude::*;
@@ -43,7 +42,7 @@ mod worker_tests {
         }
     }
 
-    impl HasWorkerPeers<TestRuntime> for TestBehavior {
+    impl HasPeers<WorkerMsg, TestRuntime> for TestBehavior {
         fn peers(&self) -> &[ActorRef<WorkerMsg, TestRuntime>] {
             &self.peers
         }

@@ -17,9 +17,10 @@ pub mod spawn;
 pub mod supervision;
 pub mod timer;
 
+pub use bloxide_child_management::ChildGroupBuilder;
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{TokioSender, TokioStream, TokioTrySendError};
-pub use supervision::{run_supervised_actor, run_supervised_actor_with_abort, ChildGroupBuilder};
+pub use supervision::{run_supervised_actor, run_supervised_actor_with_abort, GenericChildGroupBuilder};
 
 // ── TokioRuntime ──────────────────────────────────────────────────────────────
 

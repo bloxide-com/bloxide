@@ -29,7 +29,6 @@ members = [
     "crates/context/blox-ctx-rounds",
     "crates/context/blox-ctx-current-timer",
     "crates/context/blox-ctx-current-task",
-    "crates/context/blox-ctx-worker-peers",
     "crates/context/blox-ctx-ticks",
     "crates/messages/ping-pong-messages",
     "crates/messages/pool-messages",
@@ -86,7 +85,6 @@ blox-ctx-pool-ref = { path = "crates/context/blox-ctx-pool-ref" }
 blox-ctx-rounds = { path = "crates/context/blox-ctx-rounds" }
 blox-ctx-current-timer = { path = "crates/context/blox-ctx-current-timer" }
 blox-ctx-current-task = { path = "crates/context/blox-ctx-current-task" }
-blox-ctx-worker-peers = { path = "crates/context/blox-ctx-worker-peers" }
 blox-ctx-ticks = { path = "crates/context/blox-ctx-ticks" }
 ping-pong-messages = { path = "crates/messages/ping-pong-messages" }
 pool-messages = { path = "crates/messages/pool-messages" }

@@ -19,4 +19,3 @@ pool-messages = { workspace = true }
 blox-ctx-workers = { workspace = true }
 blox-ctx-pool-ref = { workspace = true }
 blox-ctx-current-task = { workspace = true }
-blox-ctx-worker-peers = { workspace = true }

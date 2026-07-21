@@ -1768,7 +1768,7 @@ runtime = "tokio"
 name = "worker-1"
 blox = "worker-blox"
 behavior = "WorkerBehavior"
-behavior_traits = ["HasCurrentTask", "HasWorkerPeers"]
+behavior_traits = ["HasCurrentTask", "HasPeers"]
 
   [actors.inject]
   self_ref = { source = "self", mailbox = 0 }

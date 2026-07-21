@@ -1,9 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 use core::fmt;
 
+use bloxide_child_management::{AbortCommand, ChildPolicy};
 use bloxide_core::{
     capability::{BloxRuntime, KillCapability},
-    child_management::{AbortCommand, ChildPolicy},
     lifecycle::LifecycleCommand,
     messaging::{ActorId, ActorRef},
 };

@@ -7,16 +7,16 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
+use bloxide_child_management::{AbortCommand, ChildPolicy};
 use bloxide_core::{
     capability::{BloxRuntime, DynamicChannelCap},
-    child_management::{AbortCommand, ChildPolicy},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::ActorRef,
     StateMachine,
 };
 use bloxide_spawn::{SpawnCap, SpawnOutput};
 use bloxide_tokio::{run_supervised_actor_with_abort, TokioRuntime};
-use pool_actions::traits::{HasCurrentTask, HasWorkerPeers};
+use pool_actions::traits::{HasCurrentTask, HasPeers};
 use bloxide_peers::PeerCtrl;
 use pool_messages::{SpawnRequest, SpawnedWorker, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
@@ -53,7 +53,7 @@ impl<R: BloxRuntime> HasCurrentTask for WorkerBehavior<R> {
     }
 }
 
-impl<R: BloxRuntime> HasWorkerPeers<R> for WorkerBehavior<R> {
+impl<R: BloxRuntime> HasPeers<WorkerMsg, R> for WorkerBehavior<R> {
     fn peers(&self) -> &[ActorRef<WorkerMsg, R>] {
         &self.peers
     }

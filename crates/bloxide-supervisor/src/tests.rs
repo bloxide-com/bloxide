@@ -13,7 +13,7 @@ use crate::{
     registry::{ChildAction, ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy},
     SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState,
 };
-use bloxide_core::child_management::AbortCommand;
+use bloxide_child_management::AbortCommand;
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
 use bloxide_test_runtime::{TestReceiver, TestRuntime};

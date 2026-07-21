@@ -1,18 +1,12 @@
 // Copyright 2025 Bloxide, all rights reserved
-use bloxide_core::lifecycle::ChildLifecycleEvent;
+use bloxide_child_management::{AbortCommand, ChildGroup, ChildPolicy, GroupShutdown};
 use bloxide_core::{
     capability::{BloxRuntime, DynamicChannelCap},
-    child_management::AbortCommand,
     engine::{DispatchOutcome, MachineState, StateMachine},
-    lifecycle::LifecycleCommand,
+    lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     mailboxes::Mailboxes,
     messaging::{ActorId, ActorRef, Envelope},
     spec::MachineSpec,
-};
-
-use bloxide_supervisor::{
-    control::SupervisorControl,
-    registry::{ChildGroup, ChildPolicy, GroupShutdown},
 };
 use core::future::poll_fn;
 use core::pin::Pin;
@@ -219,69 +213,16 @@ pub async fn run_supervised_actor_with_abort<S: MachineSpec + 'static>(
 }
 
 // ── ChildGroupBuilder ─────────────────────────────────────────────────────────
+//
+// The concrete builder is now `bloxide_child_management::ChildGroupBuilder<R, Ctrl>`.
+// We re-export it with the supervisor's control type baked in so existing code
+// that writes `ChildGroupBuilder` (without generic args) keeps working.
+//
+// The app chooses the control type — the runtime does NOT know about
+// `SupervisorControl`. Users who want a different managing blox can use
+// `bloxide_child_management::ChildGroupBuilder<TokioRuntime, MyCtrl>` directly.
 
-pub struct ChildGroupBuilder {
-    group: ChildGroup<TokioRuntime>,
-    notify_ref: ActorRef<ChildLifecycleEvent, TokioRuntime>,
-    notify_rx: TokioStream<ChildLifecycleEvent>,
-    control_ref: ActorRef<SupervisorControl<TokioRuntime>, TokioRuntime>,
-    control_rx: TokioStream<SupervisorControl<TokioRuntime>>,
-}
-
-impl ChildGroupBuilder {
-    pub fn new(shutdown: GroupShutdown) -> Self {
-        let notify_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
-        let (notify_ref, notify_rx) =
-            <TokioRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(notify_id, 32);
-        let control_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
-        let (control_ref, control_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
-            SupervisorControl<TokioRuntime>,
-        >(control_id, 16);
-        Self {
-            group: ChildGroup::new(shutdown),
-            notify_ref,
-            notify_rx,
-            control_ref,
-            control_rx,
-        }
-    }
-
-    pub fn add_child(
-        &mut self,
-        id: ActorId,
-        policy: ChildPolicy,
-    ) -> (
-        TokioStream<LifecycleCommand>,
-        TokioSender<ChildLifecycleEvent>,
-    ) {
-        let (lifecycle_ref, cmd_rx) =
-            <TokioRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(id, 4);
-        self.group.add(id, lifecycle_ref, policy);
-        (cmd_rx, self.notify_ref.sender())
-    }
-
-    pub fn control_ref(&self) -> ActorRef<SupervisorControl<TokioRuntime>, TokioRuntime> {
-        self.control_ref.clone()
-    }
-
-    pub fn notify_sender(&self) -> TokioSender<ChildLifecycleEvent> {
-        self.notify_ref.sender()
-    }
-
-    pub fn notify_ref(&self) -> ActorRef<ChildLifecycleEvent, TokioRuntime> {
-        self.notify_ref.clone()
-    }
-
-    pub fn finish(
-        self,
-    ) -> (
-        ChildGroup<TokioRuntime>,
-        TokioStream<ChildLifecycleEvent>,
-        TokioStream<SupervisorControl<TokioRuntime>>,
-    ) {
-        (self.group, self.notify_rx, self.control_rx)
-    }
-}
+pub use bloxide_child_management::ChildGroupBuilder as GenericChildGroupBuilder;
 
 #[cfg(test)]
 mod tests {
@@ -465,8 +406,8 @@ mod tests {
     ///      an `AtomicBool` when the future is dropped (killed mid-flight)
     #[tokio::test]
     async fn ripcord_aborts_unresponsive_child() {
+        use bloxide_child_management::{ChildGroup, ChildPolicy, GroupShutdown};
         use bloxide_spawn::SpawnCap;
-        use bloxide_supervisor::registry::{ChildGroup, ChildPolicy, GroupShutdown};
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
 

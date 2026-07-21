@@ -29,7 +29,7 @@ terminal = true
 
 [context]
 name = "WorkerCtx"
-generics = "<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask>"
+generics = "<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask>"
 on_init = "ctx.set_task_id(0); ctx.set_result(0); ctx.peers_mut().clear();"
 imports = [
     "pool_messages::{PoolMsg, WorkerMsg}",
@@ -44,10 +44,10 @@ field = "pool_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "accessor"
 
-# Behavior traits from context crates (delegatable)
+# Behavior traits from platform/shared crates (delegatable)
 [[context.uses]]
-crate = "blox_ctx_worker_peers"
-trait = "HasWorkerPeers<R>"
+crate = "bloxide_peers"
+trait = "HasPeers<WorkerMsg, R>"
 delegatable = true
 
 [[context.uses]]
@@ -63,7 +63,7 @@ ty = "ActorId"
 [[context.fields]]
 name = "behavior"
 ty = "B"
-delegates = ["HasWorkerPeers<R>", "HasCurrentTask"]
+delegates = ["HasPeers<WorkerMsg, R>", "HasCurrentTask"]
 
 # --- Declarative transitions ---
 

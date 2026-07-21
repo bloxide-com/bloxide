@@ -9,7 +9,7 @@ use bloxide_core::{accessor::HasSelfId, capability::BloxRuntime};
 use bloxide_peers::{introduce_peers, PeerCtrl};
 use pool_messages::{PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
-use crate::traits::{HasCurrentTask, HasPoolRef, HasWorkerPeers, HasWorkers};
+use crate::traits::{HasCurrentTask, HasPoolRef, HasPeers, HasWorkers};
 
 /// Send `WorkDone` to the pool when the worker finishes its task.
 ///
@@ -36,7 +36,7 @@ where
 pub fn broadcast_to_peers<R, C>(ctx: &mut C)
 where
     R: BloxRuntime,
-    C: HasSelfId + HasCurrentTask + HasWorkerPeers<R>,
+    C: HasSelfId + HasCurrentTask + HasPeers<WorkerMsg, R>,
 {
     let from = ctx.self_id();
     let result = ctx.result();
@@ -93,7 +93,7 @@ where
 pub fn apply_worker_control<R, C>(ctx: &mut C, ctrl: &PeerCtrl<WorkerMsg, R>)
 where
     R: BloxRuntime,
-    C: HasWorkerPeers<R>,
+    C: HasPeers<WorkerMsg, R>,
 {
     match ctrl {
         PeerCtrl::AddPeer(add) => ctx.peers_mut().push(add.peer_ref.clone()),

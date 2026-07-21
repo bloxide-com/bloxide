@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 bloxide-core = { workspace = true, features = ["std"] }
+bloxide-child-management = { workspace = true, features = ["std"] }
 bloxide-spawn = { workspace = true, features = ["std"] }
 bloxide-peers = { workspace = true }
 bloxide-tokio = { workspace = true }

@@ -12,7 +12,6 @@ pub mod tracing;
 pub mod accessor;
 pub mod actor;
 pub mod capability;
-pub mod child_management;
 pub mod engine;
 pub mod event_tag;
 pub mod generated;
@@ -32,7 +31,6 @@ pub use actor::{run_actor, run_actor_auto_start, run_actor_to_completion};
 pub use capability::{
     BloxRuntime, DynamicChannelCap, KillCapability, NoKill, StaticChannelCap,
 };
-pub use child_management::{AbortCommand, ChildPolicy, GroupShutdown, RestartStrategy};
 pub use engine::{DispatchOutcome, MachineState, StateMachine};
 pub use event_tag::{EventTag, LifecycleEvent, LIFECYCLE_TAG, WILDCARD_TAG};
 pub use lifecycle::{ChildLifecycleEvent, LifecycleCommand};

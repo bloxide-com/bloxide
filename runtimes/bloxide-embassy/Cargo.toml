@@ -9,8 +9,8 @@ license.workspace = true
 
 [dependencies]
 bloxide-core = { workspace = true, features = ["alloc"] }
+bloxide-child-management = { workspace = true, features = ["alloc"] }
 bloxide-macros = { workspace = true }
-bloxide-supervisor = { workspace = true, features = ["alloc"] }
 bloxide-timer = { workspace = true, features = ["alloc"] }
 bloxide-log = { workspace = true }
 embassy-futures = "0.1"
@@ -20,4 +20,4 @@ embassy-executor = { version = "0.9", features = ["executor-thread"] }
 futures-core = { version = "0.3", default-features = false }
 
 [features]
-std = ["bloxide-core/std", "bloxide-supervisor/std", "bloxide-timer/std"]
+std = ["bloxide-core/std", "bloxide-child-management/std", "bloxide-timer/std"]
