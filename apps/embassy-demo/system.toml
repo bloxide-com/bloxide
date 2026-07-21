@@ -12,7 +12,7 @@ kind = "timer"
 name = "ping"
 blox = "ping-blox"
 behavior = "PingBehavior"
-behavior_impl = "embassy-demo-impl"
+behavior_impl = "ping-pong-impl"
 
   [actors.inject]
   self_ref = { source = "self" }

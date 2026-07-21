@@ -95,7 +95,7 @@ traits. In this example, `PingCtx` forwards:
 - `CountsRounds` → `self.behavior.round()` / `self.behavior.set_round()`
 - `HasCurrentTimer` → `self.behavior.current_timer()` / `self.behavior.set_current_timer()`
 
-The binary injects a concrete `B` (e.g., `PingBehavior` from `embassy-demo-impl`) at construction time. Tests supply a local `TestBehavior` struct. The blox crate imports neither.
+The binary injects a concrete `B` (e.g., `PingBehavior` from `ping-pong-impl`) at construction time. Tests supply a local `TestBehavior` struct. The blox crate imports neither.
 
 No `supervisor_ref` — actors don't hold a reference to their supervisor.
 

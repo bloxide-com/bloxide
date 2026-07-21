@@ -40,7 +40,7 @@ members = [
     "crates/bloxes/pool",
     "crates/bloxes/counter",
     "crates/bloxes/bhsm-tst",
-    "crates/impl/embassy-demo-impl",
+    "crates/impl/ping-pong-impl",
     "crates/impl/counter-demo-impl",
     "crates/impl/tokio-pool-demo-impl",
     "crates/tools/bloxide-codegen",
@@ -96,7 +96,7 @@ worker-blox = { path = "crates/bloxes/worker" }
 pool-blox = { path = "crates/bloxes/pool" }
 counter-blox = { path = "crates/bloxes/counter" }
 bhsm-tst-blox = { path = "crates/bloxes/bhsm-tst" }
-embassy-demo-impl = { path = "crates/impl/embassy-demo-impl" }
+ping-pong-impl = { path = "crates/impl/ping-pong-impl" }
 counter-demo-impl = { path = "crates/impl/counter-demo-impl" }
 tokio-pool-demo-impl = { path = "crates/impl/tokio-pool-demo-impl" }
 bloxide-codegen = { path = "crates/tools/bloxide-codegen" }
@@ -122,7 +122,7 @@ bhsm-tst-messages = { workspace = true }
 ping-pong-messages = { workspace = true }
 pool-messages = { workspace = true }
 counter-messages = { workspace = true }
-embassy-demo-impl = { workspace = true }
+ping-pong-impl = { workspace = true }
 counter-demo-impl = { workspace = true }
 tokio-pool-demo-impl = { workspace = true }
 tokio = { version = "1", features = ["full"] }

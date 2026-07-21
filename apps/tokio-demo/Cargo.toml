@@ -15,7 +15,7 @@ ping-blox          = { workspace = true }
 pong-blox          = { workspace = true }
 ping-pong-messages = { workspace = true }
 ping-pong-actions  = { workspace = true }
-embassy-demo-impl  = { workspace = true }
+ping-pong-impl     = { workspace = true }
 tokio              = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }

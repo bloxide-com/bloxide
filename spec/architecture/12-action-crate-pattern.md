@@ -96,7 +96,7 @@ defined by the actions layer.
 
 Example:
 
-- `embassy-demo-impl` defines `PingBehavior`
+- `ping-pong-impl` defines `PingBehavior`
 - `PingBehavior` implements traits such as `CountsRounds` and `HasCurrentTimer`
 - the wiring binary injects `PingBehavior` into `PingCtx<R, B>`
 - `counter-demo-impl` defines `CounterBehavior` for the layered minimal demo

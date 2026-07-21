@@ -1,6 +1,6 @@
 # Copyright 2025 Bloxide, all rights reserved
 [package]
-name = "embassy-demo-impl"
+name = "ping-pong-impl"
 version.workspace = true
 edition.workspace = true
 description = "Concrete Ping behavior implementations shared by ping-pong demos"

@@ -14,7 +14,7 @@
 - Blox crate: `crates/bloxes/<blox-name>/`
 - Messages crate: `crates/messages/<blox-name>-messages/` _(if new messages are needed; share with peers using the same protocol)_
 - Actions crate: `crates/actions/<blox-name>-actions/` _(accessor/behavior traits + generic action functions; no concrete types)_
-- Impl crate: a separate crate consumed by the wiring binary (e.g. `crates/impl/embassy-demo-impl/`); contains concrete behavior trait implementations injected into the blox context
+- Impl crate: a separate crate consumed by the wiring binary (e.g. `crates/impl/ping-pong-impl/`); contains concrete behavior trait implementations injected into the blox context
 
 ## State Hierarchy
 

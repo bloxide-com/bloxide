@@ -15,7 +15,7 @@ ping-blox          = { workspace = true }
 pong-blox          = { workspace = true }
 ping-pong-messages = { workspace = true }
 ping-pong-actions  = { workspace = true }
-embassy-demo-impl  = { workspace = true }
+ping-pong-impl     = { workspace = true }
 embassy-executor   = { version = "0.9", features = ["arch-std", "executor-thread"] }
 embassy-sync       = { version = "0.7" }
 embassy-time       = { version = "0.5", features = ["std", "generic-queue-8"] }

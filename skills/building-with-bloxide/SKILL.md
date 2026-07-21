@@ -118,7 +118,7 @@ where
 Provides concrete types that implement behavior traits. Only needed when a blox has mutable state beyond accessor fields.
 
 ```rust
-// crates/impl/embassy-demo-impl/src/lib.rs
+// crates/impl/ping-pong-impl/src/lib.rs
 use bloxide_timer::TimerId;
 use ping_pong_actions::{CountsRounds, HasCurrentTimer};
 

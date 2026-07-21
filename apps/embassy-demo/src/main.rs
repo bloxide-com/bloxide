@@ -3,7 +3,7 @@
 ::bloxide_embassy::timer_task!(timer_task);
 use ::bloxide_core::lifecycle::LifecycleCommand;
 use ::bloxide_embassy::prelude::*;
-use ::embassy_demo_impl::PingBehavior;
+use ::ping_pong_impl::PingBehavior;
 use ::ping_blox::prelude::*;
 use ::pong_blox::prelude::*;
 ::bloxide_embassy::actor_task_supervised!(

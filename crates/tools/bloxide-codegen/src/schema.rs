@@ -55,11 +55,9 @@ pub struct EventConfig {
     /// Generics for the feature-gated variant (e.g. `"<R: BloxRuntime, B: SomeTrait>"`).
     #[serde(default)]
     pub feature_generics: Option<String>,
-    #[serde(default)]
-    pub debug: Option<bool>, // default true; deprecated — use `derives` instead
     /// Custom derive trait paths to apply to the generated event enum.
-    /// When set, overrides `debug`. An empty list means no derives at all.
-    /// When unset (None), falls back to `debug` for backward compatibility.
+    /// When `None`, defaults to `["Debug"]`. An empty list means no derives
+    /// at all.
     #[serde(default)]
     pub derives: Option<Vec<String>>,
     pub mailboxes: Vec<MailboxConfig>,
@@ -481,7 +479,7 @@ pub struct ActorInstance {
     pub behavior: Option<String>,
     /// Actor kind: "timer" for timer service actors, None for normal blox actors.
     pub kind: Option<String>,
-    /// Crate that provides the behavior type (e.g. "embassy_demo_impl").
+    /// Crate that provides the behavior type (e.g. "ping_pong_impl").
     pub behavior_impl: Option<String>,
     /// Channel capacity for this actor's primary mailbox (default 16).
     pub channel_capacity: Option<usize>,

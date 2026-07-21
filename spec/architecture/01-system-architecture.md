@@ -68,7 +68,7 @@ flowchart LR
     ppActions[ping-pong-actions]
     ping[ping-blox]
     pong[pong-blox]
-    demoImpl[embassy-demo-impl]
+    demoImpl[ping-pong-impl]
     core[bloxide-core]
     macros[bloxide-macros]
     log[bloxide-log]
