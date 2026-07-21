@@ -598,7 +598,7 @@ fn register_dynamic_child_adds_and_starts() {
         id: child_id,
         lifecycle_ref,
         abort_ref,
-        abort_handle: (),
+        kill_handle: (),
         policy: ChildPolicy::Restart { max: 3 },
     };
 
@@ -647,7 +647,7 @@ fn register_dynamic_child_during_shutdown_still_starts_child() {
         id: child_id,
         lifecycle_ref,
         abort_ref,
-        abort_handle: (),
+        kill_handle: (),
         policy: ChildPolicy::Restart { max: 3 },
     };
 

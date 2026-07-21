@@ -226,17 +226,17 @@ mod spawn_helpers {
 
     impl SpawnCap for TestRuntime {
         type TaskHandle = ();
-        type AbortHandle = ();
+        type KillHandle = ();
 
         fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle {
             SPAWNED.with(|s| s.borrow_mut().push(Box::pin(future)));
         }
 
-        fn abort_handle(_handle: Self::TaskHandle) -> Self::AbortHandle {
+        fn kill_handle(_handle: Self::TaskHandle) -> Self::KillHandle {
             // No-op: TestRuntime doesn't run real tasks
         }
 
-        fn abort(_handle: Self::AbortHandle) {
+        fn kill(_handle: Self::KillHandle) {
             // No-op: TestRuntime doesn't run real tasks
         }
     }

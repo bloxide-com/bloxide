@@ -121,7 +121,7 @@ where
 /// Called when the supervisor receives a `SupervisorControl::RegisterDynamicChild`
 /// from the `spawn_child` helper. Registers the child in the child group
 /// (storing the `abort_ref` for the cooperative abort mailbox and the
-/// `abort_handle` for the external kill ripcord) and sends a Start command.
+/// `kill_handle` for the external kill ripcord) and sends a Start command.
 pub fn handle_register_dynamic_child<R>(
     ctx: &mut SupervisorCtx<R>,
     ev: &SupervisorEvent<R>,
@@ -137,7 +137,7 @@ where
             child_id,
             reg.lifecycle_ref.clone(),
             reg.abort_ref.clone(),
-            reg.abort_handle.clone(),
+            reg.kill_handle.clone(),
             reg.policy,
         );
         ctx.children.start_child(child_id, from);

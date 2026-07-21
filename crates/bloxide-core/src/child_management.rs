@@ -53,7 +53,7 @@ pub enum ChildPolicy {
     /// Immediately kill the child via `KillCapability::kill(handle)`.
     /// The task is destroyed externally — no callbacks, no cooperation.
     /// Permanently dead. Requires the child to have a kill capability
-    /// (abort handle from `SpawnCap`).
+    /// (kill handle from `SpawnCap`).
     Kill,
 }
 

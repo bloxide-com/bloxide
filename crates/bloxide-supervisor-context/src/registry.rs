@@ -48,11 +48,11 @@ struct ChildEntry<R: BloxRuntime> {
     /// Abort capability mailbox (send side). `None` for static children
     /// registered via `RegisterChild` (no abort capability).
     abort_ref: Option<ActorRef<AbortCommand, R>>,
-    /// Cloneable abort handle for external task kill (the ripcord). `None` for
+    /// Cloneable kill handle for external task kill (the ripcord). `None` for
     /// static children. Consumed by `R::Kill::kill(handle)` when
     /// `ChildPolicy::Kill` fires.
-    /// This is `R::AbortHandle` (Clone), not `R::TaskHandle` (not Clone).
-    abort_handle: Option<<R::Kill as KillCapability<R>>::Handle>,
+    /// This is `R::KillHandle` (Clone), not `R::TaskHandle` (not Clone).
+    kill_handle: Option<<R::Kill as KillCapability<R>>::Handle>,
 }
 
 pub struct ChildGroup<R: BloxRuntime> {
@@ -111,17 +111,17 @@ impl<R: BloxRuntime> ChildGroup<R> {
             phase: ChildPhase::Init,
             awaiting_alive: false,
             abort_ref: None,
-            abort_handle: None,
+            kill_handle: None,
         });
     }
 
     /// Register a dynamically spawned child that has an abort capability.
     ///
     /// Stores the `abort_ref` (for cooperative self-termination via the abort
-    /// mailbox) and the `abort_handle` (for the external kill ripcord) so the
+    /// mailbox) and the `kill_handle` (for the external kill ripcord) so the
     /// supervisor can abort or kill the child when policy dictates.
     ///
-    /// The `abort_handle` is `Clone` (it's `R::AbortHandle`), so the action
+    /// The `kill_handle` is `Clone` (it's `R::KillHandle`), so the action
     /// function can clone it from `&Event` — unlike the old `task_handle`
     /// (`R::TaskHandle` = `JoinHandle<()>`) which was not `Clone`.
     pub fn add_dynamic(
@@ -129,7 +129,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
         id: ActorId,
         lifecycle_ref: ActorRef<LifecycleCommand, R>,
         abort_ref: ActorRef<AbortCommand, R>,
-        abort_handle: <R::Kill as KillCapability<R>>::Handle,
+        kill_handle: <R::Kill as KillCapability<R>>::Handle,
         policy: ChildPolicy,
     ) {
         self.children.push(ChildEntry {
@@ -142,7 +142,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             phase: ChildPhase::Init,
             awaiting_alive: false,
             abort_ref: Some(abort_ref),
-            abort_handle: Some(abort_handle),
+            kill_handle: Some(kill_handle),
         });
     }
 
@@ -213,13 +213,13 @@ impl<R: BloxRuntime> ChildGroup<R> {
             return ChildAction::Continue;
         }
 
-        // Handle Kill policy: call R::Kill::kill(abort_handle) — the ripcord.
+        // Handle Kill policy: call R::Kill::kill(kill_handle) — the ripcord.
         // This immediately terminates the child — no callbacks fire, no
         // cooperative shutdown. Permanently dead.
         if policy == ChildPolicy::Kill {
-            // Take the abort_handle out — kill() consumes it by value.
-            let abort_handle = self.children[idx].abort_handle.take();
-            if let Some(handle) = abort_handle {
+            // Take the kill_handle out — kill() consumes it by value.
+            let kill_handle = self.children[idx].kill_handle.take();
+            if let Some(handle) = kill_handle {
                 R::Kill::kill(handle);
             }
 

@@ -5,17 +5,17 @@ use crate::TokioRuntime;
 
 impl bloxide_core::SpawnCap for TokioRuntime {
     type TaskHandle = tokio::task::JoinHandle<()>;
-    type AbortHandle = tokio::task::AbortHandle;
+    type KillHandle = tokio::task::AbortHandle;
 
     fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle {
         tokio::spawn(future)
     }
 
-    fn abort_handle(handle: Self::TaskHandle) -> Self::AbortHandle {
+    fn kill_handle(handle: Self::TaskHandle) -> Self::KillHandle {
         handle.abort_handle()
     }
 
-    fn abort(handle: Self::AbortHandle) {
+    fn kill(handle: Self::KillHandle) {
         handle.abort();
     }
 }
