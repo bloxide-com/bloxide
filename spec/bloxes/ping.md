@@ -193,8 +193,8 @@ Entry:  Error.on_entry      ← log_error (is_error() notifies supervisor via ru
 current_state = Done, source_path = [Done]
 
 Reset exits: Done.on_exit   (no-op)
-Then: on_init_entry()       ← resets behavior via B::default()
-Runtime emits: ChildLifecycleEvent::Reset to supervisor
+Then: on_entry for initial_state() (Active)  ← resets behavior via B::default()
+Runtime emits: ChildLifecycleEvent::Started to supervisor
 ```
 
 ## Constants
@@ -216,8 +216,8 @@ Runtime emits: ChildLifecycleEvent::Reset to supervisor
 - [x] `is_terminal(&PingState::Done)` returns `true`
 - [x] `is_error(&PingState::Error)` returns `true`; runtime reports `ChildLifecycleEvent::Failed` (not `Done`)
 - [x] `PingPongMsg::Pong(n)` in `Active` when `results.any_failed()` transitions to `Error`; the error guard is checked before round-based guards
-- [x] `dispatch(PingEvent::Lifecycle(LifecycleCommand::Reset))` from any state (including `Error`) exits all states and calls `on_init_entry`; behavior reset via B::default()
-- [x] `on_init_entry` does NOT send any messages — it only resets domain state
+- [x] `dispatch(PingEvent::Lifecycle(LifecycleCommand::Reset))` from any state (including `Error`) exits all states and enters `initial_state()` (Active); `on_init_entry` does NOT fire; behavior reset via `Active::on_entry` calling `B::default()`
+- [x] `Active::on_entry` resets domain state (behavior via `B::default()`) — it does NOT send any messages
 - [x] Unknown events bubble to root (no root rules) and are silently dropped
 
 ## Implementation Notes
@@ -227,7 +227,7 @@ Runtime emits: ChildLifecycleEvent::Reset to supervisor
 - `self_ref` in the context is needed because `set_timer` needs a target `ActorRef` to deliver `Resume` to.
 - `timer_ref` in the context is the `ActorRef<TimerCommand, R>` channel to the timer service.
 - `cancel_pause_timer` is called in `Paused::on_exit` to prevent stale timer deliveries after leaving `Paused`.
-- `on_init_entry` resets the behavior type to its default (`ctx.behavior = B::default()`) so all domain counters are clean after every reset.
+- `Active::on_entry` resets the behavior type to its default (`ctx.behavior = B::default()`) so all domain counters are clean after every reset (both from Init→Start and from Guard::Reset).
 - The blox crate depends on `ping-pong-actions` (traits + generic functions), `bloxide-log` (feature-gated logging macros), and `bloxide-timer` (for `TimerCommand` and `HasTimerRef<R>`). Concrete types (e.g., `PingBehavior`) live in an impl crate and are injected by the binary; the blox crate never imports any impl crate (Invariant 9).
 - `PingSpec` defines local helper methods (`Self::schedule_pause_timer`, `Self::cancel_pause_timer`, `Self::log_round`, `Self::log_done`, `Self::log_error`, `Self::log_pong_received`, `Self::forward_ping`) that adapt action-crate functions to blox-local constants or event payloads. These are thin wrappers — all domain logic remains in `ping-pong-actions`.
 - See `spec/architecture/08-supervision.md` for how the runtime manages lifecycle.

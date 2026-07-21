@@ -37,10 +37,7 @@ where
 }
 
 /// Handle a Done or Failed child lifecycle event.
-pub fn handle_done_or_failed<R>(
-    ctx: &mut SupervisorCtx<R>,
-    ev: &SupervisorEvent<R>,
-) -> ActionResult
+pub fn handle_done_or_failed<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
@@ -149,10 +146,7 @@ where
 }
 
 /// Handle a health-check tick.
-pub fn handle_health_check<R>(
-    ctx: &mut SupervisorCtx<R>,
-    ev: &SupervisorEvent<R>,
-) -> ActionResult
+pub fn handle_health_check<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {

@@ -86,7 +86,7 @@ The response message is sent inside the transition action `reply_pong_action`, d
 - [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`; runtime emits `ChildLifecycleEvent::Started`
 - [x] `PingPongMsg::Ping(Ping { round: n })` in `Ready` sends `PingPongMsg::Pong(Pong { round: n })` to Ping and returns `Stay`
 - [x] `Ready::on_entry` does NOT fire on `PingPongMsg::Ping` (it is `Stay`, not a self-transition)
-- [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` returns to Init; `on_init_entry` fires (no-op); runtime emits `ChildLifecycleEvent::Reset`
+- [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` goes directly to `initial_state()` (Ready); `on_init_entry` does NOT fire (Reset skips Init); runtime emits `ChildLifecycleEvent::Started`
 - [x] Unknown events bubble to root (no root rules) and are silently dropped
 - [x] Pong has no round counter — it is stateless with respect to round tracking
 - [x] `is_terminal()` always returns `false` for Pong — it has no terminal state

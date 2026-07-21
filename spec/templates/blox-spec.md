@@ -246,8 +246,8 @@ Each listed action is a free function from the actions crate with signature `fn<
 - [ ] `DomainMsg::Complete` in `Working` transitions back to `Idle`
 - [ ] `DomainMsg::Finish` in `Working` transitions to `Done` when guard is met
 - [ ] `is_terminal(&State::Done)` returns `true`
-- [ ] `dispatch(LifecycleCommand::Reset)` from any state exits all states; `on_init_entry` fires; domain state is reset
-- [ ] `on_init_entry` does NOT send any messages — domain-state reset only
+- [ ] `dispatch(LifecycleCommand::Reset)` from any state exits all states and enters `initial_state()` directly; `on_init_entry` does NOT fire; domain state is reset via `initial_state()::on_entry`
+- [ ] `initial_state()::on_entry` does NOT send any messages — domain-state reset only
 - [ ] Unknown events bubble to root (no root rules) and are silently dropped
 
 ## Action Crate Dependencies

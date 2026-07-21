@@ -11,15 +11,15 @@ use crate::SupervisorCtx;
 use crate::SupervisorEvent;
 use bloxide_core::capability::BloxRuntime;
 #[allow(unused_imports)]
+use bloxide_core::lifecycle::ChildLifecycleEvent;
+#[allow(unused_imports)]
 use bloxide_core::messaging::Envelope;
 use bloxide_core::spec::{MachineSpec, StateFns};
-use core::marker::PhantomData;
-#[allow(unused_imports)]
-use bloxide_core::lifecycle::ChildLifecycleEvent;
 #[allow(unused_imports)]
 use bloxide_supervisor_context::ChildAction;
 #[allow(unused_imports)]
 use bloxide_supervisor_context::SupervisorControl;
+use core::marker::PhantomData;
 pub struct SupervisorSpec<R: BloxRuntime> {
     _phantom: PhantomData<R>,
 }

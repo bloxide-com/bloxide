@@ -192,11 +192,7 @@ pub async fn run_supervised_actor_with_abort<S: MachineSpec + 'static>(
                     // Self-termination: report Aborted, then break out of the
                     // loop and return. No lifecycle callback fires — abort
                     // is cooperative but immediate.
-                    report_outcome::<S>(
-                        &DispatchOutcome::Aborted,
-                        actor_id,
-                        &supervisor_notify,
-                    );
+                    report_outcome::<S>(&DispatchOutcome::Aborted, actor_id, &supervisor_notify);
                     return Poll::Ready(LoopAction::Stop);
                 }
                 Poll::Pending => {}
@@ -507,7 +503,13 @@ mod tests {
         // --- Register the child and fire the Kill policy ---
         let abort_handle = <TokioRuntime as SpawnCap>::abort_handle(handle);
         let mut group = ChildGroup::<TokioRuntime>::new(GroupShutdown::WhenAnyDone);
-        group.add_dynamic(child_id, lifecycle_ref, abort_ref, abort_handle, ChildPolicy::Kill);
+        group.add_dynamic(
+            child_id,
+            lifecycle_ref,
+            abort_ref,
+            abort_handle,
+            ChildPolicy::Kill,
+        );
 
         // Fire the Kill policy — this calls R::Kill::kill(abort_handle)
         group.handle_done_or_failed(child_id, 42);

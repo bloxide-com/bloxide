@@ -88,7 +88,7 @@ None — Counter is a sink actor.
 - [ ] `CounterMsg::Tick` in `Ready` with `count < DONE_AT_COUNT` stays in `Ready`
 - [ ] `CounterMsg::Tick` in `Ready` with `count >= DONE_AT_COUNT` transitions to `Done`
 - [ ] `is_terminal(&CounterState::Done)` returns `true`
-- [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Reset))` from `Done` exits states, calls `on_init_entry`, count reset to 0
+- [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Reset))` from `Done` exits states, enters `initial_state()` (Ready); `on_init_entry` does NOT fire; count reset to 0 via `Ready::on_entry`
 
 ## Acceptance Criteria → Test Mapping
 

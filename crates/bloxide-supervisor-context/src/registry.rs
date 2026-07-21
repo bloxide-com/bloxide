@@ -15,9 +15,7 @@ use bloxide_core::{
 
 // Re-export the moved types so downstream code can still import them from
 // `bloxide_supervisor_context` if desired.
-pub use bloxide_core::child_management::{
-    ChildPolicy, GroupShutdown, RestartStrategy,
-};
+pub use bloxide_core::child_management::{ChildPolicy, GroupShutdown, RestartStrategy};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum ChildAction {

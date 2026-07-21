@@ -157,7 +157,10 @@ mod hsm_engine {
         let mut m = machine_in_c();
         let outcome = m.dispatch(TEvent::Reset);
         // C→A: exit C, Other; enter Top, A
-        assert_eq!(take_log(), vec!["C:exit", "Other:exit", "Top:entry", "A:entry"]);
+        assert_eq!(
+            take_log(),
+            vec!["C:exit", "Other:exit", "Top:entry", "A:entry"]
+        );
         assert!(matches!(
             outcome,
             DispatchOutcome::Started(MachineState::State(TState::A))
@@ -200,7 +203,10 @@ mod hsm_engine {
         let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Reset));
         // Reset from Init is a no-op — there's nothing to reset.
         assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
-        assert!(take_log().is_empty(), "Reset from Init must not fire callbacks");
+        assert!(
+            take_log().is_empty(),
+            "Reset from Init must not fire callbacks"
+        );
         assert!(m.current_state().is_init());
     }
 

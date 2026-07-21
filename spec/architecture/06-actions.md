@@ -155,7 +155,7 @@ pattern = "MyEvent::Check(_)"
   to = "Active"
 ```
 
-Both state-level (`[[topology.transitions]]`) and root-level (`[[topology.transitions]]` with `scope = "root"`) rules support `reset` as a terminal outcome (in place of a state target or `stay`). When a guard returns `Reset`, the engine fires the full LCA exit chain (leaf → root) then calls `on_init_entry` — identical to the `machine.reset()` code path:
+Both state-level (`[[topology.transitions]]`) and root-level (`[[topology.transitions]]` with `scope = "root"`) rules support `reset` as a terminal outcome (in place of a state target or `stay`). When a guard returns `Reset`, the engine fires the full LCA exit chain (leaf → root) then enters `initial_state()` directly — `on_init_entry` does NOT fire (Reset skips Init):
 
 ```toml
 # State-level — actor self-terminates when a condition is met

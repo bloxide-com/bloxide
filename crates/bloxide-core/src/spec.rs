@@ -58,7 +58,7 @@ pub trait MachineSpec: Sized + 'static {
     ///   chains). The supervisor sees `DispatchOutcome::Failed` and applies
     ///   its `ChildPolicy`. The actor handles its own error recovery.
     /// - `None` (default): the engine transitions to Init (firing exit chain
-    ///   + `on_init_entry`). The supervisor sees `DispatchOutcome::Failed`
+    ///   and `on_init_entry`). The supervisor sees `DispatchOutcome::Failed`
     ///   and applies its `ChildPolicy`.
     fn error_state() -> Option<Self::State> {
         None
