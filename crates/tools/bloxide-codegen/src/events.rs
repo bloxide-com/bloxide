@@ -35,8 +35,6 @@ fn build_derive_attr(config: &EventConfig) -> proc_macro2::TokenStream {
                 .collect();
             quote! { #[derive(#(#derive_paths),*)] }
         }
-    } else if config.debug == Some(false) {
-        quote! {}
     } else {
         quote! { #[derive(Debug)] }
     }
@@ -309,7 +307,7 @@ pub fn generate(config: &EventConfig) -> anyhow::Result<String> {
     let has_feature = config.mailboxes.iter().any(|mb| mb.feature.is_some());
 
     if !has_feature {
-        // Single-variant mode (backward compatible)
+        // Single-variant mode — no feature gating
         let generics = parse_generics(config.generics.as_deref())?;
         let mailboxes: Vec<&MailboxConfig> = config.mailboxes.iter().collect();
         let tokens = generate_variant(config, &mailboxes, &generics, None)?;

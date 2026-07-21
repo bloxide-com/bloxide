@@ -264,37 +264,6 @@ message_path = "pool_messages::WorkerMsg"
 }
 
 #[test]
-fn test_generate_event_legacy_debug_false() {
-    let toml = r#"
-[actor]
-name = "Worker"
-
-[event]
-name = "WorkerEvent"
-generics = "<R: BloxRuntime>"
-debug = false
-
-[[event.mailboxes]]
-variant = "Msg"
-message = "WorkerMsg"
-message_path = "pool_messages::WorkerMsg"
-"#;
-
-    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
-    let files = generate_all(&config, "worker-blox").expect("generate failed");
-
-    let events_file = files
-        .iter()
-        .find(|(n, _)| n == "events.rs")
-        .expect("events.rs missing");
-    let content = &events_file.1;
-
-    // Legacy debug=false should still produce no derives
-    assert!(!content.contains("#[derive"));
-    assert!(content.contains("pub enum WorkerEvent"));
-}
-
-#[test]
 fn test_generate_counter_topology() {
     let toml = r#"
 [actor]
