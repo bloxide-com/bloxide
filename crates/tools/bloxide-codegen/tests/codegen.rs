@@ -1496,7 +1496,7 @@ impl_macro = "impl_has_workers"
 
   [[context.uses.fields]]
   name = "worker_ctrls"
-  ty = "Vec<ActorRef<WorkerCtrl<R>, R>>"
+  ty = "Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>"
   role = "state"
 
   [[context.uses.fields]]

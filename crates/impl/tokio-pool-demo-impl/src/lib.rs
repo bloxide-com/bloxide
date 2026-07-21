@@ -17,7 +17,8 @@ use bloxide_core::{
 use bloxide_spawn::{SpawnCap, SpawnOutput};
 use bloxide_tokio::{run_supervised_actor_with_abort, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasWorkerPeers};
-use pool_messages::{SpawnRequest, SpawnedWorker, WorkerCtrl, WorkerMsg};
+use bloxide_peers::PeerCtrl;
+use pool_messages::{SpawnRequest, SpawnedWorker, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
 
 /// Behavior type for Worker actors holding task state and peer list.
@@ -81,7 +82,7 @@ pub fn spawn_worker(
         } => {
             let worker_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
             let (ctrl_ref, ctrl_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
-                WorkerCtrl<TokioRuntime>,
+                PeerCtrl<WorkerMsg, TokioRuntime>,
             >(worker_id, 16);
             let (domain_ref, domain_rx) =
                 <TokioRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);

@@ -18,6 +18,7 @@ std = [
 bloxide-core    = { workspace = true, features = ["alloc"] }
 bloxide-macros  = { workspace = true }
 bloxide-log     = { workspace = true }
+bloxide-peers   = { workspace = true }
 pool-messages   = { workspace = true }
 pool-actions    = { workspace = true }
 blox-ctx-pool-ref     = { workspace = true }

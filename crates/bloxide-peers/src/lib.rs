@@ -1,5 +1,10 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Peer introduction control messages and helper.
+//! Peer introduction control messages and helpers.
+//!
+//! Provides the generic `PeerCtrl<M, R>` control message type and the
+//! `introduce_peers` / `apply_peer_control` helper functions.  Domain
+//! code uses these directly instead of defining per-domain copies like
+//! `WorkerCtrl`, `AddWorkerPeer`, etc.
 
 #![no_std]
 extern crate alloc;
@@ -117,4 +122,21 @@ pub fn introduce_peers<M, R>(
             peer_ref: a_ref.clone(),
         }),
     );
+}
+
+/// Apply a `PeerCtrl` command to a context's peer collection.
+///
+/// Handles both `AddPeer` and `RemovePeer` variants.
+pub fn apply_peer_control<M, R, C>(ctx: &mut C, ctrl: &PeerCtrl<M, R>)
+where
+    M: Send + 'static,
+    R: BloxRuntime,
+    C: HasPeers<M, R>,
+{
+    match ctrl {
+        PeerCtrl::AddPeer(add) => ctx.peers_mut().push(add.peer_ref.clone()),
+        PeerCtrl::RemovePeer(remove) => {
+            ctx.peers_mut().retain(|r| r.id() != remove.peer_id);
+        }
+    }
 }

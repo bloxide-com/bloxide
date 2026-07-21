@@ -16,7 +16,7 @@ mod worker_tests {
         capability::DynamicChannelCap, messaging::ActorRef, spec::MachineSpec, Envelope,
         MachineState, StateMachine,
     };
-    use pool_messages::{AddWorkerPeer, WorkerCtrl};
+    use bloxide_peers::{AddPeer, PeerCtrl};
     use pool_messages::{DoWork, PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
     use crate::prelude::*;
@@ -86,7 +86,7 @@ mod worker_tests {
             peer_ref: bloxide_core::messaging::ActorRef<WorkerMsg, TestRuntime>,
         ) {
             self.machine
-                .dispatch(Envelope(0, WorkerCtrl::AddPeer(AddWorkerPeer { peer_ref })).into());
+                .dispatch(Envelope(0, PeerCtrl::AddPeer(AddPeer { peer_id: peer_ref.id(), peer_ref })).into());
         }
 
         fn current_state(&self) -> MachineState<WorkerState> {

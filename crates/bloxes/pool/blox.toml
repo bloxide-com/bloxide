@@ -33,14 +33,15 @@ feature = "dynamic"
 feature_generics = "<R: BloxRuntime>"
 on_init = "ctx.worker_refs_mut().clear(); ctx.worker_ctrls_mut().clear(); ctx.set_pending(0);"
 imports = [
-    "pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg}",
+    "pool_messages::{PoolMsg, WorkerMsg}",
+    "bloxide_peers::PeerCtrl",
     "alloc::vec::Vec",
 ]
 feature_imports = [
     "pool_messages::{SpawnRequest, SpawnedWorker}",
-    "bloxide_core::spawn::SpawnFn",
+    "bloxide_spawn::SpawnFn",
     "bloxide_core::lifecycle::ChildLifecycleEvent",
-    "bloxide_supervisor_context::SupervisorControl",
+    "bloxide_supervisor::SupervisorControl",
 ]
 
 # Accessor trait from bloxide-messaging (2-param, requires #[provides])
@@ -64,7 +65,7 @@ impl_macro = "impl_has_workers"
 
   [[context.uses.fields]]
   name = "worker_ctrls"
-  ty = "Vec<ActorRef<WorkerCtrl<R>, R>>"
+  ty = "Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>"
   role = "state"
 
   [[context.uses.fields]]

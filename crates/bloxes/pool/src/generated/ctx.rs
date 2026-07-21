@@ -15,14 +15,16 @@ use blox_ctx_workers::{impl_has_workers, HasWorkers};
 #[allow(unused_imports)]
 use bloxide_messaging::HasSelfRef;
 #[cfg(not(feature = "dynamic"))]
-use pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg};
+use bloxide_peers::PeerCtrl;
+#[cfg(not(feature = "dynamic"))]
+use pool_messages::{PoolMsg, WorkerMsg};
 #[cfg(not(feature = "dynamic"))]
 #[derive(BloxCtx)]
 pub struct PoolCtx<R: BloxRuntime> {
     #[provides(HasSelfRef<R, PoolMsg>)]
     pub self_ref: ActorRef<PoolMsg, R>,
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
-    pub worker_ctrls: Vec<ActorRef<WorkerCtrl<R>, R>>,
+    pub worker_ctrls: Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>,
     pub pending: u32,
     pub self_id: ActorId,
 }
@@ -49,7 +51,9 @@ use bloxide_messaging::HasSelfRef;
 #[cfg(feature = "dynamic")]
 use bloxide_supervisor::SupervisorControl;
 #[cfg(feature = "dynamic")]
-use pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg};
+use bloxide_peers::PeerCtrl;
+#[cfg(feature = "dynamic")]
+use pool_messages::{PoolMsg, WorkerMsg};
 #[cfg(feature = "dynamic")]
 use pool_messages::{SpawnRequest, SpawnedWorker};
 #[cfg(feature = "dynamic")]
@@ -58,7 +62,7 @@ pub struct PoolCtx<R: BloxRuntime> {
     #[provides(HasSelfRef<R, PoolMsg>)]
     pub self_ref: ActorRef<PoolMsg, R>,
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
-    pub worker_ctrls: Vec<ActorRef<WorkerCtrl<R>, R>>,
+    pub worker_ctrls: Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>,
     pub pending: u32,
     pub self_id: ActorId,
     #[blox_ctx(skip)]

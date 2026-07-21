@@ -21,8 +21,9 @@ mod pool_tests {
         Envelope, MachineState, StateMachine,
     };
     use bloxide_supervisor::SupervisorControl;
+    use bloxide_peers::PeerCtrl;
     use pool_messages::{
-        PoolMsg, SpawnRequest, SpawnWorker, SpawnedWorker, WorkDone, WorkerCtrl, WorkerMsg,
+        PoolMsg, SpawnRequest, SpawnWorker, SpawnedWorker, WorkDone, WorkerMsg,
     };
 
     use crate::{PoolCtx, PoolEvent, PoolSpec, PoolState};
@@ -55,7 +56,7 @@ mod pool_tests {
                 let (domain_ref, _domain_rx) =
                     <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
                 let (ctrl_ref, _ctrl_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-                    WorkerCtrl<TestRuntime>,
+                    PeerCtrl<WorkerMsg, TestRuntime>,
                 >(worker_id, 16);
                 let (lifecycle_ref, _lifecycle_rx) =
                     <TestRuntime as DynamicChannelCap>::channel::<LifecycleCommand>(worker_id, 4);
@@ -137,7 +138,7 @@ mod pool_tests {
             &mut self,
             worker_id: usize,
             domain_ref: ActorRef<WorkerMsg, TestRuntime>,
-            ctrl_ref: ActorRef<WorkerCtrl<TestRuntime>, TestRuntime>,
+            ctrl_ref: ActorRef<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
         ) {
             self.machine.dispatch(PoolEvent::SpawnReply(Envelope(
                 0,
@@ -174,12 +175,12 @@ mod pool_tests {
         worker_id: usize,
     ) -> (
         ActorRef<WorkerMsg, TestRuntime>,
-        ActorRef<WorkerCtrl<TestRuntime>, TestRuntime>,
+        ActorRef<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
     ) {
         let (domain_ref, _domain_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
         let (ctrl_ref, _ctrl_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TestRuntime>>(worker_id, 16);
+            <TestRuntime as DynamicChannelCap>::channel::<PeerCtrl<WorkerMsg, TestRuntime>>(worker_id, 16);
         (domain_ref, ctrl_ref)
     }
 
@@ -333,7 +334,7 @@ mod pool_tests {
         let (domain_ref, _domain_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
         let (ctrl_ref, _ctrl_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<WorkerCtrl<TestRuntime>>(worker_id, 16);
+            <TestRuntime as DynamicChannelCap>::channel::<PeerCtrl<WorkerMsg, TestRuntime>>(worker_id, 16);
         domain_ref.sender().set_full(true);
 
         machine.dispatch(PoolEvent::SpawnReply(Envelope(

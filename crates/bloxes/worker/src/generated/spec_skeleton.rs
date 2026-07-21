@@ -15,7 +15,7 @@ use blox_ctx_pool_ref::HasPoolRef;
 #[allow(unused_imports)]
 use blox_ctx_worker_peers::HasWorkerPeers;
 #[allow(unused_imports)]
-use pool_messages::WorkerCtrl;
+use bloxide_peers::PeerCtrl;
 #[allow(unused_imports)]
 use pool_messages::WorkerMsg;
 pub struct WorkerSpec<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> {
@@ -31,7 +31,7 @@ impl<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> WorkerSpec
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
                     __ev.ctrl_payload()
-                        .is_some_and(|__m| ::core::matches!(__m, WorkerCtrl::AddPeer(_)))
+                        .is_some_and(|__m| ::core::matches!(__m, PeerCtrl::AddPeer(_)))
                 },
                 actions: &[Self::handle_ctrl],
                 guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
@@ -74,7 +74,7 @@ impl<R: BloxRuntime, B: HasWorkerPeers<R> + HasCurrentTask + 'static> MachineSpe
     type Event = WorkerEvent<R>;
     type Ctx = WorkerCtx<R, B>;
     type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> = (
-        Rt::Stream<pool_messages::WorkerCtrl<R>>,
+        Rt::Stream<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>>,
         Rt::Stream<pool_messages::WorkerMsg>,
     );
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = worker_state_handler_table!(Self);

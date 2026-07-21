@@ -6,7 +6,8 @@
 extern crate alloc;
 
 use bloxide_core::{accessor::HasSelfId, capability::BloxRuntime};
-use pool_messages::{AddWorkerPeer, PeerResult, PoolMsg, WorkDone, WorkerCtrl, WorkerMsg};
+use bloxide_peers::{introduce_peers, PeerCtrl};
+use pool_messages::{PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
 use crate::traits::{HasCurrentTask, HasPoolRef, HasWorkerPeers, HasWorkers};
 
@@ -57,6 +58,9 @@ where
 /// Call this after adding a new worker's refs to `HasWorkers` to wire only
 /// the new worker to existing peers — avoiding the duplicate introductions
 /// that would result from calling `introduce_all_workers` repeatedly.
+///
+/// Uses the generic `bloxide-peers::introduce_peers` helper with the
+/// domain-specific `WorkerMsg` type.
 pub fn introduce_new_worker<R, C>(ctx: &C)
 where
     R: BloxRuntime,
@@ -68,39 +72,32 @@ where
     }
     let new_idx = n - 1;
     let from = ctx.self_id();
+    let new_id = ctx.worker_refs()[new_idx].id();
     let new_ref = ctx.worker_refs()[new_idx].clone();
     let new_ctrl = ctx.worker_ctrls()[new_idx].clone();
     for i in 0..new_idx {
+        let old_id = ctx.worker_refs()[i].id();
         let old_ref = ctx.worker_refs()[i].clone();
         let old_ctrl = ctx.worker_ctrls()[i].clone();
-        // Send AddPeer to new worker's control channel
-        let _ = new_ctrl.try_send(
+        introduce_peers(
             from,
-            WorkerCtrl::AddPeer(AddWorkerPeer {
-                peer_ref: old_ref.clone(),
-            }),
-        );
-        // Send AddPeer to old worker's control channel
-        let _ = old_ctrl.try_send(
-            from,
-            WorkerCtrl::AddPeer(AddWorkerPeer {
-                peer_ref: new_ref.clone(),
-            }),
+            new_id, new_ref.clone(), new_ctrl.clone(),
+            old_id, old_ref.clone(), old_ctrl.clone(),
         );
     }
 }
 
-/// Apply a `WorkerCtrl` command to the context's peer collection.
+/// Apply a `PeerCtrl<WorkerMsg, R>` command to the context's peer collection.
 ///
 /// Handles both `AddPeer` and `RemovePeer` variants.
-pub fn apply_worker_control<R, C>(ctx: &mut C, ctrl: &WorkerCtrl<R>)
+pub fn apply_worker_control<R, C>(ctx: &mut C, ctrl: &PeerCtrl<WorkerMsg, R>)
 where
     R: BloxRuntime,
     C: HasWorkerPeers<R>,
 {
     match ctrl {
-        WorkerCtrl::AddPeer(add) => ctx.peers_mut().push(add.peer_ref.clone()),
-        WorkerCtrl::RemovePeer(remove) => {
+        PeerCtrl::AddPeer(add) => ctx.peers_mut().push(add.peer_ref.clone()),
+        PeerCtrl::RemovePeer(remove) => {
             ctx.peers_mut().retain(|r| r.id() != remove.peer_id);
         }
     }

@@ -9,8 +9,8 @@ derives = []
 
 [[event.mailboxes]]
 variant = "Ctrl"
-message = "WorkerCtrl"
-message_path = "pool_messages::WorkerCtrl<R>"
+message = "PeerCtrl<WorkerMsg>"
+message_path = "bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>"
 
 [[event.mailboxes]]
 variant = "Msg"
@@ -74,7 +74,7 @@ actions = ["Self::log_waiting"]
 
 [[topology.transitions]]
 state = "Waiting"
-event = "WorkerCtrl::AddPeer(_) | WorkerCtrl::RemovePeer(_)"
+event = "PeerCtrl::AddPeer(_) | PeerCtrl::RemovePeer(_)"
 target = "stay"
 actions = ["Self::handle_ctrl"]
 

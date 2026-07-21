@@ -5,13 +5,13 @@ use ::bloxide_core::messaging::Envelope;
 pub enum WorkerEvent<R: BloxRuntime> {
     /// Lifecycle command (Start/Reset/Stop/Ping).
     Lifecycle(::bloxide_core::lifecycle::LifecycleCommand),
-    Ctrl(Envelope<pool_messages::WorkerCtrl<R>>),
+    Ctrl(Envelope<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>>),
     Msg(Envelope<pool_messages::WorkerMsg>),
 }
-impl<R: BloxRuntime> ::core::convert::From<Envelope<pool_messages::WorkerCtrl<R>>>
+impl<R: BloxRuntime> ::core::convert::From<Envelope<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>>>
     for WorkerEvent<R>
 {
-    fn from(envelope: Envelope<pool_messages::WorkerCtrl<R>>) -> Self {
+    fn from(envelope: Envelope<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>>) -> Self {
         WorkerEvent::Ctrl(envelope)
     }
 }
@@ -53,14 +53,14 @@ impl<R: BloxRuntime> WorkerEvent<R> {
     /// Event tag for this variant, used for fast dispatch filtering.
     pub const MSG_TAG: u8 = 1u8;
     /// Returns the envelope if this event matches this variant.
-    pub fn ctrl_envelope(&self) -> ::core::option::Option<&Envelope<pool_messages::WorkerCtrl<R>>> {
+    pub fn ctrl_envelope(&self) -> ::core::option::Option<&Envelope<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>>> {
         match self {
             WorkerEvent::Ctrl(ref e) => ::core::option::Option::Some(e),
             _ => ::core::option::Option::None,
         }
     }
     /// Returns the message payload if this event matches this variant.
-    pub fn ctrl_payload(&self) -> ::core::option::Option<&pool_messages::WorkerCtrl<R>> {
+    pub fn ctrl_payload(&self) -> ::core::option::Option<&bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>> {
         match self {
             WorkerEvent::Ctrl(ref e) => ::core::option::Option::Some(&e.1),
             _ => ::core::option::Option::None,

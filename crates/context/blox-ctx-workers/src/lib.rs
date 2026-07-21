@@ -13,17 +13,22 @@ pub use bloxide_core::{
     capability::BloxRuntime,
     messaging::{ActorId, ActorRef},
 };
-pub use pool_messages::{PoolMsg, WorkerCtrl, WorkerMsg};
+pub use bloxide_peers::PeerCtrl;
+pub use pool_messages::{PoolMsg, WorkerMsg};
 
 /// Accessor for contexts that spawn and track workers.
 ///
 /// Implemented by the pool's context. Enables generic action functions
 /// to introduce workers and query the current pool state.
+///
+/// The `worker_ctrls` type is now `ActorRef<PeerCtrl<WorkerMsg, R>, R>` —
+/// the generic peer control message from `bloxide-peers` — instead of a
+/// domain-specific `WorkerCtrl`.
 pub trait HasWorkers<R: BloxRuntime> {
     fn worker_refs(&self) -> &[ActorRef<WorkerMsg, R>];
     fn worker_refs_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, R>>;
-    fn worker_ctrls(&self) -> &[ActorRef<WorkerCtrl<R>, R>];
-    fn worker_ctrls_mut(&mut self) -> &mut Vec<ActorRef<WorkerCtrl<R>, R>>;
+    fn worker_ctrls(&self) -> &[ActorRef<PeerCtrl<WorkerMsg, R>, R>];
+    fn worker_ctrls_mut(&mut self) -> &mut Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>;
     fn pending(&self) -> u32;
     fn set_pending(&mut self, n: u32);
 }
@@ -48,12 +53,12 @@ macro_rules! impl_has_workers {
             ) -> &mut $crate::Vec<$crate::ActorRef<$crate::WorkerMsg, $R>> {
                 &mut self.worker_refs
             }
-            fn worker_ctrls(&self) -> &[$crate::ActorRef<$crate::WorkerCtrl<$R>, $R>] {
+            fn worker_ctrls(&self) -> &[$crate::ActorRef<$crate::PeerCtrl<$crate::WorkerMsg, $R>, $R>] {
                 &self.worker_ctrls
             }
             fn worker_ctrls_mut(
                 &mut self,
-            ) -> &mut $crate::Vec<$crate::ActorRef<$crate::WorkerCtrl<$R>, $R>> {
+            ) -> &mut $crate::Vec<$crate::ActorRef<$crate::PeerCtrl<$crate::WorkerMsg, $R>, $R>> {
                 &mut self.worker_ctrls
             }
             fn pending(&self) -> u32 {

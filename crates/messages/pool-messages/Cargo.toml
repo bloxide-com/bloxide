@@ -13,3 +13,4 @@ default = []
 [dependencies]
 bloxide-macros = { path = "../../bloxide-macros" }
 bloxide-core = { path = "../../bloxide-core" }
+bloxide-peers = { path = "../../bloxide-peers" }
