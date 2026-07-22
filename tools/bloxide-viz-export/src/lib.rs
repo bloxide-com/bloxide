@@ -328,8 +328,7 @@ fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
     }];
 
     if !delegatable_traits.is_empty() {
-        let delegates_annotation =
-            format!("#[delegates({})]", delegatable_traits.join(", "));
+        let delegates_annotation = format!("#[delegates({})]", delegatable_traits.join(", "));
         fields.push(model::ContextField {
             name: "behavior".to_string(),
             ty: "B".to_string(),

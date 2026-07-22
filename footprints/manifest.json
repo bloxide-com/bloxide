@@ -1,27 +1,62 @@
 {
-  "query": "SOIC-8",
+  "query": "0603",
   "results": {
-    "kicad": [
+    "tscircuit": [
       {
-        "source": "kicad",
-        "name": "SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm",
-        "library": "Package_SO",
-        "kicad_string": "Package_SO/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm",
-        "local_path": "/usr/share/kicad/footprints/Package_SO.pretty/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm.kicad_mod"
+        "source": "tscircuit",
+        "name": "AnasSarkiz/C0603C104K5RACTU",
+        "author": "",
+        "package_name": "/AnasSarkiz/C0603C104K5RACTU",
+        "description": "Generated from JLCPCB part number C127833"
       },
       {
-        "source": "kicad",
-        "name": "SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias",
-        "library": "Package_SO",
-        "kicad_string": "Package_SO/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias",
-        "local_path": "/usr/share/kicad/footprints/Package_SO.pretty/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias.kicad_mod"
+        "source": "tscircuit",
+        "name": "AnasSarkiz/A_0603WAF2101T5E",
+        "author": "",
+        "package_name": "/AnasSarkiz/A_0603WAF2101T5E",
+        "description": "Generated from JLCPCB part number C22902"
       },
       {
-        "source": "kicad",
-        "name": "SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x3.3mm",
-        "library": "Package_SO",
-        "kicad_string": "Package_SO/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x3.3mm",
-        "local_path": "/usr/share/kicad/footprints/Package_SO.pretty/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x3.3mm.kicad_mod"
+        "source": "tscircuit",
+        "name": "imrishabh18/A_0603WAF1002T5E",
+        "author": "",
+        "package_name": "/imrishabh18/A_0603WAF1002T5E",
+        "description": "Generated from JLCPCB part number C25804"
+      },
+      {
+        "source": "tscircuit",
+        "name": "techmannih/A_0603CG910J500NT",
+        "author": "",
+        "package_name": "/techmannih/A_0603CG910J500NT",
+        "description": "Generated from JLCPCB part number C1686"
+      },
+      {
+        "source": "tscircuit",
+        "name": "Abse2001/CC0603KRX7R9BB104",
+        "author": "",
+        "package_name": "/Abse2001/CC0603KRX7R9BB104",
+        "description": "Generated from JLCPCB part number C14663"
+      },
+      {
+        "source": "tscircuit",
+        "name": "AnasSarkiz/A_0603WAF182JT5E",
+        "author": "",
+        "package_name": "/AnasSarkiz/A_0603WAF182JT5E",
+        "description": "Generated from JLCPCB part number C22825"
+      },
+      {
+        "source": "tscircuit",
+        "name": "harrington40/A_0603_____D22040700184",
+        "author": "",
+        "package_name": "/harrington40/A_0603_____D22040700184",
+        "description": "Generated from JLCPCB part number C9900013625"
+      },
+      {
+        "source": "tscircuit",
+        "name": "ArnavK-09/CC0603KRX7R9BB104",
+        "author": "",
+        "package_name": "/ArnavK-09/CC0603KRX7R9BB104",
+        "description": "Generated from JLCPCB part number C14663"
       }
     ]
   }

@@ -332,7 +332,6 @@ pub fn list_transitions(blox_name: &str, json: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-
 // `list-bloxes` command — list all blox crates in the workspace with summary counts.
 
 /// A single summary row for a blox, used for both table and JSON output.

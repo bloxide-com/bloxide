@@ -150,10 +150,7 @@ fn list_three_bloxes_table() {
     assert!(success, "command should succeed");
     // Headers should be present.
     assert!(stdout.contains("NAME"), "header NAME should be present");
-    assert!(
-        stdout.contains("STATES"),
-        "header STATES should be present"
-    );
+    assert!(stdout.contains("STATES"), "header STATES should be present");
     assert!(
         stdout.contains("TRANSITIONS"),
         "header TRANSITIONS should be present"
@@ -252,10 +249,7 @@ fn list_empty_bloxes_table() {
     assert!(stdout.contains("NAME"), "header should be present");
     assert!(stdout.contains("STATES"), "header should be present");
     // No blox data rows.
-    assert!(
-        !stdout.contains("alpha"),
-        "no blox rows should be present"
-    );
+    assert!(!stdout.contains("alpha"), "no blox rows should be present");
 }
 
 #[test]

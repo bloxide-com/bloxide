@@ -48,10 +48,9 @@ async fn pool_lifecycle_spawn_and_done() {
     let pool_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
     let (pool_ref, pool_msg_rx) =
         <TokioRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
-    let (spawn_reply_ref, spawn_reply_rx) =
-        <TokioRuntime as DynamicChannelCap>::channel::<pool_messages::SpawnedWorker<TokioRuntime>>(
-            pool_id, 32,
-        );
+    let (spawn_reply_ref, spawn_reply_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
+        pool_messages::SpawnedWorker<TokioRuntime>,
+    >(pool_id, 32);
 
     // ── 2. Create the supervisor's child group builder ─────────────────────
     //
@@ -77,8 +76,7 @@ async fn pool_lifecycle_spawn_and_done() {
     //
     // add_child creates the pool's lifecycle channel and returns
     // (lifecycle_rx, supervisor_notify_sender).
-    let (pool_lifecycle_rx, pool_sup_notify) =
-        group_builder.add_child(pool_id, ChildPolicy::Stop);
+    let (pool_lifecycle_rx, pool_sup_notify) = group_builder.add_child(pool_id, ChildPolicy::Stop);
 
     // The pool's domain mailboxes are (PoolMsg stream, SpawnedWorker stream).
     let pool_domain_mailboxes = (pool_msg_rx, spawn_reply_rx);

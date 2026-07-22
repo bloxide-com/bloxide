@@ -559,7 +559,8 @@ fn test_full_round_trip_no_data_loss() {
             };
 
             assert_eq!(
-                exported_ctx.fields.len(), expected_fields.len(),
+                exported_ctx.fields.len(),
+                expected_fields.len(),
                 "context field count mismatch for {} (expected {}, got {})",
                 spec.name,
                 expected_fields.len(),

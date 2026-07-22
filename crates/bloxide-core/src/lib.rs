@@ -33,10 +33,10 @@ pub use capability::{BloxRuntime, DynamicChannelCap, KillCapability, NoKill, Sta
 pub use engine::{DispatchOutcome, MachineState, StateMachine};
 pub use event_tag::{EventTag, LifecycleEvent, LIFECYCLE_TAG, WILDCARD_TAG};
 pub use lifecycle::{ChildLifecycleEvent, LifecycleCommand};
-pub use supervision::report_outcome;
 pub use mailboxes::{Mailboxes, NoMailboxes};
 pub use messaging::{ActorId, ActorRef, Envelope};
 pub use spec::{MachineSpec, StateFns};
+pub use supervision::report_outcome;
 pub use topology::{LeafState, StateTopology};
 pub use transition::{ActionResult, ActionResults, Guard, StateRule};
 // Note: TransitionRule is public because StateRule is a type alias over it. Use
