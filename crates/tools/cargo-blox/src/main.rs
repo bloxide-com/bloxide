@@ -10,6 +10,7 @@ mod ci;
 mod forward;
 mod generate;
 mod lint;
+mod list_cmd;
 mod message_cmd;
 mod new;
 mod new_actions;
@@ -19,6 +20,7 @@ mod new_messages;
 mod run;
 mod state;
 mod test;
+mod toml_helpers;
 mod utils;
 mod verify;
 mod watch;
@@ -151,6 +153,12 @@ enum BloxSubcommand {
         blox_name: String,
         state_name: String,
     },
+    /// List states in a blox
+    ListStates {
+        blox_name: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Add a message variant to a messages crate
     AddMessage {
         crate_name: String,
@@ -211,6 +219,9 @@ fn main() -> anyhow::Result<()> {
                 blox_name,
                 state_name,
             } => state::remove_state(&blox_name, &state_name),
+            BloxSubcommand::ListStates { blox_name, json } => {
+                list_cmd::list_states(&blox_name, json)
+            }
             BloxSubcommand::AddMessage {
                 crate_name,
                 variant_name,

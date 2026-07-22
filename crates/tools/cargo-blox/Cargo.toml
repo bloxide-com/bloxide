@@ -25,3 +25,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bloxide-codegen = { path = "../bloxide-codegen" }
 bloxide-viz-export = { path = "../../../tools/bloxide-viz-export" }
+
+[dev-dependencies]
+tempfile = "3"
