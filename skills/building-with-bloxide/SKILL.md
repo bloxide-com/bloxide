@@ -357,10 +357,6 @@ where
 
     fn initial_state() -> PingState { PingState::Active }
     
-    fn is_terminal(state: &PingState) -> bool {
-        matches!(state, PingState::Done)
-    }
-    
     fn is_error(state: &PingState) -> bool {
         matches!(state, PingState::Error)
     }

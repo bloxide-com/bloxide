@@ -1977,7 +1977,7 @@ actor = "pong_actor"
 
     // Spawn calls
     assert!(content.contains("::bloxide_tokio::spawn_child!"));
-    assert!(content.contains("ChildPolicy::Restart { max : 3u32 }"));
+    assert!(content.contains("ChildPolicy::Reset"));
     assert!(content.contains("ChildPolicy::Stop"));
 
     // Supervisor wiring

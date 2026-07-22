@@ -210,6 +210,6 @@ pub struct <BloxName>Ctx<R: BloxRuntime> {
 ## Acceptance Criteria
 
 - [ ] `machine.start()` enters `Ready`
-- [ ] `is_terminal(&State::Done)` returns `true`
+- [ ] Actor self-suspends via `Guard::Stop` (goes to Init, reports `Stopped`)
 "#
 }

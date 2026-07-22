@@ -207,8 +207,8 @@ pub fn generate(config: &WiringConfig, _crate_name: &str) -> anyhow::Result<Stri
                 let id_ident = format_ident!("{}_id", child_actor.name);
                 let machine_ident = format_ident!("{}_machine", child_actor.name);
                 let task_ident = format_ident!("{}_task", child_actor.name);
-                let policy = if let Some(max) = child.restart_max {
-                    quote! { ::bloxide_child_management::ChildPolicy::Restart { max: #max } }
+                let policy = if child.restart_max.is_some() {
+                    quote! { ::bloxide_child_management::ChildPolicy::Reset }
                 } else {
                     quote! { ::bloxide_child_management::ChildPolicy::Stop }
                 };

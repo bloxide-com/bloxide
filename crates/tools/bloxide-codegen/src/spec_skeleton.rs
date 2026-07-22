@@ -409,7 +409,7 @@ pub fn generate(
     }
 
     // Envelope is needed when FullEvent patterns match on Envelope-wrapped
-    // variants (e.g. `SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))`).
+    // variants (e.g. `SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))`).
     // Always import it when there's an [event] section — it's harmless if unused.
     if event.is_some() {
         use_stmts.push(quote! {

@@ -175,10 +175,6 @@ where
 
     fn initial_state() -> MyState { MyState::Ready }
     
-    fn is_terminal(state: &MyState) -> bool {
-        matches!(state, MyState::Done)
-    }
-    
     fn is_error(state: &MyState) -> bool {
         matches!(state, MyState::Error)
     }

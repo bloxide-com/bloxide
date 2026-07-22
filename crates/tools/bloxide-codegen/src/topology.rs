@@ -23,12 +23,12 @@ fn capitalize(s: &str) -> String {
 
 // ── Pattern classification ──────────────────────────────────────────────────
 //
-// The event pattern string from TOML (e.g. "PingPongMsg::Ping(_)" or
-// "SupervisorEvent::Child(ChildLifecycleEvent::Done { .. })") is classified
+// The event pattern string from TOML (e.g. "PingPongMsg::Ping(_)") or
+// "SupervisorEvent::Child(ChildLifecycleEvent::Stopped { .. })") is classified
 // to determine how the `matches` closure and `event_tag` field are generated.
 //
 // **Full-event patterns** — match the entire event directly.
-//   Examples: "SupervisorEvent::Child(ChildLifecycleEvent::Done { .. })", "_"
+//   Examples: "SupervisorEvent::Child(ChildLifecycleEvent::Stopped { .. })", "_"
 //   Tag: extracted from the pattern path (e.g. SupervisorEvent::CHILD_TAG)
 //   Matches: |__ev| matches!(__ev, <pattern>)
 //

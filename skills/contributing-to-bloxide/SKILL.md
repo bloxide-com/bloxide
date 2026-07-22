@@ -73,7 +73,7 @@ When adding a new capability, decide which tier it belongs to. If blox crates ne
 3. **Actions before guards** — `guard` receives `&Ctx` and `&ActionResults`, not `&mut Ctx`.
 4. **Only leaf states as transition targets** — the engine `debug_assert`s this.
 5. **Lifecycle commands flow through dispatch()** — actors handle them as domain events via `root_transitions()`.
-6. **`is_error` takes precedence over `is_terminal`** — if both return `true`, supervisor reports `Failed`, not `Done`.
+6. **`is_error` takes precedence over `Guard::Stop`** — if a state returns `true` for `is_error()` and the guard returns `Guard::Stop`, supervisor reports `Failed`, not `Stopped`.
 7. **KillCapability immediately aborts** — no callbacks fire, task is dropped in-place.
 
 ## Adding a Standard Library Crate

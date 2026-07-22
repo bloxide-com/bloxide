@@ -582,9 +582,8 @@ pub fn generate(
             let child_task_ident = format_ident!("{}_task", child_actor.name);
 
             let policy = if let Some(policy_config) = sup.policies.get(child_name) {
-                if let Some(restart) = &policy_config.restart {
-                    let max = restart.max;
-                    quote! { ChildPolicy::Restart { max: #max as usize } }
+                if policy_config.restart.is_some() {
+                    quote! { ChildPolicy::Reset }
                 } else {
                     quote! { ChildPolicy::Stop }
                 }
