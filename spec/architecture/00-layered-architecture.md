@@ -102,7 +102,7 @@ bloxide-supervisor (depends on bloxide-core, bloxide-child-management, bloxide-s
   Runtime-facing: trait SupervisedRunLoop
 
 bloxide-child-management (depends on bloxide-core)
-  ChildGroup, ChildEntry, ChildPhase, HasChildGroup, RestartStrategy
+  ChildGroup, ChildEntry, ChildPhase, HasChildGroup
 
 bloxide-spawn (depends on bloxide-core)
   SpawnCap, SpawnFn, SpawnOutput, ChildRegistrar, spawn_child helper

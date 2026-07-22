@@ -103,7 +103,7 @@ bloxide_embassy::actor_task_supervised!(ping_task, PingSpec<EmbassyRuntime>);
 Hides lifecycle channel creation and task spawning plumbing. Creates the lifecycle channel, registers the child in the builder with the given `ChildPolicy`, and spawns the task:
 
 ```rust
-spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
+spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Reset);
 ```
 
 Expands to: create lifecycle channel → `group.add(id, handle, policy)` → `spawner.must_spawn(ping_task(machine, mbox, lc_rx, id, notify))`.
@@ -119,7 +119,7 @@ Call `finish()` to get `ChildGroup` plus both streams. The supervisor's own
 
 ```rust
 let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
+spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Reset);
 spawn_child!(spawner, group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
 let _sup_control_ref = group.control_ref();
 let (children, sup_notify_rx, sup_control_rx) = group.finish();
@@ -143,7 +143,7 @@ fn setup(spawner: Spawner) {
 
     // Supervised group — lifecycle is fully hidden
     let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-    bloxide_embassy::spawn_child!(spawner, group, ping_task(StateMachine::new(ping_ctx), ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
+    bloxide_embassy::spawn_child!(spawner, group, ping_task(StateMachine::new(ping_ctx), ping_mbox, ping_id), ChildPolicy::Reset);
     bloxide_embassy::spawn_child!(spawner, group, pong_task(StateMachine::new(pong_ctx), pong_mbox, pong_id), ChildPolicy::Stop);
     let sup_id = bloxide_embassy::next_actor_id!();
     let _sup_control_ref = group.control_ref();

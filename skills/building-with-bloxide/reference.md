@@ -312,7 +312,7 @@ let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
 bloxide_tokio::spawn_child!(
     group,
     my_task(machine, mbox, actor_id),
-    ChildPolicy::Restart { max: 1 }
+    ChildPolicy::Reset
 );
 ```
 

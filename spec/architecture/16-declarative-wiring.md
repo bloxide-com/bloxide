@@ -157,7 +157,7 @@ fn main() {
 
     // Wire supervisor
     let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-    bloxide_tokio::spawn_child!(group, ping_task(...), ChildPolicy::Restart { max: 1 });
+    bloxide_tokio::spawn_child!(group, ping_task(...), ChildPolicy::Reset);
     bloxide_tokio::spawn_child!(group, pong_task(...), ChildPolicy::Stop);
     // ... start supervisor
 }

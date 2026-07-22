@@ -81,7 +81,7 @@ fn setup(spawner: Spawner) {
 
     // Supervised group — lifecycle plumbing is hidden
     let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-    bloxide_embassy::spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
+    bloxide_embassy::spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Reset);
     bloxide_embassy::spawn_child!(spawner, group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
     let sup_id = bloxide_embassy::next_actor_id!();
     let _sup_control_ref = group.control_ref();

@@ -53,7 +53,7 @@ bloxide_tokio::root_task!(supervisor_task, SupervisorSpec<TokioRuntime>);
 
 // Supervise both actors
 let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-bloxide_tokio::spawn_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Restart { max: 1 });
+bloxide_tokio::spawn_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Reset);
 bloxide_tokio::spawn_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
 
 // Build and start the supervisor
@@ -160,7 +160,7 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 | `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(BloxCtx)]`, `#[delegatable]`, `#[blox_event]` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `VirtualClock` |
-| `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase`, `HasChildGroup`, `RestartStrategy` |
+| `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase`, `HasChildGroup` |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `SupervisorControl`, `RegisterChild`, `SupervisorRegistrar`, action functions |
 | `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `spawn_child` |
 | `bloxide-peers` | `crates/bloxide-peers` | ✅ | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` |

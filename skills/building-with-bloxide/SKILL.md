@@ -398,7 +398,7 @@ let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
 bloxide_tokio::spawn_child!(
     group,
     ping_task(ping_machine, ping_mbox, ping_id),
-    ChildPolicy::Restart { max: 1 }
+    ChildPolicy::Reset
 );
 let (children, sup_notify_rx, sup_control_rx) = group.finish();
 

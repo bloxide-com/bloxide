@@ -137,7 +137,7 @@ flowchart LR
 | `bloxide-core` | `MachineSpec`, `StateMachine`, `ActorRef`, `BloxRuntime`, `StaticChannelCap`, `DynamicChannelCap`, `Mailboxes` | Tokio, Embassy, OS imports |
 | `bloxide-timer` | `TimerCommand`, `TimerId`, `TimerQueue`, `HasTimerRef`, `set_timer`, `cancel_timer`, `TimerService` trait | Runtime imports, executor types |
 | `bloxide-supervisor` | `SupervisorSpec`, `SupervisorCtx`, `SupervisorControl`, `RegisterChild`, `SupervisorRegistrar`, action functions | Runtime imports, executor types |
-| `bloxide-child-management` | `ChildGroup`, `ChildEntry`, `ChildPhase`, `HasChildGroup`, `RestartStrategy` | Runtime imports, executor types |
+| `bloxide-child-management` | `ChildGroup`, `ChildEntry`, `ChildPhase`, `HasChildGroup` | Runtime imports, executor types |
 | `bloxide-spawn` | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `spawn_child` helper | Runtime imports, executor types |
 | `bloxide-peers` | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` | Runtime imports, executor types |
 | `bloxide-messaging` | `HasSelfRef<R,M>`, `HasPeerRef<R,M>` accessor traits | Runtime imports, executor types |

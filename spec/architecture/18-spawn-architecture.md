@@ -114,7 +114,7 @@ bloxide-core              ← engine + runtime capabilities
   BloxRuntime, MachineSpec, lifecycle types
   DynamicChannelCap, StaticChannelCap
   KillCapability<R> trait + NoKill / Kill type-level enum
-  AbortCommand, ChildPolicy, GroupShutdown, RestartStrategy (child_management module)
+  AbortCommand, ChildPolicy, GroupShutdown (child_management module)
 
 bloxide-spawn/            ← spawn capability (separate crate)
   SpawnCap (TaskHandle, AbortHandle, spawn, abort_handle, abort)
@@ -608,7 +608,6 @@ struct ChildEntry<R: BloxRuntime> {
 pub struct ChildGroup<R: BloxRuntime> {
     children: Vec<ChildEntry<R>>,
     shutdown: GroupShutdown,
-    restart_strategy: RestartStrategy,
     stopped_count: usize,
 }
 ```
@@ -626,10 +625,11 @@ children — the `Option` encodes "this child has an abort mailbox" vs "this chi
 - **`ChildPolicy::Abort`** (cooperative): Sends `AbortCommand::Abort` on the child's
   `abort_ref`. The child self-terminates via its select loop and reports `Aborted`.
   Marks permanently done.
-- **`ChildPolicy::Restart { max }`**: Sends `Reset` (if restarts < max). Reset goes directly
+- **`ChildPolicy::Reset`**: Sends `Reset` to the child. Reset goes directly
   to `initial_state()` — the child reports `Started`, no separate `Start` needed. Sets
   phase to `ResetPending`.
-- **`ChildPolicy::Stop`**: Marks permanently done immediately.
+- **`ChildPolicy::Stop`**: Sends `Stop` to the child. The child goes to `Init` (suspended).
+  Marks permanently done.
 
 ```rust
 // In ChildGroup::handle_done_or_failed (simplified)
@@ -656,17 +656,10 @@ match policy {
         }
         // Child will report Aborted; record_aborted marks permanently done.
     }
-    ChildPolicy::Restart { max } => {
-        if self.children[idx].restarts < max {
-            self.children[idx].restarts += 1;
-            // Reset goes directly to initial_state() — no separate Start needed.
-            let _ = lifecycle_ref.try_send(from, LifecycleCommand::Reset);
-            self.children[idx].phase = ChildPhase::ResetPending;
-        } else {
-            self.children[idx].permanently_done = true;
-            self.children[idx].phase = ChildPhase::PermanentlyDone;
-            return self.check_shutdown();
-        }
+    ChildPolicy::Reset => {
+        // Reset goes directly to initial_state() — no separate Start needed.
+        let _ = lifecycle_ref.try_send(from, LifecycleCommand::Reset);
+        self.children[idx].phase = ChildPhase::ResetPending;
     }
     ChildPolicy::Stop => {
         self.children[idx].permanently_done = true;
@@ -676,7 +669,7 @@ match policy {
 }
 ```
 
-All other `ChildGroup` methods (restart strategy, shutdown logic, phase tracking, health
+All other `ChildGroup` methods (shutdown logic, phase tracking, health
 check) are standard lifecycle management. The `ChildGroup` sends a message instead of
 calling a trait method for abort — the capability-as-mailbox pattern.
 
@@ -1425,19 +1418,20 @@ startup, plus storing the abort capability fields.
 stateDiagram-v2
     [*] --> Init
     Init --> Running : "Start command received via lifecycle mailbox"
-    Init --> Done : "Start enters terminal state"
+    Init --> Running : "Start enters initial_state (if initial_state is also Running)"
     Init --> Error : "Start enters error state"
     Running --> Running : "domain events (stay / self-transition)"
-    Running --> Done : "transition to terminal state (is_terminal)"
+    Running --> Init : "Guard::Stop → machine returns to Init"
     Running --> Error : "transition to error state (is_error)"
     Running --> Running : "Reset → initial_state (Guard::Reset or LifecycleCommand::Reset)"
     Running --> Aborted : "ChildPolicy::Abort (AbortCommand)"
     Running --> Killed : "ChildPolicy::Kill (ripcord)"
-    Done --> [*] : "task exits"
-    Error --> [*] : "task exits"
+    Error --> [*] : "task exits (supervised: stays alive for Restart/Reset)"
     Aborted --> [*] : "task exits cooperatively (permanently done)"
     Killed --> [*] : "task aborted externally (permanently dead)"
 ```
+
+> **Note**: In the new lifecycle model, `Guard::Stop` replaces terminal `Done` states. When a guard returns `Stop`, the machine goes to `Init` and produces `DispatchOutcome::Stopped`. The transition's actions run BEFORE `Guard::Stop`. `on_init_entry` fires when `Guard::Stop` triggers (clearing state). Supervised actor run loops do NOT exit on `DispatchOutcome::Stopped` — the actor stays alive in `Init`, waiting for `Start` or `Reset` from the supervisor. Only `Aborted` or stream-closed exits the loop.
 
 The child's `run_supervised_actor` loop (or `run_supervised_actor_with_abort` for dynamic
 children) handles lifecycle reporting automatically — it converts `DispatchOutcome` to
