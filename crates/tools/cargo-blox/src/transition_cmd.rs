@@ -104,3 +104,46 @@ pub fn add_transition(
     );
     Ok(())
 }
+
+pub fn remove_transition(blox_name: &str, state: &str, event: &str) -> anyhow::Result<()> {
+    let path = blox_toml_path_for_blox(blox_name);
+    let mut doc = load_toml(&path)?;
+
+    let topology = topology_table_mut(&mut doc)?;
+    let transitions = transitions_array_mut(topology)?;
+
+    let exists = transitions.iter().any(|t| {
+        let table = match t.as_table() {
+            Some(t) => t,
+            None => return false,
+        };
+        let s = table.get("state").and_then(|v| v.as_str()) == Some(state);
+        let e = table.get("event").and_then(|v| v.as_str()) == Some(event);
+        s && e
+    });
+    if !exists {
+        bail!(
+            "transition {} + {} not found in {}",
+            state,
+            event,
+            blox_name
+        );
+    }
+
+    transitions.retain(|t| {
+        let table = match t.as_table() {
+            Some(t) => t,
+            None => return true,
+        };
+        let s = table.get("state").and_then(|v| v.as_str()) == Some(state);
+        let e = table.get("event").and_then(|v| v.as_str()) == Some(event);
+        !(s && e)
+    });
+
+    save_toml(&path, &doc)?;
+    println!(
+        "Removed transition {} + {} from {}",
+        state, event, blox_name
+    );
+    Ok(())
+}

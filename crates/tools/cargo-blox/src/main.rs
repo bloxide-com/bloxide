@@ -207,6 +207,14 @@ enum BloxSubcommand {
         #[arg(long)]
         if_not_exists: bool,
     },
+    /// Remove a transition from a blox topology
+    RemoveTransition {
+        blox_name: String,
+        #[arg(long)]
+        state: String,
+        #[arg(long)]
+        event: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -310,6 +318,11 @@ fn main() -> anyhow::Result<()> {
                 feature.as_deref(),
                 if_not_exists,
             ),
+            BloxSubcommand::RemoveTransition {
+                blox_name,
+                state,
+                event,
+            } => transition_cmd::remove_transition(&blox_name, &state, &event),
         },
     }
 }
