@@ -159,6 +159,12 @@ enum BloxSubcommand {
         #[arg(long)]
         json: bool,
     },
+    /// List transitions in a blox
+    ListTransitions {
+        blox_name: String,
+        #[arg(long)]
+        json: bool,
+    },
     /// Add a message variant to a messages crate
     AddMessage {
         crate_name: String,
@@ -221,6 +227,9 @@ fn main() -> anyhow::Result<()> {
             } => state::remove_state(&blox_name, &state_name),
             BloxSubcommand::ListStates { blox_name, json } => {
                 list_cmd::list_states(&blox_name, json)
+            }
+            BloxSubcommand::ListTransitions { blox_name, json } => {
+                list_cmd::list_transitions(&blox_name, json)
             }
             BloxSubcommand::AddMessage {
                 crate_name,
