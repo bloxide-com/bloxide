@@ -197,17 +197,17 @@ mod hsm_engine {
     }
 
     #[test]
-    fn reset_from_init_is_noop() {
+    fn reset_from_init_goes_to_initial_state() {
         let mut m = StateMachine::<TSpec>::new(TCtx);
         take_log();
         let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Reset));
-        // Reset from Init is a no-op — there's nothing to reset.
-        assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
+        // Reset from Init goes to initial_state() (equivalent to Start).
+        assert!(matches!(outcome, DispatchOutcome::Started(_)));
         assert!(
-            take_log().is_empty(),
-            "Reset from Init must not fire callbacks"
+            !take_log().is_empty(),
+            "Reset from Init must fire entry callbacks"
         );
-        assert!(m.current_state().is_init());
+        assert!(!m.current_state().is_init());
     }
 
     // ── Topology invariants ─────────────────────────────────────────────────

@@ -48,7 +48,7 @@ fn setup(spawner: ::embassy_executor::Spawner) {
         spawner,
         group,
         ping_task(ping_machine, ping_mbox, ping_id),
-        ChildPolicy::Restart { max: 1u32 as usize }
+        ChildPolicy::Reset
     );
     ::bloxide_embassy::spawn_child!(
         spawner,

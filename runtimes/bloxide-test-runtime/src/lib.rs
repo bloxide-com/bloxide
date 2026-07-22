@@ -261,7 +261,7 @@ mod waker_tests {
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::Envelope;
     use bloxide_core::spec::MachineSpec;
-    use bloxide_core::topology::{LeafState, StateTopology};
+    use bloxide_core::topology::StateTopology;
     use bloxide_core::transition::{ActionResult, Guard, TransitionRule};
     use std::marker::PhantomData;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -404,7 +404,7 @@ mod waker_tests {
                     }],
                     guard: |ctx, _results, _ev| {
                         if ctx.processed.load(Ordering::SeqCst) >= ctx.threshold {
-                            Guard::Transition(LeafState::new(WState::Done))
+                            Guard::Stop
                         } else {
                             Guard::Stay
                         }

@@ -674,16 +674,11 @@ mod tests {
         assert!(ping.states.iter().any(|s| s.name == "Operating"));
         assert!(ping.states.iter().any(|s| s.name == "Active"));
         assert!(ping.states.iter().any(|s| s.name == "Paused"));
-        assert!(ping.states.iter().any(|s| s.name == "Done"));
         assert!(ping.states.iter().any(|s| s.name == "Error"));
 
         // Operating is composite
         let operating = ping.states.iter().find(|s| s.name == "Operating").unwrap();
         assert_eq!(operating.kind, model::StateKind::Composite);
-
-        // Done is terminal
-        let done = ping.states.iter().find(|s| s.name == "Done").unwrap();
-        assert_eq!(done.kind, model::StateKind::Terminal);
 
         // Error is error
         let error = ping.states.iter().find(|s| s.name == "Error").unwrap();
@@ -742,7 +737,6 @@ mod tests {
 
         // States
         assert!(counter.states.iter().any(|s| s.name == "Ready"));
-        assert!(counter.states.iter().any(|s| s.name == "Done"));
 
         // Ready handler for Tick
         assert!(counter
@@ -760,13 +754,6 @@ mod tests {
             !ready_handler.guard.branches.is_empty(),
             "Ready handler should have guard branches"
         );
-
-        // Check guard branch targeting Done
-        assert!(ready_handler
-            .guard
-            .branches
-            .iter()
-            .any(|b| b.target.display() == "Done"));
     }
 
     #[test]
@@ -782,11 +769,6 @@ mod tests {
         assert!(pool.states.iter().any(|s| s.name == "Idle"));
         assert!(pool.states.iter().any(|s| s.name == "Spawning"));
         assert!(pool.states.iter().any(|s| s.name == "Active"));
-        assert!(pool.states.iter().any(|s| s.name == "AllDone"));
-
-        // AllDone is terminal
-        let all_done = pool.states.iter().find(|s| s.name == "AllDone").unwrap();
-        assert_eq!(all_done.kind, model::StateKind::Terminal);
 
         // Idle → Spawning on SpawnWorker
         assert!(pool.handlers.iter().any(|h| h.state == "Idle"
@@ -797,10 +779,6 @@ mod tests {
         assert!(pool.handlers.iter().any(|h| h.state == "Spawning"
             && h.event == "PoolEvent::SpawnReply"
             && h.target.display() == "Active"));
-
-        // AllDone entry action
-        let entry = pool.entry_exit.get("AllDone").expect("AllDone has entry");
-        assert!(entry.on_entry.iter().any(|a| a == "log_all_done"));
     }
 
     #[test]
@@ -844,28 +822,6 @@ mod tests {
 
         // Clean up
         let _ = fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn test_dropped_handlers() {
-        let ws = workspace_root();
-        let specs = export_workspace(&ws).expect("export should succeed");
-        let counter = specs
-            .iter()
-            .find(|s| s.name == "Counter")
-            .expect("Counter spec should exist");
-
-        // Done is a terminal leaf state with no explicit handler for Tick.
-        // It should have a Dropped handler.
-        let dropped = counter.handlers.iter().find(|h| {
-            h.state == "Done"
-                && h.event == "CounterMsg::Tick"
-                && h.source == model::HandlerSource::Dropped
-        });
-        assert!(
-            dropped.is_some(),
-            "Done state should have a Dropped handler for CounterMsg::Tick"
-        );
     }
 
     #[test]

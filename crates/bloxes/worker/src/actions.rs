@@ -24,24 +24,27 @@ impl<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask + 'static> Worke
         ActionResult::Ok
     }
 
-    pub(crate) fn do_broadcast(ctx: &mut WorkerCtx<R, B>) {
+    pub(crate) fn do_broadcast(ctx: &mut WorkerCtx<R, B>, _ev: &WorkerEvent<R>) -> ActionResult {
         broadcast_to_peers::<R, _>(ctx);
+        ActionResult::Ok
     }
 
-    pub(crate) fn do_notify_pool(ctx: &mut WorkerCtx<R, B>) {
+    pub(crate) fn do_notify_pool(ctx: &mut WorkerCtx<R, B>, _ev: &WorkerEvent<R>) -> ActionResult {
         notify_pool_done::<R, _>(ctx);
+        ActionResult::Ok
     }
 
     pub(crate) fn log_waiting(ctx: &mut WorkerCtx<R, B>) {
         bloxide_log::blox_log_info!(ctx.self_id(), "worker waiting for task");
     }
 
-    pub(crate) fn log_done(ctx: &mut WorkerCtx<R, B>) {
+    pub(crate) fn log_done(ctx: &mut WorkerCtx<R, B>, _ev: &WorkerEvent<R>) -> ActionResult {
         bloxide_log::blox_log_info!(
             ctx.self_id(),
             "worker done: task_id={} result={}",
             ctx.task_id(),
             ctx.result()
         );
+        ActionResult::Ok
     }
 }

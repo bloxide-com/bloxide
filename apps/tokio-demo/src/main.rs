@@ -48,7 +48,7 @@ async fn main() {
     ::bloxide_tokio::spawn_child!(
         group,
         ping_task(ping_machine, ping_mbox, ping_id),
-        ChildPolicy::Restart { max: 1u32 as usize }
+        ChildPolicy::Reset
     );
     ::bloxide_tokio::spawn_child!(
         group,

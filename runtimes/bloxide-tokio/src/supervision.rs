@@ -42,10 +42,11 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
                     let outcome = handle_lifecycle(&mut machine, cmd);
                     report_outcome::<S, TokioRuntime>(&outcome, actor_id, &supervisor_notify);
 
-                    return match outcome {
-                        DispatchOutcome::Stopped => Poll::Ready(LoopAction::Stop),
-                        _ => Poll::Ready(LoopAction::Continue),
-                    };
+                    // Stopped is NOT terminal — the actor self-suspended to
+                    // Init and the supervisor was notified. The task stays
+                    // alive, waiting for a future Start or Reset command.
+                    // Only stream-closed (None) exits the loop.
+                    return Poll::Ready(LoopAction::Continue);
                 }
                 Poll::Pending => {}
             }
@@ -68,8 +69,8 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
                 // Yield to the executor after each message to prevent
                 // task starvation. Without this, a run loop that always
                 // finds queued messages will busy-loop and starve other
-                // tasks (e.g. the supervisor that needs to process Done
-                // events and initiate shutdown).
+                // tasks (e.g. the supervisor that needs to process
+                // lifecycle events and initiate shutdown).
                 tokio::task::yield_now().await;
             }
             LoopAction::Stop => break,
@@ -126,10 +127,10 @@ pub async fn run_supervised_actor_with_abort<S: MachineSpec + 'static>(
                     let outcome = handle_lifecycle(&mut machine, cmd);
                     report_outcome::<S, TokioRuntime>(&outcome, actor_id, &supervisor_notify);
 
-                    return match outcome {
-                        DispatchOutcome::Stopped => Poll::Ready(LoopAction::Stop),
-                        _ => Poll::Ready(LoopAction::Continue),
-                    };
+                    // Stopped is NOT terminal — the actor self-suspended to
+                    // Init. The task stays alive, waiting for Start/Reset.
+                    // Only Abort or stream-closed (None) exits the loop.
+                    return Poll::Ready(LoopAction::Continue);
                 }
                 Poll::Pending => {}
             }

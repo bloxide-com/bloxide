@@ -12,7 +12,7 @@
 //!    registers them with the supervisor via `RegisterDynamicChild`.
 //! 7. The pool sends `DoWork` to each worker; the worker transitions to
 //!    `Done` (terminal), sends `WorkDone` to the pool, and the runtime
-//!    reports `ChildLifecycleEvent::Done` to the supervisor.
+//!    reports `ChildLifecycleEvent::Stopped` to the supervisor.
 //! 8. The test drives the supervisor manually (dispatching both notify and
 //!    control events) and verifies the event sequence:
 //!    `Started` (pool), `Started` (worker), `Done` (worker), …, `Done` (pool).
@@ -162,7 +162,7 @@ async fn pool_lifecycle_spawn_and_done() {
                 if let Some(env) = envelope {
                     // ChildLifecycleEvent is Copy — clone before dispatch.
                     let event = env.1;
-                    if let ChildLifecycleEvent::Done { child_id } = &event {
+                    if let ChildLifecycleEvent::Stopped { child_id } = &event {
                         if *child_id == pool_id {
                             pool_done = true;
                         }
@@ -181,8 +181,8 @@ async fn pool_lifecycle_spawn_and_done() {
     // We should see at least:
     //   - 1 pool Started
     //   - 2 worker Started
-    //   - 2 worker Done
-    //   - 1 pool Done
+    //   - 2 worker Stopped
+    //   - 1 pool Stopped
     let pool_started = events
         .iter()
         .any(|e| matches!(e, ChildLifecycleEvent::Started { child_id } if *child_id == pool_id));
@@ -192,11 +192,11 @@ async fn pool_lifecycle_spawn_and_done() {
         .count();
     let worker_done_count = events
         .iter()
-        .filter(|e| matches!(e, ChildLifecycleEvent::Done { child_id } if *child_id != pool_id))
+        .filter(|e| matches!(e, ChildLifecycleEvent::Stopped { child_id } if *child_id != pool_id))
         .count();
     let pool_done_count = events
         .iter()
-        .filter(|e| matches!(e, ChildLifecycleEvent::Done { child_id } if *child_id == pool_id))
+        .filter(|e| matches!(e, ChildLifecycleEvent::Stopped { child_id } if *child_id == pool_id))
         .count();
 
     assert!(
@@ -211,12 +211,12 @@ async fn pool_lifecycle_spawn_and_done() {
     );
     assert_eq!(
         worker_done_count, 2,
-        "expected 2 worker Done events: events={:?}",
+        "expected 2 worker Stopped events: events={:?}",
         events
     );
     assert_eq!(
         pool_done_count, 1,
-        "expected 1 pool Done event: events={:?}",
+        "expected 1 pool Stopped event: events={:?}",
         events
     );
 }

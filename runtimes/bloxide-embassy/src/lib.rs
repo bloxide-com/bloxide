@@ -208,7 +208,12 @@ where
         };
         match machine.dispatch(event) {
             DispatchOutcome::Stopped | DispatchOutcome::Aborted => return,
-            _ => {}
+            _ => {
+                // Yield to the executor after each non-terminal dispatch
+                // to prevent busy-looping when messages are continuously
+                // queued (e.g. child lifecycle events arriving in bursts).
+                embassy_futures::yield_now().await;
+            }
         }
     }
 }
