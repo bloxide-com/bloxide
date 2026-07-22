@@ -331,3 +331,99 @@ pub fn list_transitions(blox_name: &str, json: bool) -> anyhow::Result<()> {
 
     Ok(())
 }
+
+
+// `list-bloxes` command — list all blox crates in the workspace with summary counts.
+
+/// A single summary row for a blox, used for both table and JSON output.
+#[derive(Serialize)]
+struct BloxSummaryRow {
+    name: String,
+    states: usize,
+    transitions: usize,
+    messages: usize,
+}
+
+/// Count the total number of message variants across all `[[messages]]` entries.
+fn count_message_variants(doc: &toml::Value) -> usize {
+    doc.as_table()
+        .and_then(|t| t.get("messages")?.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|msg| {
+                    msg.as_table()
+                        .and_then(|t| t.get("variants")?.as_array())
+                        .map(|variants| variants.len())
+                })
+                .sum()
+        })
+        .unwrap_or(0)
+}
+
+/// List all blox crates in the workspace.
+///
+/// Scans `crates/bloxes/*/blox.toml` and prints a summary table (NAME,
+/// STATES, TRANSITIONS, MESSAGES) or a pretty-printed JSON array
+/// (`--json`).  Results are sorted alphabetically by blox name.
+pub fn list_bloxes(json: bool) -> anyhow::Result<()> {
+    let bloxes_dir = std::path::Path::new("crates/bloxes");
+    let mut rows: Vec<BloxSummaryRow> = Vec::new();
+
+    if bloxes_dir.exists() {
+        let entries = std::fs::read_dir(bloxes_dir)
+            .with_context(|| format!("failed to read {}", bloxes_dir.display()))?;
+        for entry in entries {
+            let entry = entry.context("failed to read directory entry")?;
+            let path = entry.path();
+            // Only consider subdirectories that contain a blox.toml.
+            if !path.is_dir() {
+                continue;
+            }
+            let toml_path = path.join("blox.toml");
+            if !toml_path.exists() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            let doc = load_toml(&toml_path)
+                .with_context(|| format!("failed to load {}", toml_path.display()))?;
+            let states = topology_table(&doc)
+                .and_then(states_array)
+                .map(|arr| arr.len())
+                .unwrap_or(0);
+            let transitions = topology_table(&doc)
+                .and_then(transitions_array)
+                .map(|arr| arr.len())
+                .unwrap_or(0);
+            let messages = count_message_variants(&doc);
+            rows.push(BloxSummaryRow {
+                name,
+                states,
+                transitions,
+                messages,
+            });
+        }
+    }
+
+    rows.sort_by(|a, b| a.name.cmp(&b.name));
+
+    if json {
+        let out = serde_json::to_string_pretty(&rows)
+            .context("failed to serialize blox summaries to JSON")?;
+        println!("{}", out);
+        return Ok(());
+    }
+
+    // Table output with fixed-width columns.
+    println!(
+        "{:<20} {:<8} {:<12} {:<10}",
+        "NAME", "STATES", "TRANSITIONS", "MESSAGES"
+    );
+    for row in &rows {
+        println!(
+            "{:<20} {:<8} {:<12} {:<10}",
+            row.name, row.states, row.transitions, row.messages
+        );
+    }
+
+    Ok(())
+}
