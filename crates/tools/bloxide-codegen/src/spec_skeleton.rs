@@ -281,12 +281,6 @@ pub fn generate(
         format_ident!("Init")
     };
 
-    let terminal_states: Vec<_> = topology
-        .states
-        .iter()
-        .filter(|s| s.terminal.unwrap_or(false))
-        .map(|s| format_ident!("{}", s.name))
-        .collect();
     let error_states: Vec<_> = topology
         .states
         .iter()
@@ -294,14 +288,6 @@ pub fn generate(
         .map(|s| format_ident!("{}", s.name))
         .collect();
 
-    let (is_terminal_param, is_terminal_body) = if terminal_states.is_empty() {
-        (quote! { _state }, quote! { false })
-    } else {
-        (
-            quote! { state },
-            quote! { ::core::matches!(state, #state_ident::#(#terminal_states)|*) },
-        )
-    };
     let (is_error_param, is_error_body) = if error_states.is_empty() {
         (quote! { _state }, quote! { false })
     } else {
@@ -900,10 +886,6 @@ pub fn generate(
 
                 fn initial_state() -> #state_ident {
                     #state_ident::#initial_state_ident
-                }
-
-                fn is_terminal(#is_terminal_param: &#state_ident) -> bool {
-                    #is_terminal_body
                 }
 
                 fn is_error(#is_error_param: &#state_ident) -> bool {

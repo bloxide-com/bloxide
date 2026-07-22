@@ -213,6 +213,7 @@ fn target_to_guard(target: &str, state_enum_ident: &syn::Ident) -> proc_macro2::
     match target {
         "stay" => quote! { ::bloxide_core::transition::Guard::Stay },
         "reset" => quote! { ::bloxide_core::transition::Guard::Reset },
+        "stop" => quote! { ::bloxide_core::transition::Guard::Stop },
         "fail" => quote! { ::bloxide_core::transition::Guard::Fail },
         state_name => {
             let ident = format_ident!("{}", state_name);

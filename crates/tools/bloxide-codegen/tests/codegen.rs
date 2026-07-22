@@ -847,8 +847,6 @@ terminal = true
     assert!(content.contains("counter_messages::CounterMsg"));
     assert!(content.contains("counter_state_handler_table"));
     assert!(content.contains("CounterState::Ready"));
-    assert!(content.contains("fn is_terminal"));
-    assert!(content.contains("CounterState::Done"));
     assert!(content.contains("fn on_init_entry"));
 }
 
@@ -926,8 +924,6 @@ error = true
     assert!(content.contains("for PingSpec"));
     assert!(content.contains("type State = PingState"));
     assert!(content.contains("PingState::Active"));
-    assert!(content.contains("fn is_terminal"));
-    assert!(content.contains("PingState::Done"));
     assert!(content.contains("fn is_error"));
     assert!(content.contains("PingState::Error"));
     assert!(content.contains("ping_state_handler_table"));
