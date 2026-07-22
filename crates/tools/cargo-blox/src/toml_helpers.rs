@@ -20,7 +20,6 @@ pub(crate) fn blox_toml_path_for_blox(blox_name: &str) -> PathBuf {
 
 /// Returns the path `crates/messages/<crate_name>/blox.toml` relative to the
 /// current working directory.
-#[allow(dead_code)]
 pub(crate) fn blox_toml_path_for_messages(crate_name: &str) -> PathBuf {
     Path::new("crates/messages")
         .join(crate_name)

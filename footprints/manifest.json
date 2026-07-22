@@ -1,0 +1,28 @@
+{
+  "query": "SOIC-8",
+  "results": {
+    "kicad": [
+      {
+        "source": "kicad",
+        "name": "SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm",
+        "library": "Package_SO",
+        "kicad_string": "Package_SO/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm",
+        "local_path": "/usr/share/kicad/footprints/Package_SO.pretty/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm.kicad_mod"
+      },
+      {
+        "source": "kicad",
+        "name": "SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias",
+        "library": "Package_SO",
+        "kicad_string": "Package_SO/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias",
+        "local_path": "/usr/share/kicad/footprints/Package_SO.pretty/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.29x3mm_ThermalVias.kicad_mod"
+      },
+      {
+        "source": "kicad",
+        "name": "SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x3.3mm",
+        "library": "Package_SO",
+        "kicad_string": "Package_SO/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x3.3mm",
+        "local_path": "/usr/share/kicad/footprints/Package_SO.pretty/SOIC-8-1EP_3.9x4.9mm_P1.27mm_EP2.41x3.3mm.kicad_mod"
+      }
+    ]
+  }
+}

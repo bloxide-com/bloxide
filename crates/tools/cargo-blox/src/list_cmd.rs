@@ -5,7 +5,8 @@ use anyhow::{bail, Context};
 use serde::Serialize;
 
 use crate::toml_helpers::{
-    blox_toml_path_for_blox, load_toml, states_array, topology_table, transitions_array,
+    blox_toml_path_for_blox, blox_toml_path_for_messages, load_toml, states_array, topology_table,
+    transitions_array,
 };
 
 /// A single state row, used for both table and JSON output.
@@ -101,6 +102,106 @@ pub fn list_states(blox_name: &str, json: bool) -> anyhow::Result<()> {
             row.error,
             row.parent.as_deref().unwrap_or("")
         );
+    }
+
+    Ok(())
+}
+
+/// A single field within a message variant, used for JSON output.
+#[derive(Serialize)]
+struct MessageFieldRow {
+    name: String,
+    ty: String,
+}
+
+/// A single message variant row, used for both table and JSON output.
+#[derive(Serialize)]
+struct MessageVariantRow {
+    name: String,
+    fields: Vec<MessageFieldRow>,
+}
+
+/// Extract a field row from a `[[messages.variants.fields]]` table.
+fn message_field_row_from_value(field: &toml::Value) -> Option<MessageFieldRow> {
+    let table = field.as_table()?;
+    let name = table.get("name")?.as_str()?.to_string();
+    let ty = table.get("ty")?.as_str()?.to_string();
+    Some(MessageFieldRow { name, ty })
+}
+
+/// Extract a variant row from a `[[messages.variants]]` table.
+fn message_variant_row_from_value(variant: &toml::Value) -> Option<MessageVariantRow> {
+    let table = variant.as_table()?;
+    let name = table.get("name")?.as_str()?.to_string();
+    let fields = table
+        .get("fields")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(message_field_row_from_value)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    Some(MessageVariantRow { name, fields })
+}
+
+/// List the message variants in a messages crate.
+///
+/// Reads `crates/messages/<crate_name>/blox.toml` and prints the message
+/// variants in either a padded table (default) or a pretty-printed JSON
+/// array (`--json`).
+pub fn list_messages(crate_name: &str, json: bool) -> anyhow::Result<()> {
+    let path = blox_toml_path_for_messages(crate_name);
+    if !path.exists() {
+        bail!(
+            "blox.toml not found for messages crate '{}' at {}",
+            crate_name,
+            path.display()
+        );
+    }
+
+    let doc = load_toml(&path).with_context(|| format!("failed to load {}", path.display()))?;
+
+    // Collect variants from all [[messages]] entries.
+    let messages_array = doc.as_table().and_then(|t| t.get("messages")?.as_array());
+    let rows: Vec<MessageVariantRow> = messages_array
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|msg| {
+                    msg.as_table()
+                        .and_then(|t| t.get("variants")?.as_array())
+                        .map(|variants| {
+                            variants
+                                .iter()
+                                .filter_map(message_variant_row_from_value)
+                                .collect::<Vec<_>>()
+                        })
+                })
+                .flatten()
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if json {
+        let out = serde_json::to_string_pretty(&rows)
+            .context("failed to serialize message variants to JSON")?;
+        println!("{out}");
+        return Ok(());
+    }
+
+    // Table output with fixed-width columns.
+    println!("{:<20} FIELDS", "VARIANT");
+    for row in &rows {
+        let fields = if row.fields.is_empty() {
+            "(none)".to_string()
+        } else {
+            row.fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, f.ty))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        println!("{:<20} {}", row.name, fields);
     }
 
     Ok(())
