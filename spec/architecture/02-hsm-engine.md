@@ -12,7 +12,7 @@ Neither `VirtualRoot` nor `Init` appear in the user's `State` enum. Both are eng
 
 - **VirtualRoot** is implicit. Top-level user states return `None` from `parent()`. The engine prepends VirtualRoot when building state paths for LCA computation — VirtualRoot contains the lifecycle handler table (`root_transitions()` from `MachineSpec`) and intercepts `LifecycleCommand` variants *before* user-declared states see them. If `root_transitions()` returns `&[]`, all lifecycle commands are handled by the engine's default rules: `Start` → exit Init, enter `initial_state()`; `Reset` → full exit chain, then entry chain for `initial_state()` (immediately operational, no `on_init_entry`, returns `Started`); `Stop` → full exit chain to Init, fire `on_init_entry`, returns `Stopped`; `Ping` → respond with `ChildLifecycleEvent::Alive`. `Abort` and `Kill` are not lifecycle commands — see [Four-Level Lifecycle](#four-level-lifecycle-reset--stop--abort--kill) below.
 
-- **Init** is implicit. Construction is **silent** — no callbacks fire. The machine starts in `Init` and waits for a `LifecycleCommand::Start` event to be dispatched. `on_init_entry` fires **only** when the machine re-enters `Init` via `LifecycleCommand::Stop` — it is for resetting domain state (counters, timers, etc.) only. It does **not** fire on `Reset` (which goes directly to `initial_state()`) or on `Guard::Fail` (which goes to `error_state()`). All non-lifecycle events dispatched while in `Init` are **silently dropped**. Lifecycle commands are handled at VirtualRoot level, so the machine in Init still processes Start/Reset/Stop/Ping via the engine's lifecycle handler.
+- **Init** is implicit. Construction is **silent** — no callbacks fire. The machine starts in `Init` and waits for a `LifecycleCommand::Start` event to be dispatched. `on_init_entry` fires **only** when the machine re-enters `Init` via `LifecycleCommand::Stop` or `Guard::Stop` — it is for resetting domain state (counters, timers, etc.) only. It does **not** fire on `Reset` (which goes directly to `initial_state()`) or on `Guard::Fail` (which goes to `error_state()`). All non-lifecycle events dispatched while in `Init` are **silently dropped**. Lifecycle commands are handled at VirtualRoot level, so the machine in Init still processes Start/Reset/Stop/Ping via the engine's lifecycle handler.
 
 ## Four-Level Lifecycle: `reset → stop → abort → kill`
 
@@ -66,14 +66,12 @@ flowchart TD
     VR["[VirtualRoot — engine implicit]"]
     Init["[Init — engine implicit]"]
     Active
-    Done
 
     VR --> Init
     VR --> Active
-    VR --> Done
 ```
 
-> This is the `PingState` topology (simplified). `VirtualRoot` and `Init` are engine-implicit — not in the user's `State` enum. `Active` and `Done` are user-declared leaf states. Lifecycle commands (Start, Reset, Stop, Ping) are matched against VirtualRoot's transition rules *first*, before any user-declared state sees them.
+> This is the `PingState` topology (simplified). `VirtualRoot` and `Init` are engine-implicit — not in the user's `State` enum. `Active` is a user-declared leaf state. Lifecycle commands (Start, Reset, Stop, Ping) are matched against VirtualRoot's transition rules *first*, before any user-declared state sees them. Actors self-suspend via `Guard::Stop` instead of reaching a terminal state.
 
 A deeper example showing nested composite states:
 
@@ -113,7 +111,8 @@ pub trait MachineSpec: Sized + 'static {
     // First operational leaf state entered after start():
     fn initial_state() -> Self::State;
 
-    // Called ONLY when the machine enters Init via LifecycleCommand::Stop.
+    // Called ONLY when the machine enters Init via LifecycleCommand::Stop
+    // or Guard::Stop.
     // Does NOT fire on Reset (goes to initial_state()) or Fail (goes to error_state()).
     // Domain-state cleanup only:
     fn on_init_entry(ctx: &mut Self::Ctx);
@@ -146,7 +145,7 @@ For most bloxes, the state enum and handler table mapping are generated from `bl
 name = "Ready"
 
 [[topology.states]]
-name = "Done"
+name = "Active"
 ```
 
 Run `cargo blox generate` to produce `src/generated/topology.rs` with `CounterState` and the `counter_state_handler_table!` macro:

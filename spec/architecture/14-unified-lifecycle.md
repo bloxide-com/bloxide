@@ -158,7 +158,7 @@ states return `None` from `parent()`, which makes them direct children of
 `Init` is an engine-implicit leaf state, separate from the user's `State` enum.
 A freshly constructed `StateMachine` begins in `Init` **silently** — no
 `on_entry` callbacks fire at construction time. `on_init_entry` fires only when
-the machine enters `Init` via `Stop` (for resource cleanup). It does **not**
+the machine enters `Init` via `Stop` or `Guard::Stop` (for resource cleanup). It does **not**
 fire on `Reset` (which skips Init entirely) or `Abort`/`Kill` (which bypass
 dispatch).
 
@@ -185,13 +185,13 @@ because the engine's `Init` is never a variant of the user's enum.
 VirtualRoot (implicit, not entered/exited — used for LCA and lifecycle intercept)
     │
     ├── Init (implicit leaf, auto-generated)
-    │       on_entry: S::on_init_entry   (fires on Stop only)
+    │       on_entry: S::on_init_entry   (fires on Stop or Guard::Stop)
     │       on_exit:  S::on_init_exit    (fires on Start)
     │       transitions: [* => stay]      (catch-all for domain events)
     │
     ├── Waiting   (user-declared leaf, returned by initial_state())
     ├── Running   (user-declared leaf)
-    └── Done      (user-declared leaf)
+    └── Ready     (user-declared leaf, returned by initial_state())
 ```
 
 While in `Init`, all non-lifecycle domain events are **silently dropped**:
@@ -282,6 +282,9 @@ pub enum Guard<S: MachineSpec> {
     /// Fires full exit chain + entry chain for initial_state().
     /// Does NOT call on_init_entry. Returns Started.
     Reset,
+    /// Self-stop: go to Init. Fires full exit chain + on_init_entry.
+    /// Returns Stopped. Actor stays alive in Init, suspended.
+    Stop,
     /// Go to error_state(), report Failed to supervisor.
     /// Fires full exit chain + entry chain for error_state().
     /// Does NOT call on_init_entry. Returns Failed.
@@ -302,6 +305,23 @@ When a state handler returns `Reset`, the engine:
 **Reset skips Init entirely.** No `on_init_entry` fires. The actor is
 immediately operational.
 
+### Guard::Stop
+
+When a state handler returns `Stop`, the engine:
+
+1. Runs `on_exit` for every state from the current leaf up to the root (the
+   full exit chain).
+2. Calls `on_init_entry` (for resource cleanup).
+3. Sets the current state to `Init`.
+4. Returns `DispatchOutcome::Stopped` from `dispatch()`.
+
+The actor is suspended in `Init` — the task stays alive, waiting for `Start`
+or `Reset` from the supervisor. This replaces the old `is_terminal` / `Done`
+model: instead of declaring a terminal state and having the runtime detect it,
+the actor's guard explicitly returns `Stop` to self-suspend. The supervisor
+sees `Stopped` and applies the child's `ChildPolicy` (e.g., `Reset` to restart,
+`Stop` to leave suspended).
+
 ### Guard::Fail
 
 When a state handler returns `Fail`, the engine:
@@ -315,15 +335,13 @@ When a state handler returns `Fail`, the engine:
 
 `on_init_entry` is **not** called — `Fail` jumps directly to `error_state()`,
 skipping `Init` entirely. The supervisor observes `Failed` and applies its
-`ChildPolicy` — typically restarting the actor by sending `Start`, or marking
+`ChildPolicy` — typically resetting the actor by sending `Reset`, or marking
 it permanently failed.
 
 ## Supervisor Observation of DispatchOutcome
 
 `dispatch()` returns a `DispatchOutcome`, which the runtime actor loop forwards
 to the supervisor as a `ChildLifecycleEvent`. This is how the supervisor learns
-about lifecycle transitions without being coupled to the actor's event types:
-
 ```rust
 pub enum DispatchOutcome<State> {
     /// No rule matched anywhere (event bubbled to VirtualRoot with no match).
@@ -334,11 +352,9 @@ pub enum DispatchOutcome<State> {
     Transition(MachineState<State>),
     /// Left Init via Start, OR Reset went directly to initial_state().
     Started(MachineState<State>),
-    /// Transitioned to terminal state.
-    Done(MachineState<State>),
     /// Actor failed via Guard::Fail (jumped to error_state()).
     Failed,
-    /// Actor stopped to Init via LifecycleCommand::Stop.
+    /// Actor stopped to Init via LifecycleCommand::Stop or Guard::Stop.
     Stopped,
     /// Actor aborted cooperatively via AbortCommand on abort mailbox.
     Aborted,
@@ -355,15 +371,13 @@ internal state-machine events that the supervisor does not need to see:
 | `DispatchOutcome`        | `ChildLifecycleEvent` | Supervisor Action                            |
 |---------------------------|-----------------------|----------------------------------------------|
 | `Started(_)`              | `Started`             | Record child as running (covers both Start and Reset) |
-| `Done(_)`                 | `Done`                | Apply `ChildPolicy` (restart, stop, abort, or kill) |
-| `Failed`                  | `Failed`              | Apply `ChildPolicy` (restart, stop, abort, or kill) |
-| `Stopped`                 | `Stopped`             | Record child as suspended in Init            |
+| `Failed`                  | `Failed`              | Apply `ChildPolicy` (reset, stop, abort, or kill) |
+| `Stopped`                 | `Stopped`             | Record child as suspended in Init; apply `ChildPolicy` if needed |
 | `Aborted`                 | `Aborted`             | `record_aborted()` — child permanently done  |
 | `Alive`                   | `Alive`               | Record child as responsive                   |
 | `NoRuleMatched`           | —                     | (not forwarded)                              |
 | `HandledNoTransition`     | —                     | (not forwarded)                              |
 | `Transition(_)`           | —                     | (not forwarded)                              |
-
 Note: `Reset` no longer has a dedicated `DispatchOutcome` variant. Reset
 returns `Started(initial_state)`, which the runtime maps to
 `ChildLifecycleEvent::Started`. The supervisor sees `Started` and knows the
@@ -375,9 +389,9 @@ handler tables — the same unified mechanism as every other actor. There is no
 special "supervisor channel" that bypasses dispatch: child lifecycle events
 arrive as ordinary domain events on the supervisor's mailbox and are routed
 through the supervisor's handler tables, where they trigger policy actions such
-as sending `Start` to restart a failed child, sending `AbortCommand::Abort` for
-cooperative self-termination (`ChildPolicy::Abort`), or invoking
-`R::Kill::kill(abort_handle)` to forcibly remove one (`ChildPolicy::Kill`).
+as sending `Reset` to restart a failed or stopped child, sending
+`AbortCommand::Abort` for cooperative self-termination (`ChildPolicy::Abort`),
+or invoking `R::Kill::kill(abort_handle)` to forcibly remove one (`ChildPolicy::Kill`).
 
 This observer model means actors have **zero knowledge of their supervisor**.
 There is no `supervisor_ref` in actor context, no lifecycle messages in the
@@ -394,16 +408,14 @@ automatically by observing `DispatchOutcome` — no actor code sends them.
 ```rust
 pub enum ChildLifecycleEvent {
     Started { child_id: ActorId },  // child exited Init or was Reset (now operational)
-    Done    { child_id: ActorId },  // child entered a terminal state (is_terminal)
+    Stopped { child_id: ActorId },  // child self-stopped via Guard::Stop or LifecycleCommand::Stop (now in Init, suspended)
     Failed  { child_id: ActorId },  // child entered an error state (is_error)
-    Stopped { child_id: ActorId },  // child was Stopped, now in Init (suspended)
     Aborted { child_id: ActorId },  // child was Aborted, task has ended (cooperative)
     Alive   { child_id: ActorId },  // child responded to Ping (healthy)
 }
 ```
 
-`is_error` takes precedence: if both `is_error` and `is_terminal` return `true`
-for the same state, only `Failed` is reported.
+> **Note**: The `Done` variant has been removed. In the new lifecycle model, actors no longer have terminal states. Instead, a guard returning `Guard::Stop` produces `DispatchOutcome::Stopped`, which the runtime maps to `ChildLifecycleEvent::Stopped`. The supervisor then applies the child's `ChildPolicy` (e.g., `Reset` to restart, `Stop` to suspend).
 
 ## Related Docs
 

@@ -92,7 +92,7 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
 
 | Pattern | When to Use | Example |
 |---------|-------------|---------|
-| Flat FSM | Simple linear progression | Counter: Init → Ready → Done |
+| Flat FSM | Simple linear progression | Counter: Init → Ready → (Guard::Stop) |
 | Composite + Siblings | Related substates with shared logic | Ping: Operating → (Active, Paused) |
 | Hierarchical Cleanup | Parent on_exit cleans up children | Supervisor: Running → [child states] |
 
@@ -219,21 +219,31 @@ pub fn spawn_worker<R: BloxRuntime + SpawnCap>(ctx: &mut impl HasWorkerFactory<R
  └────────────────────────────┬─────────────────────────────────┘
                     ┌─────────┴─────────┐
                     │                   │
-            Restartable reset        Permanent stop
+            Restartable reset        Self-suspend (Stop)
                     │                   │
                     ▼                   ▼
          ┌──────────────────┐    ┌──────────────────┐
-         │ LifecycleCommand │    │ LifecycleCommand │
-         │ ::Reset      │    │ ::Stop           │
-         │ (via dispatch)   │    │ (via dispatch)   │
+         │ LifecycleCommand │    │ Guard::Stop or   │
+         │ ::Reset          │    │ LifecycleCommand │
+         │ (via dispatch)   │    │ ::Stop (dispatch)│
          └──────────────────┘    └──────────────────┘
                     │                   │
                     ▼                   ▼
          ┌──────────────────┐    ┌──────────────────┐
          │ on_exit chain    │    │ on_exit chain    │
-         │ → on_init_entry  │    │ → on_init_entry  │
-         │ → task stays     │    │ → task exits     │
-         │   alive in Init  │    │   permanently    │
+         │ → enters         │    │ → on_init_entry  │
+         │   initial_state  │    │ → task stays     │
+         │   immediately    │    │   alive in Init  │
+         │   (no Init)      │    │   (suspended)    │
+         └──────────────────┘    └──────────────────┘
+                    │                   │
+                    ▼                   ▼
+         ┌──────────────────┐    ┌──────────────────┐
+         │ DispatchOutcome  │    │ DispatchOutcome  │
+         │ ::Started        │    │ ::Stopped        │
+         │ → supervisor     │    │ → supervisor     │
+         │   sees Started   │    │   applies        │
+         │                  │    │   ChildPolicy    │
          └──────────────────┘    └──────────────────┘
 ```
 
@@ -286,7 +296,7 @@ event = "PingPongMsg::Pong(_)"
 actions = ["log_pong_received", "forward_ping"]
 guards = [
   { condition = "results.any_failed()", target = "Error" },
-  { condition = "ctx.round() >= MAX_ROUNDS", target = "Done" },
+  { condition = "ctx.round() >= MAX_ROUNDS", target = "stop" },
   { condition = "ctx.round() == PAUSE_AT_ROUND", target = "Paused" },
   { condition = "_", target = "Active" },  # default / self-transition
 ]
@@ -305,7 +315,7 @@ first identifier's suffix and emits the appropriate `matches` closure:
 | Tuple-variant wildcard | `PingPongMsg::Ping(_)` | `*Msg` shorthand | `msg_payload().is_some_and(\|m\| matches!(m, PingPongMsg::Ping(_)))` |
 | Struct-variant rest | `MyMsg::Timeout { .. }` | `*Msg` shorthand | `msg_payload().is_some_and(\|m\| matches!(m, MyMsg::Timeout { .. }))` |
 | Struct-variant field binding | `MyMsg::Timeout { id }` | `*Msg` shorthand | `msg_payload().is_some_and(\|m\| matches!(m, MyMsg::Timeout { id }))` |
-| Full-event (envelope) | `SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))` | `FullEvent` | `matches!(ev, SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. })))` |
+| Full-event (envelope) | `SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))` | `FullEvent` | `matches!(ev, SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. })))` |
 | Ctrl shorthand | `PeerCtrl::AddPeer(_)` | `*Ctrl` shorthand | `ctrl_payload().is_some_and(\|m\| matches!(m, PeerCtrl::AddPeer(_)))` |
 | Or-pattern | `PeerCtrl::AddPeer(_) \| PeerCtrl::RemovePeer(_)` | `*Ctrl` shorthand | single `ctrl_payload()` closure matching both arms |
 | Wildcard | `_` | `FullEvent` | `matches!(ev, _)` (always true) |
@@ -338,7 +348,7 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 - `*Msg` suffix (e.g. `PingPongMsg::Ping(_)`) → `msg_payload()` closure
 - `*Ctrl` suffix (e.g. `PeerCtrl::AddPeer(_)`) → `ctrl_payload()` closure
 
-**Target vocabulary**: `"StateName"` → `Guard::Transition(LeafState::new(...))`; `"stay"` → `Guard::Stay`; `"reset"` → `Guard::Reset`; `"fail"` → `Guard::Fail`.
+**Target vocabulary**: `"StateName"` → `Guard::Transition(LeafState::new(...))`; `"stay"` → `Guard::Stay`; `"reset"` → `Guard::Reset`; `"stop"` → `Guard::Stop`; `"fail"` → `Guard::Fail`.
 
 ---
 
@@ -375,7 +385,7 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 - [ ] `on_entry` / `on_exit` are infallible (`fn(&mut Ctx)`)
 - [ ] Actions called before guard (side effects in actions, pure checks in guard)
 - [ ] No catch-all rule that manually returns parent — bubbling is automatic
-- [ ] `is_error` takes precedence over `is_terminal`
+- [ ] `is_error` states report `Failed`; actors self-stop via `Guard::Stop` (no `is_terminal`)
 
 ---
 

@@ -301,12 +301,11 @@ classDiagram
 Defined in `bloxide-core::actor`:
 
 ```rust
-/// Run an actor until it reaches a terminal/error state or resets.
+/// Run an actor until it stops, fails, or is aborted.
 ///
-/// Dispatches events until `DispatchOutcome::Started` or `DispatchOutcome::Transition`
-/// enters a terminal or error state, or `DispatchOutcome::Stopped`/`DispatchOutcome::Aborted`
-/// is observed. Suitable for dynamically spawned actors that should exit their
-/// task when their work is done.
+/// Dispatches events until `DispatchOutcome::Stopped`, `DispatchOutcome::Failed`,
+/// or `DispatchOutcome::Aborted` is observed. Suitable for dynamically spawned
+/// actors that should exit their task when their work is done.
 ///
 /// Note: This function does NOT call `machine.start()`. The actor expects lifecycle
 /// commands (including Start) to arrive via the event stream.
@@ -324,17 +323,6 @@ where
             None => return,
         };
         match machine.dispatch(event) {
-            DispatchOutcome::Started(MachineState::State(state))
-                if S::is_terminal(&state) || S::is_error(&state) =>
-            {
-                return;
-            }
-            DispatchOutcome::Transition(MachineState::State(state))
-                if S::is_terminal(&state) || S::is_error(&state) =>
-            {
-                return;
-            }
-            DispatchOutcome::Done(_) => return,
             DispatchOutcome::Failed => return,
             DispatchOutcome::Stopped => return,
             DispatchOutcome::Aborted => return,
@@ -349,7 +337,7 @@ where
 | | `run_actor` | `run_actor_to_completion` | `run_actor_auto_start` |
 |---|---|---|---|
 | Calls `machine.start()` / `handle_lifecycle(Start)` | No — caller is responsible | No — caller must send `Start` via the lifecycle mailbox | Yes — called internally before the run loop |
-| Exit condition | Never (permanent) | Terminal state, error state, Reset, Stopped, Done, or Failed | Same as `run_actor_to_completion` |
+| Exit condition | Never (permanent) | Stopped, Failed, or Aborted | Same as `run_actor_to_completion` |
 | Use case | Permanent actors (Embassy, supervised actors) | Dynamically spawned finite-lifetime actors with a lifecycle mailbox | Unsupervised dynamic actors without a lifecycle mailbox that must auto-start |
 | Supervision | Used by `run_supervised_actor` | Unsupervised by default; use `run_supervised_actor` + `SupervisorControl::RegisterChild` for supervised dynamic actors | Unsupervised; for supervision use `run_supervised_actor` instead |
 
@@ -759,28 +747,25 @@ An actor run with `run_actor_to_completion` exits when any of the following occu
 stateDiagram-v2
     [*] --> Init
     Init --> Running : "Start command received via lifecycle mailbox"
-    Init --> Done : "Start enters terminal state"
-    Init --> Error : "Start enters error state"
     Running --> Running : "domain events (stay / self-transition)"
-    Running --> Done : "transition to terminal state (is_terminal)"
-    Running --> Error : "transition to error state (is_error)"
     Running --> Running : "Guard::Reset → initial_state() (Started)"
-    Done --> [*] : "task exits"
+    Running --> Init : "Guard::Stop → self-suspend (Stopped)"
+    Running --> Error : "Guard::Fail → error_state() (Failed)"
+    Init --> [*] : "Aborted (abort mailbox)"
     Error --> [*] : "task exits"
 ```
 
 | Exit condition | `DispatchOutcome` | Notes |
 |---|---|---|
-| Terminal state | `Started(s)` or `Transition(s)` where `is_terminal(&s)` | Normal completion — task exits cleanly |
-| Error state | `Started(s)` or `Transition(s)` where `is_error(&s)` | Fault — task exits; parent may notice dropped channel |
-| Reset | `Started(initial_state)` | Explicit reset via `Guard::Reset` — goes to `initial_state()`, task stays alive |
-| Domain shutdown | `Started(s)` or `Transition(s)` where `is_terminal(&s)` | Actor defines a `Shutdown` state marked `is_terminal` |
+| Self-stop | `Stopped` | Actor returned `Guard::Stop` — goes to `Init`, task exits |
+| Error state | `Failed` | Actor returned `Guard::Fail` — fault, task exits |
+| Aborted | `Aborted` | `AbortCommand` received on abort mailbox — task exits cooperatively |
 
 ### Shutdown via Domain Messages
 
 An actor can define a graceful shutdown path through its own HSM state topology. For
-example, a worker that accepts a `Shutdown` variant in its message enum transitions to
-a terminal `Done` state:
+example, a worker that accepts a `Shutdown` variant in its message enum can return
+`Guard::Stop` from its guard to self-suspend:
 
 ```rust
 pub enum WorkerMsg {
@@ -789,8 +774,8 @@ pub enum WorkerMsg {
 }
 ```
 
-When the worker reaches its `Done` state (marked `is_terminal`),
-`run_actor_to_completion` sees the terminal `DispatchOutcome` and returns, ending
+When the worker receives `Shutdown` and its guard returns `Guard::Stop`,
+`run_actor_to_completion` sees `DispatchOutcome::Stopped` and returns, ending
 the task. The parent detects the worker is gone because the channel eventually closes
 when all non-self senders drop.
 
@@ -872,9 +857,7 @@ fn worker_processes_task() {
         WorkerMsg::DoWork(DoWork { task_id: 42 }),
     )));
 
-    assert!(WorkerSpec::<TestRuntime>::is_terminal(
-        &machine.current_state().unwrap()
-    ));
+    assert!(machine.current_state().is_init());  // Guard::Stop → Init
     assert_eq!(machine.ctx().task_id, 42);
     assert_eq!(machine.ctx().result, 84);
 }

@@ -22,7 +22,7 @@ The schema is defined in `crates/tools/bloxide-codegen/src/schema.rs` as `BloxCo
 | `[actor]` | `ActorConfig` | Actor name (used for state enum, spec struct, event enum). |
 | `[[messages]]` | `Vec<MessageEnumConfig>` | Message enums with variants, fields, `Copy`, and visibility. |
 | `[event]` | `EventConfig` | Event enum name, generics, `Debug` derive, and mailbox variants. |
-| `[topology]` | `TopologyConfig` | States, parent/initial/terminal/error flags, declarative transitions, and entry/exit actions. |
+| `[topology]` | `TopologyConfig` | States, parent/initial/error flags, declarative transitions, and entry/exit actions. |
 | `[context]` | `ContextConfig` | Context struct name, generics, fields, imports, `extra_where`, `on_init`, and `[[context.uses]]` for composable context crates. |
 | `[mailboxes]` | `MailboxesConfig` | `max_arity` for generated mailbox tuple impls. |
 | `[wiring]` | `WiringConfig` | Runtime, channels, actor instances, connections, and supervisors for the generated binary. |
@@ -94,10 +94,6 @@ initial = true
 [[topology.states]]
 name = "Active"
 
-[[topology.states]]
-name = "AllDone"
-terminal = true
-
 [[topology.transitions]]
 state = "Idle"
 event = "PoolMsg::SpawnWorker(_)"
@@ -118,18 +114,14 @@ actions = ["handle_work_done"]
 
 [[topology.transitions.guards]]
 condition = "ctx.pending() == 0"
-target = "AllDone"
-
-[[topology.entry]]
-state = "AllDone"
-actions = ["log_all_done"]
+target = "stop"
 ```
 
 `[topology]` declares:
 
 - The state hierarchy (`parent`, `composite`, `initial`).
-- Terminal and error flags.
-- Declarative transitions with event patterns, action function paths, guards, and targets (`stay`, `reset`, `fail`, or a state name).
+- Error flags.
+- Declarative transitions with event patterns, action function paths, guards, and targets (`stay`, `reset`, `stop`, `fail`, or a state name).
 - Per-state `entry` and `exit` action lists.
 
 #### `[context]` — context struct
@@ -300,8 +292,7 @@ pub enum PingState {
     Operating = 0u8,
     Active = 1u8,
     Paused = 2u8,
-    Done = 3u8,
-    Error = 4u8,
+    Error = 3u8,
 }
 
 impl ::bloxide_core::topology::StateTopology for PingState { /* ... */ }
@@ -314,7 +305,6 @@ macro_rules! ping_state_handler_table {
             &<$ty>::OPERATING_FNS,
             &<$ty>::ACTIVE_FNS,
             &<$ty>::PAUSED_FNS,
-            &<$ty>::DONE_FNS,
             &<$ty>::ERROR_FNS,
         ]
     };
@@ -381,7 +371,6 @@ where
     );
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = ping_state_handler_table!(Self);
     fn initial_state() -> PingState { PingState::Active }
-    fn is_terminal(state: &PingState) -> bool { ::core::matches!(state, PingState::Done) }
     fn is_error(state: &PingState) -> bool { ::core::matches!(state, PingState::Error) }
     fn on_init_entry(ctx: &mut Self::Ctx) { ctx.behavior = B::default(); }
 }
@@ -483,7 +472,7 @@ Additional validation that should be enforced (some by the Rust compiler after g
 7. **Context field types** — `ctx.rs` must compile; undeclared imports or mismatched types fail at compile time.
 8. **Wiring consistency** — injected constructor params must match the context field types; message types on connections must match the receiving actor's mailbox.
 9. **Initial state** — exactly one leaf state must be marked `initial = true` (or the `initial_state()` function must be supplied).
-10. **Terminal/error exclusivity** — `is_error` takes precedence over `is_terminal`; states should not be both unless the failure semantics are intentional.
+10. **Error state semantics** — `is_error` states report `Failed` to the supervisor; actors self-suspend via `Guard::Stop` (no `is_terminal()` — the old terminal state model has been removed).
 
 ### Extensibility
 
@@ -491,7 +480,7 @@ The TOML schema is designed to be extended without breaking existing codegen:
 
 1. **New field roles** — adding a role such as `config` or `metric` only requires a new branch in `ctx.rs` generation; existing roles are unaffected.
 2. **New `[[context.uses]]` shapes** — the `ContextUse` struct already supports `trait`, `traits`, `field`, `field_type`, `role`, `delegatable`, `impl_macro`, and sub-fields. New optional fields can be added without breaking existing TOML files.
-3. **New topology attributes** — optional flags on `StateConfig` (like `composite`, `terminal`, `error`) can be extended with more optional booleans.
+3. **New topology attributes** — optional flags on `StateConfig` (like `composite`, `error`) can be extended with more optional booleans.
 4. **Custom annotations** — unknown keys in TOML are ignored by serde by default, so experimental annotations can be added to `blox.toml` and consumed by future codegen versions or UI tools without breaking current builds.
 5. **New generated file types** — `generate_all` can emit additional files; `mod.rs` is generated from the file list, so new modules are re-exported automatically.
 

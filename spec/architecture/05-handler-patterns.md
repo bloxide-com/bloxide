@@ -106,7 +106,7 @@ actions = ["log_pong_received", "forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "ctx.round() >= B::Round::from(MAX_ROUNDS)"
-  to = "Done"
+  to = "stop"
 
   [[topology.transitions.guards]]
   condition = "ctx.round() == B::Round::from(PAUSE_AT_ROUND)"
@@ -118,7 +118,7 @@ actions = ["log_pong_received", "forward_ping"]
 
 Use when: context is updated or messages are sent, and the resulting context (or action results) determines the next state.
 
-**Example**: `Ping`'s `Active` state logs the round and sends the next ping (`forward_ping`), then guards on `results.any_failed()` first (error priority), then round counters to decide between `Error`, `Done`, `Paused`, or self-transition back to `Active`.
+**Example**: `Ping`'s `Active` state logs the round and sends the next ping (`forward_ping`), then guards on `results.any_failed()` first (error priority), then round counters to decide between `Error`, `Stop` (self-suspend), `Paused`, or self-transition back to `Active`.
 
 ---
 
@@ -153,7 +153,7 @@ The "Bubble" pattern is the **absence of a rule**. Do not add a catch-all rule t
 
 Use when: a leaf state does not handle an event and wants its parent (or root) to handle it.
 
-**Example**: `Done` state has an empty `transitions: &[]` — all events bubble to root, which silently drops them (or handles any root rules you define).
+**Example**: `Done` state (if declared) has an empty `transitions: &[]` — all events bubble to root, which silently drops them (or handles any root rules you define). Actors that self-suspend via `Guard::Stop` do not need a `Done` state at all.
 
 ---
 
@@ -246,7 +246,7 @@ A composite operating state with an `Active` leaf and a `Paused` leaf. Paused se
 ```text
 [VirtualRoot]
 └── Operating  (composite)
-    ├── Active  (leaf)   ← on_entry sends a ping; on Pong: guard decides Paused/Done/Active
+    ├── Active  (leaf)   ← on_entry sends a ping; on Pong: guard decides Paused/Stop/Active
     └── Paused  (leaf)   ← on_entry sets timer; on Resume: transition to Active
 ```
 
@@ -269,22 +269,24 @@ Use when: the blox initiates an operation and waits for a response before procee
 
 ---
 
-### Terminal with Notification
+### Self-Suspend via Guard::Stop
 
-A final state where the runtime auto-notifies the supervisor via `ChildLifecycleEvent::Done`.
-Set `is_terminal` on the spec so the runtime knows:
+An actor that has completed its work can self-suspend by returning `Guard::Stop` from a transition guard. The engine fires the full exit chain, calls `on_init_entry` (for cleanup), sets the state to `Init`, and returns `DispatchOutcome::Stopped`. The runtime notifies the supervisor via `ChildLifecycleEvent::Stopped`.
 
-```rust
-fn is_terminal(state: &MyState) -> bool {
-    matches!(state, MyState::Done)
-}
+```toml
+[[topology.transitions]]
+state = "Active"
+pattern = "PingPongMsg::Pong(_)"
+actions = ["log_final_pong"]
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round() >= MAX_ROUNDS"
+  to = "stop"
 ```
 
-The `Done` state itself needs only an `on_entry` for any local teardown. The `transitions`
-slice can be empty — all events silently drop. The runtime will send `Reset` to
-trigger the reset code path when the supervisor is ready.
+The `stop` target in a `[[topology.transitions]]` entry produces `Guard::Stop`. The full exit chain is guaranteed, then `on_init_entry` fires for cleanup. The actor sits suspended in `Init`; the run loop stays alive (only `Abort` ends the task). The supervisor sees `Stopped` and can later send `Start` to resume.
 
-**Example**: Ping's `Done` state.
+**Example**: Ping's `Active` state returns `Guard::Stop` when `round >= MAX_ROUNDS`.
 
 ---
 
@@ -342,7 +344,7 @@ actions = ["log_pong", "forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "ctx.round() >= MAX"
-  to = "Done"
+  to = "stop"
 
   [[topology.transitions.guards]]
   to = "Active"
@@ -367,7 +369,7 @@ actions = ["record_child_done"]
 
 In `guards = [{ condition = "...", target = "..." }]` entries, the condition expression sees `ctx` as `&Ctx` (read-only — no mutation possible) and `results` as `&ActionResults`.
 In `actions = ["fn1", "fn2"]` lists, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.
-The `reset` target triggers the full LCA exit chain (leaf → root) followed by `on_init_entry`.
+The `reset` target triggers the full LCA exit chain (leaf → root) followed by `on_entry` for `initial_state()`. The `stop` target triggers the full exit chain plus `on_init_entry` (the actor enters Init).
 
 ## Related Docs
 
