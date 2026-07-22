@@ -27,9 +27,6 @@ message_path = "counter_messages::CounterMsg"
 name = "Ready"
 initial = true
 
-[[topology.states]]
-name = "Done"
-terminal = true
 # --- Declarative transitions ---
 
 [[topology.transitions]]
@@ -40,7 +37,7 @@ actions = ["Self::count_tick"]
 
 [[topology.transitions.guards]]
 condition = "ctx.count() >= B::Count::from(2)"
-target = "Done"
+target = "stop"
 
 [[topology.transitions.guards]]
 condition = "_"

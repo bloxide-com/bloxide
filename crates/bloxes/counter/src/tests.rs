@@ -7,7 +7,7 @@
 mod counter_tests {
     use blox_ctx_ticks::CountsTicks;
     use bloxide_core::lifecycle::LifecycleCommand;
-    use bloxide_core::{spec::MachineSpec, Envelope, MachineState, StateMachine};
+    use bloxide_core::{Envelope, MachineState, StateMachine};
     use counter_messages::{CounterMsg, Tick};
 
     use crate::{CounterCtx, CounterEvent, CounterSpec, CounterState};
@@ -68,7 +68,7 @@ mod counter_tests {
     }
 
     #[test]
-    fn test_tick_reaches_done() {
+    fn test_tick_reaches_stop() {
         let mut machine = make_machine();
         machine.dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start));
 
@@ -79,21 +79,8 @@ mod counter_tests {
             MachineState::State(CounterState::Ready)
         ));
 
-        // Second tick should transition to Done (count >= 2)
+        // Second tick triggers Guard::Stop (count >= 2), machine returns to Init
         machine.dispatch(CounterEvent::Msg(Envelope(0, CounterMsg::Tick(Tick {}))));
-        assert!(matches!(
-            machine.current_state(),
-            MachineState::State(CounterState::Done)
-        ));
-    }
-
-    #[test]
-    fn test_done_is_terminal() {
-        assert!(CounterSpec::<TestBehavior>::is_terminal(
-            &CounterState::Done
-        ));
-        assert!(!CounterSpec::<TestBehavior>::is_terminal(
-            &CounterState::Ready
-        ));
+        assert!(matches!(machine.current_state(), MachineState::Init));
     }
 }

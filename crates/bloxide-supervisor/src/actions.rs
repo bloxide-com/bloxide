@@ -37,12 +37,12 @@ where
     ctx.children.stop_all(ctx.self_id);
 }
 
-/// Handle a Done or Failed child lifecycle event.
+/// Handle a Stopped or Failed child lifecycle event.
 pub fn handle_done_or_failed<R>(ctx: &mut SupervisorCtx<R>, ev: &SupervisorEvent<R>) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { child_id }))
+    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { child_id }))
     | SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { child_id })) = ev
     {
         let from = ctx.self_id();

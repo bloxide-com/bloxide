@@ -15,7 +15,6 @@ mod pool_tests {
         capability::{BloxRuntime, DynamicChannelCap},
         lifecycle::LifecycleCommand,
         messaging::ActorRef,
-        spec::MachineSpec,
         Envelope, MachineState, StateMachine,
     };
     use bloxide_peers::PeerCtrl;
@@ -253,7 +252,7 @@ mod pool_tests {
     }
 
     #[test]
-    fn all_work_done_transitions_to_all_done() {
+    fn all_work_done_transitions_to_stop() {
         let mut h = PoolHarness::new();
         h.start();
 
@@ -269,8 +268,11 @@ mod pool_tests {
         assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
 
         h.dispatch_work_done(2, 2, 4);
-        assert_eq!(h.current_state(), MachineState::State(PoolState::AllDone));
-        assert!(PoolSpec::<TestRuntime>::is_terminal(&PoolState::AllDone));
+        // All workers done → Guard::Stop → machine returns to Init
+        assert!(
+            h.current_state().is_init(),
+            "machine must be in Init after all workers done (Guard::Stop)"
+        );
     }
 
     #[test]
@@ -491,9 +493,12 @@ mod pool_tests {
         assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
         assert_eq!(h.pending(), 1);
 
-        // Worker 3 finishes → AllDone
+        // Worker 3 finishes → Guard::Stop → Init
         h.dispatch_work_done(3, 2, 4);
-        assert_eq!(h.current_state(), MachineState::State(PoolState::AllDone));
+        assert!(
+            h.current_state().is_init(),
+            "machine must be in Init after all workers done (Guard::Stop)"
+        );
         assert_eq!(
             h.machine.ctx().worker_refs.len(),
             3,

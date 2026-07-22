@@ -6,18 +6,16 @@ pub enum PingState {
     Operating = 0u8,
     Active = 1u8,
     Paused = 2u8,
-    Done = 3u8,
-    Error = 4u8,
+    Error = 3u8,
 }
 impl ::bloxide_core::topology::StateTopology for PingState {
-    const STATE_COUNT: usize = 5usize;
+    const STATE_COUNT: usize = 4usize;
     #[inline]
     fn parent(self) -> ::core::option::Option<Self> {
         match self {
             Self::Operating => ::core::option::Option::None,
             Self::Active => ::core::option::Option::Some(Self::Operating),
             Self::Paused => ::core::option::Option::Some(Self::Operating),
-            Self::Done => ::core::option::Option::None,
             Self::Error => ::core::option::Option::None,
         }
     }
@@ -27,7 +25,6 @@ impl ::bloxide_core::topology::StateTopology for PingState {
             Self::Operating => false,
             Self::Active => true,
             Self::Paused => true,
-            Self::Done => true,
             Self::Error => true,
         }
     }
@@ -35,13 +32,11 @@ impl ::bloxide_core::topology::StateTopology for PingState {
         static __PATH_OPERATING: [PingState; 1usize] = [PingState::Operating];
         static __PATH_ACTIVE: [PingState; 2usize] = [PingState::Operating, PingState::Active];
         static __PATH_PAUSED: [PingState; 2usize] = [PingState::Operating, PingState::Paused];
-        static __PATH_DONE: [PingState; 1usize] = [PingState::Done];
         static __PATH_ERROR: [PingState; 1usize] = [PingState::Error];
         match self {
             Self::Operating => &__PATH_OPERATING,
             Self::Active => &__PATH_ACTIVE,
             Self::Paused => &__PATH_PAUSED,
-            Self::Done => &__PATH_DONE,
             Self::Error => &__PATH_ERROR,
         }
     }
@@ -51,8 +46,7 @@ impl ::bloxide_core::topology::StateTopology for PingState {
             Self::Operating => 0usize,
             Self::Active => 1usize,
             Self::Paused => 2usize,
-            Self::Done => 3usize,
-            Self::Error => 4usize,
+            Self::Error => 3usize,
         }
     }
 }
@@ -64,7 +58,6 @@ macro_rules! ping_state_handler_table {
             &<$ty>::OPERATING_FNS,
             &<$ty>::ACTIVE_FNS,
             &<$ty>::PAUSED_FNS,
-            &<$ty>::DONE_FNS,
             &<$ty>::ERROR_FNS,
         ]
     };

@@ -65,9 +65,7 @@ where
                         ::bloxide_core::topology::LeafState::new(PingState::Error),
                     )
                 } else if ctx.round() >= B::Round::from(MAX_ROUNDS) {
-                    ::bloxide_core::transition::Guard::Transition(
-                        ::bloxide_core::topology::LeafState::new(PingState::Done),
-                    )
+                    ::bloxide_core::transition::Guard::Stop
                 } else if ctx.round() == B::Round::from(PAUSE_AT_ROUND) {
                     ::bloxide_core::transition::Guard::Transition(
                         ::bloxide_core::topology::LeafState::new(PingState::Paused),
@@ -99,12 +97,6 @@ where
         }],
     };
     #[allow(unused_variables)]
-    const DONE_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
-        on_entry: &[Self::log_done],
-        on_exit: &[],
-        transitions: &[],
-    };
-    #[allow(unused_variables)]
     const ERROR_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
         on_entry: &[Self::log_error],
         on_exit: &[],
@@ -124,9 +116,6 @@ where
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = ping_state_handler_table!(Self);
     fn initial_state() -> PingState {
         PingState::Active
-    }
-    fn is_terminal(state: &PingState) -> bool {
-        ::core::matches!(state, PingState::Done)
     }
     fn is_error(state: &PingState) -> bool {
         ::core::matches!(state, PingState::Error)

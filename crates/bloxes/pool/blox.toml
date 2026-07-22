@@ -91,7 +91,7 @@ fields = [
 
 [topology]
 spec_imports = [
-    "crate::actions::{handle_work_done, log_all_done}",
+    "crate::actions::handle_work_done",
 ]
 feature_spec_imports = [
     "crate::actions::{handle_spawn_worker, handle_spawn_worker_queued, handle_spawned_worker}",
@@ -107,10 +107,6 @@ name = "Spawning"
 [[topology.states]]
 name = "Active"
 
-[[topology.states]]
-name = "AllDone"
-terminal = true
-
 # --- Declarative transitions ---
 
 # Idle: SpawnWorker → Spawning (dynamic only)
@@ -121,7 +117,7 @@ target = "Spawning"
 actions = ["handle_spawn_worker"]
 feature = "dynamic"
 
-# Spawning: SpawnedWorker reply → Active (or stay Spawning if more spawns in-flight/queued, or AllDone if all workers already finished)
+# Spawning: SpawnedWorker reply → Active (or stay Spawning if more spawns in-flight/queued, or stop if all workers already finished)
 [[topology.transitions]]
 state = "Spawning"
 event = "PoolEvent::SpawnReply(_)"
@@ -135,7 +131,7 @@ target = "Spawning"
 
 [[topology.transitions.guards]]
 condition = "ctx.pending() == 0 && !ctx.worker_refs().is_empty()"
-target = "AllDone"
+target = "stop"
 
 # Spawning: buffer additional SpawnWorker requests while waiting for reply
 [[topology.transitions]]
@@ -169,9 +165,5 @@ actions = ["handle_work_done"]
 
 [[topology.transitions.guards]]
 condition = "ctx.pending() == 0"
-target = "AllDone"
+target = "stop"
 
-# AllDone: entry logs completion
-[[topology.entry]]
-state = "AllDone"
-actions = ["log_all_done"]

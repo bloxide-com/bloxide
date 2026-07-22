@@ -46,13 +46,9 @@ parent = "S21"
 name = "Error"
 error = true
 
-[[topology.states]]
-name = "Done"
-terminal = true
-
 # --- Declarative transitions ---
 
-# S: entry/exit trace, H→S11, I→stay, K→Error, X→Done
+# S: entry/exit trace, H→S11, I→stay, K→Error, X→stop
 [[topology.entry]]
 state = "S"
 actions = ["Self::s_entry"]
@@ -80,7 +76,7 @@ target = "Error"
 [[topology.transitions]]
 state = "S"
 event = "BhsmTstMsg::X(_)"
-target = "Done"
+target = "stop"
 
 # S1: entry/exit trace, C→S211
 [[topology.entry]]
@@ -173,11 +169,3 @@ actions = ["Self::error_entry"]
 state = "Error"
 actions = ["Self::error_exit"]
 
-# Done: entry/exit trace, no transitions
-[[topology.entry]]
-state = "Done"
-actions = ["Self::done_entry"]
-
-[[topology.exit]]
-state = "Done"
-actions = ["Self::done_exit"]

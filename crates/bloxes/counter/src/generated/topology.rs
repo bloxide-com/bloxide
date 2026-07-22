@@ -4,37 +4,31 @@
 #[repr(u8)]
 pub enum CounterState {
     Ready = 0u8,
-    Done = 1u8,
 }
 impl ::bloxide_core::topology::StateTopology for CounterState {
-    const STATE_COUNT: usize = 2usize;
+    const STATE_COUNT: usize = 1usize;
     #[inline]
     fn parent(self) -> ::core::option::Option<Self> {
         match self {
             Self::Ready => ::core::option::Option::None,
-            Self::Done => ::core::option::Option::None,
         }
     }
     #[inline]
     fn is_leaf(self) -> bool {
         match self {
             Self::Ready => true,
-            Self::Done => true,
         }
     }
     fn path(self) -> &'static [Self] {
         static __PATH_READY: [CounterState; 1usize] = [CounterState::Ready];
-        static __PATH_DONE: [CounterState; 1usize] = [CounterState::Done];
         match self {
             Self::Ready => &__PATH_READY,
-            Self::Done => &__PATH_DONE,
         }
     }
     #[inline]
     fn as_index(self) -> usize {
         match self {
             Self::Ready => 0usize,
-            Self::Done => 1usize,
         }
     }
 }
@@ -42,6 +36,6 @@ impl ::bloxide_core::topology::StateTopology for CounterState {
 #[macro_export]
 macro_rules! counter_state_handler_table {
     ($ty:ty) => {
-        &[&<$ty>::READY_FNS, &<$ty>::DONE_FNS]
+        &[&<$ty>::READY_FNS]
     };
 }

@@ -13,9 +13,7 @@ use crate::{
     control::{RegisterChild, SupervisorControl},
     SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState,
 };
-use bloxide_child_management::{
-    AbortCommand, ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy,
-};
+use bloxide_child_management::{AbortCommand, ChildGroup, ChildPolicy, GroupShutdown};
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
 use bloxide_core::{
@@ -30,24 +28,6 @@ fn make_supervisor(
     policies: &[ChildPolicy],
 ) -> (StateMachine<Spec>, Vec<TestReceiver<LifecycleCommand>>) {
     let mut group = ChildGroup::new(shutdown);
-    let mut receivers = Vec::new();
-    for (i, policy) in policies.iter().enumerate() {
-        let id = i + 1;
-        let (actor_ref, rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
-        group.add(id, actor_ref, *policy);
-        receivers.push(rx);
-    }
-    let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
-    let ctx = SupervisorCtx::new(100, group, notify_ref);
-    (StateMachine::new(ctx), receivers)
-}
-
-fn make_supervisor_with_strategy(
-    shutdown: GroupShutdown,
-    policies: &[ChildPolicy],
-    strategy: RestartStrategy,
-) -> (StateMachine<Spec>, Vec<TestReceiver<LifecycleCommand>>) {
-    let mut group = ChildGroup::new(shutdown).with_restart_strategy(strategy);
     let mut receivers = Vec::new();
     for (i, policy) in policies.iter().enumerate() {
         let id = i + 1;
@@ -115,7 +95,7 @@ fn restart_policy_stays_running_on_done() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
     let cmds = receivers[0].drain_payloads();
@@ -136,8 +116,8 @@ fn restart_policy_reset_returns_started_no_separate_start() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    // Child reports Done → supervisor sends Reset
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    // Child reports Stopped → supervisor sends Reset
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     receivers[0].drain_payloads();
 
     // Child reports Started (outcome of Reset going to initial_state)
@@ -161,15 +141,15 @@ fn restart_limit_exhausted_shuts_down() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    // First Done → Reset (restart count 0 < 1)
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    // First Stopped → Reset (restart count 0 < 1)
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     receivers[0].drain_payloads();
     // Child reports Started (Reset went to initial_state)
     dispatch_child_event(&mut machine, ChildLifecycleEvent::Started { child_id: 1 });
     receivers[0].drain_payloads();
 
-    // Second Done → restart count 1 >= max 1 → permanently done → shutdown
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    // Second Stopped → restart count 1 >= max 1 → permanently done → shutdown
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(
         outcome,
         DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
@@ -183,7 +163,7 @@ fn stop_policy_transitions_to_shutting_down() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(
         outcome,
         DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
@@ -199,7 +179,7 @@ fn shutting_down_stops_all_and_completes_when_done() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
 
     for rx in receivers.iter_mut() {
         let cmds = rx.drain_payloads();
@@ -213,13 +193,11 @@ fn shutting_down_stops_all_and_completes_when_done() {
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
-    // When all children are stopped, the guard transitions to the terminal
-    // ShutdownComplete state. The dispatch returns Done (terminal state reached).
+    // When all children are stopped, the guard returns Guard::Stop — the
+    // supervisor stops itself (goes to Init, reports Stopped). run_root
+    // sees DispatchOutcome::Stopped and exits.
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
-    assert_eq!(
-        outcome,
-        DispatchOutcome::Done(MachineState::State(SupervisorState::ShutdownComplete))
-    );
+    assert_eq!(outcome, DispatchOutcome::Stopped);
 }
 
 #[test]
@@ -231,10 +209,10 @@ fn when_all_done_waits_for_all_children() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 2 });
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
     assert_eq!(
         outcome,
         DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
@@ -262,7 +240,7 @@ fn stray_events_absorbed_in_shutting_down() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     for rx in receivers.iter_mut() {
         rx.drain_payloads();
     }
@@ -281,18 +259,16 @@ fn shutdown_completes_when_single_child_stops() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     for rx in receivers.iter_mut() {
         rx.drain_payloads();
     }
 
-    // When the child stops, all children are stopped → guard transitions to
-    // the terminal ShutdownComplete state. The dispatch returns Done.
+    // When the child stops, all children are stopped → guard returns
+    // Guard::Stop — the supervisor stops itself (goes to Init, reports
+    // Stopped). run_root sees DispatchOutcome::Stopped and exits.
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
-    assert_eq!(
-        outcome,
-        DispatchOutcome::Done(MachineState::State(SupervisorState::ShutdownComplete))
-    );
+    assert_eq!(outcome, DispatchOutcome::Stopped);
 
     assert!(machine.ctx().children.all_stopped());
 }
@@ -379,7 +355,7 @@ fn one_for_one_restarts_only_failed_child() {
     drain_start_commands(&mut receivers);
 
     // Fail child 2
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 2 });
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
     // Only child 2 should receive Reset
@@ -411,7 +387,7 @@ fn one_for_all_restarts_all_children() {
     drain_start_commands(&mut receivers);
 
     // Fail child 2
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 2 });
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
     // All children should receive Reset
@@ -448,7 +424,7 @@ fn rest_for_one_restarts_subsequent_children() {
     drain_start_commands(&mut receivers);
 
     // Fail child 2 (index 1)
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 2 });
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
     // Child 1 (index 0) should NOT receive any command
@@ -490,7 +466,7 @@ fn restart_strategy_respects_max_restarts() {
     drain_start_commands(&mut receivers);
 
     // First failure of child 1: both children get Reset (restarts 0 < 1)
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     for rx in receivers.iter_mut() {
         let cmds = rx.drain_payloads();
         assert_eq!(cmds.len(), 1);
@@ -507,7 +483,7 @@ fn restart_strategy_respects_max_restarts() {
     }
 
     // Second failure of child 1: restarts 1 >= max 1 → permanently done → shutdown
-    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(
         outcome,
         DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
@@ -552,7 +528,7 @@ fn aborted_child_marked_permanently_done() {
 #[test]
 fn aborted_child_does_not_trigger_shutdown_check() {
     // Aborted children are marked permanently_done, but the Aborted event
-    // does not trigger the shutdown check (only Done/Failed do). This is
+    // does not trigger the shutdown check (only Stopped/Failed do). This is
     // by design — Abort is cooperative termination, not a lifecycle event
     // that should cascade to shutdown.
     let (mut machine, mut receivers) = make_supervisor(
@@ -565,9 +541,9 @@ fn aborted_child_does_not_trigger_shutdown_check() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    // Child 1 done, child 2 aborted — both are "done" but Aborted doesn't
+    // Child 1 stopped, child 2 aborted — both are "done" but Aborted doesn't
     // trigger the shutdown check, so the supervisor stays in Running.
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Aborted { child_id: 2 });
     assert!(
         matches!(outcome, DispatchOutcome::HandledNoTransition),
@@ -633,8 +609,8 @@ fn register_dynamic_child_during_shutdown_still_starts_child() {
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    // Child 1 reports Done → triggers shutdown (WhenAnyDone)
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    // Child 1 reports Stopped → triggers shutdown (WhenAnyDone)
+    dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
 
     // In ShuttingDown state, dynamic child registration is handled and
     // the child receives a Start (current behavior).

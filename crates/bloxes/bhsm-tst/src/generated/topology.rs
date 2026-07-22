@@ -10,10 +10,9 @@ pub enum BhsmTstState {
     S21 = 4u8,
     S211 = 5u8,
     Error = 6u8,
-    Done = 7u8,
 }
 impl ::bloxide_core::topology::StateTopology for BhsmTstState {
-    const STATE_COUNT: usize = 8usize;
+    const STATE_COUNT: usize = 7usize;
     #[inline]
     fn parent(self) -> ::core::option::Option<Self> {
         match self {
@@ -24,7 +23,6 @@ impl ::bloxide_core::topology::StateTopology for BhsmTstState {
             Self::S21 => ::core::option::Option::Some(Self::S2),
             Self::S211 => ::core::option::Option::Some(Self::S21),
             Self::Error => ::core::option::Option::None,
-            Self::Done => ::core::option::Option::None,
         }
     }
     #[inline]
@@ -37,7 +35,6 @@ impl ::bloxide_core::topology::StateTopology for BhsmTstState {
             Self::S21 => false,
             Self::S211 => true,
             Self::Error => true,
-            Self::Done => true,
         }
     }
     fn path(self) -> &'static [Self] {
@@ -55,7 +52,6 @@ impl ::bloxide_core::topology::StateTopology for BhsmTstState {
             BhsmTstState::S211,
         ];
         static __PATH_ERROR: [BhsmTstState; 1usize] = [BhsmTstState::Error];
-        static __PATH_DONE: [BhsmTstState; 1usize] = [BhsmTstState::Done];
         match self {
             Self::S => &__PATH_S,
             Self::S1 => &__PATH_S1,
@@ -64,7 +60,6 @@ impl ::bloxide_core::topology::StateTopology for BhsmTstState {
             Self::S21 => &__PATH_S21,
             Self::S211 => &__PATH_S211,
             Self::Error => &__PATH_ERROR,
-            Self::Done => &__PATH_DONE,
         }
     }
     #[inline]
@@ -77,7 +72,6 @@ impl ::bloxide_core::topology::StateTopology for BhsmTstState {
             Self::S21 => 4usize,
             Self::S211 => 5usize,
             Self::Error => 6usize,
-            Self::Done => 7usize,
         }
     }
 }
@@ -93,7 +87,6 @@ macro_rules! bhsm_tst_state_handler_table {
             &<$ty>::S21_FNS,
             &<$ty>::S211_FNS,
             &<$ty>::ERROR_FNS,
-            &<$ty>::DONE_FNS,
         ]
     };
 }

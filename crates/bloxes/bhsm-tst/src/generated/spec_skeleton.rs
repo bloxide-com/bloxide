@@ -60,11 +60,7 @@ impl BhsmTstSpec {
                         .is_some_and(|__m| ::core::matches!(__m, BhsmTstMsg::X(_)))
                 },
                 actions: &[],
-                guard: |ctx, results, _ev| {
-                    ::bloxide_core::transition::Guard::Transition(
-                        ::bloxide_core::topology::LeafState::new(BhsmTstState::Done),
-                    )
-                },
+                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stop,
             },
         ],
     };
@@ -195,12 +191,6 @@ impl BhsmTstSpec {
         on_exit: &[Self::error_exit],
         transitions: &[],
     };
-    #[allow(unused_variables)]
-    const DONE_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
-        on_entry: &[Self::done_entry],
-        on_exit: &[Self::done_exit],
-        transitions: &[],
-    };
 }
 impl MachineSpec for BhsmTstSpec {
     type State = BhsmTstState;
@@ -211,9 +201,6 @@ impl MachineSpec for BhsmTstSpec {
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = bhsm_tst_state_handler_table!(Self);
     fn initial_state() -> BhsmTstState {
         BhsmTstState::S11
-    }
-    fn is_terminal(state: &BhsmTstState) -> bool {
-        ::core::matches!(state, BhsmTstState::Done)
     }
     fn is_error(state: &BhsmTstState) -> bool {
         ::core::matches!(state, BhsmTstState::Error)

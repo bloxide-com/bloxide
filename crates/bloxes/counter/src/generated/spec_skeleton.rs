@@ -28,20 +28,12 @@ impl<B: CountsTicks + 'static> CounterSpec<B> {
             actions: &[Self::count_tick],
             guard: |ctx, results, _ev| {
                 if ctx.count() >= B::Count::from(2) {
-                    ::bloxide_core::transition::Guard::Transition(
-                        ::bloxide_core::topology::LeafState::new(CounterState::Done),
-                    )
+                    ::bloxide_core::transition::Guard::Stop
                 } else {
                     ::bloxide_core::transition::Guard::Stay
                 }
             },
         }],
-    };
-    #[allow(unused_variables)]
-    const DONE_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
-        on_entry: &[],
-        on_exit: &[],
-        transitions: &[],
     };
 }
 impl<B: CountsTicks + 'static> MachineSpec for CounterSpec<B> {
@@ -53,9 +45,6 @@ impl<B: CountsTicks + 'static> MachineSpec for CounterSpec<B> {
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = counter_state_handler_table!(Self);
     fn initial_state() -> CounterState {
         CounterState::Ready
-    }
-    fn is_terminal(state: &CounterState) -> bool {
-        ::core::matches!(state, CounterState::Done)
     }
     fn is_error(_state: &CounterState) -> bool {
         false

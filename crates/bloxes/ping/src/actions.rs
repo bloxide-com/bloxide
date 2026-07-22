@@ -40,6 +40,7 @@ where
         bloxide_log::blox_log_info!(ctx.self_id(), "round {} — sending Ping", ctx.round());
     }
 
+    #[allow(dead_code)]
     pub(crate) fn log_done(ctx: &mut PingCtx<R, B>) {
         bloxide_log::blox_log_info!(ctx.self_id(), "done after {} rounds", ctx.round());
     }

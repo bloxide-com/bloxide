@@ -106,7 +106,7 @@ pub struct TransitionConfig {
     pub state: String,
     /// Event pattern, e.g. "PingPongMsg::Ping(_)" or "PingPongMsg::A(_) | PingPongMsg::B(_)".
     pub event: String,
-    /// Target: a state name, or "stay", "reset", "fail".
+    /// Target: a state name, or "stay", "reset", "stop", "fail".
     pub target: String,
     /// Action functions to call (function paths, e.g. "Self::forward_ping" or "send_pong").
     #[serde(default)]
@@ -125,7 +125,7 @@ pub struct TransitionConfig {
 pub struct GuardConfig {
     /// Guard condition expression, e.g. "ctx.round() >= MAX_ROUNDS".
     pub condition: String,
-    /// Target when guard passes: a state name, or "stay", "reset", "fail".
+    /// Target when guard passes: a state name, or "stay", "reset", "stop", "fail".
     pub target: String,
 }
 

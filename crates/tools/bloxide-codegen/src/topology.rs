@@ -390,7 +390,7 @@ pub fn generate(
     }
 
     // Validate transition targets reference valid states
-    let valid_targets = ["stay", "reset", "fail"];
+    let valid_targets = ["stay", "reset", "stop", "fail"];
     for trans in &config.transitions {
         if !name_to_index.contains_key(&trans.state) {
             anyhow::bail!("transition references unknown state '{}'", trans.state);

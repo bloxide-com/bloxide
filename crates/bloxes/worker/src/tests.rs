@@ -11,8 +11,7 @@ mod worker_tests {
     use blox_ctx_current_task::HasCurrentTask;
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::{
-        capability::DynamicChannelCap, messaging::ActorRef, spec::MachineSpec, Envelope,
-        MachineState, StateMachine,
+        capability::DynamicChannelCap, messaging::ActorRef, Envelope, MachineState, StateMachine,
     };
     use bloxide_peers::{AddPeer, HasPeers, PeerCtrl};
     use bloxide_test_runtime::{TestReceiver, TestRuntime};
@@ -117,18 +116,20 @@ mod worker_tests {
     }
 
     #[test]
-    fn do_work_transitions_to_done() {
+    fn do_work_transitions_to_stop() {
         let mut h = WorkerHarness::new();
         h.start();
         h.dispatch_do_work(7);
-        assert_eq!(h.current_state(), MachineState::State(WorkerState::Done));
-        assert!(WorkerSpec::<TestRuntime, TestBehavior>::is_terminal(
-            &WorkerState::Done
-        ));
+        // Guard::Stop fires after process_work, log_done, do_broadcast,
+        // do_notify_pool — machine returns to Init.
+        assert!(
+            h.current_state().is_init(),
+            "machine must be in Init after DoWork (Guard::Stop)"
+        );
     }
 
     #[test]
-    fn done_notifies_pool_with_correct_result() {
+    fn stop_notifies_pool_with_correct_result() {
         let mut h = WorkerHarness::new();
         h.start();
         h.dispatch_do_work(5);
@@ -177,7 +178,10 @@ mod worker_tests {
         assert_eq!(h.peer_count(), 2);
 
         h.dispatch_do_work(3);
-        assert_eq!(h.current_state(), MachineState::State(WorkerState::Done));
+        assert!(
+            h.current_state().is_init(),
+            "machine must be in Init after DoWork (Guard::Stop)"
+        );
 
         let p1_msgs = peer1_rx.drain_payloads();
         let p2_msgs = peer2_rx.drain_payloads();

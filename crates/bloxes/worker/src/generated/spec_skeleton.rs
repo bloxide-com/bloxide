@@ -42,12 +42,13 @@ impl<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask + 'static> Worke
                     __ev.msg_payload()
                         .is_some_and(|__m| ::core::matches!(__m, WorkerMsg::DoWork(_)))
                 },
-                actions: &[Self::process_work],
-                guard: |ctx, results, _ev| {
-                    ::bloxide_core::transition::Guard::Transition(
-                        ::bloxide_core::topology::LeafState::new(WorkerState::Done),
-                    )
-                },
+                actions: &[
+                    Self::process_work,
+                    Self::log_done,
+                    Self::do_broadcast,
+                    Self::do_notify_pool,
+                ],
+                guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stop,
             },
             ::bloxide_core::transition::StateRule {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
@@ -59,12 +60,6 @@ impl<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask + 'static> Worke
                 guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,
             },
         ],
-    };
-    #[allow(unused_variables)]
-    const DONE_FNS: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
-        on_entry: &[Self::log_done, Self::do_broadcast, Self::do_notify_pool],
-        on_exit: &[],
-        transitions: &[],
     };
 }
 impl<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask + 'static> MachineSpec
@@ -80,9 +75,6 @@ impl<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask + 'static> Machi
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = worker_state_handler_table!(Self);
     fn initial_state() -> WorkerState {
         WorkerState::Waiting
-    }
-    fn is_terminal(state: &WorkerState) -> bool {
-        ::core::matches!(state, WorkerState::Done)
     }
     fn is_error(_state: &WorkerState) -> bool {
         false

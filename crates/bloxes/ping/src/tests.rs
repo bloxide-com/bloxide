@@ -245,7 +245,7 @@ mod ping_tests {
     }
 
     #[test]
-    fn done_after_max_rounds() {
+    fn stop_after_max_rounds() {
         let mut h = PingHarness::new();
         run_through_pause(&mut h);
 
@@ -255,10 +255,12 @@ mod ping_tests {
         }
         h.send_pong();
 
-        assert_eq!(h.current_state(), MachineState::State(PingState::Done));
+        // Guard::Stop fires when round >= MAX_ROUNDS, returning the machine
+        // to Init (suspended). The transition actions (log_pong_received,
+        // forward_ping) run before the guard, so the last ping is still sent.
         assert!(
-            PingSpec::<TestRuntime, TestBehavior>::is_terminal(&PingState::Done),
-            "is_terminal must return true for PingState::Done"
+            h.current_state().is_init(),
+            "machine must be in Init after Guard::Stop at MAX_ROUNDS"
         );
     }
 
@@ -271,10 +273,6 @@ mod ping_tests {
         assert!(
             !PingSpec::<TestRuntime, TestBehavior>::is_error(&PingState::Active),
             "is_error must return false for non-error states"
-        );
-        assert!(
-            !PingSpec::<TestRuntime, TestBehavior>::is_error(&PingState::Done),
-            "is_error must return false for terminal states"
         );
     }
 
@@ -289,7 +287,10 @@ mod ping_tests {
         }
         h.send_pong();
 
-        assert_eq!(h.current_state(), MachineState::State(PingState::Done));
+        assert!(
+            h.current_state().is_init(),
+            "machine must be in Init after Guard::Stop at MAX_ROUNDS"
+        );
 
         h.terminate();
 
@@ -304,9 +305,10 @@ mod ping_tests {
             "machine must be in Active (initial_state) after reset"
         );
 
-        // Round is incremented by Active::on_entry (not reset — on_init_entry
-        // does not fire on Reset per the four-level lifecycle spec).
-        assert_eq!(h.ctx().round(), u32::from(MAX_ROUNDS) + 1);
+        // Round is incremented by Active::on_entry after Reset from Init.
+        // Guard::Stop fired on_init_entry which resets behavior (round=0),
+        // then Reset goes to Active where on_entry increments to 1.
+        assert_eq!(h.ctx().round(), 1);
     }
 
     #[test]

@@ -56,12 +56,6 @@ impl BhsmTstSpec {
     pub(crate) fn error_exit(_ctx: &mut BhsmTstCtx) {
         trace!("error-EXIT;");
     }
-    pub(crate) fn done_entry(_ctx: &mut BhsmTstCtx) {
-        trace!("done-ENTRY;");
-    }
-    pub(crate) fn done_exit(_ctx: &mut BhsmTstCtx) {
-        trace!("done-EXIT;");
-    }
 
     pub(crate) fn s_i(_ctx: &mut BhsmTstCtx, _ev: &BhsmTstEvent) -> ActionResult {
         trace!("s-I;");

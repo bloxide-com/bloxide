@@ -5,7 +5,9 @@
 //! - `Idle` (initial): awaiting the first `SpawnWorker`
 //! - `Spawning`: sent a spawn request to the supervisor, awaiting `SpawnedWorker` reply
 //! - `Active`: workers are running; accepts more `SpawnWorker` and `WorkDone`
-//! - `AllDone` (terminal): all workers have reported completion
+//!
+//! When all workers have reported completion (`pending == 0`), the transition
+//! guard returns `Guard::Stop`, returning the machine to `Init`.
 #![no_std]
 extern crate alloc;
 

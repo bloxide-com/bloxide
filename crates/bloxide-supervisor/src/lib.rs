@@ -23,7 +23,7 @@ mod tests;
 // Re-export child-management types from bloxide-child-management
 pub use bloxide_child_management::{
     AbortCommand, ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup,
-    HasChildGroupMut, HasPending, RestartStrategy,
+    HasChildGroupMut, HasPending,
 };
 
 // Re-export supervisor-specific types from local modules

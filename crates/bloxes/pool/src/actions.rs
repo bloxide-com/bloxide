@@ -183,6 +183,7 @@ pub fn handle_work_done<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEvent<R>)
     ActionResult::Ok
 }
 
+#[allow(dead_code)]
 pub fn log_all_done<R: BloxRuntime>(ctx: &mut PoolCtx<R>) {
     bloxide_log::blox_log_info!(
         ctx.self_id(),

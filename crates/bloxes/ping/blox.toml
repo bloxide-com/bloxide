@@ -74,10 +74,6 @@ name = "Paused"
 parent = "Operating"
 
 [[topology.states]]
-name = "Done"
-terminal = true
-
-[[topology.states]]
 name = "Error"
 error = true
 
@@ -106,7 +102,7 @@ target = "Error"
 
 [[topology.transitions.guards]]
 condition = "ctx.round() >= B::Round::from(MAX_ROUNDS)"
-target = "Done"
+target = "stop"
 
 [[topology.transitions.guards]]
 condition = "ctx.round() == B::Round::from(PAUSE_AT_ROUND)"
@@ -126,11 +122,6 @@ state = "Paused"
 event = "PingPongMsg::Resume(_)"
 target = "Active"
 actions = ["Self::forward_ping"]
-
-# Done: entry logs completion
-[[topology.entry]]
-state = "Done"
-actions = ["Self::log_done"]
 
 # Error: entry logs error
 [[topology.entry]]

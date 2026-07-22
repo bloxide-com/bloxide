@@ -3,7 +3,10 @@
 //!
 //! States:
 //! - `Waiting` (initial): accumulates peer introductions, awaits `DoWork`
-//! - `Done` (terminal): broadcasts result to peers, notifies pool
+//!
+//! When `DoWork` is received, the transition actions process the work,
+//! broadcast the result to peers, and notify the pool. The guard then
+//! returns `Guard::Stop`, returning the machine to `Init`.
 //!
 //! The ctrl stream (`PeerCtrl<WorkerMsg, R>`) is polled at higher priority
 //! than the domain stream (`WorkerMsg`) so all `AddPeer` messages are

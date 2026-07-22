@@ -41,9 +41,6 @@ impl<R: BloxRuntime> MachineSpec for PongSpec<R> {
     fn initial_state() -> PongState {
         PongState::Ready
     }
-    fn is_terminal(_state: &PongState) -> bool {
-        false
-    }
     fn is_error(_state: &PongState) -> bool {
         false
     }

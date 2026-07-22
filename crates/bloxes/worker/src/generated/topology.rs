@@ -4,37 +4,31 @@
 #[repr(u8)]
 pub enum WorkerState {
     Waiting = 0u8,
-    Done = 1u8,
 }
 impl ::bloxide_core::topology::StateTopology for WorkerState {
-    const STATE_COUNT: usize = 2usize;
+    const STATE_COUNT: usize = 1usize;
     #[inline]
     fn parent(self) -> ::core::option::Option<Self> {
         match self {
             Self::Waiting => ::core::option::Option::None,
-            Self::Done => ::core::option::Option::None,
         }
     }
     #[inline]
     fn is_leaf(self) -> bool {
         match self {
             Self::Waiting => true,
-            Self::Done => true,
         }
     }
     fn path(self) -> &'static [Self] {
         static __PATH_WAITING: [WorkerState; 1usize] = [WorkerState::Waiting];
-        static __PATH_DONE: [WorkerState; 1usize] = [WorkerState::Done];
         match self {
             Self::Waiting => &__PATH_WAITING,
-            Self::Done => &__PATH_DONE,
         }
     }
     #[inline]
     fn as_index(self) -> usize {
         match self {
             Self::Waiting => 0usize,
-            Self::Done => 1usize,
         }
     }
 }
@@ -42,6 +36,6 @@ impl ::bloxide_core::topology::StateTopology for WorkerState {
 #[macro_export]
 macro_rules! worker_state_handler_table {
     ($ty:ty) => {
-        &[&<$ty>::WAITING_FNS, &<$ty>::DONE_FNS]
+        &[&<$ty>::WAITING_FNS]
     };
 }
