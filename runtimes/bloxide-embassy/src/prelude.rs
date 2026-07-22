@@ -1,7 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 pub use crate::{
-    run_actor, run_actor_auto_start, run_root, run_supervised_actor, ChildGroupBuilder,
-    EmbassyRuntime, EmbassySender, EmbassyStream,
+    run, run_actor_to_completion, run_root, ChildGroupBuilder, EmbassyRuntime, EmbassySender,
+    EmbassyStream, RunConfig,
 };
 /// Convenience re-exports for Embassy-based wiring sites.
 ///

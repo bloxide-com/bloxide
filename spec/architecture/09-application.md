@@ -54,7 +54,7 @@ flowchart TD
     E["ChildGroupBuilder::new(strategy)\nspawn_child! for each supervised actor"] --> F
     F["builder.finish()\nreturns ChildGroup + sup_notify_rx + sup_control_rx"] --> G
     G["sup_machine.start()\nRunning::on_entry calls start_children"] --> H
-    H["spawner.must_spawn for supervisor\nrun_supervised_actor tasks running"]
+    H["spawner.must_spawn for supervisor\nrun (with RunConfig::supervised) tasks running"]
 ```
 
 Canonical wiring order matches [04-static-wiring.md](04-static-wiring.md): build refs -> contexts -> machines -> supervised child group -> supervisor.

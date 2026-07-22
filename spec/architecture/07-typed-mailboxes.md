@@ -96,13 +96,13 @@ priority over all others. Order streams by descending urgency.
 
 ## Supervised Run Loop
 
-For supervised actors, `run_supervised_actor` polls the internal lifecycle channel
+For supervised actors, `run` with `RunConfig::supervised` polls the internal lifecycle channel
 **before** domain mailboxes. Domain events are only polled when no lifecycle command
 is pending. The actor never sees lifecycle commands as domain events.
 
 ```rust
 // SupervisedRunLoop trait method (implemented by the runtime crate):
-async fn run_supervised_actor<S: MachineSpec + 'static>(
+async fn run (with RunConfig::supervised)<S: MachineSpec + 'static>(
     machine: StateMachine<S>,
     domain_mailboxes: S::Mailboxes<Self>,
     lifecycle_stream: Self::Stream<LifecycleCommand>,

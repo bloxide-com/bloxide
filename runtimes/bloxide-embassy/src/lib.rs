@@ -7,9 +7,8 @@ extern crate alloc;
 extern crate std;
 
 use bloxide_core::{mailboxes::Mailboxes, spec::MachineSpec, StateMachine};
-use core::future::poll_fn;
 
-pub use bloxide_core::{run_actor, run_actor_auto_start, run_actor_to_completion};
+pub use bloxide_core::run_actor_to_completion;
 
 #[doc(hidden)]
 pub use bloxide_macros::channels as __channels_proc_macro;
@@ -24,7 +23,7 @@ pub mod timer;
 
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{EmbassySender, EmbassyStream, EmbassyTrySendError};
-pub use supervision::{run_supervised_actor, ChildGroupBuilder};
+pub use supervision::{run, run_supervised_actor, ChildGroupBuilder, RunConfig};
 
 // ── EmbassyRuntime ────────────────────────────────────────────────────────────
 
@@ -68,7 +67,13 @@ macro_rules! actor_task {
                 $crate::EmbassyRuntime,
             >,
         ) {
-            $crate::run_actor(machine, mailboxes).await;
+            $crate::run(
+                machine,
+                mailboxes,
+                $crate::RunConfig::unsupervised(),
+                0,
+            )
+            .await;
         }
     };
 }
@@ -189,32 +194,14 @@ macro_rules! spawn_child {
 
 // ── Actor run loop ────────────────────────────────────────────────────────────
 
-/// Run the program's top-level supervisor.
+/// Run the program's top-level supervisor (root actor).
 ///
-/// Like `run_actor`, dispatches events from `mailboxes` to `machine` in
-/// run-to-completion order. When `DispatchOutcome::Aborted` is observed,
-/// the function returns so the caller can terminate. `DispatchOutcome::Stopped`
-/// does NOT exit the loop — the actor stays alive in Init, waiting for
-/// `Start` or `Reset` from the supervisor.
-pub async fn run_root<S, M>(mut machine: StateMachine<S>, mut mailboxes: M)
+/// Thin wrapper around [`crate::run`] with [`RunConfig::root`] — no lifecycle
+/// stream, no supervisor notify. Exits on `Stopped` or `Aborted`.
+pub async fn run_root<S, M>(machine: StateMachine<S>, mailboxes: M)
 where
     S: MachineSpec + 'static,
     M: Mailboxes<S::Event>,
 {
-    use bloxide_core::engine::DispatchOutcome;
-    loop {
-        let event = match poll_fn(|cx| mailboxes.poll_next(cx)).await {
-            Some(event) => event,
-            None => return,
-        };
-        match machine.dispatch(event) {
-            DispatchOutcome::Stopped | DispatchOutcome::Aborted => return,
-            _ => {
-                // Yield to the executor after each non-terminal dispatch
-                // to prevent busy-looping when messages are continuously
-                // queued (e.g. child lifecycle events arriving in bursts).
-                embassy_futures::yield_now().await;
-            }
-        }
-    }
+    crate::run(machine, mailboxes, RunConfig::root(), 0).await;
 }

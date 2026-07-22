@@ -245,7 +245,7 @@ stateDiagram-v2
 
     Running --> Running : "Stopped/Failed [policy == Reset]"
     Running --> ShuttingDown : "Stopped/Failed [GroupShutdown trigger met]"
-    ShuttingDown --> [*] : "Guard::Stop (all children Stopped) → Init, run_root sees Stopped and returns"
+    ShuttingDown --> [*] : "Guard::Stop (all children Stopped) → Init, run (with RunConfig::root) sees Stopped and returns"
 ```
 
 When a child reports `Stopped` or `Failed`:
@@ -253,7 +253,7 @@ When a child reports `Stopped` or `Failed`:
 2. If the result is `ChildAction::Continue`, the supervisor stays in `Running` (Reset was sent, or other children still running under `WhenAllDone`).
 3. If the result is `ChildAction::BeginShutdown`, the supervisor transitions to `ShuttingDown`.
 
-In `ShuttingDown`, the supervisor sends `Stop` to all children, counts `Stopped` events, and self-stops via `Guard::Stop` when all children have stopped. The supervisor returns `DispatchOutcome::Stopped`, and `run_root` sees `Stopped` and returns — the supervisor task exits cleanly.
+In `ShuttingDown`, the supervisor sends `Stop` to all children, counts `Stopped` events, and self-stops via `Guard::Stop` when all children have stopped. The supervisor returns `DispatchOutcome::Stopped`, and `run` with `RunConfig::root` sees `Stopped` and returns — the supervisor task exits cleanly.
 
 ### `SupervisorCtx<R>`
 
@@ -510,7 +510,7 @@ The runtime polls three streams in priority order:
 
 After every dispatch, the runtime inspects `DispatchOutcome` and sends the corresponding `ChildLifecycleEvent` to the supervisor automatically. The `Aborted` outcome is synthesized by the run loop itself (not by `dispatch()`), since `Abort` bypasses the dispatch pipeline.
 
-The dynamic-runtime wrapper is `run_supervised_actor_with_abort` (in `runtimes/bloxide-tokio/src/supervision.rs`) — renamed from the old `run_supervised_actor_with_kill` to reflect that it listens on the abort mailbox rather than a kill mailbox. (The Embassy runtime uses a static equivalent.)
+The dynamic-runtime wrapper is `run` with `RunConfig::supervised_with_abort` (in `runtimes/bloxide-tokio/src/supervision.rs`) — renamed from the old `run (with RunConfig::supervised)_with_kill` to reflect that it listens on the abort mailbox rather than a kill mailbox. (The Embassy runtime uses a static equivalent.)
 
 ## `SupervisorEvent` and `SupervisorControl`
 

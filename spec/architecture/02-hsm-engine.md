@@ -475,7 +475,7 @@ Actors can self-suspend by returning `Guard::Stop` from any transition rule. The
 
 The runtime emits `ChildLifecycleEvent::Stopped { child_id }` to the supervisor. The actor's run loop stays alive in Init — only `Abort` ends the task. The supervisor can later send `Start` to resume the actor from `initial_state()`.
 
-This is how supervisors self-stop: when all children have stopped, the supervisor returns `Guard::Stop`, reports `Stopped` to its own supervisor (or `run_root` sees `Stopped` and returns), and the task exits cleanly.
+This is how supervisors self-stop: when all children have stopped, the supervisor returns `Guard::Stop`, reports `Stopped` to its own supervisor (or `run` with `RunConfig::root` sees `Stopped` and returns), and the task exits cleanly.
 
 ## Topology Invariants
 

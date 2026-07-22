@@ -310,8 +310,10 @@ Defined in `bloxide-core::actor`:
 /// Note: This function does NOT call `machine.start()`. The actor expects lifecycle
 /// commands (including Start) to arrive via the event stream.
 ///
-/// For unsupervised actors without a lifecycle mailbox, use `run_actor_auto_start`
-/// instead, which auto-starts before running.
+///
+/// This is the **unsupervised** runner used by the test runtime. The Tokio and
+/// Embassy runtimes each provide a unified `run()` function that handles both
+/// supervised and unsupervised execution with optional lifecycle/abort streams.
 pub async fn run_actor_to_completion<S, M>(mut machine: StateMachine<S>, mut mailboxes: M)
 where
     S: MachineSpec + 'static,
@@ -332,31 +334,31 @@ where
 }
 ```
 
-### `run_actor_to_completion` vs `run_actor` vs `run_actor_auto_start`
+### Unified `run()` with `RunConfig`
 
-| | `run_actor` | `run_actor_to_completion` | `run_actor_auto_start` |
-|---|---|---|---|
-| Calls `machine.start()` / `handle_lifecycle(Start)` | No — caller is responsible | No — caller must send `Start` via the lifecycle mailbox | Yes — called internally before the run loop |
-| Exit condition | Never (permanent) | Stopped, Failed, or Aborted | Same as `run_actor_to_completion` |
-| Use case | Permanent actors (Embassy, supervised actors) | Dynamically spawned finite-lifetime actors with a lifecycle mailbox | Unsupervised dynamic actors without a lifecycle mailbox that must auto-start |
-| Supervision | Used by `run_supervised_actor` | Unsupervised by default; use `run_supervised_actor` + `SupervisorControl::RegisterChild` for supervised dynamic actors | Unsupervised; for supervision use `run_supervised_actor` instead |
+Each runtime (Tokio, Embassy) provides a single `run()` function that replaces the
+former `run_actor`, `run_actor_auto_start`, `run_supervised_actor`,
+`run` with `RunConfig::supervised_with_abort`, and `run` with `RunConfig::root` entry points. The behavior is
+selected by passing a `RunConfig`:
 
-`run_actor_to_completion` does NOT call `machine.start()` — the actor expects
-the `Start` lifecycle command to arrive via its event stream (typically through a
-lifecycle mailbox). The wiring binary must therefore send `Start` to the spawned
-child, or use `run_actor_auto_start` if the actor has no lifecycle mailbox and
-should start immediately. When you need supervision for dynamic children, use
-`run_supervised_actor` and register each child through the supervisor
-control-plane channel.
+| `RunConfig` method | `lifecycle` | `abort` | `supervisor_notify` | `auto_start` | `exit_on_stop` | Use case |
+|---|---|---|---|---|---|---|
+| `root()` | None | None | None | No | Yes | Top-level supervisor / root actor |
+| `supervised(..)` | Some | None | Some | No | No | Supervised child (no kill capability) |
+| `supervised_with_abort(..)` | Some | Some | Some | No | No | Supervised child with kill capability |
+| `unsupervised()` | None | None | None | Yes | Yes | Fire-and-forget dynamic actor |
 
-### `run_actor_auto_start`
+**Supervised actors stay alive on `Stopped`** — the actor self-suspends to Init
+and the task stays alive, waiting for a future `Start` or `Reset` from the
+supervisor. Only `Aborted`, `Failed`, or stream-closed (`None`) exit the loop.
 
-For unsupervised actors that have no lifecycle mailbox and need to start
-immediately on spawn, use `run_actor_auto_start` (also in `bloxide-core::actor`).
-It calls `machine.handle_lifecycle(LifecycleCommand::Start)` to transition out of
-`Init` before entering the same run-to-completion loop as `run_actor_to_completion`.
-This is the right choice for fire-and-forget dynamic actors whose spawner does not
-retain a lifecycle `ActorRef` for them.
+**Root/unsupervised actors exit on `Stopped`** — the loop returns, allowing the
+caller to terminate.
+
+`run_actor_to_completion` (in `bloxide-core`) remains as a minimal unsupervised
+runner for the test runtime — it does NOT call `machine.start()` and exits on
+`Stopped`, `Failed`, or `Aborted`. For production use, prefer the runtime's
+`run()` with `RunConfig::unsupervised()` which handles auto-start.
 
 ---
 
@@ -938,7 +940,7 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
 
 - **Supervised dynamic actors — implemented via explicit registration** — dynamic
   children can be supervised by using the supervisor control-plane protocol:
-  1. Spawn the child with `run_supervised_actor(...)` and a per-child lifecycle channel.
+  1. Spawn the child with `run (with RunConfig::supervised)(...)` and a per-child lifecycle channel.
   2. Send `SupervisorControl::RegisterChild(RegisterChild { ... })` to the supervisor.
   3. Supervisor adds the child to `ChildGroup` and sends `Start`.
   On Tokio, prefer `spawn_dynamic_supervised_child(...)` or the

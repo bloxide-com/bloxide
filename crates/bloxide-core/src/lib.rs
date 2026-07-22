@@ -28,7 +28,7 @@ pub mod transition;
 mod tests;
 
 pub use accessor::HasSelfId;
-pub use actor::{run_actor, run_actor_auto_start, run_actor_to_completion};
+pub use actor::run_actor_to_completion;
 pub use capability::{BloxRuntime, DynamicChannelCap, KillCapability, NoKill, StaticChannelCap};
 pub use engine::{DispatchOutcome, MachineState, StateMachine};
 pub use event_tag::{EventTag, LifecycleEvent, LIFECYCLE_TAG, WILDCARD_TAG};

@@ -7,25 +7,6 @@ use crate::{
     spec::MachineSpec,
 };
 
-/// Run an actor forever (unsupervised, non-terminating).
-///
-/// Selects the next event from `mailboxes` (in priority order — index 0 wins
-/// on ties) and dispatches it to `machine` (run-to-completion semantics).
-/// This function never returns under normal operation.
-pub async fn run_actor<S, M>(mut machine: StateMachine<S>, mut mailboxes: M)
-where
-    S: MachineSpec + 'static,
-    M: Mailboxes<S::Event>,
-{
-    loop {
-        let event = match poll_fn(|cx| mailboxes.poll_next(cx)).await {
-            Some(event) => event,
-            None => return,
-        };
-        machine.dispatch(event);
-    }
-}
-
 /// Run an actor until it reaches an error state or stops.
 ///
 /// Dispatches events until `DispatchOutcome::Failed` or `DispatchOutcome::Stopped`
@@ -35,58 +16,14 @@ where
 /// Note: This function does NOT call `machine.start()`. The actor expects lifecycle
 /// commands (including Start) to arrive via the event stream.
 ///
-/// For unsupervised actors without a lifecycle mailbox, use `run_actor_auto_start`
-/// instead, which auto-starts before running.
+/// This is the **unsupervised** runner used by the test runtime. The Tokio and
+/// Embassy runtimes each provide a unified `run()` function that handles both
+/// supervised and unsupervised execution with optional lifecycle/abort streams.
 pub async fn run_actor_to_completion<S, M>(mut machine: StateMachine<S>, mut mailboxes: M)
 where
     S: MachineSpec + 'static,
     M: Mailboxes<S::Event>,
 {
-    loop {
-        let event = match poll_fn(|cx| mailboxes.poll_next(cx)).await {
-            Some(event) => event,
-            None => return,
-        };
-        match machine.dispatch(event) {
-            DispatchOutcome::Started(MachineState::State(state))
-                if S::is_error(&state) =>
-            {
-                return;
-            }
-            DispatchOutcome::Transition(MachineState::State(state))
-                if S::is_error(&state) =>
-            {
-                return;
-            }
-            DispatchOutcome::Failed => return,
-            DispatchOutcome::Stopped => return,
-            _ => {}
-        }
-    }
-}
-
-/// Run an unsupervised actor, auto-starting it first.
-///
-/// For actors that don't have a lifecycle mailbox and need to start immediately.
-/// Calls `handle_lifecycle(Start)` to transition from Init, then runs like
-/// `run_actor_to_completion`.
-pub async fn run_actor_auto_start<S, M>(mut machine: StateMachine<S>, mut mailboxes: M)
-where
-    S: MachineSpec + 'static,
-    M: Mailboxes<S::Event>,
-{
-    use crate::lifecycle::LifecycleCommand;
-
-    // Auto-start the actor
-    let outcome = machine.handle_lifecycle(LifecycleCommand::Start);
-    // Check if initial state is error
-    if let DispatchOutcome::Started(MachineState::State(state)) = outcome {
-        if S::is_error(&state) {
-            return;
-        }
-    }
-
-    // Run to completion
     loop {
         let event = match poll_fn(|cx| mailboxes.poll_next(cx)).await {
             Some(event) => event,

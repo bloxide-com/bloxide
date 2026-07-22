@@ -23,10 +23,10 @@ Domain actors have one channel per message type they receive. Supervised actors 
 |---------|---------------|---------|
 | `ActorRef<DomainMsg, R>` | Peer actors | Domain message exchange |
 | `ActorRef<LifecycleCommand, R>` (internal) | `ChildGroup` | Runtime-internal: Start/Reset/Ping |
-| `EmbassySender<ChildLifecycleEvent>` (internal) | `run_supervised_actor` run loop | Runtime-internal: notifies supervisor |
+| `EmbassySender<ChildLifecycleEvent>` (internal) | `run` with `RunConfig::supervised` run loop | Runtime-internal: notifies supervisor |
 | `ActorRef<SupervisorControl<R>, R>` (internal) | Wiring/control plane | Supervisor control: dynamic registration and health ticks |
 
-The `Mailboxes` tuple for domain actors contains only domain streams. The lifecycle channel is threaded through `run_supervised_actor` separately, invisible to the blox author.
+The `Mailboxes` tuple for domain actors contains only domain streams. The lifecycle channel is threaded through `run` with `RunConfig::supervised` separately, invisible to the blox author.
 
 ## ActorRef Wiring Diagram
 
@@ -61,11 +61,11 @@ flowchart LR
 
 ## Actor Run Loop
 
-`run_supervised_actor` is used for all actors in a supervised group. It polls lifecycle commands with priority over domain events:
+`run` with `RunConfig::supervised` is used for all actors in a supervised group. It polls lifecycle commands with priority over domain events:
 
 ```rust
 // Runtime-specific supervised actor function (implemented by the runtime crate):
-async fn run_supervised_actor<S, R>(
+async fn run (with RunConfig::supervised)<S, R>(
     machine: StateMachine<S>,
     domain_mailboxes: S::Mailboxes<R>,
     lifecycle_stream: R::Stream<LifecycleCommand>,   // runtime-internal

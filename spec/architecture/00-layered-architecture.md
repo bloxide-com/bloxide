@@ -76,7 +76,7 @@ When adding something new, ask: **does it require async waiting on something oth
 
 - **No** (synchronous hardware, pure computation) → context field, handlers use directly.  
   Example: store a GPIO handle or checksum calculator in `Ctx` and call it from actions.
-- **Messages only** (domain actors) → standard run loop (`run_root` / `run_supervised_actor`).  
+- **Messages only** (domain actors) → standard run loop (`run` with `RunConfig::root` / `run` with `RunConfig::supervised`).  
   Example: ping/pong request-response flow with no timers or external service loop.
 - **Messages + external source** (timers, UART, network) → standard library crate defining messages + actions + data structures + service trait; runtime crate implements the trait bridging its native primitives.  
   Example: `bloxide-timer` (`TimerCommand`, `set_timer`, `TimerQueue`, `TimerService`).

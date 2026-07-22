@@ -54,7 +54,7 @@ pub trait Mailboxes<E: Send + 'static>: Send + 'static + Unpin {
 ///
 /// Use as `type Mailboxes<R: BloxRuntime> = NoMailboxes` for `MachineSpec`
 /// implementations that are driven directly via `machine.dispatch(event)`
-/// rather than through `run_actor` (e.g., in unit tests).
+/// rather than through a run loop (e.g., in unit tests).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct NoMailboxes;
 
