@@ -28,3 +28,4 @@ bloxide-viz-export = { path = "../../../tools/bloxide-viz-export" }
 
 [dev-dependencies]
 tempfile = "3"
+toml = "0.8"

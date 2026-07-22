@@ -87,7 +87,6 @@ pub(crate) fn transitions_array(topology: &Table) -> Option<&Vec<toml::Value>> {
 }
 
 /// Mutable accessor for the `[[topology.transitions]]` array, creating it if missing.
-#[allow(dead_code)]
 pub(crate) fn transitions_array_mut(topology: &mut Table) -> anyhow::Result<&mut Vec<toml::Value>> {
     if !topology.contains_key("transitions") {
         topology.insert("transitions".into(), toml::Value::Array(Vec::new()));

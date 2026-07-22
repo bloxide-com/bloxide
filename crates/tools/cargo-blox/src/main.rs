@@ -21,6 +21,7 @@ mod run;
 mod state;
 mod test;
 mod toml_helpers;
+mod transition_cmd;
 mod utils;
 mod verify;
 mod watch;
@@ -188,6 +189,24 @@ enum BloxSubcommand {
         crate_name: String,
         variant_name: String,
     },
+    /// Add a transition to a blox topology
+    AddTransition {
+        blox_name: String,
+        #[arg(long)]
+        state: String,
+        #[arg(long)]
+        event: String,
+        #[arg(long)]
+        target: String,
+        #[arg(long)]
+        action: Vec<String>,
+        #[arg(long)]
+        guard: Vec<String>,
+        #[arg(long)]
+        feature: Option<String>,
+        #[arg(long)]
+        if_not_exists: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -272,6 +291,25 @@ fn main() -> anyhow::Result<()> {
                 crate_name,
                 variant_name,
             } => message_cmd::remove_message(&crate_name, &variant_name),
+            BloxSubcommand::AddTransition {
+                blox_name,
+                state,
+                event,
+                target,
+                action,
+                guard,
+                feature,
+                if_not_exists,
+            } => transition_cmd::add_transition(
+                &blox_name,
+                &state,
+                &event,
+                &target,
+                action,
+                guard,
+                feature.as_deref(),
+                if_not_exists,
+            ),
         },
     }
 }
