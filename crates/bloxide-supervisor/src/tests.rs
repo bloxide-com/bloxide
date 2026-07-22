@@ -191,7 +191,7 @@ fn stop_policy_transitions_to_shutting_down() {
 }
 
 #[test]
-fn shutting_down_stops_all_and_resets_when_done() {
+fn shutting_down_stops_all_and_completes_when_done() {
     let (mut machine, mut receivers) = make_supervisor(
         GroupShutdown::WhenAnyDone,
         &[ChildPolicy::Stop, ChildPolicy::Stop],
@@ -213,12 +213,12 @@ fn shutting_down_stops_all_and_resets_when_done() {
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
-    // When all children are stopped, Guard::Reset fires — goes directly to
-    // initial_state() (Running) and returns Started.
+    // When all children are stopped, the guard transitions to the terminal
+    // ShutdownComplete state. The dispatch returns Done (terminal state reached).
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
     assert_eq!(
         outcome,
-        DispatchOutcome::Started(MachineState::State(SupervisorState::Running))
+        DispatchOutcome::Done(MachineState::State(SupervisorState::ShutdownComplete))
     );
 }
 
@@ -275,7 +275,7 @@ fn stray_events_absorbed_in_shutting_down() {
 }
 
 #[test]
-fn running_on_entry_clears_counters_on_reset() {
+fn shutdown_completes_when_single_child_stops() {
     let (mut machine, mut receivers) =
         make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
@@ -286,17 +286,15 @@ fn running_on_entry_clears_counters_on_reset() {
         rx.drain_payloads();
     }
 
-    // When the last child stops, Guard::Reset fires → goes directly to
-    // initial_state() (Running). The Running on_entry (start_children)
-    // clears counters and re-sends Start to all children.
+    // When the child stops, all children are stopped → guard transitions to
+    // the terminal ShutdownComplete state. The dispatch returns Done.
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(
         outcome,
-        DispatchOutcome::Started(MachineState::State(SupervisorState::Running))
+        DispatchOutcome::Done(MachineState::State(SupervisorState::ShutdownComplete))
     );
 
-    assert_eq!(machine.ctx().pending, ChildAction::default());
-    assert!(!machine.ctx().children.all_stopped());
+    assert!(machine.ctx().children.all_stopped());
 }
 
 #[test]

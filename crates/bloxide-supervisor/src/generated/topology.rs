@@ -5,14 +5,16 @@
 pub enum SupervisorState {
     Running = 0u8,
     ShuttingDown = 1u8,
+    ShutdownComplete = 2u8,
 }
 impl ::bloxide_core::topology::StateTopology for SupervisorState {
-    const STATE_COUNT: usize = 2usize;
+    const STATE_COUNT: usize = 3usize;
     #[inline]
     fn parent(self) -> ::core::option::Option<Self> {
         match self {
             Self::Running => ::core::option::Option::None,
             Self::ShuttingDown => ::core::option::Option::None,
+            Self::ShutdownComplete => ::core::option::Option::None,
         }
     }
     #[inline]
@@ -20,14 +22,18 @@ impl ::bloxide_core::topology::StateTopology for SupervisorState {
         match self {
             Self::Running => true,
             Self::ShuttingDown => true,
+            Self::ShutdownComplete => true,
         }
     }
     fn path(self) -> &'static [Self] {
         static __PATH_RUNNING: [SupervisorState; 1usize] = [SupervisorState::Running];
         static __PATH_SHUTTINGDOWN: [SupervisorState; 1usize] = [SupervisorState::ShuttingDown];
+        static __PATH_SHUTDOWNCOMPLETE: [SupervisorState; 1usize] =
+            [SupervisorState::ShutdownComplete];
         match self {
             Self::Running => &__PATH_RUNNING,
             Self::ShuttingDown => &__PATH_SHUTTINGDOWN,
+            Self::ShutdownComplete => &__PATH_SHUTDOWNCOMPLETE,
         }
     }
     #[inline]
@@ -35,6 +41,7 @@ impl ::bloxide_core::topology::StateTopology for SupervisorState {
         match self {
             Self::Running => 0usize,
             Self::ShuttingDown => 1usize,
+            Self::ShutdownComplete => 2usize,
         }
     }
 }
@@ -42,6 +49,10 @@ impl ::bloxide_core::topology::StateTopology for SupervisorState {
 #[macro_export]
 macro_rules! supervisor_state_handler_table {
     ($ty:ty) => {
-        &[&<$ty>::RUNNING_FNS, &<$ty>::SHUTTING_DOWN_FNS]
+        &[
+            &<$ty>::RUNNING_FNS,
+            &<$ty>::SHUTTING_DOWN_FNS,
+            &<$ty>::SHUTDOWN_COMPLETE_FNS,
+        ]
     };
 }

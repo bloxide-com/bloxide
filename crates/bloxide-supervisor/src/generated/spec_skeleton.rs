@@ -204,7 +204,11 @@ impl<R: BloxRuntime> SupervisorSpec<R> {
                     actions: &[record_stopped::<R>],
                     guard: |ctx, results, _ev| {
                         if ctx.all_children_stopped() {
-                            ::bloxide_core::transition::Guard::Reset
+                            ::bloxide_core::transition::Guard::Transition(
+                                ::bloxide_core::topology::LeafState::new(
+                                    SupervisorState::ShutdownComplete,
+                                ),
+                            )
                         } else {
                             ::bloxide_core::transition::Guard::Stay
                         }
@@ -224,6 +228,13 @@ impl<R: BloxRuntime> SupervisorSpec<R> {
                 },
             ],
         };
+    #[allow(unused_variables)]
+    const SHUTDOWN_COMPLETE_FNS: ::bloxide_core::spec::StateFns<Self> =
+        ::bloxide_core::spec::StateFns {
+            on_entry: &[],
+            on_exit: &[],
+            transitions: &[],
+        };
 }
 impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
     type State = SupervisorState;
@@ -237,8 +248,8 @@ impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
     fn initial_state() -> SupervisorState {
         SupervisorState::Running
     }
-    fn is_terminal(_state: &SupervisorState) -> bool {
-        false
+    fn is_terminal(state: &SupervisorState) -> bool {
+        ::core::matches!(state, SupervisorState::ShutdownComplete)
     }
     fn is_error(_state: &SupervisorState) -> bool {
         false

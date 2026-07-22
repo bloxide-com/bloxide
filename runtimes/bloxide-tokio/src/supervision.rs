@@ -5,8 +5,8 @@ use bloxide_core::{
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     mailboxes::Mailboxes,
     messaging::{ActorId, Envelope},
-    spec::MachineSpec,
     report_outcome,
+    spec::MachineSpec,
 };
 use core::future::poll_fn;
 use core::pin::Pin;

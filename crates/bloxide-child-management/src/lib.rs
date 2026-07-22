@@ -569,7 +569,9 @@ impl<R: BloxRuntime> ChildGroup<R> {
     }
 
     pub fn all_stopped(&self) -> bool {
-        self.stopped_count == self.children.len()
+        self.children
+            .iter()
+            .all(|e| e.permanently_done || e.stopped)
     }
 
     /// Reset all restart and stop counters for a new lifecycle epoch.

@@ -159,7 +159,7 @@ state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
 actions = ["record_stopped::<{R}>"]
-guards = [{ condition = "ctx.all_children_stopped()", target = "reset" }]
+guards = [{ condition = "ctx.all_children_stopped()", target = "ShutdownComplete" }]
 
 [[topology.transitions]]
 state = "ShuttingDown"
@@ -187,3 +187,7 @@ initial = true
 
 [[topology.states]]
 name = "ShuttingDown"
+
+[[topology.states]]
+name = "ShutdownComplete"
+terminal = true
