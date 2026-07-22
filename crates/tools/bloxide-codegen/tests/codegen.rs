@@ -467,7 +467,6 @@ parent = "NonExistent"
 }
 
 #[test]
-#[test]
 fn test_generate_counter_ctx() {
     let toml = r#"
 [actor]
@@ -499,7 +498,7 @@ delegatable = true
     assert!(content.contains("#[delegates(CountsTicks)]"));
     assert!(content.contains("pub behavior: B"));
     assert!(content.contains("blox_ctx_ticks"));
-        assert!(content.contains("use ::bloxide_macros::BloxCtx"));
+    assert!(content.contains("use ::bloxide_macros::BloxCtx"));
 }
 
 #[test]
@@ -664,7 +663,7 @@ delegatable = true
     assert!(content.contains("pub behavior: B"));
 
     // Framework imports
-        assert!(content.contains("use ::bloxide_macros::BloxCtx"));
+    assert!(content.contains("use ::bloxide_macros::BloxCtx"));
 }
 
 #[test]

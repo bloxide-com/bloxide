@@ -14,7 +14,7 @@ use crate::{
     SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState,
 };
 use bloxide_child_management::{
-    AbortCommand, ChildAction, ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy,
+    AbortCommand, ChildGroup, ChildPolicy, GroupShutdown, RestartStrategy,
 };
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
@@ -458,8 +458,8 @@ fn rest_for_one_restarts_subsequent_children() {
     );
 
     // Children 2, 3, 4 should receive Reset
-    for i in 1..=3 {
-        let cmds = receivers[i].drain_payloads();
+    for (i, receiver) in receivers.iter_mut().enumerate().skip(1).take(3) {
+        let cmds = receiver.drain_payloads();
         assert_eq!(
             cmds.len(),
             1,
