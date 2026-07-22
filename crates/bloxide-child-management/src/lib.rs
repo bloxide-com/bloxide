@@ -1,5 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Child group tracking, restart strategies, and health checking.
+//! Child group tracking, reset policies, and health checking.
 //!
 //! This is the reusable platform primitive for managing supervised children.
 //! It is not supervisor-specific — any blox that tracks child actors can use
@@ -36,24 +36,22 @@ pub enum AbortCommand {
 /// Supervision policy for a child actor.
 ///
 /// Determines what the managing blox does when the child fails (reports
-/// `Done` or `Failed`).
+/// `Stopped` or `Failed`).
 ///
 /// The four-level lifecycle model (`reset → stop → abort → kill`):
 ///
-/// | Policy | Mechanism | Cooperative? | Callbacks? | Restartable? |
-/// |--------|-----------|-------------|------------|--------------|
-/// | `Restart` | Send `Reset` | Yes | Exit + entry chain | Yes (immediately) |
+/// | Policy | Mechanism | Cooperative? | Callbacks? | Revivable? |
+/// |--------|-----------|-------------|------------|------------|
+/// | `Reset` | Send `Reset` | Yes | Exit + entry chain | Yes (immediately) |
 /// | `Stop` | Send `Stop` | Yes | Exit + `on_init_entry` | Yes (via `Start`) |
 /// | `Abort` | Send `AbortCommand` on abort mailbox | Yes (cooperative) | None | Yes (respawn task) |
 /// | `Kill` | `KillCapability::kill(handle)` | No (forced) | None | No (permanently dead) |
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ChildPolicy {
-    /// Restart the child up to `max` times by sending `Reset`.
-    /// `Reset` goes directly to `initial_state()` — the actor is immediately
-    /// operational. `max` is the number of restart attempts allowed: after
-    /// the `max`-th restart the next failure triggers group shutdown.
-    /// `Restart { max: 0 }` means no restarts — equivalent to `Stop`.
-    Restart { max: usize },
+    /// Send `Reset` to the child — goes directly to `initial_state()`.
+    /// The actor is immediately operational. No need to send `Start` separately.
+    /// The child revives and continues running.
+    Reset,
     /// Send `Stop` command for clean shutdown (exit chain + `on_init_entry` fire).
     /// Actor goes to Init, suspended, can be restarted with `Start`.
     Stop,
@@ -66,19 +64,6 @@ pub enum ChildPolicy {
     /// Permanently dead. Requires the child to have a kill capability
     /// (kill handle from `SpawnCap`).
     Kill,
-}
-
-/// Group-level restart strategy determining which children are restarted
-/// when a child fails. Inspired by Erlang/OTP supervisor strategies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RestartStrategy {
-    /// Restart only the failed child (default).
-    #[default]
-    OneForOne,
-    /// Restart all children when any child fails.
-    OneForAll,
-    /// Restart the failed child and all children declared after it.
-    RestForOne,
 }
 
 /// When to trigger group-level shutdown.
@@ -106,6 +91,8 @@ enum ChildPhase {
     /// Reset was sent; waiting for the child to report Started.
     /// Health checks skip children in this phase — the child is transitioning.
     ResetPending,
+    /// Child is permanently done (stopped, aborted, or killed).
+    /// Covers all terminal states where the child will not revive on its own.
     PermanentlyDone,
     Stopped,
 }
@@ -114,8 +101,6 @@ struct ChildEntry<R: BloxRuntime> {
     id: ActorId,
     lifecycle_ref: ActorRef<LifecycleCommand, R>,
     policy: ChildPolicy,
-    restarts: usize,
-    permanently_done: bool,
     stopped: bool,
     phase: ChildPhase,
     awaiting_alive: bool,
@@ -132,7 +117,6 @@ struct ChildEntry<R: BloxRuntime> {
 pub struct ChildGroup<R: BloxRuntime> {
     children: Vec<ChildEntry<R>>,
     shutdown: GroupShutdown,
-    restart_strategy: RestartStrategy,
     stopped_count: usize,
 }
 
@@ -157,15 +141,8 @@ impl<R: BloxRuntime> ChildGroup<R> {
         Self {
             children: Vec::new(),
             shutdown,
-            restart_strategy: RestartStrategy::default(),
             stopped_count: 0,
         }
-    }
-
-    /// Set the restart strategy after construction.
-    pub fn with_restart_strategy(mut self, strategy: RestartStrategy) -> Self {
-        self.restart_strategy = strategy;
-        self
     }
 
     pub fn add(
@@ -178,8 +155,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
             id,
             lifecycle_ref,
             policy,
-            restarts: 0,
-            permanently_done: false,
             stopped: false,
             phase: ChildPhase::Init,
             awaiting_alive: false,
@@ -209,8 +184,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
             id,
             lifecycle_ref,
             policy,
-            restarts: 0,
-            permanently_done: false,
             stopped: false,
             phase: ChildPhase::Init,
             awaiting_alive: false,
@@ -267,6 +240,13 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
     }
 
+    /// Handle a `Stopped` or `Failed` lifecycle event for a child.
+    ///
+    /// Applies the child's `ChildPolicy`:
+    /// - `Reset` → send `Reset` to child, set `ResetPending` → `Continue` (child revives)
+    /// - `Stop` → set `PermanentlyDone` → `check_shutdown()`
+    /// - `Abort` → send `AbortCommand`, set `PermanentlyDone` → `check_shutdown()`
+    /// - `Kill` → `KillCapability::kill(handle)`, set `PermanentlyDone` → `check_shutdown()`
     pub fn handle_done_or_failed(
         &mut self,
         child_id: ActorId,
@@ -279,9 +259,9 @@ impl<R: BloxRuntime> ChildGroup<R> {
         };
 
         // Extract values needed for decision-making to avoid borrow conflicts
-        let (phase, policy, restarts) = {
+        let (phase, policy) = {
             let entry = &self.children[idx];
-            (entry.phase, entry.policy, entry.restarts)
+            (entry.phase, entry.policy)
         };
 
         if matches!(
@@ -317,7 +297,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 );
             }
 
-            self.children[idx].permanently_done = true;
             self.children[idx].phase = ChildPhase::PermanentlyDone;
             self.children[idx].awaiting_alive = false;
             return self.check_shutdown();
@@ -350,77 +329,16 @@ impl<R: BloxRuntime> ChildGroup<R> {
             // early-return guard treat the late event as a no-op. The
             // supervisor's state machine processes the Aborted event for its
             // own transitions but does not re-enter the ChildGroup logic.
-            self.children[idx].permanently_done = true;
             self.children[idx].phase = ChildPhase::PermanentlyDone;
             self.children[idx].awaiting_alive = false;
             return self.check_shutdown();
         }
 
-        if let ChildPolicy::Restart { max } = policy {
-            if restarts < max {
-                // Send Reset to the failed child — goes directly to initial_state(),
-                // immediately operational. No need to send Start separately.
-                if self.children[idx]
-                    .lifecycle_ref
-                    .try_send(from, LifecycleCommand::Reset)
-                    .is_err()
-                {
-                    bloxide_log::blox_log_warn!(
-                        from,
-                        "try_send Reset to child {} failed (channel full)",
-                        self.children[idx].id
-                    );
-                }
-                self.children[idx].restarts += 1;
-                self.children[idx].phase = ChildPhase::ResetPending;
-                self.children[idx].awaiting_alive = false;
-
-                // Apply restart strategy to other children
-                self.restart_siblings(idx, from);
-
-                return ChildAction::Continue;
-            }
-        }
-
-        self.children[idx].permanently_done = true;
-        self.children[idx].phase = ChildPhase::PermanentlyDone;
-        self.children[idx].awaiting_alive = false;
-
-        self.check_shutdown()
-    }
-
-    /// Send Reset to sibling children based on the restart strategy.
-    ///
-    /// - `OneForOne`: no siblings are restarted (only the failed child).
-    /// - `OneForAll`: all other active children are restarted.
-    /// - `RestForOne`: all children declared after the failed child are restarted.
-    ///
-    /// Only children in `Init` or `Running` phase are restarted. Children that
-    /// are `PermanentlyDone` or `Stopped` are skipped.
-    fn restart_siblings(&mut self, failed_idx: usize, from: ActorId) {
-        let strategy = self.restart_strategy;
-        if strategy == RestartStrategy::OneForOne {
-            return;
-        }
-
-        // Determine which indices to restart
-        let indices: Vec<usize> = match strategy {
-            RestartStrategy::OneForOne => return,
-            RestartStrategy::OneForAll => (0..self.children.len())
-                .filter(|&i| i != failed_idx)
-                .collect(),
-            RestartStrategy::RestForOne => (failed_idx + 1..self.children.len()).collect(),
-        };
-
-        for i in indices {
-            // Only restart children that are active (Init or Running)
-            if !matches!(
-                self.children[i].phase,
-                ChildPhase::Init | ChildPhase::Running
-            ) {
-                continue;
-            }
-            if self.children[i]
+        // Handle Reset policy: send Reset to the child — goes directly to
+        // initial_state(), immediately operational. No need to send Start
+        // separately. The child revives.
+        if policy == ChildPolicy::Reset {
+            if self.children[idx]
                 .lifecycle_ref
                 .try_send(from, LifecycleCommand::Reset)
                 .is_err()
@@ -428,12 +346,23 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 bloxide_log::blox_log_warn!(
                     from,
                     "try_send Reset to child {} failed (channel full)",
-                    self.children[i].id
+                    self.children[idx].id
                 );
             }
-            self.children[i].restarts += 1;
-            self.children[i].awaiting_alive = false;
+            self.children[idx].phase = ChildPhase::ResetPending;
+            self.children[idx].awaiting_alive = false;
+            return ChildAction::Continue;
         }
+
+        // Handle Stop policy: the child is already stopping (Stopped event)
+        // or has failed. Mark PermanentlyDone and check group shutdown.
+        // Stop means the child goes to Init, suspended — it can be restarted
+        // with `Start` later, but from the ChildGroup's perspective it is
+        // done for this epoch.
+        self.children[idx].phase = ChildPhase::PermanentlyDone;
+        self.children[idx].awaiting_alive = false;
+
+        self.check_shutdown()
     }
 
     fn check_shutdown(&self) -> ChildAction {
@@ -443,7 +372,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 if self
                     .children
                     .iter()
-                    .all(|e| e.permanently_done || e.stopped)
+                    .all(|e| e.phase == ChildPhase::PermanentlyDone || e.stopped)
                 {
                     ChildAction::BeginShutdown
                 } else {
@@ -527,8 +456,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
     }
 
     fn is_health_monitored(entry: &ChildEntry<R>) -> bool {
-        !entry.permanently_done
-            && !entry.stopped
+        !entry.stopped
             && !matches!(
                 entry.phase,
                 ChildPhase::PermanentlyDone | ChildPhase::ResetPending
@@ -552,7 +480,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// needs to respawn the task.
     pub fn record_aborted(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
-            entry.permanently_done = true;
             entry.phase = ChildPhase::PermanentlyDone;
             entry.awaiting_alive = false;
         }
@@ -562,7 +489,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// `KillCapability::kill`). The child's task is gone. Permanently dead.
     pub fn record_killed(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
-            entry.permanently_done = true;
             entry.phase = ChildPhase::PermanentlyDone;
             entry.awaiting_alive = false;
         }
@@ -571,10 +497,10 @@ impl<R: BloxRuntime> ChildGroup<R> {
     pub fn all_stopped(&self) -> bool {
         self.children
             .iter()
-            .all(|e| e.permanently_done || e.stopped)
+            .all(|e| e.phase == ChildPhase::PermanentlyDone || e.stopped)
     }
 
-    /// Reset all restart and stop counters for a new lifecycle epoch.
+    /// Reset all phases for a new lifecycle epoch.
     ///
     /// # Warning
     ///
@@ -585,8 +511,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// commands before calling `clear_counters`.
     pub fn clear_counters(&mut self) {
         for entry in &mut self.children {
-            entry.restarts = 0;
-            entry.permanently_done = false;
             entry.stopped = false;
             entry.phase = ChildPhase::Init;
             entry.awaiting_alive = false;
@@ -618,34 +542,127 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_done_while_awaiting_restart_is_coalesced() {
-        let (mut group, mut rx, notify_ref, _notify_rx) =
-            setup_one_child(ChildPolicy::Restart { max: 2 });
+    fn reset_policy_sends_reset_and_continues() {
+        let (mut group, mut rx, notify_ref, _notify_rx) = setup_one_child(ChildPolicy::Reset);
         let from = 100usize;
 
-        // First Done → triggers Reset
+        // First failure → triggers Reset, child revives
+        let action = group.handle_done_or_failed(1, from, &notify_ref);
+        assert_eq!(action, ChildAction::Continue);
+        let cmds = rx.drain_payloads();
+        assert_eq!(cmds.len(), 1, "exactly one Reset command expected");
+        assert!(
+            matches!(cmds[0], LifecycleCommand::Reset),
+            "expected Reset, got {:?}",
+            cmds[0]
+        );
+    }
+
+    #[test]
+    fn duplicate_done_while_reset_pending_is_coalesced() {
+        let (mut group, mut rx, notify_ref, _notify_rx) = setup_one_child(ChildPolicy::Reset);
+        let from = 100usize;
+
+        // First failure → triggers Reset
         let action = group.handle_done_or_failed(1, from, &notify_ref);
         assert_eq!(action, ChildAction::Continue);
         assert_eq!(rx.drain_payloads().len(), 1); // Reset sent
 
-        // Second Done while ResetPending → coalesced (no second Reset)
+        // Second failure while ResetPending → coalesced (no second Reset)
         let action = group.handle_done_or_failed(1, from, &notify_ref);
         assert_eq!(action, ChildAction::Continue);
         assert_eq!(rx.drain_payloads().len(), 0); // nothing sent
     }
 
     #[test]
-    fn health_tick_pings_child_and_marks_missed_alive_as_failed() {
-        let (mut group, mut rx, notify_ref, _notify_rx) =
-            setup_one_child(ChildPolicy::Restart { max: 1 });
+    fn reset_child_revives_on_started() {
+        // After Reset is sent and the child reports Started, the child should
+        // be back in Running phase and health-monitored again. We verify this
+        // by checking that a health_check_tick pings the revived child.
+        let (mut group, mut rx, notify_ref, _notify_rx) = setup_one_child(ChildPolicy::Reset);
         let from = 100usize;
-        // Start the child first
+
+        // Trigger Reset → child goes to ResetPending
+        group.handle_done_or_failed(1, from, &notify_ref);
+        assert_eq!(rx.drain_payloads().len(), 1); // Reset sent
+
+        // Health check tick should NOT ping ResetPending child
+        group.health_check_tick(from, &notify_ref);
+        assert_eq!(rx.drain_payloads().len(), 0);
+
+        // Child reports Started → should move to Running
         group.handle_started(1);
-        // Health check tick should ping the child
+
+        // Health check tick should now ping the revived child
         group.health_check_tick(from, &notify_ref);
         let cmds = rx.drain_payloads();
-        assert_eq!(cmds.len(), 1);
+        assert_eq!(cmds.len(), 1, "revived child should be pinged");
         assert!(matches!(cmds[0], LifecycleCommand::Ping));
+    }
+
+    #[test]
+    fn stop_policy_sets_permanently_done_and_triggers_shutdown() {
+        let (mut group, mut rx, notify_ref, _notify_rx) = setup_one_child(ChildPolicy::Stop);
+        let from = 100usize;
+
+        // Start the child so it's in Running phase
+        group.handle_started(1);
+
+        // Failure with Stop policy → PermanentlyDone, BeginShutdown (WhenAnyDone)
+        let action = group.handle_done_or_failed(1, from, &notify_ref);
+        assert_eq!(action, ChildAction::BeginShutdown);
+        // No commands should be sent to the child (Stop event already came from child)
+        assert_eq!(rx.drain_payloads().len(), 0);
+    }
+
+    #[test]
+    fn stop_policy_with_when_all_done_waits_for_others() {
+        let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
+        let id1 = 1usize;
+        let id2 = 2usize;
+        let (lifecycle_ref1, _rx1) = TestRuntime::channel::<LifecycleCommand>(id1, 16);
+        let (lifecycle_ref2, _rx2) = TestRuntime::channel::<LifecycleCommand>(id2, 16);
+        let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
+        group.add(id1, lifecycle_ref1, ChildPolicy::Stop);
+        group.add(id2, lifecycle_ref2, ChildPolicy::Stop);
+
+        let from = 100usize;
+        group.handle_started(1);
+        group.handle_started(2);
+
+        // First child fails → not all done yet → Continue
+        let action = group.handle_done_or_failed(id1, from, &notify_ref);
+        assert_eq!(action, ChildAction::Continue);
+
+        // Second child fails → all done → BeginShutdown
+        let action = group.handle_done_or_failed(id2, from, &notify_ref);
+        assert_eq!(action, ChildAction::BeginShutdown);
+    }
+
+    #[test]
+    fn abort_policy_sends_abort_and_triggers_shutdown() {
+        let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+        let id = 1usize;
+        let (lifecycle_ref, _rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
+        let (abort_ref, mut abort_rx) = TestRuntime::channel::<AbortCommand>(id + 100, 16);
+        let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
+        group.add_dynamic(id, lifecycle_ref, abort_ref, (), ChildPolicy::Abort);
+
+        let from = 100usize;
+        group.handle_started(1);
+
+        // Failure with Abort policy → sends AbortCommand, BeginShutdown
+        let action = group.handle_done_or_failed(1, from, &notify_ref);
+        assert_eq!(action, ChildAction::BeginShutdown);
+
+        // AbortCommand should have been sent on the abort channel
+        let cmds = abort_rx.drain_payloads();
+        assert_eq!(cmds.len(), 1, "exactly one AbortCommand expected");
+        assert!(
+            matches!(cmds[0], AbortCommand::Abort { child_id: 1 }),
+            "expected Abort {{ child_id: 1 }}, got {:?}",
+            cmds[0]
+        );
     }
 
     #[test]
@@ -679,5 +696,52 @@ mod tests {
             "expected Killed {{ child_id: 1 }}, got {:?}",
             events[0]
         );
+    }
+
+    #[test]
+    fn health_tick_pings_child_and_marks_missed_alive_as_failed() {
+        let (mut group, mut rx, notify_ref, _notify_rx) = setup_one_child(ChildPolicy::Reset);
+        let from = 100usize;
+        // Start the child first
+        group.handle_started(1);
+        // Health check tick should ping the child
+        group.health_check_tick(from, &notify_ref);
+        let cmds = rx.drain_payloads();
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], LifecycleCommand::Ping));
+    }
+
+    #[test]
+    fn reset_pending_child_not_health_monitored() {
+        let (mut group, mut rx, notify_ref, _notify_rx) = setup_one_child(ChildPolicy::Reset);
+        let from = 100usize;
+
+        // Trigger Reset → child goes to ResetPending
+        group.handle_done_or_failed(1, from, &notify_ref);
+        assert_eq!(rx.drain_payloads().len(), 1); // Reset sent
+
+        // Health check tick should NOT ping the ResetPending child
+        group.health_check_tick(from, &notify_ref);
+        let cmds = rx.drain_payloads();
+        assert_eq!(cmds.len(), 0, "ResetPending child should not be pinged");
+    }
+
+    #[test]
+    fn all_stopped_checks_permanently_done_phase() {
+        let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
+        let id = 1usize;
+        let (lifecycle_ref, _rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
+        let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
+        group.add(id, lifecycle_ref, ChildPolicy::Stop);
+
+        let from = 100usize;
+        group.handle_started(1);
+
+        // Not all stopped yet
+        assert!(!group.all_stopped());
+
+        // Fail the child → PermanentlyDone
+        group.handle_done_or_failed(1, from, &notify_ref);
+        assert!(group.all_stopped());
     }
 }
