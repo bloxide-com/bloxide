@@ -50,6 +50,7 @@ spec/
     16-declarative-wiring.md         ← declarative wiring, handle injection, system.toml
     17-blox-toml-source-of-truth.md  ← blox.toml as single source of truth for codegen
     18-spawn-architecture.md         ← spawn architecture (fn pointers, decoupled spawning)
+    19-cli-design.md                  ← cargo-blox CLI command design (CRUD + list, agent-friendly)
   templates/
     blox-spec.md                     ← copy this to start a new blox spec
   bloxes/
@@ -85,6 +86,7 @@ spec/
 | How does declarative wiring and handle injection work? | [architecture/16-declarative-wiring.md](architecture/16-declarative-wiring.md) |
 | How does blox.toml serve as the source of truth? | [architecture/17-blox-toml-source-of-truth.md](architecture/17-blox-toml-source-of-truth.md) |
 | How does spawning work? | [architecture/18-spawn-architecture.md](architecture/18-spawn-architecture.md) |
+| How does the cargo-blox CLI work? What commands exist? | [architecture/19-cli-design.md](architecture/19-cli-design.md) |
 | Create a new blox | Copy [templates/blox-spec.md](templates/blox-spec.md) to `spec/bloxes/<name>.md` |
 | Read the Ping spec | [bloxes/ping.md](bloxes/ping.md) |
 | Read the Pong spec | [bloxes/pong.md](bloxes/pong.md) |
