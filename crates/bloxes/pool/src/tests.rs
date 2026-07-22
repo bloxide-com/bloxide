@@ -353,10 +353,17 @@ mod pool_tests {
             0,
             "pending should be decremented back to 0 when DoWork send fails"
         );
+        // Guard::Stop fires because pending==0 and worker_refs is non-empty,
+        // then on_init_entry clears worker_refs. The worker ref was stored
+        // by the action but cleared by the Init entry.
         assert_eq!(
             machine.ctx().worker_refs.len(),
-            1,
-            "worker ref should still be stored even though DoWork was dropped"
+            0,
+            "worker refs cleared by on_init_entry after Guard::Stop"
+        );
+        assert!(
+            machine.current_state().is_init(),
+            "machine should be in Init after Guard::Stop"
         );
     }
 
@@ -499,10 +506,11 @@ mod pool_tests {
             h.current_state().is_init(),
             "machine must be in Init after all workers done (Guard::Stop)"
         );
+        // on_init_entry clears worker_refs on Guard::Stop.
         assert_eq!(
             h.machine.ctx().worker_refs.len(),
-            3,
-            "all 3 worker refs should be stored"
+            0,
+            "worker refs cleared by on_init_entry after Guard::Stop"
         );
     }
 }
