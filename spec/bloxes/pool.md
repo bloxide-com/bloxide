@@ -27,10 +27,10 @@ stateDiagram-v2
     [*] --> Idle : dispatch(Start)
     Idle --> Active : PoolMsg::SpawnWorker
     Active --> Active : PoolMsg::SpawnWorker
-    Active --> AllDone : PoolMsg::WorkDone [pending == 0]
+    Active --> [*] : PoolMsg::WorkDone [pending == 0] : Guard::Stop
 ```
 
-> `[Init]` is engine-implicit. `Idle`, `Active`, `AllDone` are leaf states.
+> `[Init]` is engine-implicit. `Idle` and `Active` are leaf states.
 
 ## States
 
@@ -39,7 +39,6 @@ stateDiagram-v2
 | `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` clears worker lists |
 | `Idle` | leaf, initial | No workers spawned yet |
 | `Active` | leaf | At least one worker running; accepts more spawns and work done |
-| `AllDone` | leaf, terminal | All workers finished; `is_terminal()` returns `true` |
 
 ## Events
 
@@ -47,7 +46,7 @@ stateDiagram-v2
 |-------|-----------|--------------|--------------|--------------|
 | `PoolMsg::SpawnWorker(task_id)` | `Idle` | Action-Then-Transition | `Active` | `spawn_worker`, `introduce_peers` (inline) |
 | `PoolMsg::SpawnWorker(task_id)` | `Active` | Action-Then-Stay | `Stay` | `spawn_worker`, `introduce_peers` (inline) |
-| `PoolMsg::WorkDone(_)` | `Active` | Action-Then-Guard | `AllDone` if pending==0, else `Stay` | decrement pending count |
+| `PoolMsg::WorkDone(_)` | `Active` | Action-Then-Guard | `Stop` if pending==0, else `Stay` | decrement pending count |
 | any unhandled | root (no rules) | — | dropped | none |
 
 ## Context
@@ -102,7 +101,6 @@ pub struct PoolCtx<R: BloxRuntime> {
 | `[Init]` (engine) | clear worker_refs, worker_ctrls, set pending=0 | — |
 | `Idle` | — | — |
 | `Active` | — | — |
-| `AllDone` | `log_all_done` | — |
 
 ## Acceptance Criteria
 
@@ -111,9 +109,8 @@ pub struct PoolCtx<R: BloxRuntime> {
 - [ ] `PoolMsg::SpawnWorker` in `Active` spawns additional worker, stays in `Active`
 - [ ] New worker is introduced to all previously spawned workers
 - [ ] `PoolMsg::WorkDone` in `Active` decrements pending count
-- [ ] `PoolMsg::WorkDone` in `Active` with `pending == 0` transitions to `AllDone`
-- [ ] `is_terminal(&PoolState::AllDone)` returns `true`
-- [ ] `dispatch(PoolEvent::Lifecycle(LifecycleCommand::Reset))` from `AllDone` clears all worker tracking state
+- [ ] `PoolMsg::WorkDone` in `Active` with `pending == 0` triggers `Guard::Stop` (self-suspend to Init)
+- [ ] `dispatch(PoolEvent::Lifecycle(LifecycleCommand::Reset))` from Init clears all worker tracking state and goes to `initial_state()`
 
 ## Acceptance Criteria → Test Mapping
 
@@ -123,7 +120,7 @@ pub struct PoolCtx<R: BloxRuntime> {
 | SpawnWorker in Idle → Active | `test_first_spawn_activates()` |
 | SpawnWorker in Active stays | `test_additional_spawn_stays()` |
 | WorkDone decrements pending | `test_work_done_decrements()` |
-| All workers done → AllDone | `test_all_workers_done()` |
+| All workers done → Guard::Stop | `test_all_workers_done()` |
 
 ## Action Crate Dependencies
 

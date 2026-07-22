@@ -89,14 +89,14 @@ The response message is sent inside the transition action `reply_pong_action`, d
 - [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` goes directly to `initial_state()` (Ready); `on_init_entry` does NOT fire (Reset skips Init); runtime emits `ChildLifecycleEvent::Started`
 - [x] Unknown events bubble to root (no root rules) and are silently dropped
 - [x] Pong has no round counter — it is stateless with respect to round tracking
-- [x] `is_terminal()` always returns `false` for Pong — it has no terminal state
+- [x] Pong has no `Guard::Stop` condition — it responds indefinitely until the supervisor stops it
 - [x] When `send_pong` fails (peer channel full), machine transitions to `Error`; `is_error(&PongState::Error)` returns `true`
 
 ## Implementation Notes
 
 - The round echo (`Pong { round: n }` echoes the same `n`) is intentional: Pong is a mirror.
 - `try_send` is used (not `send`) because `on_event` runs synchronously inside dispatch.
-- Pong does not know when the exchange ends — it will keep responding to pings indefinitely. When Ping transitions to `Done`, it simply stops sending, and Pong's mailbox goes quiet.
+- Pong does not know when the exchange ends — it will keep responding to pings indefinitely. When Ping's guard returns `Guard::Stop`, it self-suspends to `Init` and simply stops sending, and Pong's mailbox goes quiet.
 - The blox crate only imports `ping-pong-actions` for the `HasPeerRef` trait and `send_pong` function. Logging, when enabled, comes from `bloxide-log` feature flags selected by the wiring crate.
 - See `spec/architecture/08-supervision.md` for how the runtime manages lifecycle.
 - See `spec/architecture/12-action-crate-pattern.md` for the full five-layer architecture.

@@ -247,8 +247,8 @@ Runtime emits: ChildLifecycleEvent::Started to supervisor
 | Pong in Active at PAUSE_AT_ROUND → Paused | `test_pong_at_pause_round` | `tests.rs` |
 | Resume in Paused → Active | `test_resume_from_paused` | `tests.rs` |
 | Stray Pong in Paused bubbles to Operating | `test_stray_pong_in_paused` | `tests.rs` |
-| Pong in Active with round >= MAX → Done | `test_pong_reaches_done` | `tests.rs` |
-| `is_terminal(Done)` returns true | (inline in test) | `tests.rs` |
+| Pong in Active with round >= MAX → Guard::Stop | `test_pong_reaches_stopped` | `tests.rs` |
+| Self-suspend via Guard::Stop reports Stopped | (inline in test) | `tests.rs` |
 | `is_error(Error)` returns true | (inline in test) | `tests.rs` |
 | Pong with failed action → Error | `test_action_failure` | `tests.rs` |
 | `dispatch(LifecycleCommand::Reset)` clears state | `test_reset` | `tests.rs` |

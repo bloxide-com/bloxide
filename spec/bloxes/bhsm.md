@@ -36,11 +36,11 @@ stateDiagram-v2
     S21 --> S11 : G [LCA=S]
     S --> S11 : H [reset]
     S --> Error : K [error]
-    S --> Done : X [terminal]
+    S --> [*] : X : Guard::Stop
 ```
 
 > `[Init]` is engine-implicit (not in the `BhsmTstState` enum). The actor enters Init at construction and waits. `dispatch(BhsmTstEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `S→S1→S11`. `dispatch(BhsmTstEvent::Lifecycle(LifecycleCommand::Reset))` exits all states and re-enters Init.
-> `S`, `S1`, `S2`, `S21` are composite states (never active). `S11`, `S211`, `Error`, `Done` are leaf states.
+> `S`, `S1`, `S2`, `S21` are composite states (never active). `S11`, `S211`, `Error` are leaf states.
 
 ## States
 
@@ -54,7 +54,6 @@ stateDiagram-v2
 | `S21` | composite | Parent of S211. Handles C (bubbled), E, G. |
 | `S211` | leaf | Handles F (deep cross back) |
 | `Error` | leaf, error | `is_error()` returns true. Supervisor restarts. |
-| `Done` | leaf, terminal | `is_terminal()` returns true. Supervisor stops group. |
 
 ## Events
 
@@ -70,7 +69,7 @@ stateDiagram-v2
 | `H` | `S` | `any→S11` | None | Top-level reset (full chain) |
 | `I` | `S` | stay | — | Top-level absorb |
 | `K` | `S` | `any→Error` | None | Error state (supervisor restart) |
-| `X` | `S` | `any→Done` | None | Terminal (supervisor shutdown) |
+| `X` | `S` | `any→Stop` | None | Self-suspend via Guard::Stop (supervisor notified via Stopped) |
 
 Lifecycle control (`Start`, `Reset`, `Stop`) is handled by the runtime — these do not appear as domain events.
 
@@ -99,7 +98,6 @@ Every state has `on_entry` and `on_exit` that print `{state}-ENTRY;` and `{state
 | `S21` | print `s21-ENTRY;` | print `s21-EXIT;` |
 | `S211` | print `s211-ENTRY;` | print `s211-EXIT;` |
 | `Error` | print `error-ENTRY;` | print `error-EXIT;` |
-| `Done` | print `done-ENTRY;` | print `done-EXIT;` |
 
 ## LCA Exit/Entry Examples
 
@@ -166,15 +164,15 @@ Exit:   (full chain from current leaf up through S)
 Entry:  Error.on_entry← error-ENTRY;  (is_error() → supervisor reports Failed)
 ```
 
-### `any → Done` via event X
+### `any → Guard::Stop` via event X
 ```
 source_path: [S, ...]  (from any substate)
-target_path: [Done]
+target_path: [Init]  # Guard::Stop goes to Init
 LCA = None
 
 Exit:   (full chain from current leaf up through S)
         S.on_exit    ← s-EXIT;
-Entry:  Done.on_entry ← done-ENTRY;   (is_terminal() → supervisor reports Done)
+Guard::Stop: fires exit chain from current state to root, enters Init. Supervisor reports Stopped.
 ```
 
 ## Interactive Demo
@@ -202,7 +200,7 @@ Run with: `RUST_LOG=info cargo run --example bhsm-tst-demo`
 - [ ] `H` from any state resets to `S11`: full exit/entry chain
 - [ ] `I` at top level (`S`) is absorbed — stay, no transition
 - [ ] `K` from any state transitions to `Error`: `is_error()` returns true, supervisor restarts
-- [ ] `X` from any state transitions to `Done`: `is_terminal()` returns true, supervisor shuts down
+- [ ] `X` from any state triggers `Guard::Stop`: actor self-suspends to Init, supervisor notified via `Stopped`
 - [ ] `R` (LifecycleCommand::Reset) resets actor to `Init→S11`
 - [ ] `Q` (LifecycleCommand::Stop) sends actor to Init (suspended)
 - [ ] Unknown events bubble to root and are silently dropped

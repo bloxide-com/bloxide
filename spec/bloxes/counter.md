@@ -4,8 +4,8 @@
 
 The Counter actor is the simplest possible bloxide actor, designed for teaching the five-layer architecture. It:
 - Receives `Tick` messages and increments an internal counter
-- Reaches terminal state after a configurable number of ticks
-- Demonstrates: flat state topology, behavior trait injection, terminal state detection
+- Self-suspends via `Guard::Stop` after a configurable number of ticks
+- Demonstrates: flat state topology, behavior trait injection, self-suspend via Guard::Stop
 
 ## Crate Location
 
@@ -19,10 +19,10 @@ The Counter actor is the simplest possible bloxide actor, designed for teaching 
 ```mermaid
 stateDiagram-v2
     [*] --> Ready : dispatch(Start)
-    Ready --> Done : CounterMsg::Tick [count >= DONE_AT_COUNT]
+    Ready --> [*] : CounterMsg::Tick [count >= DONE_AT_COUNT] : Guard::Stop
 ```
 
-> `[Init]` is engine-implicit. `Ready` and `Done` are leaf states.
+> `[Init]` is engine-implicit. `Ready` is a leaf state.
 
 ## States
 
@@ -30,13 +30,12 @@ stateDiagram-v2
 |-------|------|-------------|
 | `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` resets count to 0 |
 | `Ready` | leaf | Accepting ticks; count < threshold |
-| `Done` | leaf, terminal | Terminal state; `is_terminal()` returns `true` |
 
 ## Events
 
 | Event | Handled by | Rule pattern | Guard outcome | Side effects |
 |-------|-----------|--------------|--------------|--------------|
-| `CounterMsg::Tick` | `Ready` | Action-Then-Guard | `Done` if count >= threshold, else `Stay` | `increment_count` |
+| `CounterMsg::Tick` | `Ready` | Action-Then-Guard | `Stop` if count >= threshold, else `Stay` | `increment_count` |
 | any unhandled | root (no rules) | — | dropped | none |
 
 ## Context
@@ -74,21 +73,19 @@ None — Counter is a sink actor.
 |-------|----------|---------|
 | `[Init]` (engine) | reset count to 0 via `ctx.set_count(0)` | — |
 | `Ready` | — | — |
-| `Done` | — | — |
 
 ## Constants
 
 | Name | Value | Description |
 |------|-------|-------------|
-| `DONE_AT_COUNT` | 2 | Ticks required to reach Done |
+| `DONE_AT_COUNT` | 2 | Ticks required to trigger Guard::Stop |
 
 ## Acceptance Criteria
 
 - [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`
 - [ ] `CounterMsg::Tick` in `Ready` with `count < DONE_AT_COUNT` stays in `Ready`
-- [ ] `CounterMsg::Tick` in `Ready` with `count >= DONE_AT_COUNT` transitions to `Done`
-- [ ] `is_terminal(&CounterState::Done)` returns `true`
-- [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Reset))` from `Done` exits states, enters `initial_state()` (Ready); `on_init_entry` does NOT fire; count reset to 0 via `Ready::on_entry`
+- [ ] `CounterMsg::Tick` in `Ready` with `count >= DONE_AT_COUNT` triggers `Guard::Stop` (self-suspend to Init)
+- [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Reset))` from any state exits states, enters `initial_state()` (Ready); `on_init_entry` does NOT fire; count reset to 0 via `Ready::on_entry`
 
 ## Acceptance Criteria → Test Mapping
 
@@ -96,8 +93,8 @@ None — Counter is a sink actor.
 |---|---|
 | `dispatch(LifecycleCommand::Start)` exits Init → Ready | `test_start_enters_ready()` |
 | Tick stays in Ready when count < threshold | `test_tick_in_ready_stays()` |
-| Tick transitions to Done at threshold | `test_tick_reaches_done()` |
-| `is_terminal(Done)` returns true | `test_done_is_terminal()` |
+| Tick triggers Guard::Stop at threshold | `test_tick_reaches_stopped()` |
+
 
 ## Action Crate Dependencies
 

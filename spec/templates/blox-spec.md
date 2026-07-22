@@ -33,7 +33,7 @@ stateDiagram-v2
 
     Idle --> Working : DomainMsg::Begin
     Working --> Idle : DomainMsg::Complete
-    Working --> Done : DomainMsg::Finish [guard condition]
+    Working --> [*] : DomainMsg::Finish [guard condition] : Guard::Stop
 ```
 
 > Legend:
@@ -88,9 +88,6 @@ initial = true
 name = "Working"
 parent = "Operational"
 
-[[topology.states]]
-name = "Done"
-terminal = true
 
 # --- Declarative transitions ---
 
@@ -109,17 +106,17 @@ actions = ["send_done_to_peer"]
 
 [[topology.transitions.guards]]
 condition = "ctx.is_finished()"
-target = "Done"
+target = "stop"
 
 [[topology.transitions.guards]]
 condition = "_"
 target = "Idle"
 
-# Working: Finish event → transition to Done
+# Working: Finish event → Guard::Stop (self-suspend to Init)
 [[topology.transitions]]
 state = "Working"
 event = "DomainMsg::Finish(_)"
-target = "Done"
+target = "stop"
 
 # Entry/exit handlers
 [[topology.entry]]
@@ -154,11 +151,10 @@ actions = ["log_work_complete"]
 | `Operational` | composite | Actor is running; groups Idle and Working |
 | `Idle` | leaf | Ready for work |
 | `Working` | leaf | Processing a task |
-| `Done` | leaf | Terminal state (`is_terminal()` returns `true`); runtime notifies supervisor automatically |
 
 > Adjust table rows to match your state hierarchy diagram exactly.
 > Do NOT include a Root row — it is engine-implicit.
-> For terminal states, note that `is_terminal()` must be overridden in `MachineSpec`.
+> Actors self-suspend via `Guard::Stop` (goes to Init, reports `Stopped`). No `is_terminal()` needed.
 
 ## Events
 
@@ -171,7 +167,7 @@ actions = ["log_work_complete"]
 |-------|-----------|--------------|--------------|--------------|
 | `DomainMsg::Begin` | `Idle` | Pure Transition | `Guard::Transition(Working)` | none |
 | `DomainMsg::Complete` | `Working` | Action-Then-Guard | `Guard::Transition(Idle)` | sends `PeerMsg::Done` |
-| `DomainMsg::Finish` | `Working` | Action-Then-Guard | `Guard::Transition(Done)` if guard met, else `Guard::Stay` | none |
+| `DomainMsg::Finish` | `Working` | Action-Then-Guard | `Guard::Stop` if guard met, else `Guard::Stay` | none |
 | any unhandled | root (no rules) | — | dropped | none |
 
 ## Context
@@ -219,22 +215,21 @@ Defined in `crates/messages/<msg-crate-name>/`.
 
 | Target | Message | When |
 |--------|---------|------|
-| `peer_ref` | `SharedMsg::Done(Done { id })` | `Working::on_entry` action |
+| `peer_ref` | `SharedMsg::Done(Done { id })` | transition actions (before `Guard::Stop`) |
 
-> The runtime notifies the supervisor of lifecycle events (Started, Done, Reset) automatically.
+> The runtime notifies the supervisor of lifecycle events (Started, Stopped, Failed) automatically.
 > Do NOT add supervisor_ref sends here.
 
 ## Entry / Exit Actions
 
 > Document non-trivial `on_entry` and `on_exit` behaviors.
 > Reference action function names from the actions crate — not closures or inline logic.
-> For terminal states, note that on_entry can be empty — runtime handles Done detection.
+> For `Guard::Stop`, on_entry of Init fires automatically. Transition actions run before the guard.
 
 | State | on_entry | on_exit |
 |-------|----------|---------|
 | `[Init]` (engine) | reset `counter` to 0 | — |
 | `Working` | `increment_counter`, `send_started_to_peer` | — |
-| `Done` | _(empty — runtime detects terminal via `is_terminal()`)_ | — |
 
 Each listed action is a free function from the actions crate with signature `fn<C: BehaviorTrait + ...>(&mut C)`. Multiple actions compose via `on_entry: &[action_a, action_b]`.
 
@@ -245,8 +240,7 @@ Each listed action is a free function from the actions crate with signature `fn<
 - [ ] `dispatch(LifecycleCommand::Start)` exits Init and enters `Idle`
 - [ ] `DomainMsg::Begin` in `Idle` transitions to `Working`
 - [ ] `DomainMsg::Complete` in `Working` transitions back to `Idle`
-- [ ] `DomainMsg::Finish` in `Working` transitions to `Done` when guard is met
-- [ ] `is_terminal(&State::Done)` returns `true`
+- [ ] `DomainMsg::Finish` in `Working` triggers `Guard::Stop` when guard is met (self-suspend to Init)
 - [ ] `dispatch(LifecycleCommand::Reset)` from any state exits all states and enters `initial_state()` directly; `on_init_entry` does NOT fire; domain state is reset via `initial_state()::on_entry`
 - [ ] `initial_state()::on_entry` does NOT send any messages — domain-state reset only
 - [ ] Unknown events bubble to root (no root rules) and are silently dropped
@@ -264,6 +258,6 @@ Each listed action is a free function from the actions crate with signature `fn<
 
 > List any design questions that must be resolved before implementation.
 
-- [ ] Should `Done` be a terminal state or support re-entry via reset?
+- [ ] Should completion trigger `Guard::Stop` (self-suspend) or `Guard::Transition` to another running state?
 - [ ] What is the correct mailbox capacity for this actor?
 - [ ] Which `bloxide-log` backend does the wiring crate enable?
