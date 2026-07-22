@@ -88,7 +88,7 @@ sequenceDiagram
 
     Ping->>Pong: PingPongMsg::Ping(5)
     Pong->>Ping: PingPongMsg::Pong(5)
-    Note over Ping: Active → Done<br/>(round >= MAX_ROUNDS)
+    Note over Ping: Active → Guard::Stop<br/>(round >= MAX_ROUNDS, self-suspend to Init)
 ```
 
 ## Rules

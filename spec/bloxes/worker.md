@@ -6,7 +6,7 @@ The Worker actor demonstrates:
 - **Priority mailbox handling**: Ctrl stream polled before domain stream
 - **Peer accumulation**: Receives `AddPeer` commands before `DoWork`
 - **Result broadcast**: Sends result to all peers before notifying pool
-- **Terminal state**: Exits task when work is done
+- **Self-suspend via Guard::Stop**: When work is done, the guard returns `Guard::Stop` — the actor self-suspends to `Init` and the runtime reports `ChildLifecycleEvent::Stopped` to the pool
 
 Workers are spawned dynamically by the Pool actor.
 
@@ -122,9 +122,9 @@ pub struct WorkerCtx<R: BloxRuntime> {
 |---|---|
 | `dispatch(LifecycleCommand::Start)` enters Waiting | `test_start_enters_waiting()` |
 | AddPeer accumulates | `test_add_peer_accumulates()` |
-| DoWork triggers Guard::Stop (with broadcast/notify actions) | `test_do_work_transitions()` |
-| Transition actions broadcast to peers | `test_done_broadcasts()` |
-| Transition actions notify pool | `test_done_notifies_pool()` |
+| DoWork triggers Guard::Stop (with broadcast/notify actions) | `test_do_work_stops()` |
+| Transition actions broadcast to peers | `test_broadcast_to_peers()` |
+| Transition actions notify pool | `test_notify_pool_done()` |
 
 ## Action Crate Dependencies
 

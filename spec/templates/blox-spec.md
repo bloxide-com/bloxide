@@ -128,7 +128,7 @@ state = "Working"
 actions = ["log_work_complete"]
 ```
 
-> **State declarations** (`[[topology.states]]`): name, parent (optional), composite/initial/terminal/error flags.
+> **State declarations** (`[[topology.states]]`): name, parent (optional), composite/initial/error flags.
 >
 > **Transition declarations** (`[[topology.transitions]]`):
 > - `state` — which state handles this transition (must match a declared state)

@@ -6,7 +6,7 @@ The Pool actor demonstrates dynamic actor spawning and peer introduction:
 - Receives `SpawnWorker` commands to create workers at runtime
 - Tracks spawned workers and their completion status
 - Introduces new workers to existing peers via `PeerCtrl`
-- Reaches terminal state when all workers report done
+- Self-suspends via `Guard::Stop` when all workers report done
 
 This blox showcases:
 - **Factory injection**: Worker spawn function injected at wiring time

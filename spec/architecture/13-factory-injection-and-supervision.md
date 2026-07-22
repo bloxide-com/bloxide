@@ -396,7 +396,7 @@ If your actor has a "hot loop" with 100+ transitions per second, keep those stat
 
 ```
 # Good: Hot states are top-level
-VirtualRoot → [Processing, Waiting, Done]
+VirtualRoot → [Processing, Waiting]
 
 # Avoid: Deep nesting for frequently-changed states
 VirtualRoot → Active → Hot → [Processing, Waiting]
