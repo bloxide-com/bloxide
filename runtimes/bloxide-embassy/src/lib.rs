@@ -17,9 +17,9 @@ pub mod prelude;
 pub mod supervision;
 pub mod timer;
 
+pub use bloxide_core::{run, RunConfig};
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{EmbassySender, EmbassyStream, EmbassyTrySendError};
-pub use bloxide_core::{run, RunConfig};
 pub use supervision::ChildGroupBuilder;
 
 // ── EmbassyRuntime ────────────────────────────────────────────────────────────
@@ -94,7 +94,10 @@ macro_rules! actor_task_supervised {
             $crate::run(
                 machine,
                 domain_mailboxes,
-                $crate::RunConfig::<$crate::EmbassyRuntime>::supervised(lifecycle_rx, supervisor_notify),
+                $crate::RunConfig::<$crate::EmbassyRuntime>::supervised(
+                    lifecycle_rx,
+                    supervisor_notify,
+                ),
                 actor_id,
             )
             .await;

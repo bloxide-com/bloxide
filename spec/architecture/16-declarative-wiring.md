@@ -69,7 +69,7 @@ strategy = "one_for_one"
 children = ["ping", "pong"]
 
   [supervision.policies]
-  ping = { restart = { max = 1 } }
+  ping = { stop = true }
   pong = { stop = true }
 ```
 

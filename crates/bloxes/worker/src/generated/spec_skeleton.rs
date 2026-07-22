@@ -30,8 +30,9 @@ impl<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask + 'static> Worke
             ::bloxide_core::transition::StateRule {
                 event_tag: ::bloxide_core::event_tag::WILDCARD_TAG,
                 matches: |__ev| {
-                    __ev.ctrl_payload()
-                        .is_some_and(|__m| ::core::matches!(__m, PeerCtrl::AddPeer(_)))
+                    __ev.ctrl_payload().is_some_and(|__m| {
+                        ::core::matches!(__m, PeerCtrl::AddPeer(_) | PeerCtrl::RemovePeer(_))
+                    })
                 },
                 actions: &[Self::handle_ctrl],
                 guard: |ctx, results, _ev| ::bloxide_core::transition::Guard::Stay,

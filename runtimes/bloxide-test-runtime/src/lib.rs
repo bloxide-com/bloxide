@@ -254,7 +254,6 @@ pub fn spawned_count() -> usize {
 // not directly constructed or read in the waker tests yet.
 #[allow(dead_code)]
 mod waker_tests {
-    use bloxide_core::{run, RunConfig};
     use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
     use bloxide_core::engine::StateMachine;
     use bloxide_core::event_tag::{EventTag, LifecycleEvent};
@@ -263,6 +262,7 @@ mod waker_tests {
     use bloxide_core::spec::MachineSpec;
     use bloxide_core::topology::StateTopology;
     use bloxide_core::transition::{ActionResult, Guard, TransitionRule};
+    use bloxide_core::{run, RunConfig};
     use std::marker::PhantomData;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
     use std::sync::Arc;

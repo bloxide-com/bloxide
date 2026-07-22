@@ -547,7 +547,7 @@ pub struct SupervisionConfig {
     ///
     /// ```toml
     /// [supervision.policies]
-    /// ping = { restart = { max = 1 } }
+    /// ping = { stop = true }
     /// pong = { stop = true }
     /// ```
     #[serde(default)]

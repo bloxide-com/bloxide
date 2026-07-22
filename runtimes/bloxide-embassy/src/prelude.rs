@@ -1,8 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
-pub use crate::{
-    run, ChildGroupBuilder, EmbassyRuntime, EmbassySender,
-    EmbassyStream, RunConfig,
-};
+pub use crate::{run, ChildGroupBuilder, EmbassyRuntime, EmbassySender, EmbassyStream, RunConfig};
 /// Convenience re-exports for Embassy-based wiring sites.
 ///
 /// Re-exports everything from `bloxide_core::prelude` plus Embassy-specific

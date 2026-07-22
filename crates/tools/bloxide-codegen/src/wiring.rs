@@ -313,12 +313,9 @@ pub fn generate(config: &WiringConfig, _crate_name: &str) -> anyhow::Result<Stri
                 ::#runtime_crate_ident::root_task!(supervisor_task, #supervisor_spec_path<#runtime_ident>);
             }
         } else {
+            // Embassy: no std::process::exit — root task returns on supervisor stop.
             quote! {
-                ::#runtime_crate_ident::root_task!(
-                    supervisor_task,
-                    #supervisor_spec_path<#runtime_ident>,
-                    ::core::process::exit(0)
-                );
+                ::#runtime_crate_ident::root_task!(supervisor_task, #supervisor_spec_path<#runtime_ident>);
             }
         }
     } else {

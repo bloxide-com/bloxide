@@ -91,14 +91,48 @@ fn has_path_separator_str(event: &str) -> bool {
 /// variant is matched. For example, `Foo::Bar(Baz(a, b))` → `Foo::Bar(_)`.
 /// This is intentional: the `matches!` closure only needs to distinguish
 /// the outer variant, not inspect inner fields.
+///
+/// Handles or-patterns by splitting on top-level `|` (not inside parentheses),
+/// stripping each alternative independently, then re-joining with `|`.
+/// E.g. "PeerCtrl::AddPeer(_) | PeerCtrl::RemovePeer(_)" → same (already stripped),
+/// but "PeerCtrl::AddPeer(x) | PeerCtrl::RemovePeer(y)" → "PeerCtrl::AddPeer(_) | PeerCtrl::RemovePeer(_)".
 fn strip_bindings_from_pattern(event: &str) -> String {
-    // Find the first `(` and replace everything inside it with `_`.
-    if let Some(open) = event.find('(') {
-        let before = &event[..open];
-        format!("{before}(_)")
-    } else {
-        event.to_string()
+    // Split on top-level `|` (not inside parentheses).
+    let alternatives = split_top_level_pipe(event);
+    let stripped: Vec<String> = alternatives
+        .iter()
+        .map(|alt| {
+            let trimmed = alt.trim();
+            if let Some(open) = trimmed.find('(') {
+                let before = &trimmed[..open];
+                format!("{before}(_)")
+            } else {
+                trimmed.to_string()
+            }
+        })
+        .collect();
+    stripped.join(" | ")
+}
+
+/// Split a pattern string on top-level `|` characters, ignoring `|` inside
+/// parentheses.  Returns the alternatives as trimmed strings.
+fn split_top_level_pipe(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            '|' if depth == 0 => {
+                parts.push(s[start..i].trim().to_string());
+                start = i + 1;
+            }
+            _ => {}
+        }
     }
+    parts.push(s[start..].trim().to_string());
+    parts
 }
 
 /// Extract the event tag expression from a pattern string.

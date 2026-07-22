@@ -15,9 +15,9 @@ pub mod supervision;
 pub mod timer;
 
 pub use bloxide_child_management::ChildGroupBuilder;
+pub use bloxide_core::{run, RunConfig};
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{TokioSender, TokioStream, TokioTrySendError};
-pub use bloxide_core::{run, RunConfig};
 pub use supervision::GenericChildGroupBuilder;
 
 // ── TokioRuntime ──────────────────────────────────────────────────────────────
@@ -90,7 +90,10 @@ macro_rules! actor_task_supervised {
             $crate::run(
                 machine,
                 domain_mailboxes,
-                $crate::RunConfig::<$crate::TokioRuntime>::supervised(lifecycle_rx, supervisor_notify),
+                $crate::RunConfig::<$crate::TokioRuntime>::supervised(
+                    lifecycle_rx,
+                    supervisor_notify,
+                ),
                 actor_id,
             )
             .await;

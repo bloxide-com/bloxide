@@ -291,8 +291,14 @@ impl<S: MachineSpec> StateMachine<S> {
             LifecycleCommand::Stop => {
                 match self.current {
                     MachineState::Init => {
-                        // Already in Init - no-op
-                        DispatchOutcome::HandledNoTransition
+                        // Already in Init — acknowledge with Stopped so the
+                        // supervisor's ShuttingDown state can confirm this child
+                        // is stopped.  Without this acknowledgment, a child
+                        // that self-suspended via Guard::Stop and was then sent
+                        // Stop by stop_all_children would silently no-op, and
+                        // the supervisor would never receive the Stopped event
+                        // it needs to evaluate all_children_stopped().
+                        DispatchOutcome::Stopped
                     }
                     MachineState::State(_) => {
                         // Transition to Init, report Stopped

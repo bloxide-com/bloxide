@@ -162,9 +162,7 @@ pub async fn run<S, M, R>(
             report_outcome::<S, R>(&outcome, actor_id, notify);
         }
         match &outcome {
-            DispatchOutcome::Started(MachineState::State(state))
-                if S::is_error(state) =>
-            {
+            DispatchOutcome::Started(MachineState::State(state)) if S::is_error(state) => {
                 return;
             }
             DispatchOutcome::Failed => return,
@@ -213,11 +211,7 @@ pub async fn run<S, M, R>(
                     Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
                     Poll::Ready(Some(Envelope(_, AbortCommand::Abort { .. }))) => {
                         if let Some(ref notify) = supervisor_notify {
-                            report_outcome::<S, R>(
-                                &DispatchOutcome::Aborted,
-                                actor_id,
-                                notify,
-                            );
+                            report_outcome::<S, R>(&DispatchOutcome::Aborted, actor_id, notify);
                         }
                         return Poll::Ready(LoopAction::Stop);
                     }

@@ -46,18 +46,30 @@ fn collect_ctor_fields(
 
         // 1. context.uses entries that contribute a field.
         for u in &context.uses {
-            if u.role.as_deref() == Some("state") {
-                continue;
-            }
             // Skip uses whose feature is not enabled.
             if let Some(feat) = &u.feature {
                 if !enabled.map(|s| s.contains(feat)).unwrap_or(false) {
                     continue;
                 }
             }
+            // Single-field entry: use `field` (singular).
             if let Some(field_name) = &u.field {
+                if u.role.as_deref() == Some("state") {
+                    continue;
+                }
                 fields.push(CtorField {
                     name: field_name.clone(),
+                    is_self_id: false,
+                    is_delegate: false,
+                });
+            }
+            // Multi-field entry: use `fields` (plural) — iterate sub-fields.
+            for sub in &u.fields {
+                if sub.role.as_deref() == Some("state") {
+                    continue;
+                }
+                fields.push(CtorField {
+                    name: sub.name.clone(),
                     is_self_id: false,
                     is_delegate: false,
                 });
@@ -626,7 +638,7 @@ pub fn generate(
                 .expect("valid supervisor event path");
 
         supervisor_finish_stmts.push(quote! {
-            let #sup_ctx_ident = #supervisor_ctx_path::new(children, #sup_id_ident, #notify_ref_ident);
+            let #sup_ctx_ident = #supervisor_ctx_path::new(#sup_id_ident, children, #notify_ref_ident);
             let mut #sup_machine_ident = ::bloxide_core::StateMachine::<#supervisor_spec_path<#runtime_ident>>::new(#sup_ctx_ident);
             #sup_machine_ident.dispatch(#supervisor_event_path::<#runtime_ident>::Lifecycle(LifecycleCommand::Start));
         });
@@ -636,8 +648,13 @@ pub fn generate(
                 ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
             });
         } else {
+            // Embassy: use the two-argument form (no std::process::exit).
+            // The root task simply returns when the supervisor stops.
+            // On std targets (arch-std), the executor stays alive idle —
+            // the process can be terminated with Ctrl-C or a hardware reset.
+            // On no_std targets, std::process::exit doesn't exist.
             root_task_decls.push(quote! {
-                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>, std::process::exit(0));
+                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
             });
         }
     }
@@ -936,6 +953,7 @@ pub fn generate(
     };
 
     let tokens = quote! {
+        #![allow(unused_imports, unused_variables)]
         #(#embassy_timer_task_decl)*
         #(#use_stmts)*
         #(#task_decls)*

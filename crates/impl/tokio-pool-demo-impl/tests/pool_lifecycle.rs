@@ -25,7 +25,7 @@ use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
 use bloxide_core::{capability::DynamicChannelCap, StateMachine};
 use bloxide_supervisor::{SupervisorControl, SupervisorCtx, SupervisorEvent, SupervisorSpec};
-use bloxide_tokio::{run, RunConfig, ChildGroupBuilder, TokioRuntime, TokioStream};
+use bloxide_tokio::{run, ChildGroupBuilder, RunConfig, TokioRuntime, TokioStream};
 use futures_core::Stream;
 use pool_blox::{PoolCtx, PoolSpec};
 use pool_messages::{PoolMsg, SpawnWorker};

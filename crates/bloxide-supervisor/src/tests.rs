@@ -88,10 +88,8 @@ fn start_enters_running() {
 
 #[test]
 fn restart_policy_stays_running_on_done() {
-    let (mut machine, mut receivers) = make_supervisor(
-        GroupShutdown::WhenAnyDone,
-        &[ChildPolicy::Reset],
-    );
+    let (mut machine, mut receivers) =
+        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Reset]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -109,10 +107,8 @@ fn restart_policy_stays_running_on_done() {
 /// sees Started from the child (which is the outcome of the Reset dispatch).
 #[test]
 fn restart_policy_reset_returns_started_no_separate_start() {
-    let (mut machine, mut receivers) = make_supervisor(
-        GroupShutdown::WhenAnyDone,
-        &[ChildPolicy::Reset],
-    );
+    let (mut machine, mut receivers) =
+        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Reset]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -252,10 +248,8 @@ fn shutdown_completes_when_single_child_stops() {
 
 #[test]
 fn failed_event_treated_same_as_done() {
-    let (mut machine, mut receivers) = make_supervisor(
-        GroupShutdown::WhenAnyDone,
-        &[ChildPolicy::Reset],
-    );
+    let (mut machine, mut receivers) =
+        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Reset]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -292,10 +286,8 @@ fn register_child_event_adds_child_and_sends_start() {
 
 #[test]
 fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
-    let (mut machine, mut receivers) = make_supervisor(
-        GroupShutdown::WhenAnyDone,
-        &[ChildPolicy::Reset],
-    );
+    let (mut machine, mut receivers) =
+        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Reset]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -323,10 +315,7 @@ fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
 fn aborted_child_marked_permanently_done() {
     let (mut machine, mut receivers) = make_supervisor(
         GroupShutdown::WhenAllDone,
-        &[
-            ChildPolicy::Reset,
-            ChildPolicy::Reset,
-        ],
+        &[ChildPolicy::Reset, ChildPolicy::Reset],
     );
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
@@ -358,10 +347,7 @@ fn aborted_child_does_not_trigger_shutdown_check() {
     // that should cascade to shutdown.
     let (mut machine, mut receivers) = make_supervisor(
         GroupShutdown::WhenAllDone,
-        &[
-            ChildPolicy::Reset,
-            ChildPolicy::Reset,
-        ],
+        &[ChildPolicy::Reset, ChildPolicy::Reset],
     );
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
@@ -382,10 +368,8 @@ fn aborted_child_does_not_trigger_shutdown_check() {
 
 #[test]
 fn register_dynamic_child_adds_and_starts() {
-    let (mut machine, mut receivers) = make_supervisor(
-        GroupShutdown::WhenAllDone,
-        &[ChildPolicy::Reset],
-    );
+    let (mut machine, mut receivers) =
+        make_supervisor(GroupShutdown::WhenAllDone, &[ChildPolicy::Reset]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
@@ -427,10 +411,8 @@ fn register_dynamic_child_during_shutdown_still_starts_child() {
     // children even during ShuttingDown. This is a known limitation —
     // ideally, registration during shutdown should be absorbed without
     // starting the child. This test documents the current behavior.
-    let (mut machine, mut receivers) = make_supervisor(
-        GroupShutdown::WhenAnyDone,
-        &[ChildPolicy::Reset],
-    );
+    let (mut machine, mut receivers) =
+        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Reset]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
