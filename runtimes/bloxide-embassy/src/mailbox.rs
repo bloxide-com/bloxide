@@ -41,6 +41,10 @@ impl BloxRuntime for EmbassyRuntime {
             .try_send(envelope)
             .map_err(|_| EmbassyTrySendError)
     }
+
+    async fn yield_now() {
+        embassy_futures::yield_now().await;
+    }
 }
 
 // ── StaticChannelCap impl ─────────────────────────────────────────────────────

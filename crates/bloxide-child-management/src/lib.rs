@@ -14,24 +14,9 @@ pub mod builder;
 use alloc::vec::Vec;
 use bloxide_core::{
     capability::{BloxRuntime, KillCapability},
-    lifecycle::{ChildLifecycleEvent, LifecycleCommand},
+    lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand},
     messaging::{ActorId, ActorRef},
 };
-
-/// Command enum for the abort capability mailbox.
-///
-/// Sent by the managing blox (supervisor or custom) when `ChildPolicy::Abort` fires.
-/// The child's task receives this on its abort mailbox and self-terminates
-/// cooperatively (breaks out of the run loop, no callbacks fire).
-///
-/// This is the cooperative self-termination path — distinct from `KillCapability`
-/// which is the external ripcord that destroys the task without cooperation.
-#[derive(Debug, Clone)]
-pub enum AbortCommand {
-    /// Abort the child cooperatively. No callbacks, no graceful shutdown.
-    /// The child's task self-terminates on receipt.
-    Abort { child_id: ActorId },
-}
 
 /// Supervision policy for a child actor.
 ///

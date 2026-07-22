@@ -25,7 +25,7 @@ use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
 use bloxide_core::{capability::DynamicChannelCap, StateMachine};
 use bloxide_supervisor::{SupervisorControl, SupervisorCtx, SupervisorEvent, SupervisorSpec};
-use bloxide_tokio::{run_supervised_actor, ChildGroupBuilder, TokioRuntime, TokioStream};
+use bloxide_tokio::{run, RunConfig, ChildGroupBuilder, TokioRuntime, TokioStream};
 use futures_core::Stream;
 use pool_blox::{PoolCtx, PoolSpec};
 use pool_messages::{PoolMsg, SpawnWorker};
@@ -82,12 +82,11 @@ async fn pool_lifecycle_spawn_and_done() {
     let pool_domain_mailboxes = (pool_msg_rx, spawn_reply_rx);
 
     // Spawn the pool actor task using the supervised runner.
-    tokio::spawn(run_supervised_actor::<PoolSpec<TokioRuntime>>(
+    tokio::spawn(run::<PoolSpec<TokioRuntime>, _, TokioRuntime>(
         pool_machine,
         pool_domain_mailboxes,
-        pool_lifecycle_rx,
+        RunConfig::<TokioRuntime>::supervised(pool_lifecycle_rx, pool_sup_notify),
         pool_id,
-        pool_sup_notify,
     ));
 
     // ── 5. Build the supervisor state machine ──────────────────────────────

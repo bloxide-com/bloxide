@@ -1,7 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
-use bloxide_core::{mailboxes::Mailboxes, spec::MachineSpec, StateMachine};
 
-pub use bloxide_core::run_actor_to_completion;
 pub use bloxide_spawn::SpawnCap;
 
 #[doc(hidden)]
@@ -19,10 +17,8 @@ pub mod timer;
 pub use bloxide_child_management::ChildGroupBuilder;
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{TokioSender, TokioStream, TokioTrySendError};
-pub use supervision::{
-    run, run_supervised_actor, run_supervised_actor_with_abort, GenericChildGroupBuilder,
-    RunConfig,
-};
+pub use bloxide_core::{run, RunConfig};
+pub use supervision::GenericChildGroupBuilder;
 
 // ── TokioRuntime ──────────────────────────────────────────────────────────────
 
@@ -68,7 +64,7 @@ macro_rules! actor_task {
             $crate::run(
                 machine,
                 mailboxes,
-                $crate::RunConfig::unsupervised(),
+                $crate::RunConfig::<$crate::TokioRuntime>::unsupervised(),
                 0,
             )
             .await;
@@ -91,12 +87,11 @@ macro_rules! actor_task_supervised {
             actor_id: ::bloxide_core::messaging::ActorId,
             supervisor_notify: $crate::TokioSender<$crate::ChildLifecycleEvent>,
         ) {
-            $crate::supervision::run_supervised_actor(
+            $crate::run(
                 machine,
                 domain_mailboxes,
-                lifecycle_rx,
+                $crate::RunConfig::<$crate::TokioRuntime>::supervised(lifecycle_rx, supervisor_notify),
                 actor_id,
-                supervisor_notify,
             )
             .await;
         }
@@ -115,7 +110,13 @@ macro_rules! root_task {
                 $crate::TokioRuntime,
             >,
         ) {
-            $crate::run_root(machine, mailboxes).await;
+            $crate::run(
+                machine,
+                mailboxes,
+                $crate::RunConfig::<$crate::TokioRuntime>::root(),
+                0,
+            )
+            .await;
             $on_done
         }
     };
@@ -126,7 +127,13 @@ macro_rules! root_task {
                 $crate::TokioRuntime,
             >,
         ) {
-            $crate::run_root(machine, mailboxes).await;
+            $crate::run(
+                machine,
+                mailboxes,
+                $crate::RunConfig::<$crate::TokioRuntime>::root(),
+                0,
+            )
+            .await;
         }
     };
 }
@@ -166,18 +173,4 @@ macro_rules! spawn_child {
         let (lc_rx, sup_notify) = $builder.add_child($id, $policy);
         let _handle = tokio::spawn($task_fn($machine, $mbox, lc_rx, $id, sup_notify));
     }};
-}
-
-// ── Actor run loop ────────────────────────────────────────────────────────────
-
-/// Run the program's top-level supervisor (root actor).
-///
-/// Thin wrapper around [`crate::run`] with [`RunConfig::root`] — no lifecycle
-/// stream, no abort, no supervisor notify. Exits on `Stopped` or `Aborted`.
-pub async fn run_root<S, M>(machine: StateMachine<S>, mailboxes: M)
-where
-    S: MachineSpec + 'static,
-    M: Mailboxes<S::Event>,
-{
-    crate::run(machine, mailboxes, RunConfig::root(), 0).await;
 }

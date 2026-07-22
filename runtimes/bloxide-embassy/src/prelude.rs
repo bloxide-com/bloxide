@@ -1,6 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
 pub use crate::{
-    run, run_actor_to_completion, run_root, ChildGroupBuilder, EmbassyRuntime, EmbassySender,
+    run, ChildGroupBuilder, EmbassyRuntime, EmbassySender,
     EmbassyStream, RunConfig,
 };
 /// Convenience re-exports for Embassy-based wiring sites.

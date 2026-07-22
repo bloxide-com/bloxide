@@ -1,191 +1,15 @@
 // Copyright 2025 Bloxide, all rights reserved
+//! Embassy runtime supervision support.
+//!
+//! The run loop itself lives in `bloxide_core::runloop`. This module provides
+//! the Embassy-specific `ChildGroupBuilder` and integration tests.
+
 use bloxide_core::{
-    engine::{DispatchOutcome, StateMachine},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
-    mailboxes::Mailboxes,
-    messaging::{ActorId, Envelope},
-    report_outcome,
-    spec::MachineSpec,
+    messaging::ActorId,
 };
-use core::future::poll_fn;
-use core::pin::Pin;
-use core::task::Poll;
-use futures_core::Stream;
 
 use crate::{EmbassyRuntime, EmbassySender, EmbassyStream};
-
-// ── Unified run loop ─────────────────────────────────────────────────────────
-
-/// Configuration for the unified [`run`] loop.
-///
-/// See [`bloxide_tokio::RunConfig`] for full documentation — the semantics are
-/// identical, only the runtime types differ. Embassy has no abort stream
-/// (NoKill), so `abort` is not present in this variant.
-pub struct RunConfig {
-    /// Lifecycle command stream from the supervisor. `None` for unsupervised/root actors.
-    pub lifecycle: Option<EmbassyStream<LifecycleCommand>>,
-    /// Sender to report `ChildLifecycleEvent` to the supervisor. `None` for unsupervised/root.
-    pub supervisor_notify: Option<EmbassySender<ChildLifecycleEvent>>,
-    /// Auto-start the actor before entering the loop. Use for unsupervised actors.
-    pub auto_start: bool,
-    /// Exit the loop when `DispatchOutcome::Stopped` is observed.
-    /// `true` for root/unsupervised, `false` for supervised (stays alive in Init).
-    pub exit_on_stop: bool,
-}
-
-impl RunConfig {
-    /// Configuration for a root supervisor or root actor.
-    pub fn root() -> Self {
-        Self {
-            lifecycle: None,
-            supervisor_notify: None,
-            auto_start: false,
-            exit_on_stop: true,
-        }
-    }
-
-    /// Configuration for a supervised child actor.
-    pub fn supervised(
-        lifecycle: EmbassyStream<LifecycleCommand>,
-        supervisor_notify: EmbassySender<ChildLifecycleEvent>,
-    ) -> Self {
-        Self {
-            lifecycle: Some(lifecycle),
-            supervisor_notify: Some(supervisor_notify),
-            auto_start: false,
-            exit_on_stop: false,
-        }
-    }
-
-    /// Configuration for an unsupervised actor that auto-starts and exits on stop.
-    pub fn unsupervised() -> Self {
-        Self {
-            lifecycle: None,
-            supervisor_notify: None,
-            auto_start: true,
-            exit_on_stop: true,
-        }
-    }
-}
-
-/// The unified run loop for Embassy-based actors.
-///
-/// Polls lifecycle → domain mailboxes in priority order, dispatches events
-/// through the machine, and reports outcomes to the supervisor (if any).
-/// Yields to the executor after each message to prevent task starvation.
-///
-/// The loop exits when:
-/// - `exit_on_stop` is true and `DispatchOutcome::Stopped` is observed
-/// - `DispatchOutcome::Aborted` is observed (always exits)
-/// - `DispatchOutcome::Failed` is observed (always exits)
-/// - Any polled stream returns `Poll::Ready(None)` (stream closed)
-pub async fn run<S, M>(
-    mut machine: StateMachine<S>,
-    mut domain_mailboxes: M,
-    config: RunConfig,
-    actor_id: ActorId,
-) where
-    S: MachineSpec + 'static,
-    M: Mailboxes<S::Event>,
-{
-    // Optional auto-start for unsupervised actors
-    if config.auto_start {
-        let outcome = machine.handle_lifecycle(LifecycleCommand::Start);
-        if let Some(ref notify) = config.supervisor_notify {
-            report_outcome::<S, EmbassyRuntime>(&outcome, actor_id, notify);
-        }
-        match &outcome {
-            DispatchOutcome::Started(bloxide_core::MachineState::State(state))
-                if S::is_error(state) =>
-            {
-                return;
-            }
-            DispatchOutcome::Failed => return,
-            DispatchOutcome::Stopped if config.exit_on_stop => return,
-            _ => {}
-        }
-    }
-
-    let mut lifecycle_stream = config.lifecycle;
-    let supervisor_notify = config.supervisor_notify;
-
-    enum LoopAction {
-        Continue,
-        Stop,
-    }
-
-    loop {
-        let action = poll_fn(|cx| {
-            // 1. Lifecycle stream (highest priority)
-            if let Some(ref mut ls) = lifecycle_stream {
-                match Pin::new(ls).poll_next(cx) {
-                    Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
-                    Poll::Ready(Some(Envelope(_, cmd))) => {
-                        let outcome = machine.handle_lifecycle(cmd);
-                        if let Some(ref notify) = supervisor_notify {
-                            report_outcome::<S, EmbassyRuntime>(&outcome, actor_id, notify);
-                        }
-                        match &outcome {
-                            DispatchOutcome::Aborted | DispatchOutcome::Failed => {
-                                return Poll::Ready(LoopAction::Stop);
-                            }
-                            DispatchOutcome::Stopped if config.exit_on_stop => {
-                                return Poll::Ready(LoopAction::Stop);
-                            }
-                            _ => return Poll::Ready(LoopAction::Continue),
-                        }
-                    }
-                    Poll::Pending => {}
-                }
-            }
-
-            // 2. Domain mailboxes
-            match domain_mailboxes.poll_next(cx) {
-                Poll::Ready(Some(event)) => {
-                    let outcome = machine.dispatch(event);
-                    if let Some(ref notify) = supervisor_notify {
-                        report_outcome::<S, EmbassyRuntime>(&outcome, actor_id, notify);
-                    }
-                    match &outcome {
-                        DispatchOutcome::Aborted | DispatchOutcome::Failed => {
-                            Poll::Ready(LoopAction::Stop)
-                        }
-                        DispatchOutcome::Stopped if config.exit_on_stop => {
-                            Poll::Ready(LoopAction::Stop)
-                        }
-                        _ => Poll::Ready(LoopAction::Continue),
-                    }
-                }
-                Poll::Ready(None) => Poll::Ready(LoopAction::Stop),
-                Poll::Pending => Poll::Pending,
-            }
-        })
-        .await;
-
-        match action {
-            LoopAction::Continue => {
-                embassy_futures::yield_now().await;
-            }
-            LoopAction::Stop => break,
-        }
-    }
-}
-
-// ── Backwards-compatible wrapper ─────────────────────────────────────────────
-
-/// Run a supervised actor on Embassy.
-///
-/// Convenience wrapper around [`run`] with [`RunConfig::supervised`].
-pub async fn run_supervised_actor<S: MachineSpec + 'static>(
-    machine: StateMachine<S>,
-    domain_mailboxes: S::Mailboxes<EmbassyRuntime>,
-    lifecycle_stream: EmbassyStream<LifecycleCommand>,
-    actor_id: ActorId,
-    supervisor_notify: EmbassySender<ChildLifecycleEvent>,
-) {
-    let config = RunConfig::supervised(lifecycle_stream, supervisor_notify);
-    run(machine, domain_mailboxes, config, actor_id).await;
-}
 
 // ── ChildGroupBuilder ─────────────────────────────────────────────────────────
 //
@@ -264,9 +88,8 @@ impl<Ctrl: Send + 'static> ChildGroupBuilder<Ctrl> {
 
 #[cfg(all(test, feature = "std"))]
 mod tests {
-    use super::report_outcome;
-    use crate::EmbassyRuntime;
     use bloxide_core::lifecycle::ChildLifecycleEvent;
+    use crate::EmbassyRuntime;
     use bloxide_core::{
         capability::{BloxRuntime, StaticChannelCap},
         engine::{DispatchOutcome, MachineState},
@@ -276,6 +99,7 @@ mod tests {
         messaging::ActorId,
         spec::{MachineSpec, StateFns},
         topology::StateTopology,
+        report_outcome,
     };
 
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -6,10 +6,6 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use bloxide_core::{mailboxes::Mailboxes, spec::MachineSpec, StateMachine};
-
-pub use bloxide_core::run_actor_to_completion;
-
 #[doc(hidden)]
 pub use bloxide_macros::channels as __channels_proc_macro;
 #[doc(hidden)]
@@ -23,7 +19,8 @@ pub mod timer;
 
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{EmbassySender, EmbassyStream, EmbassyTrySendError};
-pub use supervision::{run, run_supervised_actor, ChildGroupBuilder, RunConfig};
+pub use bloxide_core::{run, RunConfig};
+pub use supervision::ChildGroupBuilder;
 
 // ── EmbassyRuntime ────────────────────────────────────────────────────────────
 
@@ -70,7 +67,7 @@ macro_rules! actor_task {
             $crate::run(
                 machine,
                 mailboxes,
-                $crate::RunConfig::unsupervised(),
+                $crate::RunConfig::<$crate::EmbassyRuntime>::unsupervised(),
                 0,
             )
             .await;
@@ -94,12 +91,11 @@ macro_rules! actor_task_supervised {
             actor_id: ::bloxide_core::messaging::ActorId,
             supervisor_notify: $crate::EmbassySender<$crate::ChildLifecycleEvent>,
         ) {
-            $crate::supervision::run_supervised_actor(
+            $crate::run(
                 machine,
                 domain_mailboxes,
-                lifecycle_rx,
+                $crate::RunConfig::<$crate::EmbassyRuntime>::supervised(lifecycle_rx, supervisor_notify),
                 actor_id,
-                supervisor_notify,
             )
             .await;
         }
@@ -133,7 +129,13 @@ macro_rules! root_task {
                 $crate::EmbassyRuntime,
             >,
         ) {
-            $crate::run_root(machine, mailboxes).await;
+            $crate::run(
+                machine,
+                mailboxes,
+                $crate::RunConfig::<$crate::EmbassyRuntime>::root(),
+                0,
+            )
+            .await;
             $on_done
         }
     };
@@ -145,7 +147,13 @@ macro_rules! root_task {
                 $crate::EmbassyRuntime,
             >,
         ) {
-            $crate::run_root(machine, mailboxes).await;
+            $crate::run(
+                machine,
+                mailboxes,
+                $crate::RunConfig::<$crate::EmbassyRuntime>::root(),
+                0,
+            )
+            .await;
         }
     };
 }
@@ -190,18 +198,4 @@ macro_rules! spawn_child {
         let (lc_rx, sup_notify) = $builder.add_child($id, $policy);
         $spawner.must_spawn($task_fn($machine, $mbox, lc_rx, $id, sup_notify));
     }};
-}
-
-// ── Actor run loop ────────────────────────────────────────────────────────────
-
-/// Run the program's top-level supervisor (root actor).
-///
-/// Thin wrapper around [`crate::run`] with [`RunConfig::root`] — no lifecycle
-/// stream, no supervisor notify. Exits on `Stopped` or `Aborted`.
-pub async fn run_root<S, M>(machine: StateMachine<S>, mailboxes: M)
-where
-    S: MachineSpec + 'static,
-    M: Mailboxes<S::Event>,
-{
-    crate::run(machine, mailboxes, RunConfig::root(), 0).await;
 }

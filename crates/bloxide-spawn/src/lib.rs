@@ -11,7 +11,8 @@
 //! (supervisor or custom) register spawned children without depending on
 //! the supervisor.
 
-use bloxide_child_management::{AbortCommand, ChildPolicy};
+use bloxide_child_management::ChildPolicy;
+use bloxide_core::lifecycle::AbortCommand;
 use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::{ActorId, ActorRef};

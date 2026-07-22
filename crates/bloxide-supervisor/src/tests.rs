@@ -13,8 +13,8 @@ use crate::{
     control::{RegisterChild, SupervisorControl},
     SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState,
 };
-use bloxide_child_management::{AbortCommand, ChildGroup, ChildPolicy, GroupShutdown};
-use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
+use bloxide_child_management::{ChildGroup, ChildPolicy, GroupShutdown};
+use bloxide_core::lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
 use bloxide_core::{
     capability::DynamicChannelCap, engine::DispatchOutcome, engine::MachineState, StateMachine,

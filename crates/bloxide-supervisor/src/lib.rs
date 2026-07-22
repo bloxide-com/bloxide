@@ -22,9 +22,10 @@ mod tests;
 
 // Re-export child-management types from bloxide-child-management
 pub use bloxide_child_management::{
-    AbortCommand, ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup,
+    ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup,
     HasChildGroupMut, HasPending,
 };
+pub use bloxide_core::lifecycle::AbortCommand;
 
 // Re-export supervisor-specific types from local modules
 pub use control::{RegisterChild, RegisterDynamicChild, SupervisorControl, SupervisorRegistrar};

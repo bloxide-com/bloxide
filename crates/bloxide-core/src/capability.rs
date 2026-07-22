@@ -91,6 +91,16 @@ pub trait BloxRuntime: Clone + Send + 'static {
     /// Each runtime impl specifies this explicitly (no default — associated
     /// type defaults are unstable on stable Rust).
     type Kill: KillCapability<Self>;
+
+    /// Cooperative yield to the executor.
+    ///
+    /// Called by the run loop after processing each message to give other
+    /// tasks a chance to run. Default is a no-op — runtimes with cooperative
+    /// schedulers (Tokio, Embassy) override this to call their runtime's
+    /// `yield_now()`. TestRuntime and bare runtimes use the default.
+    async fn yield_now() {
+        // No-op default
+    }
 }
 
 /// Channel creation for runtimes with compile-time-fixed capacity.

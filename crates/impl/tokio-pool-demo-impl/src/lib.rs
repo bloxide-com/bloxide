@@ -7,7 +7,8 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use bloxide_child_management::{AbortCommand, ChildPolicy};
+use bloxide_child_management::ChildPolicy;
+use bloxide_core::lifecycle::AbortCommand;
 use bloxide_core::{
     capability::{BloxRuntime, DynamicChannelCap},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
@@ -16,7 +17,7 @@ use bloxide_core::{
 };
 use bloxide_peers::PeerCtrl;
 use bloxide_spawn::{SpawnCap, SpawnOutput};
-use bloxide_tokio::{run_supervised_actor_with_abort, TokioRuntime};
+use bloxide_tokio::{run, RunConfig, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasPeers};
 use pool_messages::{SpawnRequest, SpawnedWorker, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
@@ -100,13 +101,15 @@ pub fn spawn_worker(
 
             let notify_sender = notify.sender();
             let task_handle = <TokioRuntime as SpawnCap>::spawn(async move {
-                run_supervised_actor_with_abort(
+                run(
                     machine,
                     (ctrl_rx, domain_rx),
-                    lifecycle_rx,
-                    abort_rx,
+                    RunConfig::<TokioRuntime>::supervised_with_abort(
+                        lifecycle_rx,
+                        abort_rx,
+                        notify_sender,
+                    ),
                     worker_id,
-                    notify_sender,
                 )
                 .await
             });

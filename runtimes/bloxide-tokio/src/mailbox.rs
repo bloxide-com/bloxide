@@ -56,6 +56,10 @@ impl BloxRuntime for TokioRuntime {
             .try_send(envelope)
             .map_err(|_| TokioTrySendError)
     }
+
+    async fn yield_now() {
+        tokio::task::yield_now().await;
+    }
 }
 
 // ── DynamicChannelCap impl ────────────────────────────────────────────────────

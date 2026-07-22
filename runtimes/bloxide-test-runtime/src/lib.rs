@@ -254,7 +254,7 @@ pub fn spawned_count() -> usize {
 // not directly constructed or read in the waker tests yet.
 #[allow(dead_code)]
 mod waker_tests {
-    use bloxide_core::actor::run_actor_to_completion;
+    use bloxide_core::{run, RunConfig};
     use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
     use bloxide_core::engine::StateMachine;
     use bloxide_core::event_tag::{EventTag, LifecycleEvent};
@@ -443,7 +443,7 @@ mod waker_tests {
             sender_clone.try_send(0, 42u32).unwrap();
         });
 
-        block_on(run_actor_to_completion(machine, (stream,)));
+        block_on(run(machine, (stream,), RunConfig::<TestRuntime>::bare(), 0));
 
         handle.join().unwrap();
         assert_eq!(processed.load(Ordering::SeqCst), 1);
@@ -471,7 +471,7 @@ mod waker_tests {
             }
         });
 
-        block_on(run_actor_to_completion(machine, (stream,)));
+        block_on(run(machine, (stream,), RunConfig::<TestRuntime>::bare(), 0));
 
         handle.join().unwrap();
         assert_eq!(processed.load(Ordering::SeqCst), 5);
