@@ -207,9 +207,7 @@ where
             None => return,
         };
         match machine.dispatch(event) {
-            DispatchOutcome::Stopped | DispatchOutcome::Aborted | DispatchOutcome::Done(_) => {
-                return
-            }
+            DispatchOutcome::Stopped | DispatchOutcome::Aborted => return,
             _ => {}
         }
     }

@@ -178,6 +178,10 @@ pub enum Guard<S: MachineSpec> {
     /// for `initial_state()`. Does NOT call `on_init_entry` or `on_init_exit`.
     /// The actor is immediately operational.
     Reset,
+    /// Self-suspend: go to Init (fire exit chain + `on_init_entry`).
+    /// Reports `DispatchOutcome::Stopped` to the supervisor.
+    /// Actor is suspended in Init and can be restarted with `Start` or `Reset`.
+    Stop,
     /// Error propagation. Go to user-defined `error_state()` if one exists,
     /// otherwise go to Init (firing exit chain + `on_init_entry`).
     /// Reports `DispatchOutcome::Failed` to the supervisor.

@@ -421,10 +421,6 @@ mod waker_tests {
         fn initial_state() -> WState {
             WState::Running
         }
-
-        fn is_terminal(state: &WState) -> bool {
-            matches!(state, WState::Done)
-        }
     }
 
     #[test]
@@ -633,9 +629,6 @@ mod lifecycle_dispatch {
         fn initial_state() -> TestState {
             TestState::Running
         }
-        fn is_terminal(state: &TestState) -> bool {
-            matches!(state, TestState::Done)
-        }
         fn is_error(_state: &TestState) -> bool {
             false
         }
@@ -728,7 +721,7 @@ mod lifecycle_dispatch {
     }
 
     #[test]
-    fn transition_to_terminal_state_fires_on_entry_and_reports_done() {
+    fn transition_to_done_state_fires_on_entry() {
         let ctx = SpyCtx::default();
         let mut machine = StateMachine::<TestSpec<TestRuntime>>::new(ctx);
         machine.handle_lifecycle(LifecycleCommand::Start);
@@ -736,7 +729,7 @@ mod lifecycle_dispatch {
         let outcome = machine.dispatch(TestEvent::Complete);
         assert!(matches!(
             outcome,
-            DispatchOutcome::Done(MachineState::State(TestState::Done))
+            DispatchOutcome::Transition(MachineState::State(TestState::Done))
         ));
         assert!(matches!(
             machine.current_state(),
@@ -762,7 +755,7 @@ mod lifecycle_dispatch {
     }
 
     #[test]
-    fn terminal_state_cannot_transition_out_on_domain_event() {
+    fn done_state_can_transition_out_on_domain_event() {
         let ctx = SpyCtx::default();
         let mut machine = StateMachine::<TestSpec<TestRuntime>>::new(ctx);
         machine.handle_lifecycle(LifecycleCommand::Start);
@@ -771,13 +764,15 @@ mod lifecycle_dispatch {
         assert_eq!(machine.ctx().done_entry_count.load(Ordering::SeqCst), 1);
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);
         let outcome = machine.dispatch(TestEvent::GoRunning);
-        assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Transition(MachineState::State(TestState::Running))
+        ));
         assert!(matches!(
             machine.current_state(),
-            MachineState::State(TestState::Done)
+            MachineState::State(TestState::Running)
         ));
-        assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 1);
-        assert_eq!(machine.ctx().done_entry_count.load(Ordering::SeqCst), 1);
+        assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 2);
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);
     }
 }

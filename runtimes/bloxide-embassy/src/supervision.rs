@@ -65,7 +65,14 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
         .await;
 
         match action {
-            LoopAction::Continue => {}
+            LoopAction::Continue => {
+                // Yield to the executor after each message to prevent
+                // task starvation. Without this, a run loop that always
+                // finds queued messages will busy-loop and starve other
+                // tasks (e.g. the supervisor that needs to process Done
+                // events and initiate shutdown).
+                embassy_futures::yield_now().await;
+            }
             LoopAction::Stop => break,
         }
     }
@@ -168,11 +175,10 @@ mod tests {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum TestState {
         Running,
-        Done,
     }
 
     impl StateTopology for TestState {
-        const STATE_COUNT: usize = 2;
+        const STATE_COUNT: usize = 1;
 
         fn parent(self) -> Option<Self> {
             let _ = self;
@@ -187,14 +193,12 @@ mod tests {
         fn path(self) -> &'static [Self] {
             match self {
                 TestState::Running => &[TestState::Running],
-                TestState::Done => &[TestState::Done],
             }
         }
 
         fn as_index(self) -> usize {
             match self {
                 TestState::Running => 0,
-                TestState::Done => 1,
             }
         }
     }
@@ -219,11 +223,6 @@ mod tests {
         on_exit: &[],
         transitions: &[],
     };
-    const DONE_FNS: StateFns<TestSpec> = StateFns {
-        on_entry: &[],
-        on_exit: &[],
-        transitions: &[],
-    };
 
     impl MachineSpec for TestSpec {
         type State = TestState;
@@ -231,26 +230,22 @@ mod tests {
         type Ctx = ();
         type Mailboxes<R: BloxRuntime> = NoMailboxes;
 
-        const HANDLER_TABLE: &'static [&'static StateFns<Self>] = &[&RUNNING_FNS, &DONE_FNS];
+        const HANDLER_TABLE: &'static [&'static StateFns<Self>] = &[&RUNNING_FNS];
 
         fn initial_state() -> Self::State {
             TestState::Running
         }
-
-        fn is_terminal(state: &Self::State) -> bool {
-            matches!(state, TestState::Done)
-        }
     }
 
     #[test]
-    fn started_terminal_reports_done_only() {
+    fn started_reports_started_event() {
         let (notify_ref, notify_rx) =
             <EmbassyRuntime as StaticChannelCap>::channel::<ChildLifecycleEvent, 8>(999);
         let notify = notify_ref.sender();
         let actor_id: ActorId = 42;
 
         report_outcome::<TestSpec, EmbassyRuntime>(
-            &DispatchOutcome::Started(MachineState::State(TestState::Done)),
+            &DispatchOutcome::Started(MachineState::State(TestState::Running)),
             actor_id,
             &notify,
         );
@@ -261,11 +256,11 @@ mod tests {
             .expect("expected one lifecycle event");
         assert!(matches!(
             first.1,
-            ChildLifecycleEvent::Done { child_id: 42 }
+            ChildLifecycleEvent::Started { child_id: 42 }
         ));
         assert!(
             notify_rx.inner.try_receive().is_err(),
-            "terminal Started should not emit a second Started event"
+            "should be exactly one event"
         );
     }
 }

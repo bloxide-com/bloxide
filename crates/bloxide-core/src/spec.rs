@@ -64,13 +64,8 @@ pub trait MachineSpec: Sized + 'static {
         None
     }
 
-    /// Returns true if state represents normal completion.
-    fn is_terminal(_state: &Self::State) -> bool {
-        false
-    }
-
     /// Returns true if state represents a failure.
-    /// Takes precedence over is_terminal if both true.
+    /// Takes precedence over normal completion.
     fn is_error(_state: &Self::State) -> bool {
         false
     }

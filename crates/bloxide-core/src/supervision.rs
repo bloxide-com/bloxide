@@ -21,7 +21,7 @@ use crate::spec::MachineSpec;
 ///
 /// # Type Parameters
 ///
-/// * `S` — The actor's [`MachineSpec`]. Used to check `is_error` / `is_terminal`
+/// * `S` — The actor's [`MachineSpec`]. Used to check `is_error`
 ///   on the resulting state.
 /// * `R` — The [`BloxRuntime`], which determines the concrete sender type
 ///   (`R::Sender<ChildLifecycleEvent>`).
@@ -46,8 +46,6 @@ pub fn report_outcome<S, R>(
         DispatchOutcome::Started(MachineState::State(s)) => {
             if S::is_error(s) {
                 send(ChildLifecycleEvent::Failed { child_id: actor_id });
-            } else if S::is_terminal(s) {
-                send(ChildLifecycleEvent::Done { child_id: actor_id });
             } else {
                 send(ChildLifecycleEvent::Started { child_id: actor_id });
             }
@@ -55,12 +53,7 @@ pub fn report_outcome<S, R>(
         DispatchOutcome::Transition(MachineState::State(s)) => {
             if S::is_error(s) {
                 send(ChildLifecycleEvent::Failed { child_id: actor_id });
-            } else if S::is_terminal(s) {
-                send(ChildLifecycleEvent::Done { child_id: actor_id });
             }
-        }
-        DispatchOutcome::Done(MachineState::State(_)) => {
-            send(ChildLifecycleEvent::Done { child_id: actor_id });
         }
         DispatchOutcome::Failed => {
             send(ChildLifecycleEvent::Failed { child_id: actor_id });

@@ -64,7 +64,14 @@ pub async fn run_supervised_actor<S: MachineSpec + 'static>(
         .await;
 
         match action {
-            LoopAction::Continue => {}
+            LoopAction::Continue => {
+                // Yield to the executor after each message to prevent
+                // task starvation. Without this, a run loop that always
+                // finds queued messages will busy-loop and starve other
+                // tasks (e.g. the supervisor that needs to process Done
+                // events and initiate shutdown).
+                tokio::task::yield_now().await;
+            }
             LoopAction::Stop => break,
         }
     }
@@ -160,7 +167,9 @@ pub async fn run_supervised_actor_with_abort<S: MachineSpec + 'static>(
         .await;
 
         match action {
-            LoopAction::Continue => {}
+            LoopAction::Continue => {
+                tokio::task::yield_now().await;
+            }
             LoopAction::Stop => break,
         }
     }
@@ -196,15 +205,10 @@ mod tests {
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum TestState {
         Running,
-        // TODO: wire this up — `Done` is the terminal state required by the
-        // `MachineSpec` impl (`is_terminal`, `HANDLER_TABLE`) but no test in
-        // this module transitions to it yet.
-        #[allow(dead_code)]
-        Done,
     }
 
     impl StateTopology for TestState {
-        const STATE_COUNT: usize = 2;
+        const STATE_COUNT: usize = 1;
 
         fn parent(self) -> Option<Self> {
             None
@@ -217,14 +221,12 @@ mod tests {
         fn path(self) -> &'static [Self] {
             match self {
                 TestState::Running => &[TestState::Running],
-                TestState::Done => &[TestState::Done],
             }
         }
 
         fn as_index(self) -> usize {
             match self {
                 TestState::Running => 0,
-                TestState::Done => 1,
             }
         }
     }
@@ -249,11 +251,6 @@ mod tests {
         on_exit: &[],
         transitions: &[],
     };
-    const DONE_FNS: StateFns<TestSpec> = StateFns {
-        on_entry: &[],
-        on_exit: &[],
-        transitions: &[],
-    };
 
     impl MachineSpec for TestSpec {
         type State = TestState;
@@ -261,14 +258,10 @@ mod tests {
         type Ctx = ();
         type Mailboxes<R: BloxRuntime> = NoMailboxes;
 
-        const HANDLER_TABLE: &'static [&'static StateFns<Self>] = &[&RUNNING_FNS, &DONE_FNS];
+        const HANDLER_TABLE: &'static [&'static StateFns<Self>] = &[&RUNNING_FNS];
 
         fn initial_state() -> Self::State {
             TestState::Running
-        }
-
-        fn is_terminal(state: &Self::State) -> bool {
-            matches!(state, TestState::Done)
         }
     }
 

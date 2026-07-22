@@ -46,10 +46,8 @@ pub enum ChildLifecycleEvent {
     /// Also sent when a child self-resets via `Guard::Reset` or
     /// `LifecycleCommand::Reset` — both go directly to `initial_state()`.
     Started { child_id: ActorId },
-    /// Child entered a terminal state (`is_terminal()` returned true).
-    Done { child_id: ActorId },
     /// Child entered an error state (`is_error()` returned true) or
-    /// returned `Guard::Fail`. Takes precedence over Done if both are true.
+    /// returned `Guard::Fail`.
     Failed { child_id: ActorId },
     /// Child was stopped via `LifecycleCommand::Stop`.
     /// The exit chain and `on_init_entry` fired. The child is in Init,

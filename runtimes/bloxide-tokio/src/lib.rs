@@ -168,8 +168,8 @@ macro_rules! spawn_child {
 ///
 /// Like `run_actor`, dispatches events from `mailboxes` to `machine` in
 /// run-to-completion order. When `DispatchOutcome::Stopped`,
-/// `DispatchOutcome::Aborted`, or `DispatchOutcome::Done` (terminal state
-/// reached) is observed, the function returns so the caller can terminate.
+/// or `DispatchOutcome::Aborted` is observed, the function returns so the
+/// caller can terminate.
 pub async fn run_root<S, M>(mut machine: StateMachine<S>, mut mailboxes: M)
 where
     S: MachineSpec + 'static,
@@ -182,10 +182,13 @@ where
             None => return,
         };
         match machine.dispatch(event) {
-            DispatchOutcome::Stopped | DispatchOutcome::Aborted | DispatchOutcome::Done(_) => {
-                return
+            DispatchOutcome::Stopped | DispatchOutcome::Aborted => return,
+            _ => {
+                // Yield to the executor after each non-terminal dispatch
+                // to prevent busy-looping when messages are continuously
+                // queued (e.g. child lifecycle events arriving in bursts).
+                tokio::task::yield_now().await;
             }
-            _ => {}
         }
     }
 }

@@ -26,10 +26,9 @@ where
     }
 }
 
-/// Run an actor until it reaches a terminal/error state or stops.
+/// Run an actor until it reaches an error state or stops.
 ///
-/// Dispatches events until `DispatchOutcome::Started` or `DispatchOutcome::Transition`
-/// enters a terminal or error state, or `DispatchOutcome::Stopped`
+/// Dispatches events until `DispatchOutcome::Failed` or `DispatchOutcome::Stopped`
 /// is observed. Suitable for dynamically spawned actors that should exit their
 /// task when their work is done.
 ///
@@ -50,16 +49,15 @@ where
         };
         match machine.dispatch(event) {
             DispatchOutcome::Started(MachineState::State(state))
-                if S::is_terminal(&state) || S::is_error(&state) =>
+                if S::is_error(&state) =>
             {
                 return;
             }
             DispatchOutcome::Transition(MachineState::State(state))
-                if S::is_terminal(&state) || S::is_error(&state) =>
+                if S::is_error(&state) =>
             {
                 return;
             }
-            DispatchOutcome::Done(_) => return,
             DispatchOutcome::Failed => return,
             DispatchOutcome::Stopped => return,
             _ => {}
@@ -81,9 +79,9 @@ where
 
     // Auto-start the actor
     let outcome = machine.handle_lifecycle(LifecycleCommand::Start);
-    // Check if initial state is terminal/error
+    // Check if initial state is error
     if let DispatchOutcome::Started(MachineState::State(state)) = outcome {
-        if S::is_terminal(&state) || S::is_error(&state) {
+        if S::is_error(&state) {
             return;
         }
     }
@@ -96,16 +94,15 @@ where
         };
         match machine.dispatch(event) {
             DispatchOutcome::Started(MachineState::State(state))
-                if S::is_terminal(&state) || S::is_error(&state) =>
+                if S::is_error(&state) =>
             {
                 return;
             }
             DispatchOutcome::Transition(MachineState::State(state))
-                if S::is_terminal(&state) || S::is_error(&state) =>
+                if S::is_error(&state) =>
             {
                 return;
             }
-            DispatchOutcome::Done(_) => return,
             DispatchOutcome::Failed => return,
             DispatchOutcome::Stopped => return,
             _ => {}

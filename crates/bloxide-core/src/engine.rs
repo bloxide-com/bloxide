@@ -155,8 +155,6 @@ pub enum DispatchOutcome<State> {
     /// Left Init via Start command, or reset directly to initial_state()
     /// via Reset command or Guard::Reset. Actor is immediately operational.
     Started(MachineState<State>),
-    /// Transitioned to terminal state.
-    Done(MachineState<State>),
     /// Actor failed via Guard::Fail or entered error state.
     Failed,
     /// Actor stopped to Init via LifecycleCommand::Stop.
@@ -275,9 +273,10 @@ impl<S: MachineSpec> StateMachine<S> {
             LifecycleCommand::Reset => {
                 match self.current {
                     MachineState::Init => {
-                        // Already in Init - no-op. Reset from Init doesn't
-                        // make sense (there's nothing to reset).
-                        DispatchOutcome::HandledNoTransition
+                        // Reset from Init: go to initial_state() (equivalent to Start).
+                        let target = S::initial_state();
+                        self.transition_to_state(target);
+                        DispatchOutcome::Started(MachineState::State(target))
                     }
                     MachineState::State(_) => {
                         // Reset directly to initial_state() — skip Init entirely.
@@ -316,8 +315,8 @@ impl<S: MachineSpec> StateMachine<S> {
             MachineState::Init => unreachable!("process_operational_event called while in Init"),
         };
 
-        // Terminal and error states are absorbing: domain events cannot transition out.
-        if S::is_terminal(&current) || S::is_error(&current) {
+        // Error states are absorbing: domain events cannot transition out.
+        if S::is_error(&current) {
             return DispatchOutcome::HandledNoTransition;
         }
 
@@ -353,11 +352,9 @@ impl<S: MachineSpec> StateMachine<S> {
                 let target = leaf.into_inner();
                 self.transition_to_state(target);
 
-                // Check for terminal/error states
+                // Check for error states only (no terminal concept)
                 if S::is_error(&target) {
                     DispatchOutcome::Failed
-                } else if S::is_terminal(&target) {
-                    DispatchOutcome::Done(MachineState::State(target))
                 } else {
                     DispatchOutcome::Transition(MachineState::State(target))
                 }
@@ -369,6 +366,11 @@ impl<S: MachineSpec> StateMachine<S> {
                 let target = S::initial_state();
                 self.transition_to_state(target);
                 DispatchOutcome::Started(MachineState::State(target))
+            }
+            Guard::Stop => {
+                // Self-suspend: go to Init (fire exit chain + on_init_entry).
+                self.transition_to_init();
+                DispatchOutcome::Stopped
             }
             Guard::Fail => {
                 // Error propagation: go to user-defined error_state() or Init.
