@@ -1,7 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Domain context crate for the current-timer-id behavior.
 //!
-//! Provides the `HasCurrentTimer` delegatable behavior trait.  The trait
+//! Provides the `HasCurrentTimer` behavior trait.
 //! definition lives here (with the data contract), not in the actions crate.
 #![no_std]
 
@@ -11,10 +11,8 @@ use bloxide_core::{capability::BloxRuntime, messaging::ActorRef, ActorId};
 use bloxide_timer::command::{next_timer_id, TimerCommand, TimerId, TIMER_ACTOR_ID};
 use ping_pong_messages::{PingPongMsg, Resume};
 
-use bloxide_macros::delegatable;
 
 /// Provides read/write access to the current pending timer ID.
-#[delegatable]
 pub trait HasCurrentTimer {
     fn current_timer(&self) -> Option<TimerId>;
     fn set_current_timer(&mut self, timer: Option<TimerId>);

@@ -1,14 +1,12 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Domain context crate for round-counting behavior.
 //!
-//! Provides the `CountsRounds` delegatable behavior trait.  The trait
+//! Provides the `CountsRounds` behavior trait.
 //! definition lives here (with the data contract), not in the actions crate.
 #![no_std]
 
-use bloxide_macros::delegatable;
 
 /// Tracks the current round number in the ping-pong exchange.
-#[delegatable]
 pub trait CountsRounds {
     type Round: Copy
         + PartialEq

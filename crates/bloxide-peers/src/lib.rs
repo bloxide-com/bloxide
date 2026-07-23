@@ -15,7 +15,6 @@ use bloxide_core::{
     capability::BloxRuntime,
     messaging::{ActorId, ActorRef},
 };
-use bloxide_macros::delegatable;
 use pool_messages::{PeerResult, WorkerMsg};
 
 /// Control message for managing a peer collection.
@@ -90,7 +89,6 @@ impl<M: Send + 'static, R: BloxRuntime> fmt::Debug for PeerCtrl<M, R> {
 }
 
 /// Accessor trait for contexts that track a collection of peer refs.
-#[delegatable]
 pub trait HasPeers<M: Send + 'static, R: BloxRuntime> {
     /// Returns the current peer refs.
     fn peers(&self) -> &[ActorRef<M, R>];

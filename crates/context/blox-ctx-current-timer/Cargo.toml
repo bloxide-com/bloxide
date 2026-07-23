@@ -13,6 +13,5 @@ alloc = ["bloxide-core/alloc", "bloxide-timer/alloc"]
 
 [dependencies]
 bloxide-core = { workspace = true }
-bloxide-macros = { workspace = true }
 bloxide-timer = { workspace = true }
 ping-pong-messages = { workspace = true }
