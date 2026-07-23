@@ -116,7 +116,7 @@ pub(crate) fn resolve_action(
 
 /// Generate the StateFns associated constants for a variant.
 #[allow(clippy::too_many_arguments)]
-fn generate_state_fns_impl(
+pub(crate) fn generate_state_fns_impl(
     topology: &TopologyConfig,
     state_enum_ident: &syn::Ident,
     spec_ident: &syn::Ident,
@@ -127,6 +127,7 @@ fn generate_state_fns_impl(
     spec_ty_generics: proc_macro2::TokenStream,
     spec_where_clause: Option<&syn::WhereClause>,
     feature_filter: Option<&str>,
+    action_resolver: &dyn Fn(&str, &str, &str, &[String], bool) -> proc_macro2::TokenStream,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
     use crate::schema::{EntryExitConfig, TransitionConfig};
     use crate::topology::generate_state_rule;
@@ -195,7 +196,7 @@ fn generate_state_fns_impl(
             .map(|ee| {
                 ee.actions
                     .iter()
-                    .map(|a| resolve_action(a, ctx_type_str, event_type_str, type_params, false))
+                    .map(|a| action_resolver(a, ctx_type_str, event_type_str, type_params, false))
                     .collect()
             })
             .unwrap_or_default();
@@ -206,7 +207,7 @@ fn generate_state_fns_impl(
             .map(|ee| {
                 ee.actions
                     .iter()
-                    .map(|a| resolve_action(a, ctx_type_str, event_type_str, type_params, false))
+                    .map(|a| action_resolver(a, ctx_type_str, event_type_str, type_params, false))
                     .collect()
             })
             .unwrap_or_default();
@@ -224,6 +225,7 @@ fn generate_state_fns_impl(
                         ctx_type_str,
                         event_type_str,
                         type_params,
+                        action_resolver,
                     )
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -253,6 +255,7 @@ pub fn generate(
     context: &ContextConfig,
     event: Option<&EventConfig>,
     _crate_name: &str,
+    action_resolver: &dyn Fn(&str, &str, &str, &[String], bool) -> proc_macro2::TokenStream,
 ) -> anyhow::Result<String> {
     let actor_name = &actor.name;
     let spec_ident = format_ident!("{}Spec", actor_name);
@@ -847,6 +850,7 @@ pub fn generate(
             spec_ty_generics.to_token_stream(),
             spec_where_clause,
             var.feature_filter.as_deref(),
+            action_resolver,
         )?;
 
         // MachineSpec impl

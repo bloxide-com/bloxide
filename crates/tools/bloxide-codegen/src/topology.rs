@@ -323,6 +323,7 @@ pub(crate) fn generate_state_rule(
     ctx_type_str: &str,
     event_type_str: &str,
     type_params: &[String],
+    action_resolver: &dyn Fn(&str, &str, &str, &[String], bool) -> proc_macro2::TokenStream,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
     let kind = classify_pattern_str(&trans.event);
     let event_tag_ts = extract_event_tag_str(&trans.event, kind, type_params);
@@ -335,9 +336,7 @@ pub(crate) fn generate_state_rule(
     let action_tokens: Vec<proc_macro2::TokenStream> = trans
         .actions
         .iter()
-        .map(|a| {
-            crate::spec_skeleton::resolve_action(a, ctx_type_str, event_type_str, type_params, true)
-        })
+        .map(|a| action_resolver(a, ctx_type_str, event_type_str, type_params, true))
         .collect();
 
     let actions_ts = if action_tokens.is_empty() {

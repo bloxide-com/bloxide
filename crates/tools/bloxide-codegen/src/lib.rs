@@ -7,6 +7,7 @@ mod mailboxes;
 mod messages;
 pub mod schema;
 pub mod spec_skeleton;
+pub mod system_spec;
 pub mod system_wiring;
 mod topology;
 pub mod util;
@@ -67,6 +68,7 @@ pub fn generate_all(
                 context,
                 config.event.as_ref(),
                 crate_name,
+                &spec_skeleton::resolve_action,
             )?;
             files.push(("spec_skeleton.rs".to_string(), code));
         }
