@@ -90,12 +90,7 @@ fields = [
 ]
 
 [topology]
-spec_imports = [
-    "crate::actions::handle_work_done",
-]
-feature_spec_imports = [
-    "crate::actions::{handle_spawn_worker, handle_spawn_worker_queued, handle_spawned_worker}",
-]
+
 
 [[topology.states]]
 name = "Idle"
@@ -114,7 +109,7 @@ name = "Active"
 state = "Idle"
 event = "PoolMsg::SpawnWorker(_)"
 target = "Spawning"
-actions = ["handle_spawn_worker"]
+actions = ["Self::handle_spawn_worker"]
 feature = "dynamic"
 
 # Spawning: SpawnedWorker reply → Active (or stay Spawning if more spawns in-flight/queued, or stop if all workers already finished)
@@ -122,7 +117,7 @@ feature = "dynamic"
 state = "Spawning"
 event = "PoolEvent::SpawnReply(_)"
 target = "Active"
-actions = ["handle_spawned_worker"]
+actions = ["Self::handle_spawned_worker"]
 feature = "dynamic"
 
 [[topology.transitions.guards]]
@@ -138,7 +133,7 @@ target = "stop"
 state = "Spawning"
 event = "PoolMsg::SpawnWorker(_)"
 target = "stay"
-actions = ["handle_spawn_worker_queued"]
+actions = ["Self::handle_spawn_worker_queued"]
 feature = "dynamic"
 
 # Spawning: handle WorkDone while waiting for spawn reply
@@ -146,14 +141,14 @@ feature = "dynamic"
 state = "Spawning"
 event = "PoolMsg::WorkDone(_)"
 target = "stay"
-actions = ["handle_work_done"]
+actions = ["Self::handle_work_done"]
 
 # Active: SpawnWorker → Spawning (async spawn, dynamic only)
 [[topology.transitions]]
 state = "Active"
 event = "PoolMsg::SpawnWorker(_)"
 target = "Spawning"
-actions = ["handle_spawn_worker"]
+actions = ["Self::handle_spawn_worker"]
 feature = "dynamic"
 
 # Active: WorkDone with guard
@@ -161,7 +156,7 @@ feature = "dynamic"
 state = "Active"
 event = "PoolMsg::WorkDone(_)"
 target = "stay"
-actions = ["handle_work_done"]
+actions = ["Self::handle_work_done"]
 
 [[topology.transitions.guards]]
 condition = "ctx.pending() == 0"

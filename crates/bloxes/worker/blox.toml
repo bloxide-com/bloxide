@@ -40,6 +40,22 @@ field = "pool_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "accessor"
 
+# Accessor for peers state field
+[[context.uses]]
+crate = "bloxide_peers"
+trait = "HasPeers<WorkerMsg, R>"
+field = "peers"
+field_type = "Vec<ActorRef<WorkerMsg, R>>"
+role = "accessor"
+
+# Accessor for current task state field
+[[context.uses]]
+crate = "blox_ctx_current_task"
+trait = "HasCurrentTask"
+field = "task_id"
+field_type = "u32"
+role = "accessor"
+
 # State fields (moved from B into Ctx)
 [[context.fields]]
 name = "task_id"

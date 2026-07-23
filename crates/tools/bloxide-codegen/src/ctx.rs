@@ -397,14 +397,15 @@ fn generate_variant(
     }
 
     // 2: State fields from [[context.fields]] — inlined directly into the
-    //    struct, zero-initialized by BloxCtx (via #[blox_ctx(skip)]).
+    //    struct. Convention-based inference in BloxCtx classifies fields
+    //    that don't match any naming pattern as State (zero-initialized,
+    //    excluded from new()).
     for field in &config.fields {
         let field_ident = format_ident!("{}", field.name);
         let field_ty = syn::parse_str::<syn::Type>(&field.r#type).map_err(|e| {
             anyhow::anyhow!("invalid type '{}' in context.fields: {}", field.r#type, e)
         })?;
         field_defs.push(quote! {
-            #[blox_ctx(skip)]
             pub #field_ident: #field_ty,
         });
     }

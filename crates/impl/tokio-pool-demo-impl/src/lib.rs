@@ -5,7 +5,7 @@
 //! that knows about concrete worker context/spec types and task spawning.
 
 extern crate alloc;
-use alloc::vec::Vec;
+
 
 use bloxide_child_management::ChildPolicy;
 use bloxide_core::lifecycle::AbortCommand;
@@ -56,7 +56,7 @@ pub fn spawn_worker(
             let (abort_ref, abort_rx) =
                 <TokioRuntime as DynamicChannelCap>::channel::<AbortCommand>(worker_id, 4);
 
-            let worker_ctx = WorkerCtx::new(worker_id, pool_ref, Vec::new(), 0, 0);
+            let worker_ctx = WorkerCtx::new(worker_id, pool_ref);
             let machine = StateMachine::<WorkerSpec<TokioRuntime>>::new(worker_ctx);
 
             let notify_sender = notify.sender();

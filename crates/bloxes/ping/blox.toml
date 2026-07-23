@@ -9,6 +9,8 @@ on_init = "ctx.round = 0; ctx.current_timer = None;"
 imports = [
     "ping_pong_messages::PingPongMsg",
     "bloxide_timer::{TimerCommand, TimerId}",
+    "blox_ctx_current_timer::HasCurrentTimer",
+    "blox_ctx_rounds::CountsRounds",
 ]
 extra_impls = [
     "HasCurrentTimer for {ctx} { fn current_timer(&self) -> Option<TimerId> { self.current_timer } fn set_current_timer(&mut self, t: Option<TimerId>) { self.current_timer = t; } }",
