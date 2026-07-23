@@ -59,6 +59,51 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
 
     println!("bloxide: processed {} blox.toml files", count);
 
+    // ── Process system.toml files (app wiring) ───────────────────────────
+    // After generating blox crate code, also regenerate main.rs for any
+    // system.toml manifests found in the workspace. This makes
+    // `cargo blox build`/`check`/`test`/`run` automatically regenerate
+    // app wiring alongside blox crate code — no separate `cargo blox wire`
+    // step needed.
+    let mut wire_count = 0;
+    for entry in WalkDir::new(&root)
+        .max_depth(4)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name() == "system.toml")
+    {
+        let system_path = entry.path();
+        match bloxide_codegen::generate_system_wiring_from_toml(system_path, &root) {
+            Ok(main_rs) => {
+                let output_path = system_path.parent().unwrap().join("src").join("main.rs");
+                std::fs::create_dir_all(output_path.parent().unwrap())?;
+
+                let needs_write = if output_path.exists() {
+                    std::fs::read_to_string(&output_path)? != main_rs
+                } else {
+                    true
+                };
+
+                if needs_write {
+                    std::fs::write(&output_path, &main_rs)?;
+                    println!("bloxide: generated {}", output_path.display());
+                }
+                wire_count += 1;
+            }
+            Err(e) => {
+                eprintln!(
+                    "bloxide: warning: failed to wire {}: {}",
+                    system_path.display(),
+                    e
+                );
+            }
+        }
+    }
+
+    if wire_count > 0 {
+        println!("bloxide: processed {} system.toml files", wire_count);
+    }
+
     // Format generated files so that `cargo fmt -- --check` passes.
     let status = std::process::Command::new("cargo")
         .args(["fmt"])
