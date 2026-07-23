@@ -17,6 +17,15 @@ field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "accessor"
 
+# --- Action declarations (Phase 3 system codegen) ---
+
+[[context.actions]]
+name = "reply_pong_action"
+kind = "transition"
+fields = ["self_id", "peer_ref:ref"]
+event_payload = "ping"
+impl_required = false
+
 [event]
 name = "PongEvent"
 

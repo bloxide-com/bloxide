@@ -5,7 +5,6 @@
 //! definition lives here (with the data contract), not in the actions crate.
 #![no_std]
 
-
 /// Tracks the current round number in the ping-pong exchange.
 pub trait CountsRounds {
     type Round: Copy

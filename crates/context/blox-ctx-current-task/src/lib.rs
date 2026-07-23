@@ -5,7 +5,6 @@
 //! definition lives here (with the data contract), not in the actions crate.
 #![no_std]
 
-
 /// Behavior trait for a worker context that is processing a task.
 ///
 /// Implemented by `WorkerCtx`. Used by `notify_pool_done` and `broadcast_to_peers`.

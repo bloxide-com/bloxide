@@ -11,6 +11,14 @@ on_init = "ctx.count = 0;"
 name = "count"
 type = "u32"
 
+# --- Action declarations (Phase 3 system codegen) ---
+
+[[context.actions]]
+name = "count_tick"
+kind = "transition"
+fields = ["count:mut"]
+impl_required = false
+
 [event]
 name = "CounterEvent"
 

@@ -5,7 +5,6 @@
 //! definition lives here (with the data contract), not in the actions crate.
 #![no_std]
 
-
 /// Behavior trait for contexts that track a count.
 pub trait CountsTicks {
     type Count: Copy + PartialOrd + core::ops::Add<Output = Self::Count> + From<u8>;

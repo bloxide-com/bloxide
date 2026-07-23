@@ -6,6 +6,112 @@ name = "BhsmTst"
 name = "BhsmTstCtx"
 generics = ""
 
+# --- Action declarations (Phase 3 system codegen) ---
+# All BHSM actions are entry/exit trace functions, previously logging-only.
+# They are now no-ops (no fields, no impl required).
+
+[[context.actions]]
+name = "s_entry"
+kind = "entry"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s_exit"
+kind = "exit"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s_i"
+kind = "transition"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s1_entry"
+kind = "entry"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s1_exit"
+kind = "exit"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s11_entry"
+kind = "entry"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s11_exit"
+kind = "exit"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s11_a"
+kind = "transition"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s11_b"
+kind = "transition"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s2_entry"
+kind = "entry"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s2_exit"
+kind = "exit"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s21_entry"
+kind = "entry"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s21_exit"
+kind = "exit"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s211_entry"
+kind = "entry"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "s211_exit"
+kind = "exit"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "error_entry"
+kind = "entry"
+fields = []
+impl_required = false
+
+[[context.actions]]
+name = "error_exit"
+kind = "exit"
+fields = []
+impl_required = false
+
 [event]
 name = "BhsmTstEvent"
 

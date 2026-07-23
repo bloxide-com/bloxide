@@ -11,7 +11,6 @@ use bloxide_core::{capability::BloxRuntime, messaging::ActorRef, ActorId};
 use bloxide_timer::command::{next_timer_id, TimerCommand, TimerId, TIMER_ACTOR_ID};
 use ping_pong_messages::{PingPongMsg, Resume};
 
-
 /// Provides read/write access to the current pending timer ID.
 pub trait HasCurrentTimer {
     fn current_timer(&self) -> Option<TimerId>;

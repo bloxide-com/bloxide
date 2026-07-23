@@ -56,6 +56,34 @@ type = "u32"
 name = "peers"
 type = "Vec<ActorRef<WorkerMsg, R>>"
 
+# --- Action declarations (Phase 3 system codegen) ---
+
+[[context.actions]]
+name = "handle_ctrl"
+kind = "transition"
+fields = ["peers:mut"]
+event_payload = "ctrl"
+impl_required = false
+
+[[context.actions]]
+name = "process_work"
+kind = "transition"
+fields = ["task_id:mut", "result:mut"]
+event_payload = "do_work"
+impl_required = true
+
+[[context.actions]]
+name = "do_broadcast"
+kind = "transition"
+fields = ["self_id", "peers:ref", "result"]
+impl_required = false
+
+[[context.actions]]
+name = "do_notify_pool"
+kind = "transition"
+fields = ["self_id", "pool_ref:ref", "task_id", "result"]
+impl_required = false
+
 # --- Declarative transitions ---
 
 # Waiting: entry logs; handles ctrl (AddPeer/RemovePeer), DoWork → stop, PeerResult stays

@@ -49,6 +49,38 @@ type = "Option<TimerId>"
 name = "round"
 type = "u32"
 
+# --- Action declarations (Phase 3 system codegen) ---
+
+[[context.actions]]
+name = "increment_round"
+kind = "transition"
+fields = ["round:mut"]
+impl_required = false
+
+[[context.actions]]
+name = "send_initial_ping"
+kind = "transition"
+fields = ["self_id", "peer_ref:ref", "round"]
+impl_required = false
+
+[[context.actions]]
+name = "forward_ping"
+kind = "transition"
+fields = ["self_id", "peer_ref:ref", "round"]
+impl_required = false
+
+[[context.actions]]
+name = "schedule_pause_timer"
+kind = "transition"
+fields = ["self_id", "timer_ref:ref", "round:mut", "current_timer:mut"]
+impl_required = false
+
+[[context.actions]]
+name = "cancel_pause_timer"
+kind = "transition"
+fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
+impl_required = false
+
 [event]
 name = "PingEvent"
 
