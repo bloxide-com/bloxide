@@ -16,6 +16,7 @@ mod new;
 mod new_actions;
 mod new_all;
 mod new_binary;
+mod new_impl;
 mod new_messages;
 mod run;
 mod state;
@@ -99,6 +100,13 @@ enum BloxSubcommand {
     },
     /// Scaffold a new actions crate
     NewActions { name: String },
+    /// Scaffold a new impl crate for a blox
+    NewImpl {
+        name: String,
+        /// Blox crate name (e.g. pool)
+        #[arg(long)]
+        blox: String,
+    },
     /// Scaffold a new messages crate
     NewMessages { name: String },
     /// Scaffold a new binary (wiring) crate
@@ -233,6 +241,7 @@ fn main() -> anyhow::Result<()> {
                 actions,
             } => new::new_blox(&name, messages.as_deref(), actions.as_deref()),
             BloxSubcommand::NewActions { name } => new_actions::new_actions(&name),
+            BloxSubcommand::NewImpl { name, blox } => new_impl::new_impl(&name, &blox),
             BloxSubcommand::NewMessages { name } => new_messages::new_messages(&name),
             BloxSubcommand::NewBinary { name, runtime } => new_binary::new_binary(&name, &runtime),
             BloxSubcommand::NewAll { name, runtime } => new_all::new_all(&name, &runtime),

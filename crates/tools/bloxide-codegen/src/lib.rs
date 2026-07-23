@@ -538,13 +538,6 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
             }
         }
 
-        // Behavior impl crate.
-        if let Some(impl_crate) = &actor.behavior_impl {
-            // behavior_impl is already in hyphen format (e.g. "ping-pong-impl").
-            deps.entry(impl_crate.clone())
-                .or_insert_with(|| (vec![], true));
-        }
-
         // Concrete action impl crate (Phase 3 system codegen).
         if let Some(impl_crate) = &actor.impl_crate {
             let cargo_name = impl_crate.replace('_', "-");

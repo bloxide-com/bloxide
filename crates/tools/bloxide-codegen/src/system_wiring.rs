@@ -320,17 +320,6 @@ pub fn generate(
         });
     }
 
-    // Behavior impl imports.
-    for actor in &config.actors {
-        if let (Some(behavior), Some(behavior_impl)) = (&actor.behavior, &actor.behavior_impl) {
-            let impl_crate_ident = format_ident!("{}", crate_name(behavior_impl));
-            let behavior_ident = format_ident!("{}", behavior);
-            use_stmts.push(quote! {
-                use ::#impl_crate_ident::#behavior_ident;
-            });
-        }
-    }
-
     // Message type imports and bootstrap struct imports.
     let mut bootstrap_imports: BTreeSet<(String, String)> = BTreeSet::new();
     for actor in &config.actors {
