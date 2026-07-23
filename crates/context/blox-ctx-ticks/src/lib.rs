@@ -14,3 +14,8 @@ pub trait CountsTicks {
     fn count(&self) -> Self::Count;
     fn set_count(&mut self, count: Self::Count);
 }
+
+/// Increment a count by one.
+pub fn increment_count<Count: Copy + core::ops::Add<Output = Count> + From<u8>>(count: &mut Count) {
+    *count = *count + Count::from(1);
+}

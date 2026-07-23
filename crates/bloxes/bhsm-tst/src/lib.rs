@@ -9,6 +9,5 @@ pub mod prelude;
 #[macro_use]
 pub mod generated;
 
-mod actions;
 
 pub use generated::{BhsmTstCtx, BhsmTstEvent, BhsmTstSpec, BhsmTstState};
