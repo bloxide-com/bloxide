@@ -127,19 +127,20 @@ pub fn introduce_peers<M, R>(
     );
 }
 
-/// Apply a `PeerCtrl` command to a context's peer collection.
+/// Apply a `PeerCtrl` command to a peer collection.
 ///
 /// Handles both `AddPeer` and `RemovePeer` variants.
-pub fn apply_peer_control<M, R, C>(ctx: &mut C, ctrl: &PeerCtrl<M, R>)
-where
+pub fn apply_peer_control<M, R>(
+    peers: &mut Vec<ActorRef<M, R>>,
+    ctrl: &PeerCtrl<M, R>,
+) where
     M: Send + 'static,
     R: BloxRuntime,
-    C: HasPeers<M, R>,
 {
     match ctrl {
-        PeerCtrl::AddPeer(add) => ctx.peers_mut().push(add.peer_ref.clone()),
+        PeerCtrl::AddPeer(add) => peers.push(add.peer_ref.clone()),
         PeerCtrl::RemovePeer(remove) => {
-            ctx.peers_mut().retain(|r| r.id() != remove.peer_id);
+            peers.retain(|r| r.id() != remove.peer_id);
         }
     }
 }

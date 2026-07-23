@@ -19,7 +19,7 @@ use bloxide_peers::PeerCtrl;
 use bloxide_spawn::{SpawnCap, SpawnOutput};
 use bloxide_tokio::{run, RunConfig, TokioRuntime};
 use pool_actions::traits::{HasCurrentTask, HasPeers};
-use pool_messages::{SpawnRequest, SpawnedWorker, WorkerMsg};
+use pool_messages::{DoWork, SpawnRequest, SpawnedWorker, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
 
 /// Behavior type for Worker actors holding task state and peer list.
@@ -61,6 +61,12 @@ impl<R: BloxRuntime> HasPeers<WorkerMsg, R> for WorkerBehavior<R> {
     fn peers_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, R>> {
         &mut self.peers
     }
+}
+
+/// Process a work request: store the task ID and compute the result (task_id * 2).
+pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) {
+    *task_id = do_work.task_id;
+    *result = do_work.task_id * 2;
 }
 
 /// Spawn function for the Tokio pool demo.
