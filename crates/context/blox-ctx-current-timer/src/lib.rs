@@ -18,13 +18,16 @@ pub trait HasCurrentTimer {
 }
 
 /// Schedule a resume timer delivering `PingPongMsg::Resume` to self after
-/// `duration_ms` milliseconds. Returns the `TimerId` for the caller to store.
+/// a duration derived from the current round number. Stores the `TimerId`
+/// in `current_timer`.
 pub fn schedule_resume<R: BloxRuntime>(
     self_id: ActorId,
     self_ref: &ActorRef<PingPongMsg, R>,
     timer_ref: &ActorRef<TimerCommand, R>,
-    duration_ms: u64,
-) -> TimerId {
+    round: u32,
+    current_timer: &mut Option<TimerId>,
+) {
+    let duration_ms = 2000 + (round as u64 * 500);
     let id = next_timer_id();
     let target = self_ref.clone();
     let deliver = alloc::boxed::Box::new(move || {
@@ -38,16 +41,16 @@ pub fn schedule_resume<R: BloxRuntime>(
             deliver,
         },
     );
-    id
+    *current_timer = Some(id);
 }
 
-/// Cancel a pending timer by its ID (if any).
+/// Cancel a pending timer by its ID (if any) and clear the stored timer.
 pub fn cancel_timer_by_id<R: BloxRuntime>(
     self_id: ActorId,
     timer_ref: &ActorRef<TimerCommand, R>,
-    timer_id: Option<TimerId>,
+    current_timer: &mut Option<TimerId>,
 ) {
-    if let Some(id) = timer_id {
+    if let Some(id) = current_timer.take() {
         let _ = timer_ref.try_send(self_id, TimerCommand::Cancel { id });
     }
 }

@@ -288,13 +288,35 @@ pub fn generate(
     // extra type parameters beyond R.)
 
     // Blox crate imports.
+    let mut has_non_timer_actors = false;
     for actor in &config.actors {
         if actor.kind.as_deref() == Some("timer") {
             continue;
         }
+        has_non_timer_actors = true;
         let blox_crate_ident = format_ident!("{}", crate_name(&actor.blox));
         use_stmts.push(quote! {
             use ::#blox_crate_ident::prelude::*;
+        });
+    }
+
+    // Import concrete specs from the app's generated/ directory.
+    // Explicit imports shadow the stub Spec types from the glob imports
+    // above (Rust: explicit `use` takes precedence over glob `use *`).
+    for actor in &config.actors {
+        if actor.kind.as_deref() == Some("timer") {
+            continue;
+        }
+        // Look up the actor name from the blox config to get the Spec name.
+        let blox_config = blox_configs.get(&actor.blox);
+        let actor_name = blox_config
+            .and_then(|bc| bc.actor.as_ref())
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| actor.name.clone());
+        let spec_ident = format_ident!("{}Spec", actor_name);
+        let module_name = format_ident!("{}_spec_skeleton", actor_name.to_lowercase());
+        use_stmts.push(quote! {
+            use crate::generated::#module_name::#spec_ident;
         });
     }
 
@@ -959,6 +981,22 @@ pub fn generate(
         #(#task_decls)*
         #(#root_task_decls)*
         #main_fn
+    };
+
+    // Prepend `mod generated;` if we generated concrete spec files.
+    // This must come before any use statements that reference crate::generated.
+    let tokens = if has_non_timer_actors {
+        quote! {
+            #![allow(unused_imports, unused_variables)]
+            mod generated;
+            #(#embassy_timer_task_decl)*
+            #(#use_stmts)*
+            #(#task_decls)*
+            #(#root_task_decls)*
+            #main_fn
+        }
+    } else {
+        tokens
     };
 
     let file = syn::parse2::<syn::File>(tokens)

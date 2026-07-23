@@ -16,6 +16,9 @@ bloxide-supervisor = { workspace = true, features = ["std"] }
 pool-messages = { workspace = true }
 worker-blox = { workspace = true, features = ["std"] }
 
+[features]
+dynamic = []
+
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std"] }
 bloxide-child-management = { workspace = true, features = ["std"] }

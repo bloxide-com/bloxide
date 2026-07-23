@@ -67,6 +67,7 @@ impl_required = false
 
 [[context.actions]]
 name = "forward_ping"
+fn_name = "send_ping"
 crate = "bloxide_messaging"
 kind = "transition"
 fields = ["self_id", "peer_ref:ref", "round"]
@@ -74,13 +75,15 @@ impl_required = false
 
 [[context.actions]]
 name = "schedule_pause_timer"
+fn_name = "schedule_resume"
 crate = "blox_ctx_current_timer"
 kind = "transition"
-fields = ["self_id", "timer_ref:ref", "round:mut", "current_timer:mut"]
+fields = ["self_id", "self_ref:ref", "timer_ref:ref", "round", "current_timer:mut"]
 impl_required = false
 
 [[context.actions]]
 name = "cancel_pause_timer"
+fn_name = "cancel_timer_by_id"
 crate = "blox_ctx_current_timer"
 kind = "transition"
 fields = ["self_id", "timer_ref:ref", "current_timer:mut"]

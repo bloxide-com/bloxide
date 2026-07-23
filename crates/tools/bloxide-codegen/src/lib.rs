@@ -68,6 +68,7 @@ pub fn generate_all(
                 context,
                 config.event.as_ref(),
                 crate_name,
+                "crate",
                 &spec_skeleton::resolve_action,
             )?;
             files.push(("spec_skeleton.rs".to_string(), code));
@@ -174,10 +175,11 @@ pub fn generate_system_wiring_from_toml(
     let content = std::fs::read_to_string(system_path)?;
     let config: SystemConfig = toml::from_str(&content)?;
 
-    // Discover all blox.toml files in the workspace.
+    // Discover all blox.toml files in the workspace (excluding target/).
     let mut blox_configs = BTreeMap::new();
     for entry in walkdir::WalkDir::new(workspace_root)
         .into_iter()
+        .filter_entry(|e| e.file_name() != "target")
         .filter_map(|e| e.ok())
     {
         if entry.file_name() == "blox.toml" {
@@ -227,6 +229,36 @@ pub fn generate_system_wiring_from_toml(
     let active_features = merge_features(inferred_features, existing_features);
 
     let generated = system_wiring::generate(&config, &blox_configs, &active_features)?;
+
+    // Generate concrete spec_skeleton.rs files for each actor and write them
+    // to the app's src/generated/ directory. Also generate a mod.rs that
+    // declares all the spec modules.
+    let app_dir = system_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("system.toml has no parent directory"))?;
+    let generated_dir = app_dir.join("src").join("generated");
+    if !config.actors.is_empty() {
+        let spec_files = system_spec::generate_concrete_spec_files(&blox_configs, &config.actors)?;
+        if !spec_files.is_empty() {
+            std::fs::create_dir_all(&generated_dir)?;
+            let mut mod_content = String::from(
+                "// Copyright 2025 Bloxide, all rights reserved\n\
+                 // Auto-generated module. Do not edit manually.\n",
+            );
+            for (actor_name, spec_code) in &spec_files {
+                let module_name = actor_name.replace('-', "_").to_lowercase() + "_spec_skeleton";
+                let filename = format!("{}.rs", module_name);
+                std::fs::write(generated_dir.join(&filename), spec_code)?;
+                mod_content.push_str(&format!("pub mod {};\n", module_name));
+                mod_content.push_str(&format!(
+                    "#[allow(unused_imports)]\npub use {}::*;\n",
+                    module_name
+                ));
+            }
+            std::fs::write(generated_dir.join("mod.rs"), &mod_content)?;
+        }
+    }
+
     Ok(generated)
 }
 
@@ -336,10 +368,12 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
     let content = std::fs::read_to_string(system_path)?;
     let config: SystemConfig = toml::from_str(&content)?;
 
-    // Discover all blox.toml files (same logic as generate_system_wiring_from_toml).
+    // Discover all blox.toml files (same logic as generate_system_wiring_from_toml,
+    // excluding target/).
     let mut blox_configs = BTreeMap::new();
     for entry in walkdir::WalkDir::new(workspace_root)
         .into_iter()
+        .filter_entry(|e| e.file_name() != "target")
         .filter_map(|e| e.ok())
     {
         if entry.file_name() == "blox.toml" {
@@ -490,6 +524,17 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
                         }
                     }
                 }
+
+                // Add context action crates — these are the crates that
+                // provide the concrete action functions referenced in the
+                // generated spec_skeleton.rs (e.g. blox_ctx_rounds,
+                // bloxide_messaging, blox_ctx_current_timer).
+                for action in &ctx.actions {
+                    if let Some(ref crate_name) = action.crate_name {
+                        let cargo_name = crate_name.replace('_', "-");
+                        deps.entry(cargo_name).or_insert_with(|| (vec![], true));
+                    }
+                }
             }
         }
 
@@ -498,6 +543,12 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
             // behavior_impl is already in hyphen format (e.g. "ping-pong-impl").
             deps.entry(impl_crate.clone())
                 .or_insert_with(|| (vec![], true));
+        }
+
+        // Concrete action impl crate (Phase 3 system codegen).
+        if let Some(impl_crate) = &actor.impl_crate {
+            let cargo_name = impl_crate.replace('_', "-");
+            deps.entry(cargo_name).or_insert_with(|| (vec![], true));
         }
 
         // Factory injection crates.

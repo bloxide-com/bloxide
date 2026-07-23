@@ -54,13 +54,13 @@ pub fn send_ping<R: BloxRuntime>(
     ActionResult::from(peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round })))
 }
 
-/// Send a `PingPongMsg::Pong` to the peer echoing the given round number.
+/// Send a `PingPongMsg::Pong` to the peer echoing the round from the received Ping.
 pub fn send_pong<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
-    round: u32,
+    ping: &Ping,
 ) -> ActionResult {
-    ActionResult::from(peer_ref.try_send(self_id, PingPongMsg::Pong(Pong { round })))
+    ActionResult::from(peer_ref.try_send(self_id, PingPongMsg::Pong(Pong { round: ping.round })))
 }
 
 /// Send a `PingPongMsg::Ping` to the peer only if this is the first round (round == 1).

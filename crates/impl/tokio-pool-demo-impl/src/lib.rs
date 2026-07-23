@@ -9,7 +9,7 @@ extern crate alloc;
 use bloxide_child_management::ChildPolicy;
 use bloxide_core::lifecycle::AbortCommand;
 use bloxide_core::{
-    capability::DynamicChannelCap,
+    capability::{BloxRuntime, DynamicChannelCap},
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::ActorRef,
     StateMachine,
@@ -24,6 +24,82 @@ use worker_blox::{WorkerCtx, WorkerSpec};
 pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) {
     *task_id = do_work.task_id;
     *result = do_work.task_id * 2;
+}
+
+// ── Pool action functions (Phase 3 system codegen) ──────────────────────────
+// These are called by the generated concrete spec_skeleton with individual
+// context fields passed as parameters (not the full PoolCtx).
+
+/// Decrement the pending work counter when a WorkDone is received.
+pub fn handle_work_done(pending: &mut u32, _work_done: &pool_messages::WorkDone) {
+    if *pending > 0 {
+        *pending -= 1;
+    }
+}
+
+/// Spawn a new worker via the supervisor, then set in-flight flag.
+#[cfg(feature = "dynamic")]
+pub fn handle_spawn_worker<R: BloxRuntime>(
+    self_id: bloxide_core::ActorId,
+    spawn_fn: &bloxide_spawn::SpawnFn<
+        R,
+        pool_messages::SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
+    >,
+    spawn_ref: &bloxide_core::messaging::ActorRef<bloxide_supervisor::SupervisorControl<R>, R>,
+    pending_task_id: &mut u32,
+    spawn_in_flight: &mut bool,
+    _spawn_queue: &mut alloc::vec::Vec<u32>,
+    _worker_refs: &mut alloc::vec::Vec<bloxide_core::messaging::ActorRef<WorkerMsg, R>>,
+    _worker_ctrls: &mut alloc::vec::Vec<
+        bloxide_core::messaging::ActorRef<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
+    >,
+    pending: &mut u32,
+    spawn_worker: &pool_messages::SpawnWorker,
+) {
+    let task_id = spawn_worker.task_id;
+    *pending_task_id = task_id;
+    *spawn_in_flight = true;
+
+    // We need the reply and pool refs — but these aren't in the field list.
+    // The spawn_child helper needs them. For now, we can't call spawn_child
+    // because we don't have spawn_reply_ref or self_ref.
+    // TODO: Add spawn_reply_ref and self_ref to the action's field list.
+    // For now, just increment pending to track the in-flight work.
+    *pending += 1;
+}
+
+/// Buffer a SpawnWorker request while already in Spawning state.
+#[cfg(feature = "dynamic")]
+pub fn handle_spawn_worker_queued(
+    spawn_queue: &mut alloc::vec::Vec<u32>,
+    spawn_worker: &pool_messages::SpawnWorker,
+) {
+    spawn_queue.push(spawn_worker.task_id);
+}
+
+/// Handle a SpawnedWorker reply: store worker refs, send DoWork, process queue.
+#[cfg(feature = "dynamic")]
+pub fn handle_spawned_worker<R: BloxRuntime>(
+    spawn_in_flight: &mut bool,
+    spawn_queue: &mut alloc::vec::Vec<u32>,
+    _worker_refs: &mut alloc::vec::Vec<bloxide_core::messaging::ActorRef<WorkerMsg, R>>,
+    _worker_ctrls: &mut alloc::vec::Vec<
+        bloxide_core::messaging::ActorRef<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
+    >,
+    _pending: &mut u32,
+    _spawned_worker: &pool_messages::SpawnedWorker<
+        bloxide_peers::PeerCtrl<WorkerMsg, R>,
+        R,
+    >,
+) {
+    *spawn_in_flight = false;
+    // TODO: Full implementation needs self_ref, spawn_fn, spawn_ref, notify_ref,
+    // spawn_reply_ref, and self_id to introduce peers and send DoWork.
+    // For now, just clear in-flight and drain the queue.
+    if !spawn_queue.is_empty() {
+        spawn_queue.remove(0);
+        *spawn_in_flight = true;
+    }
 }
 
 /// Spawn function for the Tokio pool demo.

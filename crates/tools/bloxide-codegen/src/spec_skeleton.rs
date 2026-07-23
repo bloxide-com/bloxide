@@ -84,6 +84,7 @@ pub(crate) fn resolve_action(
     ctx_type_str: &str,
     event_type_str: &str,
     type_params: &[String],
+    _event_pattern: Option<&str>,
     is_transition: bool,
 ) -> proc_macro2::TokenStream {
     let resolved = replace_placeholders(action, ctx_type_str, event_type_str, type_params);
@@ -127,7 +128,14 @@ pub(crate) fn generate_state_fns_impl(
     spec_ty_generics: proc_macro2::TokenStream,
     spec_where_clause: Option<&syn::WhereClause>,
     feature_filter: Option<&str>,
-    action_resolver: &dyn Fn(&str, &str, &str, &[String], bool) -> proc_macro2::TokenStream,
+    action_resolver: &dyn Fn(
+        &str,
+        &str,
+        &str,
+        &[String],
+        Option<&str>,
+        bool,
+    ) -> proc_macro2::TokenStream,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
     use crate::schema::{EntryExitConfig, TransitionConfig};
     use crate::topology::generate_state_rule;
@@ -196,7 +204,9 @@ pub(crate) fn generate_state_fns_impl(
             .map(|ee| {
                 ee.actions
                     .iter()
-                    .map(|a| action_resolver(a, ctx_type_str, event_type_str, type_params, false))
+                    .map(|a| {
+                        action_resolver(a, ctx_type_str, event_type_str, type_params, None, false)
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -207,7 +217,9 @@ pub(crate) fn generate_state_fns_impl(
             .map(|ee| {
                 ee.actions
                     .iter()
-                    .map(|a| action_resolver(a, ctx_type_str, event_type_str, type_params, false))
+                    .map(|a| {
+                        action_resolver(a, ctx_type_str, event_type_str, type_params, None, false)
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -255,11 +267,44 @@ pub fn generate(
     context: &ContextConfig,
     event: Option<&EventConfig>,
     _crate_name: &str,
-    action_resolver: &dyn Fn(&str, &str, &str, &[String], bool) -> proc_macro2::TokenStream,
+    blox_crate_path: &str,
+    action_resolver: &dyn Fn(
+        &str,
+        &str,
+        &str,
+        &[String],
+        Option<&str>,
+        bool,
+    ) -> proc_macro2::TokenStream,
 ) -> anyhow::Result<String> {
     let actor_name = &actor.name;
-    let spec_ident = format_ident!("{}Spec", actor_name);
-    let state_ident = format_ident!("{}State", actor_name);
+    let spec_ident = format_ident!("{}", format!("{}Spec", actor_name));
+    let state_ident = format_ident!("{}", format!("{}State", actor_name));
+
+    // Track whether this is a system-level spec (blox_crate_path starts with "::").
+    // For blox-level generation this is "crate"; for system-level it's e.g. "::ping_blox".
+    let is_system_level = blox_crate_path.starts_with("::");
+
+    // Parse the blox_crate_path into a syn::Path for use in quote! macros.
+    let blox_crate_path: syn::Path = syn::parse_str(blox_crate_path)
+        .map_err(|e| anyhow::anyhow!("invalid blox_crate_path '{}': {}", blox_crate_path, e))?;
+
+    // Helper: translate a spec_import path that starts with `crate::` to use
+    // blox_crate_path instead. Only replaces the leading `crate::`, not
+    // occurrences in the middle of a path.
+    let translate_crate_import = |imp: &str| -> String {
+        if imp.starts_with("crate::") {
+            format!(
+                "{}::{}",
+                blox_crate_path.to_token_stream(),
+                &imp["crate::".len()..]
+            )
+        } else if imp == "crate" {
+            blox_crate_path.to_token_stream().to_string()
+        } else {
+            imp.to_string()
+        }
+    };
 
     let handler_macro_name_str = format!(
         "{}_handler_table",
@@ -343,8 +388,18 @@ pub fn generate(
         use_stmts.push(quote! { use ::bloxide_core::capability::BloxRuntime; });
     }
     use_stmts.push(quote! { use ::bloxide_core::spec::{MachineSpec, StateFns}; });
-    use_stmts.push(quote! { use crate::#ctx_ident; });
-    use_stmts.push(quote! { pub use crate::generated::topology::#state_ident; });
+    use_stmts.push(quote! { use #blox_crate_path::#ctx_ident; });
+    use_stmts.push(quote! { pub use #blox_crate_path::generated::topology::#state_ident; });
+
+    // Import the handler table macro from the blox crate when generating
+    // system-level specs. For blox-level specs, the macro is already in scope
+    // via #[macro_use] mod topology.
+    if is_system_level {
+        use_stmts.push(quote! {
+            #[allow(unused_imports)]
+            use #blox_crate_path::#handler_macro_ident;
+        });
+    }
 
     // Event import
     let event_name_str = event
@@ -363,7 +418,7 @@ pub fn generate(
     // which means the event is re-exported at the crate root.
     // For hand-written events, the blox crate re-exports the event from the
     // context crate. We emit a combined import.
-    use_stmts.push(quote! { use crate::#event_ident; });
+    use_stmts.push(quote! { use #blox_crate_path::#event_ident; });
 
     // Collect delegate trait imports
     let mut delegate_imports: Vec<(String, String)> = Vec::new();
@@ -409,9 +464,11 @@ pub fn generate(
     }
 
     // Add spec_imports from topology (raw use statements for action functions)
+    // Translate leading `crate::` prefix to blox_crate_path for system-level codegen.
     for imp in &topology.spec_imports {
-        let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", imp))
-            .map_err(|e| anyhow::anyhow!("invalid spec_import '{}': {}", imp, e))?;
+        let translated = translate_crate_import(imp);
+        let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", translated))
+            .map_err(|e| anyhow::anyhow!("invalid spec_import '{}': {}", translated, e))?;
         use_stmts.push(quote! {
             #[allow(unused_imports)]
             #use_item
@@ -683,7 +740,11 @@ pub fn generate(
                 event_type_params: feature_event_params,
                 ctx_type_params: feature_ctx_params,
                 feature_filter: Some(feat_name.to_string()),
-                extra_imports: topology.feature_spec_imports.clone(),
+                extra_imports: topology
+                    .feature_spec_imports
+                    .iter()
+                    .map(|imp| translate_crate_import(imp))
+                    .collect(),
             },
         ]
     } else {

@@ -19,6 +19,47 @@ fn strip_self_prefix(action: &str) -> Option<&str> {
     action.strip_prefix("Self::")
 }
 
+/// Convert a PascalCase string to snake_case (e.g. "SpawnReply" → "spawn_reply").
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() + 4);
+    for (i, ch) in s.chars().enumerate() {
+        if ch.is_uppercase() {
+            if i > 0 {
+                result.push('_');
+            }
+            result.push(ch.to_ascii_lowercase());
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+/// Parse an event pattern like `"PingPongMsg::Ping(_)"` and replace the
+/// inner binding with the payload variable name, producing e.g.
+/// `"PingPongMsg::Ping(ping)"`. If the pattern has multiple variants
+/// (e.g. `"Msg::A(_) | Msg::B(_)"`), the first variant is used.
+fn make_payload_pattern(event_pattern: &str, payload_var: &str) -> String {
+    // Find the variant path before the `(` and replace the contents with the payload var.
+    // Pattern examples:
+    //   "PingPongMsg::Ping(_)"          → "PingPongMsg::Ping(ping)"
+    //   "WorkerMsg::DoWork(do_work)"    → "WorkerMsg::DoWork(do_work)" (already named)
+    //   "PingPongMsg::Ping(_) | ..."     → "PingPongMsg::Ping(ping)" (first variant only)
+    let pattern = event_pattern
+        .split('|')
+        .next()
+        .unwrap_or(event_pattern)
+        .trim();
+    // Find the opening paren
+    if let Some(open) = pattern.find('(') {
+        let path = &pattern[..open];
+        format!("{path}({payload_var})")
+    } else {
+        // No parens — shouldn't happen for payload actions, but handle gracefully
+        format!("{event_pattern}")
+    }
+}
+
 /// Parse a field specification like `"round:mut"`, `"peer_ref:ref"`, or `"self_id"`.
 /// Returns (field_name, access_mode) where access_mode is "mut", "ref", or "" (copy).
 fn parse_field_spec(spec: &str) -> (&str, &str) {
@@ -67,6 +108,8 @@ pub fn resolve_concrete_action(
     action: &str,
     actions: &[ContextActionConfig],
     impl_crate: Option<&str>,
+    event_type_str: &str,
+    event_pattern: Option<&str>,
     is_transition: bool,
 ) -> Option<proc_macro2::TokenStream> {
     let name = strip_self_prefix(action)?;
@@ -98,7 +141,11 @@ pub fn resolve_concrete_action(
         let crate_name = config.crate_name.as_deref().unwrap_or("unknown_crate");
         format!("::{}", crate_name.replace('-', "_"))
     };
-    let fn_name = config.name.replace('-', "_");
+    let fn_name = config
+        .fn_name
+        .as_deref()
+        .unwrap_or(&config.name)
+        .replace('-', "_");
 
     // Build the field arguments.
     let field_args: Vec<String> = config.fields.iter().map(|f| field_access(f)).collect();
@@ -127,22 +174,61 @@ pub fn resolve_concrete_action(
             quote::quote! { |_ctx, _ev| { /* error: cannot parse concrete action #name */ ::bloxide_core::transition::ActionResult::Ok } }
         }))
     } else {
-        // Transition with event payload:
-        // |ctx, ev| {
-        //     if let Some(payload) = ev.msg_payload() {
-        //         <fn_path>::<fn_name>(<args>, payload);
-        //     }
-        //     ActionResult::Ok
-        // }
+        // Transition with event payload.
+        //
+        // Two cases:
+        //   1. Message-variant pattern (e.g. "PingPongMsg::Ping(_)"):
+        //      Uses ev.msg_payload() which returns Option<&MsgEnum>.
+        //      → if let Some(PingPongMsg::Ping(ping)) = ev.msg_payload()
+        //
+        //   2. Event-variant pattern (e.g. "PoolEvent::SpawnReply(_)"):
+        //      Uses the per-mailbox accessor (e.g. ev.spawn_reply_payload())
+        //      which returns Option<&InnerType>.
+        //      → if let Some(spawned_worker) = ev.spawn_reply_payload()
+        //
+        // The distinction: if the pattern path starts with the event type name
+        // (e.g. "PoolEvent"), it's an event-variant pattern. Otherwise it's a
+        // message-variant pattern.
         let payload_var = config.event_payload.as_ref().unwrap().replace('-', "_");
         let args_with_payload = if field_args.is_empty() {
             payload_var.clone()
         } else {
             format!("{}, {}", field_args.join(", "), payload_var)
         };
+
+        // Determine which payload accessor to use and the if-let pattern.
+        // `event_type_str` is the event enum name (e.g. "PoolEvent<R>").
+        let event_type_name = event_type_str
+            .split(|c| c == '<' || c == ',')
+            .next()
+            .unwrap_or("")
+            .trim();
+
+        let (payload_accessor, if_let_pattern) = match event_pattern {
+            Some(ep) => {
+                let pattern = ep.split('|').next().unwrap_or(ep).trim();
+                let path = pattern.split('(').next().unwrap_or(pattern).trim();
+                let variant_name = path.split("::").last().unwrap_or(path);
+
+                if path.starts_with(event_type_name) {
+                    // Event-variant pattern: use the per-mailbox payload accessor.
+                    // e.g. "PoolEvent::SpawnReply" → accessor "spawn_reply_payload"
+                    let snake = to_snake_case(variant_name);
+                    let accessor = format!("ev.{snake}_payload()");
+                    // The accessor returns Option<&InnerType>, so bind directly.
+                    (accessor, format!("Some({payload_var})"))
+                } else {
+                    // Message-variant pattern: use msg_payload() and pattern match.
+                    let pat = make_payload_pattern(ep, &payload_var);
+                    (format!("ev.msg_payload()"), format!("Some({pat})"))
+                }
+            }
+            None => (format!("ev.msg_payload()"), format!("Some({payload_var})")),
+        };
+
         let code = format!(
             "|ctx, ev| {{ \
-             if let Some({payload_var}) = ev.msg_payload() {{ \
+             if let {if_let_pattern} = {payload_accessor} {{ \
              {fn_path}::{fn_name}({args_with_payload}); \
              }} \
              ::bloxide_core::transition::ActionResult::Ok \
@@ -210,11 +296,17 @@ pub fn generate_concrete_spec_skeleton(
                          ctx_type_str: &str,
                          event_type_str: &str,
                          type_params: &[String],
+                         event_pattern: Option<&str>,
                          is_transition: bool|
           -> proc_macro2::TokenStream {
-        if let Some(concrete) =
-            resolve_concrete_action(action, &actions, impl_crate_owned.as_deref(), is_transition)
-        {
+        if let Some(concrete) = resolve_concrete_action(
+            action,
+            &actions,
+            impl_crate_owned.as_deref(),
+            event_type_str,
+            event_pattern,
+            is_transition,
+        ) {
             concrete
         } else {
             // Fall back to the default stub/path resolver for non-Self:: actions.
@@ -223,10 +315,16 @@ pub fn generate_concrete_spec_skeleton(
                 ctx_type_str,
                 event_type_str,
                 type_params,
+                event_pattern,
                 is_transition,
             )
         }
     };
+
+    // Convert the blox crate name (e.g. "ping-blox") to a Rust path prefix
+    // (e.g. "::ping_blox") for referencing types in the blox crate from the
+    // app crate's generated spec_skeleton.rs.
+    let blox_crate_path = format!("::{}", crate_name.replace('-', "_"));
 
     spec_skeleton::generate(
         actor,
@@ -234,6 +332,7 @@ pub fn generate_concrete_spec_skeleton(
         context,
         blox_config.event.as_ref(),
         crate_name,
+        &blox_crate_path,
         &resolver,
     )
 }
@@ -296,6 +395,7 @@ mod tests {
             event_payload: event_payload.map(|s| s.to_string()),
             impl_required,
             feature: None,
+            fn_name: None,
         }
     }
 
@@ -309,7 +409,8 @@ mod tests {
             None,
             false,
         )];
-        let result = resolve_concrete_action("Self::s_entry", &actions, None, false);
+        let result =
+            resolve_concrete_action("Self::s_entry", &actions, None, "TestEvent", None, false);
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         // No-op entry action (empty fields, no payload)
@@ -326,7 +427,14 @@ mod tests {
             None,
             false,
         )];
-        let result = resolve_concrete_action("Self::increment_round", &actions, None, true);
+        let result = resolve_concrete_action(
+            "Self::increment_round",
+            &actions,
+            None,
+            "TestEvent",
+            None,
+            true,
+        );
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         eprintln!("DEBUG tokens: {tokens}");
@@ -350,6 +458,8 @@ mod tests {
             "Self::process_work",
             &actions,
             Some("tokio_pool_demo_impl"),
+            "WorkerEvent",
+            Some("WorkerMsg::DoWork(_)"),
             true,
         );
         assert!(result.is_some());
@@ -364,7 +474,8 @@ mod tests {
     #[test]
     fn test_resolve_concrete_non_self_action() {
         let actions = vec![];
-        let result = resolve_concrete_action("some_function", &actions, None, true);
+        let result =
+            resolve_concrete_action("some_function", &actions, None, "TestEvent", None, true);
         assert!(result.is_none());
     }
 
@@ -379,7 +490,14 @@ mod tests {
             true,
         )];
         // Without an impl_crate, it should still generate something (with "unknown_impl")
-        let result = resolve_concrete_action("Self::process_work", &actions, None, true);
+        let result = resolve_concrete_action(
+            "Self::process_work",
+            &actions,
+            None,
+            "TestEvent",
+            None,
+            true,
+        );
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         assert!(tokens.contains("unknown_impl"));
@@ -412,7 +530,8 @@ mod tests {
             None,
             false,
         )];
-        let result = resolve_concrete_action("Self::s_entry", &actions, None, false);
+        let result =
+            resolve_concrete_action("Self::s_entry", &actions, None, "TestEvent", None, false);
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         // Should be a no-op: |_ctx| {}
@@ -431,7 +550,7 @@ mod tests {
             None,
             false,
         )];
-        let result = resolve_concrete_action("Self::s_i", &actions, None, true);
+        let result = resolve_concrete_action("Self::s_i", &actions, None, "TestEvent", None, true);
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         // Should be a no-op transition: |_ctx, _ev| { ActionResult::Ok }
@@ -500,30 +619,31 @@ mod tests {
             "send_initial_ping should be a concrete call, not a stub"
         );
 
-        // forward_ping: should also be concrete
+        // forward_ping: action name is "forward_ping" but fn_name = "send_ping"
+        // The concrete code calls send_ping (the fn_name override)
         assert!(
-            generated.contains("forward_ping"),
-            "should call forward_ping function"
+            generated.contains("send_ping"),
+            "should call send_ping function (fn_name override for forward_ping)"
         );
         assert!(
             !generated.contains("stub: forward_ping"),
             "forward_ping should be a concrete call, not a stub"
         );
 
-        // schedule_pause_timer: crate = blox_ctx_current_timer
+        // schedule_pause_timer: action name is "schedule_pause_timer" but fn_name = "schedule_resume"
         assert!(
             generated.contains("blox_ctx_current_timer"),
             "should reference blox_ctx_current_timer crate"
         );
         assert!(
-            generated.contains("schedule_pause_timer"),
-            "should call schedule_pause_timer function"
+            generated.contains("schedule_resume"),
+            "should call schedule_resume function (fn_name override for schedule_pause_timer)"
         );
 
-        // cancel_pause_timer: should also be concrete
+        // cancel_pause_timer: fn_name = "cancel_timer_by_id"
         assert!(
-            generated.contains("cancel_pause_timer"),
-            "should call cancel_pause_timer function"
+            generated.contains("cancel_timer_by_id"),
+            "should call cancel_timer_by_id function (fn_name override for cancel_pause_timer)"
         );
 
         // ── Verify field access expressions ──────────────────────────────────

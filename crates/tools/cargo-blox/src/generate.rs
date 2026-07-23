@@ -15,6 +15,7 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
     for entry in WalkDir::new(&root)
         .max_depth(4)
         .into_iter()
+        .filter_entry(|e| e.file_name() != "target")
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name() == "blox.toml")
     {
@@ -69,6 +70,7 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
     for entry in WalkDir::new(&root)
         .max_depth(4)
         .into_iter()
+        .filter_entry(|e| e.file_name() != "target")
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name() == "system.toml")
     {
@@ -195,10 +197,10 @@ fn ensure_generated_mod(
         for entry in std::fs::read_dir(generated_mod.parent().unwrap())? {
             let entry = entry?;
             let path = entry.path();
-            if path.is_file() {
+            // Only consider .rs files (skip .bak, .txt, etc.)
+            if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs") {
                 if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
-                    let filename = format!("{}.rs", name);
-                    if filename != "mod.rs" && !mod_names.iter().any(|n| n == name) {
+                    if name != "mod" && !mod_names.iter().any(|n| n == name) {
                         mod_names.push(name.to_string());
                     }
                 }

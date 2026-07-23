@@ -281,6 +281,12 @@ pub struct ContextActionConfig {
     /// Feature gate for this action (e.g. `"dynamic"`).
     #[serde(default)]
     pub feature: Option<String>,
+    /// Override the function name to call. If not set, the `name` field is
+    /// used as the function name. This allows the topology to use a logical
+    /// action name (e.g. `Self::forward_ping`) while calling a differently-
+    /// named function in the crate (e.g. `send_ping`).
+    #[serde(default)]
+    pub fn_name: Option<String>,
 }
 
 /// A `[[context.uses]]` entry — pulls traits and fields from a composable

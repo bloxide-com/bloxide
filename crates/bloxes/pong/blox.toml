@@ -21,6 +21,7 @@ role = "accessor"
 
 [[context.actions]]
 name = "reply_pong_action"
+fn_name = "send_pong"
 crate = "bloxide_messaging"
 kind = "transition"
 fields = ["self_id", "peer_ref:ref"]
