@@ -5,12 +5,47 @@
 //! definition lives here (with the data contract), not in the actions crate.
 #![no_std]
 
+extern crate alloc;
+
+use bloxide_core::{capability::BloxRuntime, messaging::ActorRef, ActorId};
+use bloxide_timer::command::{next_timer_id, TimerCommand, TimerId, TIMER_ACTOR_ID};
+use ping_pong_messages::{PingPongMsg, Resume};
+
 use bloxide_macros::delegatable;
-use bloxide_timer::TimerId;
 
 /// Provides read/write access to the current pending timer ID.
 #[delegatable]
 pub trait HasCurrentTimer {
     fn current_timer(&self) -> Option<TimerId>;
     fn set_current_timer(&mut self, timer: Option<TimerId>);
+}
+
+/// Schedule a resume timer delivering `PingPongMsg::Resume` to self after
+/// `duration_ms` milliseconds. Stores the `TimerId` in `current_timer`.
+pub fn schedule_resume<R: BloxRuntime>(
+    self_id: ActorId,
+    self_ref: &ActorRef<PingPongMsg, R>,
+    timer_ref: &ActorRef<TimerCommand, R>,
+    current_timer: &mut Option<TimerId>,
+    duration_ms: u64,
+) {
+    let id = next_timer_id();
+    let target = self_ref.clone();
+    let deliver = alloc::boxed::Box::new(move || {
+        let _ = target.try_send(TIMER_ACTOR_ID, PingPongMsg::Resume(Resume));
+    });
+    let _ = timer_ref.try_send(self_id, TimerCommand::Set { id, after_ms: duration_ms, deliver });
+    *current_timer = Some(id);
+}
+
+/// Cancel the current pending timer (if any) and clear the stored ID.
+pub fn cancel_current_timer<R: BloxRuntime>(
+    self_id: ActorId,
+    timer_ref: &ActorRef<TimerCommand, R>,
+    current_timer: &mut Option<TimerId>,
+) {
+    if let Some(id) = *current_timer {
+        let _ = timer_ref.try_send(self_id, TimerCommand::Cancel { id });
+        *current_timer = None;
+    }
 }

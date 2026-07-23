@@ -7,6 +7,12 @@ description = "Domain context crate: HasCurrentTimer delegatable behavior trait"
 repository.workspace = true
 license.workspace = true
 
+[features]
+default = ["alloc"]
+alloc = ["bloxide-core/alloc", "bloxide-timer/alloc"]
+
 [dependencies]
+bloxide-core = { workspace = true }
 bloxide-macros = { workspace = true }
 bloxide-timer = { workspace = true }
+ping-pong-messages = { workspace = true }

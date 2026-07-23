@@ -30,7 +30,7 @@ mod pool_tests {
     struct PoolHarness {
         machine: StateMachine<PoolSpec<TestRuntime>>,
         _control_rx: <TestRuntime as BloxRuntime>::Receiver<SupervisorControl<TestRuntime>>,
-        _spawn_reply_ref: ActorRef<SpawnedWorker<TestRuntime>, TestRuntime>,
+        _spawn_reply_ref: ActorRef<SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>, TestRuntime>,
     }
 
     /// Dummy spawn function for tests.
@@ -40,7 +40,7 @@ mod pool_tests {
     /// lifecycle/kill refs. The actual worker task is not spawned — tests
     /// only verify the Pool's state-machine transitions.
     fn test_spawn_worker(
-        req: SpawnRequest<TestRuntime>,
+        req: SpawnRequest<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
         _notify: ActorRef<ChildLifecycleEvent, TestRuntime>,
     ) -> SpawnOutput<TestRuntime> {
         match req {
@@ -98,10 +98,10 @@ mod pool_tests {
 
             let reply_id = TestRuntime::alloc_actor_id();
             let (spawn_reply_ref, _reply_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-                SpawnedWorker<TestRuntime>,
+                SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
             >(reply_id, 16);
 
-            let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<TestRuntime>> = test_spawn_worker;
+            let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>> = test_spawn_worker;
             let ctx = PoolCtx::new(
                 pool_id,
                 pool_ref.clone(),
@@ -312,9 +312,9 @@ mod pool_tests {
 
         let reply_id = TestRuntime::alloc_actor_id();
         let (spawn_reply_ref, _reply_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<SpawnedWorker<TestRuntime>>(reply_id, 16);
+            <TestRuntime as DynamicChannelCap>::channel::<SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>>(reply_id, 16);
 
-        let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<TestRuntime>> = test_spawn_worker;
+        let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>> = test_spawn_worker;
         let ctx = PoolCtx::new(
             pool_id,
             pool_ref.clone(),

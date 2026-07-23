@@ -16,6 +16,7 @@ use bloxide_core::{
     messaging::{ActorId, ActorRef},
 };
 use bloxide_macros::delegatable;
+use pool_messages::{PeerResult, WorkerMsg};
 
 /// Control message for managing a peer collection.
 pub enum PeerCtrl<M: Send + 'static, R: BloxRuntime> {
@@ -140,5 +141,22 @@ where
         PeerCtrl::RemovePeer(remove) => {
             ctx.peers_mut().retain(|r| r.id() != remove.peer_id);
         }
+    }
+}
+
+/// Broadcast this worker's result to all registered peers.
+pub fn broadcast_to_peers<R: BloxRuntime>(
+    self_id: ActorId,
+    peers: &[ActorRef<WorkerMsg, R>],
+    result: u32,
+) {
+    for peer_ref in peers {
+        let _ = peer_ref.try_send(
+            self_id,
+            WorkerMsg::PeerResult(PeerResult {
+                from_id: self_id,
+                result,
+            }),
+        );
     }
 }

@@ -49,7 +49,7 @@ async fn pool_lifecycle_spawn_and_done() {
     let (pool_ref, pool_msg_rx) =
         <TokioRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
     let (spawn_reply_ref, spawn_reply_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
-        pool_messages::SpawnedWorker<TokioRuntime>,
+        pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, TokioRuntime>, TokioRuntime>,
     >(pool_id, 32);
 
     // ── 2. Create the supervisor's child group builder ─────────────────────

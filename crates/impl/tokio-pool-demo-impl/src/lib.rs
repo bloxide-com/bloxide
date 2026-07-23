@@ -72,7 +72,7 @@ impl<R: BloxRuntime> HasPeers<WorkerMsg, R> for WorkerBehavior<R> {
 /// All state comes from the request — `pool_ref` is in the message, not
 /// captured from a struct field.
 pub fn spawn_worker(
-    req: SpawnRequest<TokioRuntime>,
+    req: SpawnRequest<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
     notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
 ) -> SpawnOutput<TokioRuntime> {
     match req {

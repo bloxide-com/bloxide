@@ -19,7 +19,7 @@ message_path = "pool_messages::PoolMsg"
 [[event.mailboxes]]
 variant = "SpawnReply"
 message = "SpawnedWorker"
-message_path = "pool_messages::SpawnedWorker<R>"
+message_path = "pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>"
 feature = "dynamic"
 
 # ── Context struct ───────────────────────────────────────────────────────────
@@ -80,10 +80,10 @@ impl_macro = "impl_has_workers"
 crate = "pool_messages"
 feature = "dynamic"
 fields = [
-    { name = "spawn_fn", ty = "SpawnFn<R, SpawnRequest<R>>", role = "ctor" },
+    { name = "spawn_fn", ty = "SpawnFn<R, SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>>", role = "ctor" },
     { name = "spawn_ref", ty = "ActorRef<SupervisorControl<R>, R>", role = "ctor" },
     { name = "notify_ref", ty = "ActorRef<ChildLifecycleEvent, R>", role = "ctor" },
-    { name = "spawn_reply_ref", ty = "ActorRef<SpawnedWorker<R>, R>", role = "ctor" },
+    { name = "spawn_reply_ref", ty = "ActorRef<SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>, R>", role = "ctor" },
     { name = "pending_task_id", ty = "u32", role = "state" },
     { name = "spawn_in_flight", ty = "bool", role = "state" },
     { name = "spawn_queue", ty = "Vec<u32>", role = "state" },

@@ -18,14 +18,17 @@ use bloxide_core::{ActorId, ActorRef, BloxRuntime};
 ///
 /// The Pool creates a typed reply channel and includes it in the request.
 /// The factory sends a `SpawnedWorker` reply back on that channel.
+///
+/// Generic over the control message type `Ctrl` to avoid a dependency on
+/// `bloxide-peers`. Callers instantiate it with `PeerCtrl<WorkerMsg, R>`.
 #[derive(Debug, Clone)]
-pub enum SpawnRequest<R: BloxRuntime> {
+pub enum SpawnRequest<Ctrl: Send + 'static, R: BloxRuntime> {
     /// Request to spawn a new worker actor.
     Worker {
         /// Task ID for the new worker.
         task_id: u32,
         /// Reply channel: the factory sends `SpawnedWorker` here.
-        reply_to: ActorRef<SpawnedWorker<R>, R>,
+        reply_to: ActorRef<SpawnedWorker<Ctrl, R>, R>,
         /// Pool ref the worker needs to send results back.
         pool_ref: ActorRef<PoolMsg, R>,
     },
@@ -37,14 +40,14 @@ pub enum SpawnRequest<R: BloxRuntime> {
 /// `SpawnRequest`. The Pool uses these refs to send `DoWork` and
 /// introduce peers.
 ///
-/// The `ctrl_ref` now uses the generic `PeerCtrl<WorkerMsg, R>` from
-/// `bloxide-peers` instead of a domain-specific `WorkerCtrl`.
+/// Generic over the control message type `Ctrl` to avoid a dependency on
+/// `bloxide-peers`. Callers instantiate it with `PeerCtrl<WorkerMsg, R>`.
 #[derive(Debug, Clone)]
-pub struct SpawnedWorker<R: BloxRuntime> {
+pub struct SpawnedWorker<Ctrl: Send + 'static, R: BloxRuntime> {
     /// Actor ID of the spawned worker.
     pub child_id: ActorId,
     /// Domain message channel ref (for `WorkerMsg`).
     pub domain_ref: ActorRef<WorkerMsg, R>,
-    /// Control channel ref (for `PeerCtrl<WorkerMsg, R>`).
-    pub ctrl_ref: ActorRef<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
+    /// Control channel ref (for `Ctrl`, typically `PeerCtrl<WorkerMsg, R>`).
+    pub ctrl_ref: ActorRef<Ctrl, R>,
 }
