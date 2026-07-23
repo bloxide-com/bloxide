@@ -24,7 +24,6 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
     ev: &PoolEvent<R>,
 ) -> ActionResult {
     if let Some(PoolMsg::SpawnWorker(SpawnWorker { task_id })) = ev.msg_payload() {
-        
         ctx.pending_task_id = *task_id;
         ctx.spawn_in_flight = true;
         let req = SpawnRequest::Worker {
@@ -40,7 +39,6 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
             ctx.self_id,
         );
         if result.is_err() {
-            
             ctx.spawn_in_flight = false;
         }
     }
@@ -55,7 +53,6 @@ pub fn handle_spawn_worker_queued<R: BloxRuntime>(
     ev: &PoolEvent<R>,
 ) -> ActionResult {
     if let Some(PoolMsg::SpawnWorker(SpawnWorker { task_id })) = ev.msg_payload() {
-        
         ctx.spawn_queue.push(*task_id);
     }
     ActionResult::Ok
@@ -73,7 +70,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
         ctx.spawn_in_flight = false;
 
         let task_id = ctx.pending_task_id;
-        
+
         let domain_ref = spawned.domain_ref.clone();
         let ctrl_ref = spawned.ctrl_ref.clone();
         ctx.worker_refs_mut().push(domain_ref.clone());
@@ -117,7 +114,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
         // If there are queued spawn requests, start the next one immediately (FIFO).
         if !ctx.spawn_queue.is_empty() {
             let next_task_id = ctx.spawn_queue.remove(0);
-            
+
             ctx.pending_task_id = next_task_id;
             ctx.spawn_in_flight = true;
             let req = SpawnRequest::Worker {
@@ -133,7 +130,6 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
                 ctx.self_id,
             );
             if result.is_err() {
-                
                 ctx.spawn_in_flight = false;
             }
         }
@@ -149,4 +145,3 @@ pub fn handle_work_done<R: BloxRuntime>(ctx: &mut PoolCtx<R>, ev: &PoolEvent<R>)
     }
     ActionResult::Ok
 }
-

@@ -39,7 +39,10 @@ mod ping_tests {
             let ctx = PingCtx::new(ping_id, pong_ref, self_ref, timer_ref, None, 0);
             let machine = StateMachine::<PingSpec<TestRuntime>>::new(ctx);
 
-            PingHarness { machine, to_pong_rx }
+            PingHarness {
+                machine,
+                to_pong_rx,
+            }
         }
 
         fn start(&mut self) {

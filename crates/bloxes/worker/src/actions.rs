@@ -23,11 +23,7 @@ impl<R: BloxRuntime + 'static> WorkerSpec<R> {
     }
 
     pub(crate) fn do_broadcast(ctx: &mut WorkerCtx<R>, _ev: &WorkerEvent<R>) -> ActionResult {
-        bloxide_peers::broadcast_to_peers::<R>(
-            ctx.self_id,
-            ctx.peers(),
-            ctx.result(),
-        );
+        bloxide_peers::broadcast_to_peers::<R>(ctx.self_id, ctx.peers(), ctx.result());
         ActionResult::Ok
     }
 

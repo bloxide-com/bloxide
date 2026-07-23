@@ -20,7 +20,6 @@ pub trait CountsRounds {
     fn set_round(&mut self, round: Self::Round);
 }
 
-
 /// Increment the round counter by 1.
 pub fn increment_round(round: &mut u32) {
     *round += 1;

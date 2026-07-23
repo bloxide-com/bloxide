@@ -33,7 +33,14 @@ pub fn schedule_resume<R: BloxRuntime>(
     let deliver = alloc::boxed::Box::new(move || {
         let _ = target.try_send(TIMER_ACTOR_ID, PingPongMsg::Resume(Resume));
     });
-    let _ = timer_ref.try_send(self_id, TimerCommand::Set { id, after_ms: duration_ms, deliver });
+    let _ = timer_ref.try_send(
+        self_id,
+        TimerCommand::Set {
+            id,
+            after_ms: duration_ms,
+            deliver,
+        },
+    );
     id
 }
 

@@ -9,9 +9,7 @@ mod worker_tests {
     use alloc::vec::Vec;
 
     use bloxide_core::lifecycle::LifecycleCommand;
-    use bloxide_core::{
-        capability::DynamicChannelCap, Envelope, MachineState, StateMachine,
-    };
+    use bloxide_core::{capability::DynamicChannelCap, Envelope, MachineState, StateMachine};
     use bloxide_peers::{AddPeer, PeerCtrl};
     use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use pool_messages::{DoWork, PeerResult, PoolMsg, WorkDone, WorkerMsg};
@@ -113,14 +111,8 @@ mod worker_tests {
         assert_eq!(h.peer_count(), 0);
 
         // Call handle_ctrl action directly (stub in spec, real impl in actions.rs)
-        let ev: WorkerEvent<TestRuntime> = Envelope(
-            0,
-            PeerCtrl::AddPeer(AddPeer {
-                peer_id,
-                peer_ref,
-            }),
-        )
-        .into();
+        let ev: WorkerEvent<TestRuntime> =
+            Envelope(0, PeerCtrl::AddPeer(AddPeer { peer_id, peer_ref })).into();
         WorkerSpec::<TestRuntime>::handle_ctrl(h.machine.ctx_mut(), &ev);
         assert_eq!(h.peer_count(), 1);
     }

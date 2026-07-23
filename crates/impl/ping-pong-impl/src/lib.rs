@@ -13,9 +13,9 @@
 
 pub mod prelude;
 
-use bloxide_timer::TimerId;
-use blox_ctx_rounds::CountsRounds;
 use blox_ctx_current_timer::HasCurrentTimer;
+use blox_ctx_rounds::CountsRounds;
+use bloxide_timer::TimerId;
 
 /// Composite behavior type for the Ping actor.
 ///

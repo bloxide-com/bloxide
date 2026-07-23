@@ -130,10 +130,8 @@ pub fn introduce_peers<M, R>(
 /// Apply a `PeerCtrl` command to a peer collection.
 ///
 /// Handles both `AddPeer` and `RemovePeer` variants.
-pub fn apply_peer_control<M, R>(
-    peers: &mut Vec<ActorRef<M, R>>,
-    ctrl: &PeerCtrl<M, R>,
-) where
+pub fn apply_peer_control<M, R>(peers: &mut Vec<ActorRef<M, R>>, ctrl: &PeerCtrl<M, R>)
+where
     M: Send + 'static,
     R: BloxRuntime,
 {

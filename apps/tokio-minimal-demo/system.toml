@@ -6,11 +6,6 @@ name = "tokio-minimal-demo"
 [[actors]]
 name = "counter"
 blox = "counter-blox"
-behavior = "CounterBehavior"
-behavior_impl = "counter-demo-impl"
-
-  # CounterCtx has only self_id (auto-injected) and behavior (delegate, auto-defaulted).
-  # No inject entries needed — self_id and behavior are handled by codegen.
 
   # Counter needs 2 Tick messages to reach Done terminal state (DONE_AT_COUNT = 2).
   [[actors.bootstrap]]

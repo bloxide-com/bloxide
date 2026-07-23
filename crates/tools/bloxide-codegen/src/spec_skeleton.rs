@@ -29,29 +29,6 @@ fn path_without_generics(path: &syn::Path) -> syn::Path {
     }
 }
 
-/// Collect the behavior type parameter ident(s) from the context config.
-/// When delegatable `[[context.uses]]` entries exist, the auto-emitted
-/// `behavior: B` field uses the type parameter `B` — that ident is returned
-/// so the spec skeleton can add `'static` bound to it.
-fn behavior_type_idents(context: &ContextConfig) -> Vec<syn::Ident> {
-    let has_delegatable = context.uses.iter().any(|u| u.delegatable);
-    if !has_delegatable {
-        return Vec::new();
-    }
-    // Parse the generics string to find the `B` parameter.
-    if let Ok(generics) =
-        syn::parse_str::<syn::Generics>(context.generics.as_deref().unwrap_or("<>"))
-    {
-        for param in generics.type_params() {
-            if param.ident == "B" {
-                return vec![param.ident.clone()];
-            }
-        }
-    }
-    // Fallback: assume B if not found in generics (shouldn't happen).
-    vec![syn::Ident::new("B", proc_macro2::Span::call_site())]
-}
-
 /// Parameters for a single variant of the spec skeleton.
 struct VariantParams {
     /// The cfg attribute string (e.g. "not(feature = \"dynamic\")" or "feature = \"dynamic\"").
@@ -87,6 +64,51 @@ pub(crate) fn replace_placeholders(
     // {R} → first type param (or "R" if no type params)
     let first_param = type_params.first().map(|s| s.as_str()).unwrap_or("R");
     result.replace("{R}", first_param)
+}
+
+/// Resolve an action string to a token stream.
+///
+/// When the action string starts with `Self::` (e.g. `Self::increment_round`),
+/// generate a stub no-op closure instead of a function path reference.
+/// The stub closures are no-ops that will be replaced by real implementations
+/// in the system-level codegen.
+///
+/// For transition actions: `|_ctx, _ev| { /* stub: <name> */ ::bloxide_core::transition::ActionResult::Ok }`
+/// For entry/exit actions: `|_ctx| { /* stub: <name> */ }`
+///
+/// Action strings that do NOT start with `Self::` (e.g. `handle_work_done` or
+/// `bloxide_child_management::start_children`) are parsed as function path
+/// references — these are real functions imported via `spec_imports`.
+pub(crate) fn resolve_action(
+    action: &str,
+    ctx_type_str: &str,
+    event_type_str: &str,
+    type_params: &[String],
+    is_transition: bool,
+) -> proc_macro2::TokenStream {
+    let resolved = replace_placeholders(action, ctx_type_str, event_type_str, type_params);
+
+    if resolved.starts_with("Self::") {
+        // Extract the method name after `Self::` for the comment.
+        let name = resolved.strip_prefix("Self::").unwrap_or(&resolved);
+        if is_transition {
+            quote! {
+                |_ctx, _ev| { /* stub: #name */ ::bloxide_core::transition::ActionResult::Ok }
+            }
+        } else {
+            quote! {
+                |_ctx| { /* stub: #name */ }
+            }
+        }
+    } else {
+        // Real function path reference — parse as a path.
+        syn::parse_str::<syn::Path>(&resolved)
+            .map(|p| p.to_token_stream())
+            .unwrap_or_else(|_| {
+                let ident = format_ident!("{}", resolved);
+                quote! { #ident }
+            })
+    }
 }
 
 /// Generate the StateFns associated constants for a variant.
@@ -170,16 +192,7 @@ fn generate_state_fns_impl(
             .map(|ee| {
                 ee.actions
                     .iter()
-                    .map(|a| {
-                        let resolved =
-                            replace_placeholders(a, ctx_type_str, event_type_str, type_params);
-                        resolved
-                            .parse::<proc_macro2::TokenStream>()
-                            .unwrap_or_else(|_| {
-                                let ident = format_ident!("{}", resolved);
-                                quote! { #ident }
-                            })
-                    })
+                    .map(|a| resolve_action(a, ctx_type_str, event_type_str, type_params, false))
                     .collect()
             })
             .unwrap_or_default();
@@ -190,16 +203,7 @@ fn generate_state_fns_impl(
             .map(|ee| {
                 ee.actions
                     .iter()
-                    .map(|a| {
-                        let resolved =
-                            replace_placeholders(a, ctx_type_str, event_type_str, type_params);
-                        resolved
-                            .parse::<proc_macro2::TokenStream>()
-                            .unwrap_or_else(|_| {
-                                let ident = format_ident!("{}", resolved);
-                                quote! { #ident }
-                            })
-                    })
+                    .map(|a| resolve_action(a, ctx_type_str, event_type_str, type_params, false))
                     .collect()
             })
             .unwrap_or_default();
@@ -519,20 +523,10 @@ pub fn generate(
             })?
         };
 
-        // Build spec generics for base variant (add 'static to behavior params)
+        // Build spec generics for base variant
         let mut base_spec_generics =
             syn::parse_str::<syn::Generics>(context.generics.as_deref().unwrap_or("<>"))
                 .map_err(|e| anyhow::anyhow!("invalid generics: {}", e))?;
-        let behavior_idents = behavior_type_idents(context);
-        if !behavior_idents.is_empty() {
-            for param in base_spec_generics.type_params_mut() {
-                if behavior_idents.iter().any(|id| id == &param.ident) {
-                    let static_bound: syn::TypeParamBound =
-                        syn::parse_str("'static").expect("'static' is a valid bound");
-                    param.bounds.push(static_bound);
-                }
-            }
-        }
         // Add extra_where
         if !context.extra_where.is_empty() {
             let mut preds = syn::punctuated::Punctuated::new();
@@ -632,19 +626,10 @@ pub fn generate(
             })?
         };
 
-        // Build spec generics for feature variant (add 'static to behavior params + 'static to F)
+        // Build spec generics for feature variant
         let mut feature_spec_generics =
             syn::parse_str::<syn::Generics>(context.feature_generics.as_deref().unwrap_or("<>"))
                 .map_err(|e| anyhow::anyhow!("invalid feature_generics: {}", e))?;
-        if !behavior_idents.is_empty() {
-            for param in feature_spec_generics.type_params_mut() {
-                if behavior_idents.iter().any(|id| id == &param.ident) {
-                    let static_bound: syn::TypeParamBound =
-                        syn::parse_str("'static").expect("'static' is a valid bound");
-                    param.bounds.push(static_bound);
-                }
-            }
-        }
         // Add 'static to feature-variant type params that need it.
         // Feature variants may need 'static bounds on extra type params
         // (beyond R: BloxRuntime). Use feature_where for this.
@@ -768,20 +753,10 @@ pub fn generate(
             )
         };
 
-        // Build spec generics (add 'static to behavior params)
+        // Build spec generics
         let mut spec_generics =
             syn::parse_str::<syn::Generics>(context.generics.as_deref().unwrap_or("<>"))
                 .map_err(|e| anyhow::anyhow!("invalid generics: {}", e))?;
-        let behavior_idents = behavior_type_idents(context);
-        if !behavior_idents.is_empty() {
-            for param in spec_generics.type_params_mut() {
-                if behavior_idents.iter().any(|id| id == &param.ident) {
-                    let static_bound: syn::TypeParamBound =
-                        syn::parse_str("'static").expect("'static' is a valid bound");
-                    param.bounds.push(static_bound);
-                }
-            }
-        }
         // Add extra_where
         if !context.extra_where.is_empty() {
             let mut preds = syn::punctuated::Punctuated::new();

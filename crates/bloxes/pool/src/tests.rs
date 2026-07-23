@@ -30,7 +30,8 @@ mod pool_tests {
     struct PoolHarness {
         machine: StateMachine<PoolSpec<TestRuntime>>,
         _control_rx: <TestRuntime as BloxRuntime>::Receiver<SupervisorControl<TestRuntime>>,
-        _spawn_reply_ref: ActorRef<SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>, TestRuntime>,
+        _spawn_reply_ref:
+            ActorRef<SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>, TestRuntime>,
     }
 
     /// Dummy spawn function for tests.
@@ -101,7 +102,10 @@ mod pool_tests {
                 SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
             >(reply_id, 16);
 
-            let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>> = test_spawn_worker;
+            let spawn_fn: SpawnFn<
+                TestRuntime,
+                SpawnRequest<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
+            > = test_spawn_worker;
             let ctx = PoolCtx::new(
                 pool_id,
                 pool_ref.clone(),
@@ -311,10 +315,14 @@ mod pool_tests {
             <TestRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(notify_id, 16);
 
         let reply_id = TestRuntime::alloc_actor_id();
-        let (spawn_reply_ref, _reply_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>>(reply_id, 16);
+        let (spawn_reply_ref, _reply_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+            SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
+        >(reply_id, 16);
 
-        let spawn_fn: SpawnFn<TestRuntime, SpawnRequest<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>> = test_spawn_worker;
+        let spawn_fn: SpawnFn<
+            TestRuntime,
+            SpawnRequest<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
+        > = test_spawn_worker;
         let ctx = PoolCtx::new(
             pool_id,
             pool_ref.clone(),

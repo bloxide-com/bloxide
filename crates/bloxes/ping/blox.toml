@@ -10,6 +10,10 @@ imports = [
     "ping_pong_messages::PingPongMsg",
     "bloxide_timer::{TimerCommand, TimerId}",
 ]
+extra_impls = [
+    "HasCurrentTimer for {ctx} { fn current_timer(&self) -> Option<TimerId> { self.current_timer } fn set_current_timer(&mut self, t: Option<TimerId>) { self.current_timer = t; } }",
+    "CountsRounds for {ctx} { type Round = u32; fn round(&self) -> u32 { self.round } fn set_round(&mut self, r: u32) { self.round = r; } }",
+]
 
 # Accessor traits from bloxide-messaging (2-param, require #[provides])
 [[context.uses]]
@@ -34,15 +38,6 @@ field = "timer_ref"
 field_type = "ActorRef<TimerCommand, R>"
 role = "accessor"
 
-# Behavior traits from context crates (impl directly on Ctx, no delegation)
-[[context.uses]]
-crate = "blox_ctx_current_timer"
-trait = "HasCurrentTimer"
-
-[[context.uses]]
-crate = "blox_ctx_rounds"
-trait = "CountsRounds"
-
 # State fields (moved from B into Ctx)
 [[context.fields]]
 name = "current_timer"
@@ -51,11 +46,6 @@ type = "Option<TimerId>"
 [[context.fields]]
 name = "round"
 type = "u32"
-
-context.extra_impls = [
-    "HasCurrentTimer for {ctx} { fn current_timer(&self) -> Option<TimerId> { self.current_timer } fn set_current_timer(&mut self, t: Option<TimerId>) { self.current_timer = t; } }",
-    "CountsRounds for {ctx} { type Round = u32; fn round(&self) -> u32 { self.round } fn set_round(&mut self, r: u32) { self.round = r; } }",
-]
 
 [event]
 name = "PingEvent"

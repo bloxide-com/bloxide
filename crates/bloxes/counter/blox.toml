@@ -4,14 +4,12 @@ name = "Counter"
 
 [context]
 name = "CounterCtx"
-generics = "<B: CountsTicks>"
-on_init = "ctx.set_count(B::Count::from(0));"
+on_init = "ctx.count = 0;"
 
-# Behavior trait from context crate (delegatable)
-[[context.uses]]
-crate = "blox_ctx_ticks"
-trait = "CountsTicks"
-delegatable = true
+# State fields (moved from B into Ctx)
+[[context.fields]]
+name = "count"
+type = "u32"
 
 [event]
 name = "CounterEvent"
@@ -36,7 +34,7 @@ target = "stay"
 actions = ["Self::count_tick"]
 
 [[topology.transitions.guards]]
-condition = "ctx.count() >= B::Count::from(2)"
+condition = "ctx.count >= 2"
 target = "stop"
 
 [[topology.transitions.guards]]
