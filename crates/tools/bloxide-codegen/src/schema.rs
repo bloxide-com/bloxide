@@ -532,6 +532,9 @@ pub struct ActorInstance {
     pub kind: Option<String>,
     /// Crate that provides the behavior type (e.g. "ping_pong_impl").
     pub behavior_impl: Option<String>,
+    /// Impl crate for concrete action closures (Phase 3 system codegen).
+    /// When set, actions with `impl_required = true` resolve functions from this crate.
+    pub impl_crate: Option<String>,
     /// Channel capacity for this actor's primary mailbox (default 16).
     pub channel_capacity: Option<usize>,
     /// Traits the behavior type implements (e.g. `["CountsRounds", "HasCurrentTimer"]`).

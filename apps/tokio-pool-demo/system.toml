@@ -6,6 +6,7 @@ name = "tokio-pool-demo"
 [[actors]]
 name = "pool"
 blox = "pool-blox"
+impl_crate = "tokio_pool_demo_impl"
 
   [actors.inject]
   self_ref = { source = "self" }
