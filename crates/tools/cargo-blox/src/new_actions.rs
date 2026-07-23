@@ -37,14 +37,11 @@ bloxide-macros = {{ workspace = true }}
 //! Action traits and generic functions for {name_camel}.
 #![no_std]
 
-use bloxide_macros::delegatable;
-
 pub mod prelude {{
     pub use crate::*;
 }}
 
 /// Placeholder behavior trait.
-#[delegatable]
 pub trait CountsTicks {{
     type Count: Copy + PartialOrd + core::ops::Add<Output = Self::Count> + From<u8>;
     fn count(&self) -> Self::Count;
