@@ -7,5 +7,6 @@ description = "Concrete Ping behavior implementations shared by ping-pong demos"
 publish = false
 
 [dependencies]
-ping-pong-actions  = { workspace = true }
+blox-ctx-rounds       = { workspace = true }
+blox-ctx-current-timer = { workspace = true }
 bloxide-timer      = { workspace = true }

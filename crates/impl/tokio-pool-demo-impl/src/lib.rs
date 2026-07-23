@@ -18,7 +18,8 @@ use bloxide_core::{
 use bloxide_peers::PeerCtrl;
 use bloxide_spawn::{SpawnCap, SpawnOutput};
 use bloxide_tokio::{run, RunConfig, TokioRuntime};
-use pool_actions::traits::{HasCurrentTask, HasPeers};
+use blox_ctx_current_task::HasCurrentTask;
+use bloxide_peers::HasPeers;
 use pool_messages::{DoWork, SpawnRequest, SpawnedWorker, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
 

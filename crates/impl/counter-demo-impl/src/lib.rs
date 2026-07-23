@@ -4,7 +4,7 @@
 
 pub mod prelude;
 
-use counter_actions::CountsTicks;
+use blox_ctx_ticks::CountsTicks;
 
 /// Concrete behavior injected by the wiring binary.
 #[derive(Debug, Default, Clone, Copy)]
