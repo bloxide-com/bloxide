@@ -2,9 +2,7 @@
 use crate::{PingCtx, PingEvent, PingSpec, PAUSE_DURATION_MS};
 use blox_ctx_current_timer::HasCurrentTimer;
 use blox_ctx_rounds::CountsRounds;
-use bloxide_core::{capability::BloxRuntime, transition::ActionResult, HasSelfId};
-use ping_pong_actions::{cancel_current_timer, schedule_resume, send_ping};
-use ping_pong_messages::PingPongMsg;
+use bloxide_core::{capability::BloxRuntime, transition::ActionResult};
 
 impl<R, B> PingSpec<R, B>
 where
@@ -12,40 +10,43 @@ where
     B: HasCurrentTimer + CountsRounds + Default + 'static,
     B::Round: Into<u32>,
 {
-    pub(crate) fn log_pong_received(ctx: &mut PingCtx<R, B>, ev: &PingEvent) -> ActionResult {
-        if let Some(PingPongMsg::Pong(pong)) = ev.msg_payload() {
-            bloxide_log::blox_log_debug!(ctx.self_id(), "Pong({}) received", pong.round);
-        }
-        ActionResult::Ok
+    pub(crate) fn increment_round(ctx: &mut PingCtx<R, B>) {
+        let one = B::Round::from(1);
+        ctx.behavior.set_round(ctx.behavior.round() + one);
     }
 
-    pub(crate) fn forward_ping(ctx: &mut PingCtx<R, B>, _ev: &PingEvent) -> ActionResult {
-        send_ping::<R, _>(ctx)
-    }
-
-    pub(crate) fn schedule_pause_timer(ctx: &mut PingCtx<R, B>) {
-        schedule_resume::<R, _>(ctx, PAUSE_DURATION_MS);
-        bloxide_log::blox_log_info!(
-            ctx.self_id(),
-            "paused — resuming in {}ms",
-            PAUSE_DURATION_MS
+    pub(crate) fn send_initial_ping(ctx: &mut PingCtx<R, B>) {
+        bloxide_messaging::send_initial_ping::<R>(
+            ctx.self_id,
+            &ctx.peer_ref,
+            ctx.behavior.round().into(),
         );
     }
 
+    pub(crate) fn forward_ping(ctx: &mut PingCtx<R, B>, _ev: &PingEvent) -> ActionResult {
+        bloxide_messaging::send_ping::<R>(
+            ctx.self_id,
+            &ctx.peer_ref,
+            ctx.behavior.round().into(),
+        )
+    }
+
+    pub(crate) fn schedule_pause_timer(ctx: &mut PingCtx<R, B>) {
+        let id = blox_ctx_current_timer::schedule_resume::<R>(
+            ctx.self_id,
+            &ctx.self_ref,
+            &ctx.timer_ref,
+            PAUSE_DURATION_MS,
+        );
+        ctx.behavior.set_current_timer(Some(id));
+    }
+
     pub(crate) fn cancel_pause_timer(ctx: &mut PingCtx<R, B>) {
-        cancel_current_timer::<R, _>(ctx);
-    }
-
-    pub(crate) fn log_round(ctx: &mut PingCtx<R, B>) {
-        bloxide_log::blox_log_info!(ctx.self_id(), "round {} — sending Ping", ctx.round());
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn log_done(ctx: &mut PingCtx<R, B>) {
-        bloxide_log::blox_log_info!(ctx.self_id(), "done after {} rounds", ctx.round());
-    }
-
-    pub(crate) fn log_error(ctx: &mut PingCtx<R, B>) {
-        bloxide_log::blox_log_info!(ctx.self_id(), "entered error state");
+        blox_ctx_current_timer::cancel_timer_by_id::<R>(
+            ctx.self_id,
+            &ctx.timer_ref,
+            ctx.behavior.current_timer(),
+        );
+        ctx.behavior.set_current_timer(None);
     }
 }

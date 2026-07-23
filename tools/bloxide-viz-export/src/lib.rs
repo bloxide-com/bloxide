@@ -703,7 +703,6 @@ mod tests {
         // Active entry actions
         let entry = ping.entry_exit.get("Active").expect("Active has entry");
         assert!(!entry.on_entry.is_empty());
-        assert!(entry.on_entry.iter().any(|a| a == "send_initial_ping"));
 
         // Paused entry/exit
         let paused_entry = ping

@@ -256,8 +256,8 @@ mod ping_tests {
         h.send_pong();
 
         // Guard::Stop fires when round >= MAX_ROUNDS, returning the machine
-        // to Init (suspended). The transition actions (log_pong_received,
-        // forward_ping) run before the guard, so the last ping is still sent.
+        // to Init (suspended). The transition actions (noop, forward_ping)
+        // run before the guard, so the last ping is still sent.
         assert!(
             h.current_state().is_init(),
             "machine must be in Init after Guard::Stop at MAX_ROUNDS"

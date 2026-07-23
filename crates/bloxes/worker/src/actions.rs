@@ -1,9 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Action functions for the Worker actor.
 use blox_ctx_current_task::HasCurrentTask;
-use bloxide_core::{accessor::HasSelfId, capability::BloxRuntime, transition::ActionResult};
+use bloxide_core::{capability::BloxRuntime, transition::ActionResult};
 use bloxide_peers::HasPeers;
-use pool_actions::actions::{apply_worker_control, broadcast_to_peers, notify_pool_done};
 use pool_messages::WorkerMsg;
 
 use crate::{WorkerCtx, WorkerEvent, WorkerSpec};
@@ -11,7 +9,7 @@ use crate::{WorkerCtx, WorkerEvent, WorkerSpec};
 impl<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask + 'static> WorkerSpec<R, B> {
     pub(crate) fn handle_ctrl(ctx: &mut WorkerCtx<R, B>, ev: &WorkerEvent<R>) -> ActionResult {
         if let Some(ctrl) = ev.ctrl_payload() {
-            apply_worker_control(ctx, ctrl);
+            bloxide_peers::apply_peer_control(ctx.peers_mut(), ctrl);
         }
         ActionResult::Ok
     }
@@ -25,25 +23,20 @@ impl<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask + 'static> Worke
     }
 
     pub(crate) fn do_broadcast(ctx: &mut WorkerCtx<R, B>, _ev: &WorkerEvent<R>) -> ActionResult {
-        broadcast_to_peers::<R, _>(ctx);
+        bloxide_peers::broadcast_to_peers::<R>(
+            ctx.self_id,
+            &ctx.peers(),
+            ctx.result(),
+        );
         ActionResult::Ok
     }
 
     pub(crate) fn do_notify_pool(ctx: &mut WorkerCtx<R, B>, _ev: &WorkerEvent<R>) -> ActionResult {
-        notify_pool_done::<R, _>(ctx);
-        ActionResult::Ok
-    }
-
-    pub(crate) fn log_waiting(ctx: &mut WorkerCtx<R, B>) {
-        bloxide_log::blox_log_info!(ctx.self_id(), "worker waiting for task");
-    }
-
-    pub(crate) fn log_done(ctx: &mut WorkerCtx<R, B>, _ev: &WorkerEvent<R>) -> ActionResult {
-        bloxide_log::blox_log_info!(
-            ctx.self_id(),
-            "worker done: task_id={} result={}",
+        blox_ctx_pool_ref::notify_pool_done::<R>(
+            ctx.self_id,
+            &ctx.pool_ref,
             ctx.task_id(),
-            ctx.result()
+            ctx.result(),
         );
         ActionResult::Ok
     }
