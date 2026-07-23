@@ -53,30 +53,35 @@ type = "u32"
 
 [[context.actions]]
 name = "increment_round"
+crate = "blox_ctx_rounds"
 kind = "transition"
 fields = ["round:mut"]
 impl_required = false
 
 [[context.actions]]
 name = "send_initial_ping"
+crate = "bloxide_messaging"
 kind = "transition"
 fields = ["self_id", "peer_ref:ref", "round"]
 impl_required = false
 
 [[context.actions]]
 name = "forward_ping"
+crate = "bloxide_messaging"
 kind = "transition"
 fields = ["self_id", "peer_ref:ref", "round"]
 impl_required = false
 
 [[context.actions]]
 name = "schedule_pause_timer"
+crate = "blox_ctx_current_timer"
 kind = "transition"
 fields = ["self_id", "timer_ref:ref", "round:mut", "current_timer:mut"]
 impl_required = false
 
 [[context.actions]]
 name = "cancel_pause_timer"
+crate = "blox_ctx_current_timer"
 kind = "transition"
 fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
 impl_required = false

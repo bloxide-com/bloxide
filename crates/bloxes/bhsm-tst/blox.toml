@@ -12,102 +12,119 @@ generics = ""
 
 [[context.actions]]
 name = "s_entry"
+crate = "bloxide_core"
 kind = "entry"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s_exit"
+crate = "bloxide_core"
 kind = "exit"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s_i"
+crate = "bloxide_core"
 kind = "transition"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s1_entry"
+crate = "bloxide_core"
 kind = "entry"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s1_exit"
+crate = "bloxide_core"
 kind = "exit"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s11_entry"
+crate = "bloxide_core"
 kind = "entry"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s11_exit"
+crate = "bloxide_core"
 kind = "exit"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s11_a"
+crate = "bloxide_core"
 kind = "transition"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s11_b"
+crate = "bloxide_core"
 kind = "transition"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s2_entry"
+crate = "bloxide_core"
 kind = "entry"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s2_exit"
+crate = "bloxide_core"
 kind = "exit"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s21_entry"
+crate = "bloxide_core"
 kind = "entry"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s21_exit"
+crate = "bloxide_core"
 kind = "exit"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s211_entry"
+crate = "bloxide_core"
 kind = "entry"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "s211_exit"
+crate = "bloxide_core"
 kind = "exit"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "error_entry"
+crate = "bloxide_core"
 kind = "entry"
 fields = []
 impl_required = false
 
 [[context.actions]]
 name = "error_exit"
+crate = "bloxide_core"
 kind = "exit"
 fields = []
 impl_required = false

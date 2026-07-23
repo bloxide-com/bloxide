@@ -15,6 +15,7 @@ type = "u32"
 
 [[context.actions]]
 name = "count_tick"
+crate = "blox_ctx_ticks"
 kind = "transition"
 fields = ["count:mut"]
 impl_required = false
