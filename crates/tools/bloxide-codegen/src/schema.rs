@@ -236,6 +236,11 @@ pub struct ContextConfig {
     /// and are now inlined into the context struct.
     #[serde(default)]
     pub fields: Vec<ContextFieldConfig>,
+
+    /// Action declarations for system codegen.
+    /// Each entry describes how to generate a concrete action closure.
+    #[serde(default)]
+    pub actions: Vec<ContextActionConfig>,
 }
 
 /// A `[[context.fields]]` entry — a state field declared directly in the
@@ -246,6 +251,32 @@ pub struct ContextFieldConfig {
     pub r#type: String,
     #[serde(default)]
     pub default: Option<String>,
+}
+
+/// A `[[context.actions]]` entry — declares an action's signature for
+/// the system codegen to generate concrete action closures.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct ContextActionConfig {
+    /// Action name (without `Self::` prefix), e.g. `"process_work"`.
+    pub name: String,
+    /// Action kind: `"entry"`, `"exit"`, or `"transition"`.
+    pub kind: String,
+    /// Context fields the action needs, with access mode suffix:
+    /// `"field:mut"` (mutable ref), `"field:ref"` (shared ref),
+    /// `"field"` (copy/owned).
+    #[serde(default)]
+    pub fields: Vec<String>,
+    /// Optional event payload variable name to extract from the event.
+    /// e.g. `"do_work"` means the action receives the `DoWork` payload.
+    #[serde(default)]
+    pub event_payload: Option<String>,
+    /// Whether the action function lives in an impl crate (true) or
+    /// a context/peer crate (false).
+    #[serde(default)]
+    pub impl_required: bool,
+    /// Feature gate for this action (e.g. `"dynamic"`).
+    #[serde(default)]
+    pub feature: Option<String>,
 }
 
 /// A `[[context.uses]]` entry — pulls traits and fields from a composable
