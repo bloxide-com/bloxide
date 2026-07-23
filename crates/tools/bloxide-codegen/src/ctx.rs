@@ -396,6 +396,19 @@ fn generate_variant(
         }
     }
 
+    // 2: State fields from [[context.fields]] — inlined directly into the
+    //    struct, zero-initialized by BloxCtx (via #[blox_ctx(skip)]).
+    for field in &config.fields {
+        let field_ident = format_ident!("{}", field.name);
+        let field_ty = syn::parse_str::<syn::Type>(&field.r#type).map_err(|e| {
+            anyhow::anyhow!("invalid type '{}' in context.fields: {}", field.r#type, e)
+        })?;
+        field_defs.push(quote! {
+            #[blox_ctx(skip)]
+            pub #field_ident: #field_ty,
+        });
+    }
+
     // 3: Auto-emit behavior field (self_id is already emitted first above).
     // behavior: B — emitted when there are delegatable uses entries.
     // The #[delegates(...)] list is derived from the delegatable traits.

@@ -1,7 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Pool action functions.
 use blox_ctx_workers::HasWorkers;
-use bloxide_core::{capability::BloxRuntime, transition::ActionResult, HasSelfId};
+use bloxide_core::{capability::BloxRuntime, transition::ActionResult};
 use pool_messages::PoolMsg;
 
 use crate::{PoolCtx, PoolEvent};
@@ -37,7 +37,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
             req,
             &ctx.spawn_ref,
             &ctx.notify_ref,
-            ctx.self_id(),
+            ctx.self_id,
         );
         if result.is_err() {
             
@@ -84,7 +84,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
             let n = ctx.worker_refs().len();
             if n >= 2 {
                 let new_idx = n - 1;
-                let from = ctx.self_id();
+                let from = ctx.self_id;
                 let new_id = ctx.worker_refs()[new_idx].id();
                 let new_ref = ctx.worker_refs()[new_idx].clone();
                 let new_ctrl = ctx.worker_ctrls()[new_idx].clone();
@@ -104,7 +104,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
                 }
             }
         }
-        let self_id = ctx.self_id();
+        let self_id = ctx.self_id;
         if domain_ref
             .try_send(self_id, WorkerMsg::DoWork(DoWork { task_id }))
             .is_err()
@@ -130,7 +130,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
                 req,
                 &ctx.spawn_ref,
                 &ctx.notify_ref,
-                ctx.self_id(),
+                ctx.self_id,
             );
             if result.is_err() {
                 

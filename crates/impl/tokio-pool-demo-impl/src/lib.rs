@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use bloxide_child_management::ChildPolicy;
 use bloxide_core::lifecycle::AbortCommand;
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap},
+    capability::DynamicChannelCap,
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::ActorRef,
     StateMachine,
@@ -18,51 +18,8 @@ use bloxide_core::{
 use bloxide_peers::PeerCtrl;
 use bloxide_spawn::{SpawnCap, SpawnOutput};
 use bloxide_tokio::{run, RunConfig, TokioRuntime};
-use blox_ctx_current_task::HasCurrentTask;
-use bloxide_peers::HasPeers;
 use pool_messages::{DoWork, SpawnRequest, SpawnedWorker, WorkerMsg};
 use worker_blox::{WorkerCtx, WorkerSpec};
-
-/// Behavior type for Worker actors holding task state and peer list.
-pub struct WorkerBehavior<R: BloxRuntime> {
-    task_id: u32,
-    result: u32,
-    peers: Vec<ActorRef<WorkerMsg, R>>,
-}
-
-impl<R: BloxRuntime> Default for WorkerBehavior<R> {
-    fn default() -> Self {
-        Self {
-            task_id: 0,
-            result: 0,
-            peers: Vec::new(),
-        }
-    }
-}
-
-impl<R: BloxRuntime> HasCurrentTask for WorkerBehavior<R> {
-    fn task_id(&self) -> u32 {
-        self.task_id
-    }
-    fn set_task_id(&mut self, id: u32) {
-        self.task_id = id;
-    }
-    fn result(&self) -> u32 {
-        self.result
-    }
-    fn set_result(&mut self, r: u32) {
-        self.result = r;
-    }
-}
-
-impl<R: BloxRuntime> HasPeers<WorkerMsg, R> for WorkerBehavior<R> {
-    fn peers(&self) -> &[ActorRef<WorkerMsg, R>] {
-        &self.peers
-    }
-    fn peers_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, R>> {
-        &mut self.peers
-    }
-}
 
 /// Process a work request: store the task ID and compute the result (task_id * 2).
 pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) {
@@ -99,12 +56,9 @@ pub fn spawn_worker(
             let (abort_ref, abort_rx) =
                 <TokioRuntime as DynamicChannelCap>::channel::<AbortCommand>(worker_id, 4);
 
-            let behavior = WorkerBehavior::<TokioRuntime>::default();
-            let worker_ctx = WorkerCtx::new(worker_id, pool_ref, behavior);
+            let worker_ctx = WorkerCtx::new(worker_id, pool_ref, Vec::new(), 0, 0);
             let machine =
-                StateMachine::<WorkerSpec<TokioRuntime, WorkerBehavior<TokioRuntime>>>::new(
-                    worker_ctx,
-                );
+                StateMachine::<WorkerSpec<TokioRuntime>>::new(worker_ctx);
 
             let notify_sender = notify.sender();
             let task_handle = <TokioRuntime as SpawnCap>::spawn(async move {

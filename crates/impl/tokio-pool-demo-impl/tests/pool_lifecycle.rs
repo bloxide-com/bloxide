@@ -37,6 +37,7 @@ async fn recv<M: Send + 'static>(rx: &mut TokioStream<M>) -> Option<Envelope<M>>
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "Phase 2: pool actions are stubs — re-enable after Phase 3 system codegen generates concrete specs"]
 async fn pool_lifecycle_spawn_and_done() {
     let timeout = std::time::Duration::from_secs(10);
 

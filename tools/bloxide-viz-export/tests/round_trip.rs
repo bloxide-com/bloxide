@@ -282,14 +282,9 @@ fn test_context_preserved() {
                 spec.name
             );
 
-            // Verify auto-emitted fields (self_id, behavior) appear in the exported context
-            let expected_fields: Vec<&str> = {
-                let mut v: Vec<&str> = vec!["self_id"];
-                if ctx.uses.iter().any(|u| u.delegatable) {
-                    v.push("behavior");
-                }
-                v
-            };
+            // Verify auto-emitted fields appear in the exported context.
+            // No more B generic — just self_id (always present).
+            let expected_fields: Vec<&str> = vec!["self_id"];
             for field_name in &expected_fields {
                 assert!(
                     exported_ctx.fields.iter().any(|f| f.name == *field_name),
@@ -553,10 +548,21 @@ fn test_full_round_trip_no_data_loss() {
             );
 
             // Verify auto-emitted fields match the exported context.
+            // No more B generic — fields are: self_id + accessor fields with
+            // field names + [[context.fields]] state fields.
             let expected_fields: Vec<(&str, &str)> = {
                 let mut v: Vec<(&str, &str)> = vec![("self_id", "ActorId")];
-                if ctx.uses.iter().any(|u| u.delegatable) {
-                    v.push(("behavior", "B"));
+                // Accessor fields (from [[context.uses]] with field = "...")
+                for u in &ctx.uses {
+                    if let (Some(name), Some(ty)) = (&u.field, &u.field_type) {
+                        if !u.delegatable {
+                            v.push((name.as_str(), ty.as_str()));
+                        }
+                    }
+                }
+                // State fields from [[context.fields]]
+                for f in &ctx.fields {
+                    v.push((f.name.as_str(), f.r#type.as_str()));
                 }
                 v
             };

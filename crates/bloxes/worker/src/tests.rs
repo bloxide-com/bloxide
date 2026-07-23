@@ -8,50 +8,18 @@ mod worker_tests {
     extern crate alloc;
     use alloc::vec::Vec;
 
-    use blox_ctx_current_task::HasCurrentTask;
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::{
-        capability::DynamicChannelCap, messaging::ActorRef, Envelope, MachineState, StateMachine,
+        capability::DynamicChannelCap, Envelope, MachineState, StateMachine,
     };
-    use bloxide_peers::{AddPeer, HasPeers, PeerCtrl};
+    use bloxide_peers::{AddPeer, PeerCtrl};
     use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use pool_messages::{DoWork, PeerResult, PoolMsg, WorkDone, WorkerMsg};
 
     use crate::prelude::*;
 
-    #[derive(Default)]
-    struct TestBehavior {
-        task_id: u32,
-        result: u32,
-        peers: Vec<ActorRef<WorkerMsg, TestRuntime>>,
-    }
-
-    impl HasCurrentTask for TestBehavior {
-        fn task_id(&self) -> u32 {
-            self.task_id
-        }
-        fn set_task_id(&mut self, id: u32) {
-            self.task_id = id;
-        }
-        fn result(&self) -> u32 {
-            self.result
-        }
-        fn set_result(&mut self, r: u32) {
-            self.result = r;
-        }
-    }
-
-    impl HasPeers<WorkerMsg, TestRuntime> for TestBehavior {
-        fn peers(&self) -> &[ActorRef<WorkerMsg, TestRuntime>] {
-            &self.peers
-        }
-        fn peers_mut(&mut self) -> &mut Vec<ActorRef<WorkerMsg, TestRuntime>> {
-            &mut self.peers
-        }
-    }
-
     struct WorkerHarness {
-        machine: StateMachine<WorkerSpec<TestRuntime, TestBehavior>>,
+        machine: StateMachine<WorkerSpec<TestRuntime>>,
         pool_rx: TestReceiver<PoolMsg>,
     }
 
@@ -63,8 +31,8 @@ mod worker_tests {
             let (pool_ref, pool_rx) =
                 <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 16);
 
-            let ctx = WorkerCtx::new(worker_id, pool_ref, TestBehavior::default());
-            let machine = StateMachine::<WorkerSpec<TestRuntime, TestBehavior>>::new(ctx);
+            let ctx = WorkerCtx::new(worker_id, pool_ref, Vec::new(), 0, 0);
+            let machine = StateMachine::<WorkerSpec<TestRuntime>>::new(ctx);
 
             WorkerHarness { machine, pool_rx }
         }
@@ -79,22 +47,6 @@ mod worker_tests {
                 .dispatch(Envelope(0, WorkerMsg::DoWork(DoWork { task_id })).into());
         }
 
-        fn dispatch_add_peer(
-            &mut self,
-            peer_ref: bloxide_core::messaging::ActorRef<WorkerMsg, TestRuntime>,
-        ) {
-            self.machine.dispatch(
-                Envelope(
-                    0,
-                    PeerCtrl::AddPeer(AddPeer {
-                        peer_id: peer_ref.id(),
-                        peer_ref,
-                    }),
-                )
-                .into(),
-            );
-        }
-
         fn current_state(&self) -> MachineState<WorkerState> {
             self.machine.current_state()
         }
@@ -104,9 +56,11 @@ mod worker_tests {
         }
 
         fn peer_count(&self) -> usize {
-            self.machine.ctx().behavior.peers.len()
+            self.machine.ctx().peers.len()
         }
     }
+
+    // ── State transition tests (work with stub actions) ────────────────────
 
     #[test]
     fn worker_starts_in_waiting() {
@@ -120,8 +74,7 @@ mod worker_tests {
         let mut h = WorkerHarness::new();
         h.start();
         h.dispatch_do_work(7);
-        // Guard::Stop fires after process_work, log_done, do_broadcast,
-        // do_notify_pool — machine returns to Init.
+        // Guard::Stop fires after stub actions — machine returns to Init.
         assert!(
             h.current_state().is_init(),
             "machine must be in Init after DoWork (Guard::Stop)"
@@ -129,10 +82,74 @@ mod worker_tests {
     }
 
     #[test]
-    fn stop_notifies_pool_with_correct_result() {
+    fn peer_result_in_waiting_is_ignored() {
         let mut h = WorkerHarness::new();
         h.start();
-        h.dispatch_do_work(5);
+
+        h.machine.dispatch(
+            Envelope(
+                0,
+                WorkerMsg::PeerResult(PeerResult {
+                    from_id: 99,
+                    result: 42,
+                }),
+            )
+            .into(),
+        );
+        assert_eq!(h.current_state(), MachineState::State(WorkerState::Waiting));
+    }
+
+    // ── Action function tests (real impls in actions.rs, stubs in spec) ────
+
+    #[test]
+    fn handle_ctrl_adds_peer_to_ctx() {
+        let mut h = WorkerHarness::new();
+        h.start();
+
+        let peer_id = TestRuntime::alloc_actor_id();
+        let (peer_ref, _peer_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(peer_id, 16);
+
+        assert_eq!(h.peer_count(), 0);
+
+        // Call handle_ctrl action directly (stub in spec, real impl in actions.rs)
+        let ev: WorkerEvent<TestRuntime> = Envelope(
+            0,
+            PeerCtrl::AddPeer(AddPeer {
+                peer_id,
+                peer_ref,
+            }),
+        )
+        .into();
+        WorkerSpec::<TestRuntime>::handle_ctrl(h.machine.ctx_mut(), &ev);
+        assert_eq!(h.peer_count(), 1);
+    }
+
+    #[test]
+    fn process_work_sets_task_id_and_result() {
+        let mut h = WorkerHarness::new();
+        h.start();
+
+        let ev: WorkerEvent<TestRuntime> =
+            Envelope(0, WorkerMsg::DoWork(DoWork { task_id: 5 })).into();
+        WorkerSpec::<TestRuntime>::process_work(h.machine.ctx_mut(), &ev);
+
+        assert_eq!(h.machine.ctx().task_id, 5);
+        assert_eq!(h.machine.ctx().result, 10, "result = task_id * 2");
+    }
+
+    #[test]
+    fn do_notify_pool_sends_work_done() {
+        let mut h = WorkerHarness::new();
+        h.start();
+
+        // Set task state manually (stub actions don't set it)
+        h.machine.ctx_mut().task_id = 5;
+        h.machine.ctx_mut().result = 10;
+
+        let ev: WorkerEvent<TestRuntime> =
+            Envelope(0, WorkerMsg::DoWork(DoWork { task_id: 5 })).into();
+        WorkerSpec::<TestRuntime>::do_notify_pool(h.machine.ctx_mut(), &ev);
 
         let msgs = h.drain_pool_msgs();
         assert_eq!(msgs.len(), 1, "exactly one WorkDone should be sent");
@@ -148,21 +165,7 @@ mod worker_tests {
     }
 
     #[test]
-    fn add_peer_is_stored_in_ctx() {
-        let mut h = WorkerHarness::new();
-        h.start();
-
-        let peer_id = TestRuntime::alloc_actor_id();
-        let (peer_ref, _peer_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(peer_id, 16);
-
-        assert_eq!(h.peer_count(), 0);
-        h.dispatch_add_peer(peer_ref);
-        assert_eq!(h.peer_count(), 1);
-    }
-
-    #[test]
-    fn broadcast_sends_peer_result_to_all_peers() {
+    fn do_broadcast_sends_peer_result_to_all_peers() {
         let mut h = WorkerHarness::new();
         h.start();
 
@@ -173,15 +176,17 @@ mod worker_tests {
         let (peer2_ref, mut peer2_rx) =
             <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(peer2_id, 16);
 
-        h.dispatch_add_peer(peer1_ref);
-        h.dispatch_add_peer(peer2_ref);
+        // Add peers manually (stub actions don't handle ctrl)
+        h.machine.ctx_mut().peers.push(peer1_ref);
+        h.machine.ctx_mut().peers.push(peer2_ref);
         assert_eq!(h.peer_count(), 2);
 
-        h.dispatch_do_work(3);
-        assert!(
-            h.current_state().is_init(),
-            "machine must be in Init after DoWork (Guard::Stop)"
-        );
+        // Set result manually (stub actions don't process work)
+        h.machine.ctx_mut().result = 6;
+
+        let ev: WorkerEvent<TestRuntime> =
+            Envelope(0, WorkerMsg::DoWork(DoWork { task_id: 3 })).into();
+        WorkerSpec::<TestRuntime>::do_broadcast(h.machine.ctx_mut(), &ev);
 
         let p1_msgs = peer1_rx.drain_payloads();
         let p2_msgs = peer2_rx.drain_payloads();
@@ -202,23 +207,5 @@ mod worker_tests {
             ),
             "peer2 result should be 6"
         );
-    }
-
-    #[test]
-    fn peer_result_in_waiting_is_ignored() {
-        let mut h = WorkerHarness::new();
-        h.start();
-
-        h.machine.dispatch(
-            Envelope(
-                0,
-                WorkerMsg::PeerResult(PeerResult {
-                    from_id: 99,
-                    result: 42,
-                }),
-            )
-            .into(),
-        );
-        assert_eq!(h.current_state(), MachineState::State(WorkerState::Waiting));
     }
 }

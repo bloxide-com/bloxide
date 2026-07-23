@@ -11,7 +11,6 @@ bloxide-core = { workspace = true, features = ["std"] }
 bloxide-child-management = { workspace = true, features = ["std"] }
 bloxide-spawn = { workspace = true, features = ["std"] }
 bloxide-peers = { workspace = true }
-blox-ctx-current-task = { workspace = true }
 bloxide-tokio = { workspace = true }
 bloxide-supervisor = { workspace = true, features = ["std"] }
 pool-messages = { workspace = true }

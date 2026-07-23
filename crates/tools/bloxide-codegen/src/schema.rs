@@ -230,6 +230,22 @@ pub struct ContextConfig {
     /// e.g. `"crate::dynamic_mailboxes::SupervisorMailboxes<R, Rt, F>"`.
     #[serde(default)]
     pub feature_mailboxes_type: Option<String>,
+
+    /// State fields declared directly in `[[context.fields]]`.
+    /// These are fields that were previously in `B` (the behavior trait)
+    /// and are now inlined into the context struct.
+    #[serde(default)]
+    pub fields: Vec<ContextFieldConfig>,
+}
+
+/// A `[[context.fields]]` entry — a state field declared directly in the
+/// context struct (not via a composable crate trait).
+#[derive(Debug, Deserialize, Clone)]
+pub struct ContextFieldConfig {
+    pub name: String,
+    pub r#type: String,
+    #[serde(default)]
+    pub default: Option<String>,
 }
 
 /// A `[[context.uses]]` entry — pulls traits and fields from a composable

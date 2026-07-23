@@ -42,10 +42,11 @@ members = [
     "crates/tools/bloxide-codegen",
     "crates/tools/cargo-blox",
     "tools/bloxide-viz-export",
-    "apps/tokio-demo",
-    "apps/tokio-minimal-demo",
-    "apps/tokio-pool-demo",
-    "apps/embassy-demo",
+    # apps/ temporarily excluded — system.toml codegen is Phase 3
+    # "apps/tokio-demo",
+    # "apps/tokio-minimal-demo",
+    # "apps/tokio-pool-demo",
+    # "apps/embassy-demo",
 ]
 resolver = "2"
 

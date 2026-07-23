@@ -25,8 +25,8 @@ initial = true
 
 [context]
 name = "WorkerCtx"
-generics = "<R: BloxRuntime, B: HasPeers<WorkerMsg, R> + HasCurrentTask>"
-on_init = "ctx.set_task_id(0); ctx.set_result(0); ctx.peers_mut().clear();"
+generics = "<R: BloxRuntime>"
+on_init = "ctx.task_id = 0; ctx.result = 0; ctx.peers.clear();"
 imports = [
     "pool_messages::{PoolMsg, WorkerMsg}",
     "alloc::vec::Vec",
@@ -40,16 +40,18 @@ field = "pool_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "accessor"
 
-# Behavior traits from platform/shared crates (delegatable)
-[[context.uses]]
-crate = "bloxide_peers"
-trait = "HasPeers<WorkerMsg, R>"
-delegatable = true
+# State fields (moved from B into Ctx)
+[[context.fields]]
+name = "task_id"
+type = "u32"
 
-[[context.uses]]
-crate = "blox_ctx_current_task"
-trait = "HasCurrentTask"
-delegatable = true
+[[context.fields]]
+name = "result"
+type = "u32"
+
+[[context.fields]]
+name = "peers"
+type = "Vec<ActorRef<WorkerMsg, R>>"
 
 # --- Declarative transitions ---
 
