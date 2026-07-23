@@ -15,7 +15,7 @@ mod counter_tests {
     // ── Test helpers ─────────────────────────────────────────────────────────
 
     fn make_machine() -> StateMachine<CounterSpec> {
-        let ctx = CounterCtx::new(bloxide_core::next_actor_id!(), 0);
+        let ctx = CounterCtx::new(bloxide_core::next_actor_id!());
         StateMachine::new(ctx)
     }
 

@@ -32,7 +32,9 @@ imports = [
     "alloc::vec::Vec",
 ]
 
-# Accessor trait from context crate (1-param, convention-based inference works)
+# Accessor trait from context crate — pool_ref is a constructor parameter
+# (passed to WorkerCtx::new), not a state field. HasPoolRef provides the
+# pool_ref() accessor used by notify_pool_done.
 [[context.uses]]
 crate = "blox_ctx_pool_ref"
 trait = "HasPoolRef<R>"
@@ -40,23 +42,8 @@ field = "pool_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "accessor"
 
-# Accessor for peers state field
-[[context.uses]]
-crate = "bloxide_peers"
-trait = "HasPeers<WorkerMsg, R>"
-field = "peers"
-field_type = "Vec<ActorRef<WorkerMsg, R>>"
-role = "accessor"
-
-# Accessor for current task state field
-[[context.uses]]
-crate = "blox_ctx_current_task"
-trait = "HasCurrentTask"
-field = "task_id"
-field_type = "u32"
-role = "accessor"
-
-# State fields (moved from B into Ctx)
+# State fields (moved from B into Ctx) — accessed directly, no trait accessor.
+# task_id, result, and peers are zero-initialized by BloxCtx derive macro.
 [[context.fields]]
 name = "task_id"
 type = "u32"
@@ -74,7 +61,7 @@ type = "Vec<ActorRef<WorkerMsg, R>>"
 # Waiting: entry logs; handles ctrl (AddPeer/RemovePeer), DoWork → stop, PeerResult stays
 [[topology.entry]]
 state = "Waiting"
-actions = ["Self::log_waiting"]
+actions = []
 
 [[topology.transitions]]
 state = "Waiting"
@@ -86,7 +73,7 @@ actions = ["Self::handle_ctrl"]
 state = "Waiting"
 event = "WorkerMsg::DoWork(_)"
 target = "stop"
-actions = ["Self::process_work", "Self::log_done", "Self::do_broadcast", "Self::do_notify_pool"]
+actions = ["Self::process_work", "Self::do_broadcast", "Self::do_notify_pool"]
 
 [[topology.transitions]]
 state = "Waiting"

@@ -36,7 +36,7 @@ mod ping_tests {
             let (timer_ref, _timer_rx) =
                 <TestRuntime as DynamicChannelCap>::channel::<TimerCommand>(timer_id, 16);
 
-            let ctx = PingCtx::new(ping_id, pong_ref, self_ref, timer_ref, None, 0);
+            let ctx = PingCtx::new(ping_id, pong_ref, self_ref, timer_ref);
             let machine = StateMachine::<PingSpec<TestRuntime>>::new(ctx);
 
             PingHarness {

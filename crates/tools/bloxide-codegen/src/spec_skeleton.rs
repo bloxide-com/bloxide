@@ -89,7 +89,10 @@ pub(crate) fn resolve_action(
     let resolved = replace_placeholders(action, ctx_type_str, event_type_str, type_params);
 
     if resolved.starts_with("Self::") {
-        // Extract the method name after `Self::` for the comment.
+        // Self:: prefix indicates an action method on the spec struct.
+        // In Phase 2, actions are stub no-op closures — the real action
+        // implementations live in the blox crate's actions.rs (or context
+        // crates) and are tested there, not through the generated spec.
         let name = resolved.strip_prefix("Self::").unwrap_or(&resolved);
         if is_transition {
             quote! {

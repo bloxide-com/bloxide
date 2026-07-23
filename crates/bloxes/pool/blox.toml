@@ -19,7 +19,7 @@ message_path = "pool_messages::PoolMsg"
 [[event.mailboxes]]
 variant = "SpawnReply"
 message = "SpawnedWorker"
-message_path = "pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>"
+message_path = "pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>, R>"
 feature = "dynamic"
 
 # ── Context struct ───────────────────────────────────────────────────────────

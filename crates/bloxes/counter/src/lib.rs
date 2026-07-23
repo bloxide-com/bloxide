@@ -4,6 +4,7 @@
 #[cfg(feature = "std")]
 extern crate std;
 
+pub mod actions;
 pub mod generated;
 pub mod prelude;
 
