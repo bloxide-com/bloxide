@@ -25,7 +25,6 @@ bloxide-macros  = { workspace = true }
 bloxide-peers   = { workspace = true }
 pool-messages   = { workspace = true }
 bloxide-messaging  = { workspace = true }
-blox-ctx-workers   = { workspace = true }
 bloxide-supervisor = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
