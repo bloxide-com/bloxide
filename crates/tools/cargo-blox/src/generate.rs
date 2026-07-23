@@ -73,9 +73,12 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
         .filter(|e| e.file_name() == "system.toml")
     {
         let system_path = entry.path();
+        let app_dir = system_path.parent().unwrap();
+
+        // Generate main.rs (app wiring).
         match bloxide_codegen::generate_system_wiring_from_toml(system_path, &root) {
             Ok(main_rs) => {
-                let output_path = system_path.parent().unwrap().join("src").join("main.rs");
+                let output_path = app_dir.join("src").join("main.rs");
                 std::fs::create_dir_all(output_path.parent().unwrap())?;
 
                 let needs_write = if output_path.exists() {
@@ -88,7 +91,6 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
                     std::fs::write(&output_path, &main_rs)?;
                     println!("bloxide: generated {}", output_path.display());
                 }
-                wire_count += 1;
             }
             Err(e) => {
                 eprintln!(
@@ -96,8 +98,38 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
                     system_path.display(),
                     e
                 );
+                continue;
             }
         }
+
+        // Generate Cargo.toml (app dependencies).
+        match bloxide_codegen::generate_cargo_toml(system_path, &root) {
+            Ok(cargo_toml) => {
+                let cargo_path = app_dir.join("Cargo.toml");
+                let needs_write = if cargo_path.exists() {
+                    // Preserve the header comment if the existing file has one
+                    // that differs from our generated one. We only update
+                    // if the generated content differs from the existing file.
+                    std::fs::read_to_string(&cargo_path)? != cargo_toml
+                } else {
+                    true
+                };
+
+                if needs_write {
+                    std::fs::write(&cargo_path, &cargo_toml)?;
+                    println!("bloxide: generated {}", cargo_path.display());
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "bloxide: warning: failed to generate Cargo.toml for {}: {}",
+                    system_path.display(),
+                    e
+                );
+            }
+        }
+
+        wire_count += 1;
     }
 
     if wire_count > 0 {

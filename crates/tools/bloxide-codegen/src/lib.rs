@@ -165,16 +165,6 @@ pub fn generate_to_dir(
     Ok(written)
 }
 
-/// Generate a system wiring binary (main.rs) from a system.toml manifest.
-///
-/// Reads the system.toml at `system_path`, discovers all blox.toml files in the
-/// workspace, parses them into BloxConfig entries, and calls
-/// `system_wiring::generate` to produce the main.rs content.
-///
-/// Feature awareness: reads the Cargo.toml in the same directory as
-/// `system_path` to determine which Cargo features are enabled on each blox
-/// dependency. Feature-gated context fields whose feature is not active are
-/// silently skipped during wiring — the system.toml is feature-agnostic.
 pub fn generate_system_wiring_from_toml(
     system_path: &Path,
     workspace_root: &Path,
@@ -222,10 +212,17 @@ pub fn generate_system_wiring_from_toml(
         }
     }
 
-    // Read the app's Cargo.toml to determine which features are enabled on
-    // each blox dependency. This lets collect_ctor_fields skip feature-gated
-    // fields that don't exist when the feature is off.
-    let active_features = read_app_cargo_features(system_path)?;
+    // Infer active features from the system.toml + blox configs.
+    //
+    // When an actor has a `source = "factory"` injection and the blox's
+    // blox.toml declares a `feature` (e.g. "dynamic"), that feature must be
+    // enabled in the app's Cargo.toml for the generated code to compile.
+    //
+    // We also fall back to reading the existing Cargo.toml (if any) so that
+    // manually-specified features are preserved during incremental regen.
+    let inferred_features = infer_active_features(&config, &blox_configs);
+    let existing_features = read_app_cargo_features(system_path)?;
+    let active_features = merge_features(inferred_features, existing_features);
 
     let generated = system_wiring::generate(&config, &blox_configs, &active_features)?;
     Ok(generated)
@@ -273,4 +270,339 @@ fn read_app_cargo_features(
     }
 
     Ok(result)
+}
+
+/// Infer which Cargo features should be enabled on each blox dependency based
+/// on the system.toml and the blox configs.
+///
+/// Currently this detects:
+/// - `dynamic` feature: when an actor has a `source = "factory"` injection
+///   and the blox's blox.toml declares `feature = "dynamic"`.
+///
+/// Returns a map from crate name (e.g. `"pool-blox"`) to the set of features.
+fn infer_active_features(
+    config: &SystemConfig,
+    blox_configs: &BTreeMap<String, BloxConfig>,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut result = BTreeMap::new();
+
+    for actor in &config.actors {
+        // Check if this actor has a factory injection.
+        let has_factory = actor.inject.values().any(|src| src.source == "factory");
+
+        if has_factory {
+            if let Some(blox_config) = blox_configs.get(&actor.blox) {
+                // Look for feature declarations in the blox config.
+                // The `feature` field on context or event indicates a
+                // feature-gated variant. We activate it.
+                if let Some(ctx) = &blox_config.context {
+                    if let Some(feat) = &ctx.feature {
+                        result
+                            .entry(actor.blox.clone())
+                            .or_insert_with(BTreeSet::new)
+                            .insert(feat.clone());
+                    }
+                }
+                if let Some(event) = &blox_config.event {
+                    if let Some(feat) = &event.feature {
+                        result
+                            .entry(actor.blox.clone())
+                            .or_insert_with(BTreeSet::new)
+                            .insert(feat.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Merge two feature maps. Values from `extra` are added to `base` without
+/// removing existing entries.
+fn merge_features(
+    mut base: BTreeMap<String, BTreeSet<String>>,
+    extra: BTreeMap<String, BTreeSet<String>>,
+) -> BTreeMap<String, BTreeSet<String>> {
+    for (k, v) in extra {
+        base.entry(k).or_default().extend(v);
+    }
+    base
+}
+
+pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow::Result<String> {
+    let content = std::fs::read_to_string(system_path)?;
+    let config: SystemConfig = toml::from_str(&content)?;
+
+    // Discover all blox.toml files (same logic as generate_system_wiring_from_toml).
+    let mut blox_configs = BTreeMap::new();
+    for entry in walkdir::WalkDir::new(workspace_root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if entry.file_name() == "blox.toml" {
+            let blox_content = std::fs::read_to_string(entry.path())?;
+            let blox_config: BloxConfig = toml::from_str(&blox_content)?;
+            let dir = entry.path().parent().unwrap();
+            let cargo_toml_path = dir.join("Cargo.toml");
+            let key = if cargo_toml_path.exists() {
+                let cargo_content = std::fs::read_to_string(&cargo_toml_path)?;
+                cargo_content
+                    .lines()
+                    .find_map(|line| {
+                        let trimmed = line.trim();
+                        if trimmed.starts_with("name = ") {
+                            let name = trimmed
+                                .strip_prefix("name = ")
+                                .unwrap()
+                                .trim()
+                                .trim_matches('"');
+                            Some(name.to_string())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| dir.file_name().unwrap().to_string_lossy().to_string())
+            } else {
+                dir.file_name().unwrap().to_string_lossy().to_string()
+            };
+            blox_configs.insert(key, blox_config);
+        }
+    }
+
+    // Infer active features.
+    let inferred = infer_active_features(&config, &blox_configs);
+    let existing = read_app_cargo_features(system_path)?;
+    let active_features = merge_features(inferred, existing);
+
+    // Collect dependencies.
+    // Each entry is (crate_name, features, is_workspace_dep).
+    // is_workspace_dep = true → use `{ workspace = true, features = [...] }`
+    // is_workspace_dep = false → use inline version spec.
+    let mut deps: BTreeMap<String, (Vec<String>, bool)> = BTreeMap::new();
+
+    // ── Always-required deps ───────────────────────────────────────────────
+    deps.insert("bloxide-core".to_string(), (vec!["std".to_string()], true));
+    deps.insert("bloxide-log".to_string(), (vec!["log".to_string()], true));
+    deps.insert(
+        "bloxide-supervisor".to_string(),
+        (vec!["std".to_string()], true),
+    );
+
+    // ── Runtime-specific deps ──────────────────────────────────────────────
+    match config.system.runtime.as_str() {
+        "tokio" => {
+            deps.insert("bloxide-tokio".to_string(), (vec![], true));
+            deps.insert("tokio".to_string(), (vec![], true));
+            deps.insert("tracing".to_string(), (vec![], true));
+            deps.insert("tracing-subscriber".to_string(), (vec![], true));
+            deps.insert("tracing-log".to_string(), (vec![], true));
+        }
+        "embassy" => {
+            deps.insert(
+                "bloxide-embassy".to_string(),
+                (vec!["std".to_string()], true),
+            );
+            // embassy crates are NOT workspace deps — inline version specs.
+            deps.insert(
+                "embassy-executor".to_string(),
+                (
+                    vec!["arch-std".to_string(), "executor-thread".to_string()],
+                    false,
+                ),
+            );
+            deps.insert("embassy-sync".to_string(), (vec![], false));
+            deps.insert(
+                "embassy-time".to_string(),
+                (
+                    vec!["std".to_string(), "generic-queue-8".to_string()],
+                    false,
+                ),
+            );
+            deps.insert(
+                "critical-section".to_string(),
+                (vec!["std".to_string()], false),
+            );
+            deps.insert("static_cell".to_string(), (vec![], true));
+            deps.insert("tracing".to_string(), (vec![], true));
+            deps.insert("tracing-subscriber".to_string(), (vec![], true));
+        }
+        "test" => {
+            // Test runtime — minimal deps.
+        }
+        other => {
+            eprintln!("bloxide: warning: unknown runtime '{}'", other);
+        }
+    }
+
+    // ── Per-actor deps ─────────────────────────────────────────────────────
+    for actor in &config.actors {
+        let is_timer = actor.kind.as_deref() == Some("timer");
+
+        // The blox crate itself.
+        let blox_name = &actor.blox;
+        let features = active_features
+            .get(blox_name)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<Vec<_>>();
+        deps.insert(blox_name.clone(), (features, true));
+
+        if is_timer {
+            // bloxide-timer is already added as the blox crate.
+            // Ensure std feature is included.
+            let entry = deps.get_mut("bloxide-timer").unwrap();
+            if !entry.0.contains(&"std".to_string()) {
+                entry.0.push("std".to_string());
+            }
+        }
+
+        // Message crates: extract from the blox.toml's event.mailboxes[].message_path.
+        if let Some(blox_config) = blox_configs.get(blox_name) {
+            if let Some(event) = &blox_config.event {
+                for mailbox in &event.mailboxes {
+                    if let Some(path) = &mailbox.message_path {
+                        // message_path is like "ping_pong_messages::PingPongMsg"
+                        // Extract the crate name (first segment) and convert
+                        // underscores to hyphens for Cargo.toml.
+                        if let Some(crate_part) = path.split("::").next() {
+                            let cargo_name = crate_part.replace('_', "-");
+                            deps.entry(cargo_name).or_insert_with(|| (vec![], true));
+                        }
+                    }
+                }
+            }
+
+            // Also check context.imports for message crate references.
+            if let Some(ctx) = &blox_config.context {
+                for imp in &ctx.imports {
+                    // imports are like "ping_pong_messages::PingPongMsg"
+                    // or "bloxide_timer::{TimerCommand, TimerId}"
+                    if let Some(crate_part) = imp.split("::").next() {
+                        // Skip std/alloc/bloxide_core etc — only add external
+                        // message crates (they end with "_messages").
+                        if crate_part.ends_with("_messages") {
+                            let cargo_name = crate_part.replace('_', "-");
+                            deps.entry(cargo_name).or_insert_with(|| (vec![], true));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Behavior impl crate.
+        if let Some(impl_crate) = &actor.behavior_impl {
+            // behavior_impl is already in hyphen format (e.g. "ping-pong-impl").
+            deps.entry(impl_crate.clone())
+                .or_insert_with(|| (vec![], true));
+        }
+
+        // Factory injection crates.
+        for src in actor.inject.values() {
+            if src.source == "factory" {
+                if let Some(crate_name) = &src.crate_name {
+                    // crate_name uses underscores (e.g. "tokio_pool_demo_impl")
+                    // — convert to hyphens for Cargo.toml.
+                    let cargo_name = crate_name.replace('_', "-");
+                    deps.entry(cargo_name).or_insert_with(|| (vec![], true));
+                }
+            }
+        }
+    }
+
+    // ── Emit Cargo.toml ─────────────────────────────────────────────────────
+    let app_name = config.system.name.clone().unwrap_or_else(|| {
+        system_path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("bloxide-app")
+            .to_string()
+    });
+
+    let mut out = String::new();
+    out.push_str("# Copyright 2025 Bloxide, all rights reserved\n");
+    out.push_str("# Auto-generated by `cargo blox generate` from system.toml.\n");
+    out.push_str("# Do not edit manually — regenerate with `cargo blox generate`.\n\n");
+    out.push_str("[package]\n");
+    out.push_str(&format!("name = \"{}\"\n", app_name));
+    out.push_str("version.workspace = true\n");
+    out.push_str("edition.workspace = true\n");
+    out.push_str("publish = false\n\n");
+    out.push_str("[dependencies]\n");
+
+    for (crate_name, (features, is_workspace)) in &deps {
+        if *is_workspace {
+            if features.is_empty() {
+                out.push_str(&format!("{} = {{ workspace = true }}\n", crate_name));
+            } else {
+                let feat_list = features
+                    .iter()
+                    .map(|f| format!("\"{}\"", f))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                out.push_str(&format!(
+                    "{} = {{ workspace = true, features = [{}] }}\n",
+                    crate_name, feat_list
+                ));
+            }
+        } else {
+            // Inline version specs for non-workspace deps (embassy crates).
+            let feat_list = if features.is_empty() {
+                String::new()
+            } else {
+                let items = features
+                    .iter()
+                    .map(|f| format!("\"{}\"", f))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(", features = [{}]", items)
+            };
+            match crate_name.as_str() {
+                "embassy-executor" => {
+                    out.push_str(&format!(
+                        "embassy-executor = {{ version = \"0.9\"{} }}\n",
+                        feat_list
+                    ));
+                }
+                "embassy-sync" => {
+                    out.push_str(&format!(
+                        "embassy-sync = {{ version = \"0.7\"{} }}\n",
+                        feat_list
+                    ));
+                }
+                "embassy-time" => {
+                    out.push_str(&format!(
+                        "embassy-time = {{ version = \"0.5\"{} }}\n",
+                        feat_list
+                    ));
+                }
+                "critical-section" => {
+                    out.push_str(&format!(
+                        "critical-section = {{ version = \"1.2\"{} }}\n",
+                        feat_list
+                    ));
+                }
+                _ => {
+                    // Fallback: try workspace dep.
+                    if features.is_empty() {
+                        out.push_str(&format!("{} = {{ workspace = true }}\n", crate_name));
+                    } else {
+                        out.push_str(&format!(
+                            "{} = {{ workspace = true, features = [{}] }}\n",
+                            crate_name,
+                            features
+                                .iter()
+                                .map(|f| format!("\"{}\"", f))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(out)
 }
