@@ -963,11 +963,59 @@ pub fn generate(
 
     let file = syn::parse2::<syn::File>(tokens)
         .map_err(|e| anyhow::anyhow!("syn parsing failed: {}", e))?;
-    let mut formatted = prettyplease::unparse(&file);
+    let pretty = prettyplease::unparse(&file);
 
-    if is_tokio {
-        formatted = formatted.replace("async fn main()", "#[tokio::main]\nasync fn main()");
+    // Apply the `#[tokio::main]` attribute that prettyplease can't emit
+    // (it's not a regular attribute — it's an outer attribute on a function
+    // that prettyplease formats on the same line).
+    let with_attr = if is_tokio {
+        pretty.replace("async fn main()", "#[tokio::main]\nasync fn main()")
+    } else {
+        pretty
+    };
+
+    // Run rustfmt on the output so it matches `cargo fmt` exactly.
+    // This prevents `cargo blox generate` (which calls `cargo fmt`) from
+    // clobbering the wire-generated main.rs with formatting diffs.
+    let with_header = format!("{}{}", HEADER, with_attr);
+    let formatted = rustfmt_source(&with_header)?;
+
+    Ok(formatted)
+}
+
+/// Format a Rust source string through `rustfmt`.
+///
+/// Falls back to the unformatted input if `rustfmt` is not available,
+/// so the codegen still works in environments without rustfmt installed.
+fn rustfmt_source(source: &str) -> anyhow::Result<String> {
+    use std::io::Write;
+    use std::process::Command;
+
+    let spawn_result = Command::new("rustfmt")
+        .args(["--edition", "2021", "--emit", "stdout"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+
+    let mut child = match spawn_result {
+        Ok(c) => c,
+        Err(_) => {
+            // rustfmt not available — return the source as-is.
+            return Ok(source.to_string());
+        }
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(source.as_bytes())?;
     }
 
-    Ok(format!("{}{}", HEADER, formatted))
+    let output = child.wait_with_output()?;
+    if output.status.success() {
+        let formatted = String::from_utf8_lossy(&output.stdout).to_string();
+        Ok(formatted)
+    } else {
+        // rustfmt failed — return the source as-is rather than panicking.
+        Ok(source.to_string())
+    }
 }
