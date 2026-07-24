@@ -480,12 +480,10 @@ actions_crate = "counter_actions"
 [[context.uses]]
 crate = "blox_ctx_ticks"
 trait = "CountsTicks"
-delegatable = true
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
     let files = generate_all(&config, "counter-blox").expect("generate failed");
-
     let ctx_file = files
         .iter()
         .find(|(n, _)| n == "ctx.rs")
@@ -533,12 +531,10 @@ role = "accessor"
 [[context.uses]]
 crate = "blox_ctx_current_timer"
 trait = "HasCurrentTimer"
-delegatable = true
 
 [[context.uses]]
 crate = "blox_ctx_rounds"
 trait = "CountsRounds"
-delegatable = true
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -577,7 +573,6 @@ generics = "<B: CountsTicks>"
 [[context.uses]]
 crate = "blox_ctx_ticks"
 trait = "CountsTicks"
-delegatable = true
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -623,7 +618,6 @@ role = "ctor"
 [[context.uses]]
 crate = "blox_ctx_rounds"
 trait = "CountsRounds"
-delegatable = true
 
 "#;
 
@@ -651,51 +645,6 @@ delegatable = true
 }
 
 #[test]
-fn test_generate_ctx_uses_multi_field_with_impl_macro() {
-    let toml = r#"
-[actor]
-name = "Pool"
-
-[context]
-name = "PoolCtx"
-generics = "<R: BloxRuntime, B: HasWorkers<R> + HasWorkerFactory<R>>"
-
-[[context.uses]]
-crate = "blox_ctx_workers"
-traits = ["HasWorkers<R>", "HasWorkerFactory<R>"]
-impl_macro = "impl_has_workers"
-
-  [[context.uses.fields]]
-  name = "worker_refs"
-  ty = "Vec<ActorRef<WorkerMsg, R>>"
-  role = "state"
-
-"#;
-
-    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
-    let files = generate_all(&config, "pool-blox").expect("generate failed");
-    let ctx_file = files
-        .iter()
-        .find(|(n, _)| n == "ctx.rs")
-        .expect("ctx.rs missing");
-    let content = &ctx_file.1;
-
-    // Multi-field sub-field (role = "state" → zero-initialized)
-    assert!(content.contains("pub worker_refs:"));
-    assert!(content.contains("pub self_id: ::bloxide_core::ActorId"));
-
-    // Framework imports (auto-detected from field types containing ActorRef + BloxRuntime)
-    assert!(content.contains("use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef}"));
-
-    // Struct name
-    assert!(content.contains("PoolCtx"));
-
-    // Constructor takes only ctor fields (self_id); state fields are zero-initialized
-    assert!(content.contains("pub fn new(self_id: ::bloxide_core::ActorId) -> Self"));
-    assert!(content.contains("worker_refs: ::core::default::Default::default()"));
-}
-
-#[test]
 fn test_generate_spec_skeleton_counter() {
     let toml = r#"
 [actor]
@@ -717,7 +666,6 @@ actions_crate = "counter_actions"
 [[context.uses]]
 crate = "blox_ctx_ticks"
 trait = "CountsTicks"
-delegatable = true
 
 [topology]
 
@@ -779,12 +727,10 @@ role = "accessor"
 [[context.uses]]
 crate = "blox_ctx_current_timer"
 trait = "HasCurrentTimer"
-delegatable = true
 
 [[context.uses]]
 crate = "blox_ctx_rounds"
 trait = "CountsRounds"
-delegatable = true
 
 [topology]
 
@@ -1258,115 +1204,11 @@ role = "ctor"
     assert_eq!(u0.field.as_deref(), Some("peer_ref"));
     assert_eq!(u0.field_type.as_deref(), Some("ActorRef<PingPongMsg, R>"));
     assert_eq!(u0.role.as_deref(), Some("ctor"));
-    assert!(!u0.delegatable);
-    assert!(u0.impl_macro.is_none());
     assert!(u0.fields.is_empty());
 
     let u1 = &ctx.uses[1];
     assert_eq!(u1.trait_.as_deref(), Some("HasSelfRef<R, PingPongMsg>"));
     assert_eq!(u1.field.as_deref(), Some("self_ref"));
-}
-
-#[test]
-fn test_parse_context_uses_delegatable() {
-    let toml = r#"
-[actor]
-name = "Ping"
-
-[context]
-name = "PingCtx"
-generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
-
-[[context.uses]]
-crate = "blox_ctx_rounds"
-trait = "CountsRounds"
-delegatable = true
-
-[[context.uses]]
-crate = "blox_ctx_current_timer"
-trait = "HasCurrentTimer"
-delegatable = true
-
-"#;
-
-    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
-    let ctx = config.context.expect("context section missing");
-    assert_eq!(ctx.uses.len(), 2);
-
-    let u0 = &ctx.uses[0];
-    assert_eq!(u0.crate_name, "blox_ctx_rounds");
-    assert_eq!(u0.trait_.as_deref(), Some("CountsRounds"));
-    assert!(u0.delegatable);
-    assert!(u0.field.is_none());
-    assert!(u0.field_type.is_none());
-    assert!(u0.impl_macro.is_none());
-    assert!(u0.fields.is_empty());
-
-    let u1 = &ctx.uses[1];
-    assert_eq!(u1.trait_.as_deref(), Some("HasCurrentTimer"));
-    assert!(u1.delegatable);
-}
-
-#[test]
-fn test_parse_context_uses_multi_field_with_impl_macro() {
-    let toml = r#"
-[actor]
-name = "Pool"
-
-[context]
-name = "PoolCtx"
-generics = "<R: BloxRuntime>"
-
-[[context.uses]]
-crate = "blox_ctx_workers"
-traits = ["HasWorkers<R>", "HasWorkerFactory<R>"]
-impl_macro = "impl_has_workers"
-
-  [[context.uses.fields]]
-  name = "worker_refs"
-  ty = "Vec<ActorRef<WorkerMsg, R>>"
-  role = "state"
-
-  [[context.uses.fields]]
-  name = "worker_ctrls"
-  ty = "Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>"
-  role = "state"
-
-  [[context.uses.fields]]
-  name = "pending"
-  ty = "u32"
-  role = "state"
-
-  [[context.uses.fields]]
-  name = "worker_factory"
-  ty = "WorkerSpawnFn<R>"
-  role = "ctor"
-"#;
-
-    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
-    let ctx = config.context.expect("context section missing");
-    assert_eq!(ctx.uses.len(), 1);
-
-    let u0 = &ctx.uses[0];
-    assert_eq!(u0.crate_name, "blox_ctx_workers");
-    assert!(u0.trait_.is_none());
-    assert_eq!(u0.traits.len(), 2);
-    assert_eq!(u0.traits[0], "HasWorkers<R>");
-    assert_eq!(u0.traits[1], "HasWorkerFactory<R>");
-    assert_eq!(u0.impl_macro.as_deref(), Some("impl_has_workers"));
-    assert!(u0.field.is_none());
-    assert!(u0.field_type.is_none());
-    assert!(!u0.delegatable);
-
-    // Sub-fields
-    assert_eq!(u0.fields.len(), 4);
-    assert_eq!(u0.fields[0].name, "worker_refs");
-    assert_eq!(u0.fields[0].ty, "Vec<ActorRef<WorkerMsg, R>>");
-    assert_eq!(u0.fields[0].role.as_deref(), Some("state"));
-
-    assert_eq!(u0.fields[3].name, "worker_factory");
-    assert_eq!(u0.fields[3].ty, "WorkerSpawnFn<R>");
-    assert_eq!(u0.fields[3].role.as_deref(), Some("ctor"));
 }
 
 #[test]
@@ -2028,7 +1870,6 @@ on_init = "ctx.worker_refs_mut().clear(); ctx.set_pending(0);"
 [[context.uses]]
 crate = "blox_ctx_workers"
 traits = ["HasWorkers<R>"]
-impl_macro = "impl_has_workers"
 
   [[context.uses.fields]]
   name = "worker_refs"

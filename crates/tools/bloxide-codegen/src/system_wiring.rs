@@ -16,7 +16,6 @@ fn crate_name(s: &str) -> String {
 struct CtorField {
     name: String,
     is_self_id: bool,
-    is_delegate: bool,
 }
 
 /// Collect the constructor fields of a blox context in the order they appear
@@ -41,7 +40,6 @@ fn collect_ctor_fields(
         fields.push(CtorField {
             name: "self_id".to_string(),
             is_self_id: true,
-            is_delegate: false,
         });
 
         // 1. context.uses entries that contribute a field.
@@ -60,7 +58,6 @@ fn collect_ctor_fields(
                 fields.push(CtorField {
                     name: field_name.clone(),
                     is_self_id: false,
-                    is_delegate: false,
                 });
             }
             // Multi-field entry: use `fields` (plural) — iterate sub-fields.
@@ -71,19 +68,8 @@ fn collect_ctor_fields(
                 fields.push(CtorField {
                     name: sub.name.clone(),
                     is_self_id: false,
-                    is_delegate: false,
                 });
             }
-        }
-
-        // 2. behavior is LAST in the constructor (when delegatable uses exist).
-        let has_delegatable = context.uses.iter().any(|u| u.delegatable);
-        if has_delegatable {
-            fields.push(CtorField {
-                name: "behavior".to_string(),
-                is_self_id: false,
-                is_delegate: true,
-            });
         }
     }
 
@@ -209,7 +195,7 @@ fn validate(
         }
 
         for field in &ctor_fields {
-            if field.is_self_id || field.is_delegate {
+            if field.is_self_id {
                 continue;
             }
             if !actor.inject.contains_key(&field.name) {
@@ -219,13 +205,6 @@ fn validate(
                     field.name
                 );
             }
-        }
-
-        if ctor_fields.iter().any(|f| f.is_delegate) && actor.behavior.is_none() {
-            anyhow::bail!(
-                "actor '{}' has a delegate field but no behavior type",
-                actor.name
-            );
         }
     }
 
@@ -692,27 +671,8 @@ pub fn generate(
             .unwrap_or("");
 
         let has_r = generics_str.contains("R:");
-        let has_b = generics_str.contains("B:");
 
-        let spec_ty = if has_r && has_b {
-            let behavior = actor.behavior.as_ref().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "actor '{}' blox has behavior generic but no behavior type specified",
-                    actor.name
-                )
-            })?;
-            let behavior_ident = format_ident!("{}", behavior);
-            quote! { #spec_ident<#runtime_ident, #behavior_ident> }
-        } else if has_b {
-            let behavior = actor.behavior.as_ref().ok_or_else(|| {
-                anyhow::anyhow!(
-                    "actor '{}' blox has behavior generic but no behavior type specified",
-                    actor.name
-                )
-            })?;
-            let behavior_ident = format_ident!("{}", behavior);
-            quote! { #spec_ident<#behavior_ident> }
-        } else if has_r {
+        let spec_ty = if has_r {
             quote! { #spec_ident<#runtime_ident> }
         } else {
             quote! { #spec_ident }
@@ -744,10 +704,6 @@ pub fn generate(
         for field in &ctor_fields {
             if field.is_self_id {
                 ctor_args.push(quote! { #id_ident });
-            } else if field.is_delegate {
-                let behavior = actor.behavior.as_ref().unwrap();
-                let behavior_ident = format_ident!("{}", behavior);
-                ctor_args.push(quote! { #behavior_ident::default() });
             } else if let Some(source) = actor.inject.get(&field.name) {
                 if source.source == "self" {
                     let ref_ident = format_ident!("{}_ref", actor.name);

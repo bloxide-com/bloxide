@@ -317,15 +317,7 @@ pub struct ContextActionConfig {
 /// role = "ctor"
 /// ```
 ///
-/// **Delegatable behavior trait** (used via `#[delegates(...)]`):
-/// ```toml
-/// [[context.uses]]
-/// crate = "blox_ctx_rounds"
-/// trait = "CountsRounds"
-/// delegatable = true
-/// ```
-///
-/// **Multi-field trait** (domain context crate with impl macro):
+/// **Multi-field trait** (domain context crate):
 /// ```toml
 /// [[context.uses]]
 /// crate = "blox_ctx_workers"
@@ -367,24 +359,6 @@ pub struct ContextUse {
     /// `#[provides(TraitPath)]` annotation for the BloxCtx derive macro.
     /// Generates `impl TraitPath for Struct` that returns `&self.field`.
     /// May include associated type bindings.
-    /// Used when the trait name doesn't follow the `Has{FieldName}` convention.
-    #[serde(default)]
-    pub provides: Option<String>,
-
-    /// `#[provides_mut(TraitPath, method_name)]` annotation for BloxCtx.
-    /// Generates `impl TraitPath for Struct` with a mutable accessor.
-    #[serde(default)]
-    pub provides_mut: Option<String>,
-
-    /// When `true`, the trait is `#[delegatable]` and the codegen should emit
-    /// `__delegate_{Trait}` imports alongside the trait import.
-    #[serde(default)]
-    pub delegatable: bool,
-
-    /// Impl macro name for multi-field traits (e.g. `"impl_has_workers"`).
-    /// The codegen emits `{impl_macro}!({CtxName}<R>);` after the struct.
-    pub impl_macro: Option<String>,
-
     /// Sub-fields for multi-field traits.
     #[serde(default)]
     pub fields: Vec<ContextUseField>,
