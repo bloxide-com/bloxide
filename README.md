@@ -22,10 +22,10 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 
 ## Start Here
 
-- Read [AGENTS.md](AGENTS.md) for the three-layer principle, five-layer application structure, and two-tier trait system in one place.
+- Read [AGENTS.md](AGENTS.md) for the three-layer principle, four-layer application structure, and two-tier trait system in one place.
 - Use [skills/building-with-bloxide/SKILL.md](skills/building-with-bloxide/SKILL.md) as the step-by-step build workflow.
 - Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the API reference while you build (being updated for bloxide-codegen workflow).
-- For the smallest runnable app, start with `cargo run -p tokio-minimal-demo` (now fully five-layered via `counter-*` crates).
+- For the smallest runnable app, start with `cargo run -p tokio-minimal-demo` (now fully four-layered via `counter-*` crates).
 
 ---
 
@@ -41,13 +41,13 @@ let ping_id = ping_ref.id();
 let pong_id = pong_ref.id();
 
 // Build state machines — PingSpec and PongSpec are runtime-agnostic MachineSpec impls
-let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref, PingBehavior::default());
+let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref);
 let pong_ctx = PongCtx::new(pong_id, ping_ref.clone());
 let ping_machine = StateMachine::new(ping_ctx);
 let pong_machine = StateMachine::new(pong_ctx);
 
 // Define task wrappers (typically in a prelude or near main)
-bloxide_tokio::actor_task_supervised!(ping_task, PingSpec<TokioRuntime, PingBehavior>);
+bloxide_tokio::actor_task_supervised!(ping_task, PingSpec<TokioRuntime>);
 bloxide_tokio::actor_task_supervised!(pong_task, PongSpec<TokioRuntime>);
 bloxide_tokio::root_task!(supervisor_task, SupervisorSpec<TokioRuntime>);
 
@@ -79,15 +79,14 @@ bloxide/
 ├── crates/            # framework + layered application crates
 │   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, KillCapability, std-gated TestRuntime
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
-│   ├── bloxide-macros/    # proc macros: #[derive(BloxCtx)], #[delegatable]
-│   ├── bloxide-messaging/ # accessor traits: HasSelfRef, HasPeerRef
+│   ├── bloxide-macros/    # proc macros: #[blox_event]
+│   ├── bloxide-messaging/ # messaging helpers: send_ping, broadcast_to_peers
 │   ├── bloxide-peers/     # peer introduction: PeerCtrl, introduce_peers
 │   ├── bloxide-child-management/ # reusable child tracking: ChildGroup, ChildEntry, ChildPhase
 │   ├── bloxide-supervisor/ # supervisor blox: SupervisorSpec, SupervisorControl, RegisterChild
 │   ├── bloxide-spawn/     # spawn capability: SpawnCap, SpawnFn, SpawnOutput, ChildRegistrar
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
 │   ├── messages/          # shared message crates (ping-pong, pool, counter, bhsm-tst)
-│   ├── actions/           # action trait crates (ping-pong, pool, counter, bhsm-tst)
 │   ├── context/           # composable context crates (rounds, timer, task, workers, etc.)
 │   ├── bloxes/            # ping, pong, worker, pool, counter, bhsm-tst
 │   ├── impl/              # concrete behavior/factory crates for wiring demos
@@ -122,7 +121,7 @@ bloxide/
 Each app has a `system.toml` wiring manifest and a generated `main.rs`. Regenerate with `cargo blox wire --system apps/<name>/system.toml` if needed.
 
 ```bash
-# Minimal single-actor Tokio example (5-layer architecture)
+# Minimal single-actor Tokio example (4-layer architecture)
 cargo run -p tokio-minimal-demo
 
 # Ping-pong with OTP supervision, timer-driven pause, and full HSM tracing
@@ -157,14 +156,14 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 | Crate | Path | `no_std` | Purpose |
 |---|---|:---:|---|
 | `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, `KillCapability`, std-gated `TestRuntime` |
-| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[derive(BloxCtx)]`, `#[delegatable]`, `#[blox_event]` |
+| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[blox_event]` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `VirtualClock` |
-| `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase`, `HasChildGroup` |
+| `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase` |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `SupervisorControl`, `RegisterChild`, `SupervisorRegistrar`, action functions |
 | `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `spawn_child` |
 | `bloxide-peers` | `crates/bloxide-peers` | ✅ | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` |
-| `bloxide-messaging` | `crates/bloxide-messaging` | ✅ | `HasSelfRef<R,M>`, `HasPeerRef<R,M>` accessor traits |
+| `bloxide-messaging` | `crates/bloxide-messaging` | ✅ | `send_ping`, `broadcast_to_peers` messaging helpers |
 | `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
 | `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, `SpawnCap`, `KillCapability`, task macros |
 
@@ -188,7 +187,7 @@ Then reference it from your project's `AGENTS.md`:
 | Building bloxes with bloxide | `skills/building-with-bloxide/SKILL.md` |
 ```
 
-The guide covers the five-layer architecture, spec-driven development workflow, step-by-step blox creation, and key invariants.
+The guide covers the four-layer architecture, spec-driven development workflow, step-by-step blox creation, and key invariants.
 
 ---
 

@@ -13,16 +13,16 @@ This guide is for modifying the bloxide framework itself — the HSM engine, pro
 
 ```
 bloxide-core        HSM engine, BloxRuntime, channel traits, KillCapability, TestRuntime  (no_std)
-bloxide-macros      Proc macros: BloxCtx, delegatable, blox_event                          (host-compiled)
+bloxide-macros      Proc macros: blox_event                                    (host-compiled)
 bloxide-codegen     TOML-driven code generator library                        (host-compiled)
 cargo-blox          CLI: cargo blox generate / new / build / check / test / run  (host-compiled)
 bloxide-log         Feature-gated logging macros                              (no_std)
-bloxide-timer       Timer service: commands, queue, accessor traits           (no_std)
+bloxide-timer       Timer service: commands, queue, timer action functions     (no_std)
 bloxide-spawn       Spawn capability: SpawnCap, ChildRegistrar, spawn_child   (no_std)
 bloxide-child-management  Child tracking: ChildGroup, ChildEntry, ChildPhase  (no_std)
 bloxide-supervisor  Supervisor blox: SupervisorSpec, SupervisorControl, actions  (no_std)
 bloxide-peers       Peer introduction: PeerCtrl, AddPeer, RemovePeer, introduce_peers  (no_std)
-bloxide-messaging   Accessor traits: HasSelfRef, HasPeerRef                   (no_std)
+bloxide-messaging   Messaging helpers: send_ping, broadcast_to_peers         (no_std)
 bloxide-embassy     Embassy runtime: channels, tasks, timer bridge            (no_std)
 bloxide-tokio       Tokio runtime: channels, tasks, SpawnCap, KillCapability  (std)
 ```
@@ -64,7 +64,7 @@ These traits formalize the contract runtimes must fulfill:
 | `SpawnCap` | `bloxide-spawn` | Dynamic actor spawning; extends `DynamicChannelCap` |
 | `KillCapability` | `bloxide-core` | Immediately aborts actor tasks for dynamic actor cleanup |
 
-When adding a new capability, decide which tier it belongs to. If blox crates need it, it is Tier 1 (accessor traits, action functions). If only runtimes implement it, it is Tier 2 (service trait).
+When adding a new capability, decide which tier it belongs to. If blox crates need it, it is Tier 1 (plain context fields, action functions). If only runtimes implement it, it is Tier 2 (service trait).
 
 ## Key Invariants for Framework Code
 
@@ -99,8 +99,7 @@ The crate must be `#![no_std]`. Use `extern crate alloc` if heap allocation is n
 
 - **Command/message types** — plain data enums/structs
 - **Shared data structures** — types both bloxes and runtimes use
-- **Accessor traits** — `HasXRef<R>` providing access to `ActorRef`s
-- **Action functions** — generic, trait-bounded functions
+- **Action functions** — generic, runtime-bounded functions that take concrete params
 
 ### 3. Define runtime-facing side
 
@@ -182,7 +181,6 @@ Proc macros live in `bloxide-macros` (host-compiled, exempt from `no_std`).
 
 ### Key Macros:
 
-- `#[derive(BloxCtx)]` — generates accessor impls and constructor
 - `bloxide-codegen` — TOML-driven code generator for messages, events, topology, and mailbox impls; emits `StateRule` struct literals from `[[topology.transitions]]` entries
 - `cargo-blox` — CLI tool for `cargo blox generate / new / build / check / test / run`
 
@@ -253,8 +251,8 @@ mod tests {
     use bloxide_core::test_utils::TestRuntime;
     use bloxide_core::{spec::MachineSpec, MachineState, StateMachine};
 
-    fn make_machine() -> StateMachine<MySpec<TestRuntime, TestBehavior>> {
-        let ctx = MyCtx::new(bloxide_core::next_actor_id!(), TestBehavior::default());
+    fn make_machine() -> StateMachine<MySpec<TestRuntime>> {
+        let ctx = MyCtx::new(bloxide_core::next_actor_id!());
         StateMachine::new(ctx)
     }
 
@@ -275,7 +273,7 @@ mod tests {
    - External async source → standard library crate
 
 2. **Which tier?**
-   - Blox crates need it → Tier 1 (accessor traits, action functions)
+   - Blox crates need it → Tier 1 (plain context fields, action functions)
    - Only runtimes → Tier 2 (service trait)
 
 3. **Messages required?**
@@ -283,8 +281,8 @@ mod tests {
    - No → skip message layer
 
 4. **Mutable state?**
-   - Yes → behavior trait with `#[delegatable]`
-   - No → accessor trait only
+   - Yes → plain field on the context struct, action functions take `&mut` to it
+   - No → read-only field on the context struct
 
 5. **Runtime support?**
    - Yes → service trait in stdlib crate, impl in each runtime

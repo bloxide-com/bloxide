@@ -138,7 +138,7 @@ fn setup(spawner: Spawner) {
     let pong_id = pong_ref.id();
 
     // Contexts
-    let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref, PingBehavior::default());
+    let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref);
     let pong_ctx = PongCtx::new(pong_id, ping_ref);
 
     // Supervised group — lifecycle is fully hidden

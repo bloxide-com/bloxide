@@ -258,11 +258,8 @@ In `ShuttingDown`, the supervisor sends `Stop` to all children, counts `Stopped`
 ### `SupervisorCtx<R>`
 
 ```rust
-#[derive(BloxCtx)]
 pub struct SupervisorCtx<R: BloxRuntime> {
-    #[self_id]
     pub self_id: ActorId,
-    #[provides(HasChildren<R>)]
     pub children: ChildGroup<R>,
     pub pending: ChildAction,
 }
@@ -548,8 +545,8 @@ let ping_id = ping_ref.id();
 let ((pong_ref,), pong_mbox) = bloxide_embassy::channels! { PingPongMsg(16) };
 let pong_id = pong_ref.id();
 
-// Build contexts (omitting timer_ref / behavior for brevity)
-let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref, PingBehavior::default());
+// Build contexts (omitting timer_ref for brevity)
+let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref);
 let pong_ctx = PongCtx::new(pong_id, ping_ref);
 
 // Wrap contexts in state machines before spawning

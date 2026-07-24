@@ -153,7 +153,7 @@ Run `cargo blox generate` to produce `src/generated/topology.rs` with `CounterSt
 ```rust
 pub use crate::generated::topology::CounterState;
 
-impl<R: BloxRuntime, B: CountsTicks + 'static> MachineSpec for CounterSpec<R, B> {
+impl<R: BloxRuntime> MachineSpec for CounterSpec<R> {
     // ...
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] =
         counter_state_handler_table!(Self);

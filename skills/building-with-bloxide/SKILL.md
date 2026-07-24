@@ -392,7 +392,7 @@ cargo blox run      # blox generate + system codegen + cargo run
 6. **Bloxes never import impl crates** — concrete types come from the binary.
 7. **Lifecycle via dispatch** — actors receive `LifecycleCommand::Start/Reset/Stop` through `dispatch()`, not direct `start()` calls.
 8. **No `B` generic** — `Ctx` and `Spec` have no `B` type parameter. State fields are plain fields on the context struct.
-9. **No `#[delegatable]` / `#[delegates]`** — context traits are implemented directly on the context struct by the codegen.
+9. **No context traits** — there are no accessor or behavior traits. The context struct is a plain struct with plain fields. Action functions take concrete params (e.g. `fn(&mut u32)`), not trait-bounded generics.
 10. **No blox logic** — blox crates contain zero Rust logic. No `actions.rs`, no `Self::` methods, no logging.
 11. **No `bloxide-log` in blox crates** — logging has been ripped out of blox crates. Never add `blox_log_*!` calls or `bloxide-log` dependency to a blox crate.
 

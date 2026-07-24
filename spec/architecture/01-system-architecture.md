@@ -35,7 +35,7 @@ flowchart TB
         CHILDMGMT[bloxide-child-management\nChildGroup\nChildEntry\nChildPhase]
         SPAWN[bloxide-spawn\nSpawnCap\nSpawnFn\nChildRegistrar]
         PEERS[bloxide-peers\nPeerCtrl\nintroduce_peers]
-        MSG[bloxide-messaging\nHasSelfRef\nHasPeerRef]
+        MSG[bloxide-messaging\nsend_ping\nbroadcast_to_peers]
         TEST_RT[TestRuntime\nin bloxide-core]
     end
 
@@ -135,12 +135,12 @@ flowchart LR
 | Messages crates | Plain data enums/structs | Runtime types, `ActorRef` |
 | Blox crates | `MachineSpec` impl, `Ctx`, state handlers, `Event` enum | Runtime imports, executor types |
 | `bloxide-core` | `MachineSpec`, `StateMachine`, `ActorRef`, `BloxRuntime`, `StaticChannelCap`, `DynamicChannelCap`, `Mailboxes` | Tokio, Embassy, OS imports |
-| `bloxide-timer` | `TimerCommand`, `TimerId`, `TimerQueue`, `HasTimerRef`, `set_timer`, `cancel_timer`, `TimerService` trait | Runtime imports, executor types |
+| `bloxide-timer` | `TimerCommand`, `TimerId`, `TimerQueue`, `set_timer`, `cancel_timer`, `TimerService` trait | Runtime imports, executor types |
 | `bloxide-supervisor` | `SupervisorSpec`, `SupervisorCtx`, `SupervisorControl`, `RegisterChild`, `SupervisorRegistrar`, action functions | Runtime imports, executor types |
-| `bloxide-child-management` | `ChildGroup`, `ChildEntry`, `ChildPhase`, `HasChildGroup` | Runtime imports, executor types |
+| `bloxide-child-management` | `ChildGroup`, `ChildEntry`, `ChildPhase` | Runtime imports, executor types |
 | `bloxide-spawn` | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `spawn_child` helper | Runtime imports, executor types |
 | `bloxide-peers` | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` | Runtime imports, executor types |
-| `bloxide-messaging` | `HasSelfRef<R,M>`, `HasPeerRef<R,M>` accessor traits | Runtime imports, executor types |
+| `bloxide-messaging` | `send_ping`, `broadcast_to_peers` messaging helpers | Runtime imports, executor types |
 | Runtime crates | `BloxRuntime` + `StaticChannelCap` + `TimerService` impls, actor task functions | Domain logic |
 | Application/Wiring | Channel creation, `ActorRef` injection, task spawning | Business logic |
 
@@ -194,13 +194,13 @@ Wiring binaries use prelude wildcard imports to avoid multi-line framework boile
 ```rust
 // For Embassy:
 use bloxide_embassy::prelude::*;      // StateMachine, ActorRef, EmbassyRuntime, channels!, …
-use bloxide_supervisor::prelude::*;   // ChildGroup, HasChildren, ChildPolicy, GroupShutdown, action functions
+use bloxide_supervisor::prelude::*;   // ChildGroup, ChildPolicy, GroupShutdown, action functions
 use my_blox_foo::prelude::*;          // FooCtx, FooSpec
 use my_blox_bar::prelude::*;          // BarCtx, BarSpec
 
 // For Tokio:
 use bloxide_tokio::prelude::*;        // StateMachine, ActorRef, TokioRuntime, channels!, spawn_child_dynamic!, …
-use bloxide_supervisor::prelude::*;   // ChildGroup, HasChildren, ChildPolicy, GroupShutdown, action functions
+use bloxide_supervisor::prelude::*;   // ChildGroup, ChildPolicy, GroupShutdown, action functions
 use my_blox_foo::prelude::*;
 use my_blox_bar::prelude::*;
 ```

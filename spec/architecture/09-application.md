@@ -74,7 +74,7 @@ fn setup(spawner: Spawner) {
     let pong_id = pong_ref.id();
 
     // Build contexts
-    let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref, PingBehavior::default());
+    let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref);
     let pong_ctx = PongCtx::new(pong_id, ping_ref);
     let ping_machine = StateMachine::new(ping_ctx);
     let pong_machine = StateMachine::new(pong_ctx);

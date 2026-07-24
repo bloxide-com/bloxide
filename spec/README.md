@@ -43,7 +43,7 @@ spec/
     09-application.md                ← wiring patterns, prelude imports, setup() example
     10-effects-and-capabilities.md   ← effects, capabilities, two-tier traits, timer-as-service
     11-dynamic-actors.md             ← dynamic actor creation, peer control, factory injection
-    12-action-crate-pattern.md       ← action crate pattern, five-layer architecture
+    12-action-crate-pattern.md       ← context crate pattern, four-layer architecture
     13-factory-injection-and-supervision.md ← factory injection, two-stream lifecycle, constructor fields
     14-unified-lifecycle.md          ← unified lifecycle model, VirtualRoot interception
     15-composable-context-crates.md  ← composable context crates, trait-with-data pattern
@@ -79,7 +79,7 @@ spec/
 | See a complete wiring example | [architecture/09-application.md](architecture/09-application.md) |
 | Understand effects, capabilities, and timers | [architecture/10-effects-and-capabilities.md](architecture/10-effects-and-capabilities.md) |
 | Understand dynamic actors and factory injection | [architecture/11-dynamic-actors.md](architecture/11-dynamic-actors.md) |
-| Understand the action crate pattern (five-layer architecture) | [architecture/12-action-crate-pattern.md](architecture/12-action-crate-pattern.md) |
+| Understand the context crate pattern (four-layer architecture) | [architecture/12-action-crate-pattern.md](architecture/12-action-crate-pattern.md) |
 | How does factory injection interact with supervision? | [architecture/13-factory-injection-and-supervision.md](architecture/13-factory-injection-and-supervision.md) |
 | How does the unified lifecycle model work? | [architecture/14-unified-lifecycle.md](architecture/14-unified-lifecycle.md) |
 | How do composable context crates work? | [architecture/15-composable-context-crates.md](architecture/15-composable-context-crates.md) |

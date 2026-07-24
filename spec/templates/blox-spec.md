@@ -13,8 +13,8 @@
 
 - Blox crate: `crates/bloxes/<blox-name>/`
 - Messages crate: `crates/messages/<blox-name>-messages/` _(if new messages are needed; share with peers using the same protocol)_
-- Actions crate: `crates/actions/<blox-name>-actions/` _(accessor/behavior traits + generic action functions; no concrete types)_
-- Impl crate: a separate crate consumed by the wiring binary (e.g. `crates/impl/ping-pong-impl/`); contains concrete behavior trait implementations injected into the blox context
+- Context crate: `crates/context/<blox-name>-context/` _(plain context struct + generic action functions; no concrete types)_
+- Impl crate: a separate crate consumed by the wiring binary (e.g. `crates/impl/ping-pong-impl/`); contains concrete action function implementations injected into the blox context
 
 ## State Hierarchy
 
@@ -64,14 +64,12 @@ name = "<BloxName>Ctx"
 generics = "<R: BloxRuntime>"
 
 # Context fields come from [[context.uses]] entries.
-# self_id and behavior are auto-emitted by the codegen — do NOT declare them.
+# self_id is auto-emitted by the codegen — do NOT declare it.
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasPeerRef<R, DomainMsg>"
 field = "peer_ref"
 field_type = "ActorRef<DomainMsg, R>"
-role = "accessor"
 
 [topology]
 
@@ -172,30 +170,30 @@ actions = ["log_work_complete"]
 
 ## Context
 
-> Describe every field in `<BloxName>Ctx<R>`. Use `#[derive(BloxCtx)]` with field annotations.
-> See `spec/architecture/12-action-crate-pattern.md` for annotation semantics.
+> Describe every field in `<BloxName>Ctx<R>`. The context is a plain struct with plain fields (no `#[derive(BloxCtx)]`, no accessor traits).
+> See `spec/architecture/12-action-crate-pattern.md` for field conventions.
 > No `supervisor_ref` field — actors don't hold a reference to their supervisor.
 
 ```rust
-#[derive(BloxCtx)]
 pub struct <BloxName>Ctx<R: BloxRuntime> {
     pub self_id: ActorId,
-    // Peer handles (auto-detected from _ref field naming convention):
+    // Peer handle (plain field):
     pub peer_ref: ActorRef<SharedMsg, R>,
-    // Domain state (initialized to Default::default() in generated constructor):
+    // Domain state (zero-initialized by generated constructor):
     pub counter: u32,
 }
 ```
 
-Behavior traits (implemented manually, delegating to fields):
-- `HasPeerRef<R>` → auto-detected from `peer_ref: ActorRef<SharedMsg, R>` field
-- _(list domain behavior traits and their field targets)_
+Field auto-detection (by naming convention):
+- `self_id: ActorId` → plain field, first position
+- `peer_ref: ActorRef<SharedMsg, R>` → plain field (constructor param)
+- `counter: u32` → plain field, zero-initialized
 
 | Field | Type | Detection | Description |
 |-------|------|-----------|-------------|
-| `self_id` | `ActorId` | Auto-detected `HasSelfId` | Actor identity |
-| `peer_ref` | `ActorRef<SharedMsg, R>` | Auto-detected `HasPeerRef<R>` | Handle to peer |
-| `counter` | `u32` | _(none — `Default::default()`)_ | Tasks processed |
+| `self_id` | `ActorId` | Auto-emitted first field | Actor identity |
+| `peer_ref` | `ActorRef<SharedMsg, R>` | Plain field (constructor param) | Handle to peer |
+| `counter` | `u32` | Plain field (zero-initialized) | Tasks processed |
 
 ## Message Contracts
 
@@ -223,7 +221,7 @@ Defined in `crates/messages/<msg-crate-name>/`.
 ## Entry / Exit Actions
 
 > Document non-trivial `on_entry` and `on_exit` behaviors.
-> Reference action function names from the actions crate — not closures or inline logic.
+> Reference action function names from the context crate — not closures or inline logic.
 > For `Guard::Stop`, on_entry of Init fires automatically. Transition actions run before the guard.
 
 | State | on_entry | on_exit |
@@ -231,7 +229,7 @@ Defined in `crates/messages/<msg-crate-name>/`.
 | `[Init]` (engine) | reset `counter` to 0 | — |
 | `Working` | `increment_counter`, `send_started_to_peer` | — |
 
-Each listed action is a free function from the actions crate with signature `fn<C: BehaviorTrait + ...>(&mut C)`. Multiple actions compose via `on_entry: &[action_a, action_b]`.
+Each listed action is a free function from the context crate with signature `fn(&mut Ctx)` (entry/exit) or `fn(&mut Ctx, &Event) -> ActionResult` (transition). Multiple actions compose via `on_entry: &[action_a, action_b]`.
 
 ## Acceptance Criteria
 
@@ -245,14 +243,14 @@ Each listed action is a free function from the actions crate with signature `fn<
 - [ ] `initial_state()::on_entry` does NOT send any messages — domain-state reset only
 - [ ] Unknown events bubble to root (no root rules) and are silently dropped
 
-## Action Crate Dependencies
+## Context Crate Dependencies
 
-> List the behavior traits from the actions crate that this blox's context must implement.
+> List the context crate action functions this blox uses.
 
-| Trait | From crate | Implemented by |
-|-------|-----------|----------------|
-| `HasPeerRef<R>` | `<blox>-actions` | auto-detected from `peer_ref` field |
-| `CountsX` | `<blox>-actions` | wraps `counter` field |
+| Function | From crate | Operates on |
+|----------|-----------|-------------|
+| `send_done_to_peer` | `<blox>-context` | `peer_ref` field |
+| `increment_counter` | `<blox>-context` | `counter` field |
 
 ## Open Questions
 

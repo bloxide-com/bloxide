@@ -920,13 +920,14 @@ the field's `ty` in `blox.toml`) and emits the appropriate code: path expression
 for `fn` pointers, struct construction for factory structs. One source type, two output
 shapes, selected by field type.
 
-An accessor trait exposes the factory to action functions, keeping them generic over any
-context that implements it:
+An accessor field exposes the factory to action functions, keeping them generic over any
+context that has the field:
 
 ```rust
-// In pool-actions/src/traits.rs
-pub trait HasWorkerFactory<R: BloxRuntime> {
-    fn worker_factory(&self) -> WorkerSpawnFn<R>;
+// In pool-context/src/lib.rs — plain field on the context struct
+pub struct PoolCtx<R: BloxRuntime> {
+    pub worker_factory: WorkerSpawnFn<R>,
+    // ...
 }
 ```
 
