@@ -72,21 +72,15 @@ Rules:
 
 Context crates are the portable interface layer. They define:
 
-- **Accessor traits** such as `HasPeerRef<R>`, `HasPoolRef<R>`, `HasTimerRef<R>`
-- **State traits** such as `CountsRounds`, `HasCurrentTimer`, `CountsTicks`
 - **Free action functions** taking concrete params (e.g., `increment_round(&mut u32)`,
   `send_ping::<R>(ActorId, &ActorRef<M, R>, u32)`)
 
-There is no `B` generic, no `#[delegatable]`, no `#[delegates]`. Context traits are
-implemented directly on the context struct by the codegen.
+There is no `B` generic, no `#[delegatable]`, no `#[delegates]`, no accessor traits.
+State is stored as plain fields on the context struct; action functions take the
+fields they need as concrete parameters.
 
 ```rust
 // crates/blox-ctx-rounds/src/lib.rs
-pub trait CountsRounds {
-    fn round(&self) -> u32;
-    fn set_round(&mut self, round: u32);
-}
-
 pub fn increment_round(round: &mut u32) {
     *round += 1;
 }
@@ -126,8 +120,7 @@ They depend on `bloxide-core`, message crates, and context crates, but never on 
 runtime crate or an impl crate.
 
 ```rust
-// Generated ctx.rs — plain fields, no B generic
-#[derive(BloxCtx)]
+// Generated ctx.rs — plain fields, no B generic, no accessor traits
 pub struct PingCtx<R: BloxRuntime> {
     pub self_id: ActorId,
     pub peer_ref: ActorRef<PingPongMsg, R>,
@@ -222,22 +215,26 @@ pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) {
 Dependency direction stays one-way: the wiring binary depends on both the blox crate
 and the impl crate; the blox crate never depends on the impl crate.
 
-## Accessor Trait Naming Convention
+## Field Naming Convention
+
+Context fields are plain fields on the context struct. The codegen auto-emits
+`self_id` as the first field. Fields named with a `_ref` suffix or `_factory`
+suffix are treated as constructor parameters (injected at wiring time). State
+fields come from `[[context.fields]]` entries and are zero-initialized in
+`on_init`.
 
 | Name Pattern | Use Case | Example |
 |---------------|----------|---------|
-| `HasXRef` | Single reference access (singular) | `HasTimerRef`, `HasPeerRef` |
-| `HasX` | Collection access (plural) | `HasChildren`, `HasWorkers` |
-
-**Rule of thumb**:
-- If the accessor returns a single `ActorRef<M>`, name it `HasXRef`.
-- If the accessor returns a collection (Vec, map, etc.), name it `HasX`.
+| `self_id: ActorId` | Auto-emitted first field | always present |
+| `foo_ref: ActorRef<M, R>` | Constructor param (injected at wiring) | `peer_ref`, `timer_ref` |
+| `foo_factory: fn(...)` | Constructor param (function pointer) | `worker_factory` |
+| `round: u32` | State field (from `[[context.fields]]`) | zero-initialized |
 
 ## Supervisor As The Same Pattern
 
 The supervisor follows the same layering model:
 
-- `bloxide-supervisor` provides accessor traits and action functions
+- `bloxide-supervisor` provides action functions taking concrete params
 - `SupervisorSpec<R>` is the reusable `MachineSpec`
 - the wiring layer builds a `ChildGroup<R>` and injects it into `SupervisorCtx<R>`
 

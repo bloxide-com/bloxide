@@ -2,17 +2,17 @@
 
 ## Purpose
 
-The Counter actor is the simplest possible bloxide actor, designed for teaching the five-layer architecture. It:
+The Counter actor is the simplest possible bloxide actor, designed for teaching the four-layer architecture. It:
 - Receives `Tick` messages and increments an internal counter
 - Self-suspends via `Guard::Stop` after a configurable number of ticks
-- Demonstrates: flat state topology, behavior trait injection, self-suspend via Guard::Stop
+- Demonstrates: flat state topology, plain context struct, self-suspend via Guard::Stop
 
 ## Crate Location
 
 - Blox crate: `crates/bloxes/counter/`
 - Messages crate: `crates/messages/counter-messages/`
-- Actions crate: `crates/actions/counter-actions/`
-- Impl crate: `crates/impl/counter-demo-impl/` (provides `CounterBehavior`)
+- Context crate: `crates/context/blox-ctx-ticks/` (provides `increment_count`)
+- No impl crate needed — behavior is simple enough for context-crate actions
 
 ## State Hierarchy
 
@@ -41,19 +41,16 @@ stateDiagram-v2
 ## Context
 
 ```rust
-#[derive(BloxCtx)]
-pub struct CounterCtx<B: CountsTicks> {
+pub struct CounterCtx {
     pub self_id: ActorId,
-    
-    #[delegates(CountsTicks)]
-    pub behavior: B,
+    pub count: u32,
 }
 ```
 
-| Field | Type | Annotation | Description |
-|-------|------|------------|-------------|
-| `self_id` | `ActorId` | Auto-detected `HasSelfId` | Actor identity |
-| `behavior` | `B` | `#[delegates(CountsTicks)]` | Injected behavior; stores count |
+| Field | Type | Description |
+|-------|------|-------------|
+| `self_id` | `ActorId` | Actor identity (auto-emitted by codegen) |
+| `count` | `u32` | Tick counter (plain state field) |
 
 ## Message Contracts
 
@@ -71,7 +68,7 @@ None — Counter is a sink actor.
 
 | State | on_entry | on_exit |
 |-------|----------|---------|
-| `[Init]` (engine) | reset count to 0 via `ctx.set_count(0)` | — |
+| `[Init]` (engine) | reset count to 0 via `on_init_entry` (ctx.count = 0) | — |
 | `Ready` | — | — |
 
 ## Constants
@@ -96,13 +93,13 @@ None — Counter is a sink actor.
 | Tick triggers Guard::Stop at threshold | `test_tick_reaches_stopped()` |
 
 
-## Action Crate Dependencies
+## Context Crate Dependencies
 
-| Trait | From crate | Implemented by |
+| Action function | From crate | Description |
 |-------|-----------|----------------|
-| `CountsTicks` | `counter-actions` | `CounterBehavior` in impl crate |
+| `increment_count` | `blox-ctx-ticks` | Increments the `count` field |
 
 ## Related Docs
 
-- See `spec/architecture/12-action-crate-pattern.md` for the five-layer model
+- See `spec/architecture/12-action-crate-pattern.md` for the four-layer model
 - See `tokio-minimal-demo.rs` for wiring example

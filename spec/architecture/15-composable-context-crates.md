@@ -7,41 +7,41 @@
 
 ## Problem Statement
 
-Today, every blox defines its context struct from scratch in `blox.toml`. When two bloxes need the same capability — e.g., `self_ref: ActorRef<M, R>` — they independently define the field, and the trait (`HasSelfRef`) needs to be available from a shared crate. The codegen needs to know which traits to import and which fields map to which trait methods.
+Today, every blox defines its context struct from scratch in `blox.toml`. When two bloxes need the same capability — e.g., `self_ref: ActorRef<M, R>` — they independently declare the field, and the action function that uses it needs to be available from a shared crate. The codegen needs to know which fields to import and which action functions map to which fields.
 
 The root issues this design solves:
-1. **Trait definitions belong with the data** — a context trait is a contract about *what data a context has*. An action function is *what you do with that data*. The contract belongs with the data.
-2. **No trait duplication** — `HasSelfRef` lives in `bloxide-messaging`, not duplicated across action crates.
-3. **No manual impls** — the codegen generates trait impls from `blox.toml` declarations, not hand-written `impl` blocks.
+1. **Action functions belong with the data** — a context crate defines *what data a context has* and *what you do with that data*. The contract and the action belong together.
+2. **No duplication** — `send_ping` lives in `bloxide-messaging`, not duplicated across blox crates.
+3. **No manual impls** — the codegen generates the context struct and constructor from `blox.toml` declarations, not hand-written `impl` blocks.
 4. **Declarative imports** — the codegen knows imports from `[[context.uses]]` entries, not string-matching.
-5. **Reusability** — a new blox that needs `peer_ref` depends on `bloxide-messaging` for the trait + action functions.
+5. **Reusability** — a new blox that needs `peer_ref` depends on `bloxide-messaging` for the action functions.
 
 ## Design
 
-### Principle: trait definitions and action functions live together in context crates
+### Principle: action functions live in context crates
 
 A context crate owns:
-- The trait definition (contract about what data a context has)
-- Free action functions that operate on that data (taking concrete params)
-- No `B` generic, no `#[delegatable]`, no forwarding impls
+- Free action functions that operate on context data (taking concrete params)
+- Type definitions (e.g., `WorkerSpawnFn<R>`) when needed
+- No `B` generic, no `#[delegatable]`, no accessor traits, no forwarding impls
 
 ### Four-layer crate model
 
 ```
 bloxide-core          ← engine (required by all bloxes)
-  HasSelfId, ActorId, ActorRef, BloxRuntime, MachineSpec, StateFns, StateRule
+  ActorId, ActorRef, BloxRuntime, MachineSpec, StateFns, StateRule
 
 service crates        ← infrastructure capabilities (optional)
-  bloxide-messaging   ← HasSelfRef<R, M>, HasPeerRef<R, M> + send_ping, send_pong, send_initial_ping
-  bloxide-timer       ← HasTimerRef<R>, set_timer, cancel_timer
+  bloxide-messaging   ← send_ping, send_pong, send_initial_ping (action functions)
+  bloxide-timer       ← set_timer, cancel_timer (action functions)
 
 domain context crates ← domain-specific data composition (optional)
-  blox-ctx-workers    ← HasWorkers<R>, HasWorkerFactory<R>
-  blox-ctx-pool-ref   ← HasPoolRef<R> + notify_pool_done
-  blox-ctx-rounds     ← CountsRounds + increment_round
-  blox-ctx-current-timer ← HasCurrentTimer + schedule_resume, cancel_timer_by_id
-  blox-ctx-current-task  ← HasCurrentTask
-  blox-ctx-ticks        ← CountsTicks + increment_count
+  blox-ctx-workers    ← WorkerSpawnFn<R> type, spawn-related action functions
+  blox-ctx-pool-ref   ← notify_pool_done action function
+  blox-ctx-rounds     ← increment_round action function
+  blox-ctx-current-timer ← schedule_resume, cancel_timer_by_id action functions
+  blox-ctx-current-task  ← (task state helpers)
+  blox-ctx-ticks        ← increment_count action function
 
 blox crates           ← TOML → codegen (depend on context crates)
   ping-blox, pong-blox, pool-blox, worker-blox, counter-blox
@@ -50,7 +50,6 @@ blox crates           ← TOML → codegen (depend on context crates)
 ### What stays in bloxide-core
 
 Only what *every* blox needs, no exceptions:
-- `HasSelfId` + `self_id: ActorId` field pattern (auto-emitted by codegen)
 - `ActorId`, `ActorRef`, `BloxRuntime`
 - `MachineSpec`, `StateFns`, `StateTopology`
 - `StateRule`, `TransitionRule` (transition rules are declared in `blox.toml` via `[[topology.transitions]]` and emitted by `bloxide-codegen`)
@@ -58,26 +57,16 @@ Only what *every* blox needs, no exceptions:
 
 ### Service-level crates
 
-Service crates follow the `bloxide-timer` model: the trait, the field pattern, and the action functions all live together. A blox pulls in the crate if it needs that service.
+Service crates follow the `bloxide-timer` model: action functions live in the crate. A blox pulls in the crate if it needs that service.
 
 #### `bloxide-messaging`
 
-Provides messaging primitives — references to actor mailboxes. Both `self_ref` and `peer_ref` are `ActorRef<M, R>` where `M` varies per blox. One crate, two traits + action functions:
+Provides messaging primitives — action functions that send messages via `ActorRef`s. Both `self_ref` and `peer_ref` are `ActorRef<M, R>` where `M` varies per blox. One crate, action functions for both:
 
 ```rust
 // crates/bloxide-messaging/src/lib.rs
 use bloxide_core::{BloxRuntime, messaging::ActorRef, ActorId};
 use ping_pong_messages::PingPongMsg;
-
-/// Reference to this actor's own mailbox (for self-delivered messages).
-pub trait HasSelfRef<R: BloxRuntime, M> {
-    fn self_ref(&self) -> &ActorRef<M, R>;
-}
-
-/// Reference to a peer actor's mailbox.
-pub trait HasPeerRef<R: BloxRuntime, M> {
-    fn peer_ref(&self) -> &ActorRef<M, R>;
-}
 
 /// Action function: send a Ping message to the peer.
 pub fn send_ping<R: BloxRuntime>(
@@ -89,26 +78,22 @@ pub fn send_ping<R: BloxRuntime>(
 }
 ```
 
-The `BloxCtx` macro auto-generates impls from naming conventions:
-- `self_ref: ActorRef<M, R>` → `impl HasSelfRef<R, M>`
-- `peer_ref: ActorRef<M, R>` → `impl HasPeerRef<R, M>`
+The codegen emits these as plain fields on the context struct:
+- `self_ref: ActorRef<M, R>` → constructor parameter
+- `peer_ref: ActorRef<M, R>` → constructor parameter
 
 ### Domain context crates
 
-Domain context crates own trait definitions + action functions for domain-specific capabilities.
+Domain context crates own action functions for domain-specific capabilities.
 
-#### Single-field accessor traits
+#### Single-field action functions
 
-For simple accessor traits (one field, one method), the `BloxCtx` macro auto-generates the impl from the naming convention. The context crate provides only the trait definition:
+For simple capabilities (one field, one action function), the context crate provides only the action function. The blox declares the field in `blox.toml` and the codegen emits it as a plain field:
 
 ```rust
 // crates/blox-ctx-pool-ref/src/lib.rs
-use bloxide_core::{BloxRuntime, messaging::ActorRef};
+use bloxide_core::{BloxRuntime, messaging::ActorRef, ActorId};
 use pool_messages::PoolMsg;
-
-pub trait HasPoolRef<R: BloxRuntime> {
-    fn pool_ref(&self) -> &ActorRef<PoolMsg, R>;
-}
 
 /// Action function: notify the pool that work is done.
 pub fn notify_pool_done<R: BloxRuntime>(
@@ -121,35 +106,33 @@ pub fn notify_pool_done<R: BloxRuntime>(
 }
 ```
 
-#### State traits (formerly "delegatable behavior traits")
+#### State action functions
 
-State traits like `CountsRounds`, `HasCurrentTimer` are now plain traits — no `#[delegatable]` macro, no `B` generic. They are implemented directly on the context struct by the codegen:
+State action functions like `increment_round` are plain free functions — no `#[delegatable]` macro, no `B` generic, no trait. They take the field they operate on as a concrete parameter:
 
 ```rust
 // crates/blox-ctx-rounds/src/lib.rs
-pub trait CountsRounds {
-    fn round(&self) -> u32;
-    fn set_round(&mut self, round: u32);
-}
-
 pub fn increment_round(round: &mut u32) {
     *round += 1;
 }
 ```
 
-The codegen generates the impl directly on the context struct:
+The codegen generates a plain field on the context struct and a wrapper closure that passes the field to the action function:
 
 ```rust
-// Generated by codegen
-impl<R: BloxRuntime> CountsRounds for PingCtx<R> {
-    fn round(&self) -> u32 { self.round }
-    fn set_round(&mut self, r: u32) { self.round = r; }
+// Generated by codegen — plain field, no trait impl
+pub struct PingCtx<R: BloxRuntime> {
+    pub round: u32,
+    // ... other fields ...
 }
+
+// Generated wrapper closure (in spec_skeleton.rs)
+|ctx| { blox_ctx_rounds::increment_round(&mut ctx.round); }
 ```
 
 ### blox.toml schema
 
-The context section uses `[[context.uses]]` for accessor traits and `[[context.fields]]` for state fields:
+The context section uses `[[context.uses]]` for field declarations (with action function imports) and `[[context.fields]]` for state fields:
 
 ```toml
 [context]
@@ -157,22 +140,20 @@ name = "PingCtx"
 generics = "<R: BloxRuntime>"
 on_init = "ctx.round = 0; ctx.current_timer = None;"
 
-# Accessor traits — codegen generates trait impls from naming conventions
+# Reference fields — codegen emits plain fields + constructor params
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasPeerRef<R, PingPongMsg>"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "accessor"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasSelfRef<R, PingPongMsg>"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "accessor"
 
-# State fields (formerly in B) — plain fields on the context struct
+# State fields — plain fields on the context struct
 [[context.fields]]
 name = "current_timer"
 type = "Option<TimerId>"
@@ -203,7 +184,7 @@ Each context field has an explicit role that tells the codegen what to emit:
 
 | Role | Codegen behavior |
 |------|-----------------|
-| `accessor` | Add field, emit trait import, auto-generate accessor impl from naming convention |
+| `accessor` | Add field, emit import, add field to constructor signature |
 | `ctor` | Add field to constructor signature (constructor parameter) |
 | `state` (from `[[context.fields]]`) | Add field, zero-initialize in `on_init` |
 
@@ -214,9 +195,8 @@ Each context field has an explicit role that tells the codegen what to emit:
 For each `uses` entry, the codegen:
 
 1. **Adds fields** to the generated struct definition
-2. **Emits imports** — `use {crate}::{trait};` for each trait
-3. **Emits attributes** — `#[provides(Trait)]` for accessor traits (auto-detected from `_ref` naming)
-4. **Emits trait impls** — auto-generated from naming conventions (e.g., `impl HasPeerRef for PingCtx`)
+2. **Emits imports** — `use {crate}::*;` for the action functions
+3. **Adds fields to constructor** — fields with `role = "accessor"` or `role = "ctor"` become constructor parameters
 
 The codegen **never guesses imports**. Every import is a direct 1:1 mapping from the TOML.
 
@@ -240,8 +220,8 @@ The codegen parser:
 
 The blox.toml `[[context.uses]]` and `[[context.fields]]` entries drive a visual editor where you:
 - Add context fields by picking from a library of context crates (dropdown)
-- Each context crate shows what traits + fields + action functions it provides
+- Each context crate shows what fields + action functions it provides
 - Set field roles (accessor / ctor / state) via dropdown
-- The codegen assembles the struct, imports, and impls
+- The codegen assembles the struct, imports, and constructor
 
 The only hand-written Rust is action function bodies (in context/impl crates) and guard predicate bodies (in `blox.toml` expressions).

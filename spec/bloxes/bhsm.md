@@ -8,7 +8,7 @@ The BhsmTst (Bloxide HSM Test) actor is a pedagogical demonstration of deep hier
 
 - Blox crate: `crates/bloxes/bhsm-tst/`
 - Messages crate: `crates/messages/bhsm-tst-messages/`
-- Actions crate: `crates/actions/bhsm-tst-actions/` (minimal — no mutable state)
+- No context crate needed — this is a pure topology demonstration with no mutable state
 
 ## State Hierarchy
 
@@ -76,13 +76,12 @@ Lifecycle control (`Start`, `Reset`, `Stop`) is handled by the runtime — these
 ## Context
 
 ```rust
-#[derive(BloxCtx)]
 pub struct BhsmTstCtx {
     pub self_id: ActorId,
 }
 ```
 
-No behavior field — this is a pure topology demonstration. `BhsmTstCtx::new(actor_id)` is the only constructor.
+No state fields — this is a pure topology demonstration. `BhsmTstCtx::new(actor_id)` is the only constructor.
 
 ## Entry / Exit Actions
 

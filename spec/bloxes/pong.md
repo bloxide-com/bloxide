@@ -8,7 +8,7 @@ The Pong actor responds to every `PingPongMsg::Ping` it receives by sending `Pin
 
 - Blox crate: `crates/bloxes/pong/`
 - Messages crate: `crates/messages/ping-pong-messages/`
-- Actions crate: `crates/actions/ping-pong-actions/`
+- Context crate: `crates/bloxide-messaging/` (provides `send_pong` action function)
 
 ## State Hierarchy
 
@@ -40,14 +40,11 @@ Lifecycle control (`start`, `reset`) is handled by the runtime — these do not 
 
 ## Context
 
-`PongCtx` uses `#[derive(BloxCtx)]` to generate accessor trait impls and a constructor.
+`PongCtx` is a plain struct with plain fields.
 
 ```rust
-#[derive(BloxCtx)]
 pub struct PongCtx<R: BloxRuntime> {
-    #[self_id]
     pub self_id: ActorId,
-    #[provides(HasPeerRef<R>)]
     pub peer_ref: ActorRef<PingPongMsg, R>,
 }
 ```
@@ -79,7 +76,7 @@ The runtime notifies the supervisor of lifecycle events (`Started`, `Reset`) aut
 | `[Init]` (engine) | logs "reset" via `blox_log_info!` | — |
 | `Ready` | — | — |
 
-The response message is sent inside the transition action `reply_pong_action`, defined as a method on `PongSpec<R>` in the blox crate. It extracts the `Ping` payload and delegates to the `send_pong` generic function from `ping-pong-actions`. The action is referenced from the `[[topology.transitions]]` block in the blox's `blox.toml`.
+The response message is sent inside the transition action `reply_pong_action`, defined as a method on `PongSpec<R>` in the blox crate. It extracts the `Ping` payload and delegates to the `send_pong` generic function from `bloxide-messaging`. The action is referenced from the `[[topology.transitions]]` block in the blox's `blox.toml`.
 
 ## Acceptance Criteria
 
@@ -97,9 +94,9 @@ The response message is sent inside the transition action `reply_pong_action`, d
 - The round echo (`Pong { round: n }` echoes the same `n`) is intentional: Pong is a mirror.
 - `try_send` is used (not `send`) because `on_event` runs synchronously inside dispatch.
 - Pong does not know when the exchange ends — it will keep responding to pings indefinitely. When Ping's guard returns `Guard::Stop`, it self-suspends to `Init` and simply stops sending, and Pong's mailbox goes quiet.
-- The blox crate only imports `ping-pong-actions` for the `HasPeerRef` trait and `send_pong` function. Logging, when enabled, comes from `bloxide-log` feature flags selected by the wiring crate.
+- The blox crate only imports `bloxide-messaging` for the `send_pong` function. Logging, when enabled, comes from `bloxide-log` feature flags selected by the wiring crate.
 - See `spec/architecture/08-supervision.md` for how the runtime manages lifecycle.
-- See `spec/architecture/12-action-crate-pattern.md` for the full five-layer architecture.
+- See `spec/architecture/12-action-crate-pattern.md` for the full four-layer architecture.
 
 ## Acceptance Criteria → Test Mapping
 

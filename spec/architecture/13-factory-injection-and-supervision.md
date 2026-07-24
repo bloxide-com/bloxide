@@ -23,13 +23,13 @@ How does the Pool invoke spawning logic without knowing the runtime?
 
 ### The Solution: Factory Injection
 
-Fields matching the `_factory` naming convention are **constructor parameters** auto-detected by `#[derive(BloxCtx)]`. The blox stores a function pointer and invokes it without knowing its implementation.
+Fields matching the `_factory` naming convention are **constructor parameters** auto-detected by the codegen. The blox stores a function pointer and invokes it without knowing its implementation.
 
 ### Layer-by-Layer Walkthrough
 
 **Layer 1 (messages)**: `pool-messages/` defines `PoolMsg`, `WorkerMsg`, `SpawnWorker`, `DoWork`, `WorkDone`. Pure data — no runtime types.
 
-**Layer 2 (actions)**: `pool-actions/src/traits.rs` defines the factory type:
+**Layer 2 (context)**: `pool-actions/` (now a context crate) defines the factory type:
 
 ```rust
 /// Function pointer type for spawning a single worker actor.
@@ -43,14 +43,9 @@ pub type WorkerSpawnFn<R> = fn(
     ActorRef<WorkerMsg, R>,
     ActorRef<PeerCtrl<WorkerMsg, R>, R>,
 );
-
-/// Accessor for contexts that hold a worker spawn factory.
-pub trait HasWorkerFactory<R: BloxRuntime> {
-    fn worker_factory(&self) -> WorkerSpawnFn<R>;
-}
 ```
 
-This is a **plain function pointer** — not a closure, not a trait object. The blox can invoke it without any bounds beyond `R: BloxRuntime`.
+This is a **plain function pointer** — not a closure, not a trait object. The blox can invoke it without any bounds beyond `R: BloxRuntime`. No accessor trait is needed; the factory is a plain field on the context struct.
 
 **Layer 3 (impl)**: `tokio-pool-demo-impl/src/lib.rs` provides the concrete implementation:
 
@@ -87,39 +82,32 @@ This crate is the **only place** that:
 - Imports `TokioRuntime` (binds to a specific runtime)
 - Calls `TokioRuntime::spawn` (uses runtime-specific spawning)
 
-**Layer 4 (blox)**: `pool/src/ctx.rs` declares the factory field, auto-detected by naming convention:
+**Layer 4 (blox)**: `pool/src/ctx.rs` declares the factory field as a plain struct field:
 
 ```rust
-#[derive(BloxCtx)]
 pub struct PoolCtx<R: BloxRuntime> {
-    pub self_id: ActorId,                        // auto-detected → impl HasSelfId
+    pub self_id: ActorId,
     
     /// Pool's own ActorRef — keeps the pool channel open.
-    pub self_ref: ActorRef<PoolMsg, R>,           // auto-detected → impl HasSelfRef<R>
+    pub self_ref: ActorRef<PoolMsg, R>,
     
     /// Factory function injected at construction time.
-    pub worker_factory: WorkerSpawnFn<R>,         // auto-detected → constructor parameter only
+    pub worker_factory: WorkerSpawnFn<R>,
     
-    // Fields without matching conventions use Default::default() in constructor
+    // State fields — zero-initialized in on_init
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
     pub worker_ctrls: Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>,
     pub pending: u32,
 }
-
-impl<R: BloxRuntime> HasWorkerFactory<R> for PoolCtx<R> {
-    fn worker_factory(&self) -> WorkerSpawnFn<R> {
-        self.worker_factory
-    }
-}
 ```
 
-**What `#[derive(BloxCtx)]` generates:**
+**What the codegen generates (constructor):**
 
 ```rust
 impl<R: BloxRuntime> PoolCtx<R> {
     pub fn new(
         self_id: ActorId,                    // auto-emitted by codegen
-        self_ref: ActorRef<PoolMsg, R>,      // from _ref field
+        self_ref: ActorRef<PoolMsg, R>,       // from _ref field
         worker_factory: WorkerSpawnFn<R>,    // from _factory field
     ) -> Self {
         Self {
@@ -161,10 +149,9 @@ The factory injection pattern **does not require the blox to have `R: SpawnCap`*
 
 | Field Pattern | Constructor Param | Trait Impl Generated |
 |------------|------------------|---------------------|
-| `self_id: ActorId` | ✅ Yes | `impl HasSelfId` |
-| `foo_ref: ActorRef<M, R>` | ✅ Yes | `impl HasFooRef<R>` |
-| `foo_factory: fn(...)` | ✅ Yes | ❌ None |
-| `#[delegates(Trait1, Trait2)] behavior: B` | ✅ Yes | Via companion macro |
+| `self_id: ActorId` | ✅ Yes | ❌ None (plain field) |
+| `foo_ref: ActorRef<M, R>` | ✅ Yes | ❌ None (plain field) |
+| `foo_factory: fn(...)` | ✅ Yes | ❌ None (plain field) |
 | (no matching convention) | ❌ No (Default::default()) | ❌ None |
 
 ---
@@ -252,18 +239,16 @@ This is perfectly valid. Lifecycle commands still bypass the worker's handlers.
 ### Field Naming Convention Decision Tree
 
 ```
-Does the field need a trait impl generated?
-├── Yes: Use naming convention (self_id, foo_ref) or #[delegates(...)]
-└── No: Is it provided at construction time?
-    ├── Yes: Use _factory naming convention
-    └── No: Leave unannotated (Default::default() in constructor)
+Is the field provided at construction time?
+├── Yes: Use naming convention (self_id, foo_ref, foo_factory)
+└── No: Leave unannotated (Default::default() in constructor)
 ```
 
 ### Factory Injection Pattern
 
 ```
 ┌─────────────┐         ┌─────────────┐         ┌─────────────┐
-│   actions   │         │    impl     │         │   binary    │
+│  context    │         │    impl     │         │   binary    │
 │   crate     │         │   crate     │         │   (wiring)  │
 ├─────────────┤         ├─────────────┤         ├─────────────┤
 │ type        │◄────────│ fn          │◄────────│ PoolCtx::   │

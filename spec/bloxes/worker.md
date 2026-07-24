@@ -14,7 +14,7 @@ Workers are spawned dynamically by the Pool actor.
 
 - Blox crate: `crates/bloxes/worker/`
 - Messages crate: `crates/messages/pool-messages/` (shared with Pool)
-- Actions crate: `crates/actions/pool-actions/` (shared with Pool)
+- Context crates: `crates/context/blox-ctx-pool-ref/`, `crates/context/blox-ctx-current-task/`, `crates/bloxide-peers/`
 - No impl crate needed — behavior is simple enough for blox-internal state
 
 ## State Hierarchy
@@ -54,33 +54,27 @@ type Mailboxes<Rt: BloxRuntime> = (R::Stream<PeerCtrl<WorkerMsg, R>>, R::Stream<
 
 The runtime polls index 0 first, ensuring all `AddPeer` commands arrive before `DoWork`.
 
-> The behavior type parameter `B` must implement `HasWorkerPeers<R>`. This trait provides the concrete peer vector that `PeerCtrl::AddPeer` appends to.
+> The `peers` field is a plain `Vec<ActorRef<WorkerMsg, R>>` on the context struct. `PeerCtrl::AddPeer` appends to it.
 
 ## Context
 
 ```rust
-#[derive(BloxCtx)]
 pub struct WorkerCtx<R: BloxRuntime> {
-    #[self_id]
     pub self_id: ActorId,
-    #[provides(HasPoolRef<R>)]
     pub pool_ref: ActorRef<PoolMsg, R>,
-    #[delegates(HasCurrentTask)]
     pub task_id: u32,
-    #[delegates(HasCurrentTask)]
     pub result: u32,
-    #[delegates(HasWorkerPeers<R>)]
     pub peers: Vec<ActorRef<WorkerMsg, R>>,
 }
 ```
 
-| Field | Type | Annotation | Description |
-|-------|------|------------|-------------|
-| `self_id` | `ActorId` | `#[self_id]` | Actor identity |
-| `pool_ref` | `ActorRef<PoolMsg, R>` | `#[provides(HasPoolRef<R>)]` | Reference to parent pool |
-| `task_id` | `u32` | `#[delegates(HasCurrentTask)]` | Assigned task ID |
-| `result` | `u32` | `#[delegates(HasCurrentTask)]` | Computed result |
-| `peers` | `Vec<...>` | `#[delegates(HasWorkerPeers<R>)]` | Introduced peer refs |
+| Field | Type | Description |
+|-------|------|-------------|
+| `self_id` | `ActorId` | Actor identity (auto-emitted by codegen) |
+| `pool_ref` | `ActorRef<PoolMsg, R>` | Reference to parent pool |
+| `task_id` | `u32` | Assigned task ID (plain state field) |
+| `result` | `u32` | Computed result (plain state field) |
+| `peers` | `Vec<...>` | Introduced peer refs (plain state field) |
 
 ## Message Contracts
 
@@ -126,13 +120,12 @@ pub struct WorkerCtx<R: BloxRuntime> {
 | Transition actions broadcast to peers | `test_broadcast_to_peers()` |
 | Transition actions notify pool | `test_notify_pool_done()` |
 
-## Action Crate Dependencies
+## Context Crate Dependencies
 
-| Trait | From crate | Implemented by |
+| Action function | From crate | Description |
 |-------|-----------|----------------|
-| `HasPoolRef<R>` | `pool-actions` | Generated via `#[provides]` |
-| `HasCurrentTask` | `pool-actions` | Generated via `#[delegates]` |
-| `HasWorkerPeers<R>` | `pool-actions` | Generated via `#[delegates]` |
+| `notify_pool_done` | `blox-ctx-pool-ref` | Worker sends WorkDone to pool |
+| `broadcast_to_peers` | `bloxide-peers` | Worker broadcasts result to peers |
 
 ## Related Docs
 

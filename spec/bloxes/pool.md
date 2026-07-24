@@ -17,8 +17,8 @@ This blox showcases:
 
 - Blox crate: `crates/bloxes/pool/`
 - Messages crate: `crates/messages/pool-messages/`
-- Actions crate: `crates/actions/pool-actions/`
-- Impl crate: `crates/impl/tokio-pool-demo-impl/` (provides worker factory)
+- Context crate: `crates/context/blox-ctx-workers/` (provides `WorkerSpawnFn` type)
+- Impl crate: `crates/impl/tokio-pool-demo-impl/` (provides worker factory function)
 
 ## State Hierarchy
 
@@ -52,31 +52,24 @@ stateDiagram-v2
 ## Context
 
 ```rust
-#[derive(BloxCtx)]
 pub struct PoolCtx<R: BloxRuntime> {
-    #[self_id]
     pub self_id: ActorId,
-    #[provides(HasSelfRef<R>)]
     pub self_ref: ActorRef<PoolMsg, R>,
-    #[provides(HasWorkerFactory<R>)]
     pub worker_factory: WorkerSpawnFn<R>,
-    #[ctor]
     pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
-    #[ctor]
     pub worker_ctrls: Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>,
-    #[ctor]
     pub pending: u32,
 }
 ```
 
-| Field | Type | Annotation | Description |
-|-------|------|------------|-------------|
-| `self_id` | `ActorId` | `#[self_id]` | Actor identity |
-| `self_ref` | `ActorRef<PoolMsg, R>` | `#[provides(HasSelfRef<R>)]` | Self reference (for worker callbacks) |
-| `worker_factory` | `WorkerSpawnFn<R>` | `#[provides(HasWorkerFactory<R>)]` | Injected spawn function |
-| `worker_refs` | `Vec<...>` | `#[ctor]` | Domain refs to spawned workers |
-| `worker_ctrls` | `Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>` | `#[ctor]` | Ctrl refs for peer introduction via `PeerCtrl` |
-| `pending` | `u32` | `#[ctor]` | Count of running workers |
+| Field | Type | Description |
+|-------|------|-------------|
+| `self_id` | `ActorId` | Actor identity (auto-emitted by codegen) |
+| `self_ref` | `ActorRef<PoolMsg, R>` | Self reference (for worker callbacks) |
+| `worker_factory` | `WorkerSpawnFn<R>` | Injected spawn function (constructor param) |
+| `worker_refs` | `Vec<...>` | Domain refs to spawned workers |
+| `worker_ctrls` | `Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>` | Ctrl refs for peer introduction via `PeerCtrl` |
+| `pending` | `u32` | Count of running workers |
 
 ## Message Contracts
 
@@ -122,13 +115,12 @@ pub struct PoolCtx<R: BloxRuntime> {
 | WorkDone decrements pending | `test_work_done_decrements()` |
 | All workers done → Guard::Stop | `test_all_workers_done()` |
 
-## Action Crate Dependencies
+## Context Crate Dependencies
 
-| Trait | From crate | Implemented by |
+| Action function / type | From crate | Description |
 |-------|-----------|----------------|
-| `HasWorkerFactory<R>` | `pool-actions` | Generated via `#[provides]` |
-| `HasWorkers<R>` | `pool-actions` | Manual accessor methods |
-| `HasSelfRef<R>` | `pool-actions` | Generated via `#[provides]` |
+| `WorkerSpawnFn<R>` | `blox-ctx-workers` | Function pointer type for worker spawning |
+| `notify_pool_done` | `blox-ctx-pool-ref` | Worker sends WorkDone to pool |
 
 ## Implementation Notes
 
