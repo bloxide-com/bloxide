@@ -552,12 +552,10 @@ fn test_full_round_trip_no_data_loss() {
             // field names + [[context.fields]] state fields.
             let expected_fields: Vec<(&str, &str)> = {
                 let mut v: Vec<(&str, &str)> = vec![("self_id", "ActorId")];
-                // Accessor fields (from [[context.uses]] with field = "...")
+                // Context fields (from [[context.uses]] with field = "...")
                 for u in &ctx.uses {
                     if let (Some(name), Some(ty)) = (&u.field, &u.field_type) {
-                        if !u.delegatable {
-                            v.push((name.as_str(), ty.as_str()));
-                        }
+                        v.push((name.as_str(), ty.as_str()));
                     }
                 }
                 // State fields from [[context.fields]]

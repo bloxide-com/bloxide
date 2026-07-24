@@ -321,22 +321,14 @@ fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
         annotations: Vec::new(),
     }];
 
-    // No more B generic — accessor fields with field names go directly into
-    // the struct, not a behavior object.
-    // Accessor fields from [[context.uses]] with field = "..." are struct fields.
+    // Context fields from [[context.uses]] with field = "..." are plain struct fields.
     for u in &context.uses {
         if let (Some(name), Some(ty)) = (&u.field, &u.field_type) {
-            if !u.delegatable {
-                let annotation = u
-                    .trait_
-                    .as_ref()
-                    .map(|t| format!("#[provides({})]", t))
-                    .into_iter()
-                    .collect();
+            {
                 fields.push(model::ContextField {
                     name: name.clone(),
                     ty: ty.clone(),
-                    annotations: annotation,
+                    annotations: Vec::new(),
                 });
             }
         }
@@ -356,16 +348,10 @@ fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
     let mut uses: Vec<model::ContextField> = Vec::new();
     for u in &context.uses {
         if let (Some(name), Some(ty)) = (&u.field, &u.field_type) {
-            let annotation = u
-                .trait_
-                .as_ref()
-                .map(|t| format!("#[provides({})]", t))
-                .into_iter()
-                .collect();
             uses.push(model::ContextField {
                 name: name.clone(),
                 ty: ty.clone(),
-                annotations: annotation,
+                annotations: Vec::new(),
             });
         }
         for f in &u.fields {

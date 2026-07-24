@@ -157,14 +157,8 @@ pub fn verify(workspace: Option<PathBuf>) -> anyhow::Result<()> {
                     spec.name, exported_ctx.struct_name, ctx.name
                 ));
             }
-            // Verify auto-emitted fields (self_id, behavior) and uses fields.
-            let expected_fields: Vec<&str> = {
-                let mut v: Vec<&str> = vec!["self_id"];
-                if ctx.uses.iter().any(|u| u.delegatable) {
-                    v.push("behavior");
-                }
-                v
-            };
+            // Verify auto-emitted fields (self_id) and uses fields.
+            let expected_fields: Vec<&str> = vec!["self_id"];
             for field_name in &expected_fields {
                 if !exported_ctx.fields.iter().any(|f| f.name == *field_name) {
                     errors.push(format!(
