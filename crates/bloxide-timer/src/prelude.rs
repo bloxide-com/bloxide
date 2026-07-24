@@ -3,7 +3,7 @@
 //!
 //! Import with `use bloxide_timer::prelude::*;` for quick access to commonly used types.
 
-pub use crate::actions::{cancel_timer, set_timer, HasTimerRef};
+pub use crate::actions::{cancel_timer, set_timer};
 pub use crate::command::{next_timer_id, TimerCommand, TimerId, TIMER_ACTOR_ID};
 pub use crate::queue::TimerQueue;
 pub use crate::service::TimerService;

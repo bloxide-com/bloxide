@@ -1,28 +1,24 @@
 // Copyright 2025 Bloxide, all rights reserved
-use bloxide_core::{accessor::HasSelfId, capability::BloxRuntime, messaging::ActorRef};
+use bloxide_core::{capability::BloxRuntime, messaging::ActorId, messaging::ActorRef};
 
 use crate::command::{next_timer_id, TimerCommand, TimerId, TIMER_ACTOR_ID};
-
-/// Accessor trait for blox contexts that hold a timer service reference.
-///
-/// Auto-detected from a `timer_ref: ActorRef<TimerCommand, R>` field
-/// in a `#[derive(BloxCtx)]` context struct.
-pub trait HasTimerRef<R: BloxRuntime> {
-    fn timer_ref(&self) -> &ActorRef<TimerCommand, R>;
-}
 
 /// Schedule `event` to be delivered to `target` after `after_ms` milliseconds.
 ///
 /// Returns the `TimerId` that can be passed to `cancel_timer` later.
 /// Logs a warning if the timer channel is full and the command was dropped.
-pub fn set_timer<R, C, M>(ctx: &C, after_ms: u64, target: &ActorRef<M, R>, event: M) -> TimerId
+pub fn set_timer<R, M>(
+    self_id: ActorId,
+    timer_ref: &ActorRef<TimerCommand, R>,
+    after_ms: u64,
+    target: &ActorRef<M, R>,
+    event: M,
+) -> TimerId
 where
     R: BloxRuntime,
-    C: HasSelfId + HasTimerRef<R>,
     M: Send + 'static,
 {
     let id = next_timer_id();
-    let self_id = ctx.self_id();
     let target = target.clone();
     let deliver = alloc::boxed::Box::new(move || {
         if target.try_send(TIMER_ACTOR_ID, event).is_err() {
@@ -32,10 +28,9 @@ where
             );
         }
     });
-    if ctx
-        .timer_ref()
+    if timer_ref
         .try_send(
-            ctx.self_id(),
+            self_id,
             TimerCommand::Set {
                 id,
                 after_ms,
@@ -45,7 +40,7 @@ where
         .is_err()
     {
         bloxide_log::blox_log_warn!(
-            ctx.self_id(),
+            self_id,
             "set_timer: timer channel full, timer {} dropped — it will never fire",
             id.as_u64()
         );
@@ -57,18 +52,20 @@ where
 ///
 /// Logs a warning if the timer channel is full and the cancel command was dropped
 /// (the timer may still fire).
-pub fn cancel_timer<R, C>(ctx: &C, id: TimerId)
+pub fn cancel_timer<R>(
+    self_id: ActorId,
+    timer_ref: &ActorRef<TimerCommand, R>,
+    id: TimerId,
+)
 where
     R: BloxRuntime,
-    C: HasSelfId + HasTimerRef<R>,
 {
-    if ctx
-        .timer_ref()
-        .try_send(ctx.self_id(), TimerCommand::Cancel { id })
+    if timer_ref
+        .try_send(self_id, TimerCommand::Cancel { id })
         .is_err()
     {
         bloxide_log::blox_log_warn!(
-            ctx.self_id(),
+            self_id,
             "cancel_timer: timer channel full, cancel for timer {} dropped — it may still fire",
             id.as_u64()
         );
