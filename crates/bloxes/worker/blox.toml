@@ -59,6 +59,7 @@ type = "Vec<ActorRef<WorkerMsg, R>>"
 [[context.actions]]
 name = "handle_ctrl"
 crate = "bloxide_peers"
+fn_name = "apply_peer_control"
 kind = "transition"
 fields = ["peers:mut"]
 event_payload = "ctrl"
@@ -74,6 +75,7 @@ impl_required = true
 [[context.actions]]
 name = "do_broadcast"
 crate = "bloxide_peers"
+fn_name = "broadcast_to_peers"
 kind = "transition"
 fields = ["self_id", "peers:ref", "result"]
 impl_required = false
@@ -81,6 +83,7 @@ impl_required = false
 [[context.actions]]
 name = "do_notify_pool"
 crate = "blox_ctx_pool_ref"
+fn_name = "notify_pool_done"
 kind = "transition"
 fields = ["self_id", "pool_ref:ref", "task_id", "result"]
 impl_required = false
