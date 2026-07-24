@@ -47,8 +47,6 @@ blox = "bloxide-timer"
 [[actors]]
 name = "ping"
 blox = "ping-blox"
-behavior = "DemoBehavior"
-behavior_traits = ["CountsRounds", "HasCurrentTimer"]
 
   [actors.inject]
   self_ref = { source = "self" }           # supervisor creates channel, injects self_ref
@@ -93,8 +91,6 @@ For actors with multiple mailboxes (like worker: `WorkerMsg` + `PeerCtrl<WorkerM
 [[actors]]
 name = "worker-1"
 blox = "worker-blox"
-behavior = "WorkerBehavior"
-behavior_traits = ["HasCurrentTask", "HasWorkerPeers"]
 
   [actors.inject]
   self_ref = { source = "self", mailbox = 0 }  # domain channel
@@ -205,4 +201,4 @@ The wiring manifest drives a visual editor where you:
 - Set spawn factories for dynamic actors
 - Pick the runtime (Tokio / Embassy / Test)
 
-The codegen produces the complete binary. The only hand-written Rust is action function bodies and guard predicates in actions crates.
+The codegen produces the complete binary. The only hand-written Rust is action function bodies and guard predicates in context crates.

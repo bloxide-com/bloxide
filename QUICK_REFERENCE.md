@@ -43,7 +43,7 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
 | Is it a constructor param (factory)? | Yes | `[[context.uses]]` with `role = "ctor"` |
 | Is it state data? | Yes | `[[context.fields]]` entry — direct field, zero-initialized |
 
-State fields are plain fields on the context struct. There is no `B` generic, no behavior object.
+State fields are plain fields on the context struct. There is no `B` generic, no behavior object, no accessor traits.
 
 ---
 
@@ -144,7 +144,6 @@ Use `bloxide-timer` and `blox-ctx-current-timer` action functions instead of man
    ```toml
    [[context.uses]]
    crate = "bloxide_timer"
-   trait = "HasTimerRef<R>"
    field = "timer_ref"
    field_type = "ActorRef<TimerCommand, R>"
    role = "accessor"
@@ -366,22 +365,26 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 
 ## Key Invariants Checklist
 
-- [ ] `bloxide-core` imports only `futures-core` (no Tokio/Embassy)
-- [ ] Blox crates are generic over `R: BloxRuntime`
-- [ ] Messages contain only plain data (no `ActorRef`)
-- [ ] Transition targets are leaf states only
-- [ ] `on_entry` / `on_exit` are infallible (`fn(&mut Ctx)`)
-- [ ] Actions called before guard (side effects in actions, pure checks in guard)
-- [ ] No catch-all rule that manually returns parent — bubbling is automatic
-- [ ] `is_error` states report `Failed`; actors self-stop via `Guard::Stop` (no `is_terminal`)
-- [ ] No `B` generic on any `Ctx` or `Spec` type
-- [ ] No `#[delegatable]` attribute anywhere
-- [ ] No `#[delegates]` annotation anywhere
-- [ ] No `actions.rs` file in any blox crate
-- [ ] No `crates/actions/` directory
-- [ ] No `bloxide-log` dependency in any blox crate
-- [ ] No `behavior: B` field in any context struct
-- [ ] Guard expressions use direct field access (no trait methods, no `B::Type::from()`)
+- [x] `bloxide-core` imports only `futures-core` (no Tokio/Embassy)
+- [x] Blox crates are generic over `R: BloxRuntime`
+- [x] Messages contain only plain data (no `ActorRef`)
+- [x] Transition targets are leaf states only
+- [x] `on_entry` / `on_exit` are infallible (`fn(&mut Ctx)`)
+- [x] Actions called before guard (side effects in actions, pure checks in guard)
+- [x] No catch-all rule that manually returns parent — bubbling is automatic
+- [x] `is_error` states report `Failed`; actors self-stop via `Guard::Stop` (no `is_terminal`)
+- [x] No `B` generic on any `Ctx` or `Spec` type
+- [x] No accessor traits anywhere
+- [x] No `#[delegatable]` attribute anywhere
+- [x] No `#[delegates]` annotation anywhere
+- [x] No `#[derive(BloxCtx)]` anywhere
+- [x] No `#[provides]` or `#[provides_mut]` in generated code
+- [x] No accessor traits (HasSelfId, HasPeerRef, etc.) in any crate
+- [x] No `actions.rs` file in any blox crate
+- [x] No `crates/actions/` directory
+- [x] No `bloxide-log` dependency in any blox crate
+- [x] No `behavior: B` field in any context struct
+- [x] Guard expressions use direct field access (no trait methods, no `B::Type::from()`)
 
 ---
 

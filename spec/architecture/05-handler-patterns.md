@@ -105,11 +105,11 @@ actions = ["log_pong_received", "forward_ping"]
   to = "Error"
 
   [[topology.transitions.guards]]
-  condition = "ctx.round() >= B::Round::from(MAX_ROUNDS)"
+  condition = "ctx.round >= MAX_ROUNDS as u32"
   to = "stop"
 
   [[topology.transitions.guards]]
-  condition = "ctx.round() == B::Round::from(PAUSE_AT_ROUND)"
+  condition = "ctx.round == PAUSE_AT_ROUND as u32"
   to = "Paused"
 
   [[topology.transitions.guards]]
@@ -280,7 +280,7 @@ pattern = "PingPongMsg::Pong(_)"
 actions = ["log_final_pong"]
 
   [[topology.transitions.guards]]
-  condition = "ctx.round() >= MAX_ROUNDS"
+  condition = "ctx.round >= MAX_ROUNDS"
   to = "stop"
 ```
 
@@ -295,7 +295,7 @@ The `stop` target in a `[[topology.transitions]]` entry produces `Guard::Stop`. 
 Self-transition with a counter guard. The `Active` state increments a counter in `on_entry` (since entry fires on every self-transition). The rule guards on the counter.
 
 ```toml
-# State on_entry increments ctx.attempts (via action crate function)
+# State on_entry increments ctx.attempts (via context crate function)
 [[topology.transitions]]
 state = "Active"
 pattern = "MyMsg::Timeout(_)"

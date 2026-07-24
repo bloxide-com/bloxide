@@ -123,7 +123,6 @@ bloxide-spawn/            ← spawn capability (separate crate)
 bloxide-child-management/ ← reusable child tracking (separate crate)
   ChildGroup<R>             ← per-child tracking, restart strategy, phase management
   ChildEntry<R>, ChildPhase
-  HasChildGroup<R>, HasChildGroupMut<R>, HasPending accessor traits
 
 bloxide-supervisor/       ← the supervisor blox (codegen-ed from blox.toml)
   blox.toml                ← source of truth: states, context, transitions, events
@@ -131,7 +130,7 @@ bloxide-supervisor/       ← the supervisor blox (codegen-ed from blox.toml)
   src/generated/           ← codegen output (ctx.rs, topology.rs, spec_skeleton.rs, events.rs)
   src/lib.rs               ← re-exports
   src/control.rs           ← SupervisorControl, RegisterChild, RegisterDynamicChild, SupervisorRegistrar
-  src/spawn.rs             ← HasChildNotify trait (accessor for child-event mailbox)
+  src/spawn.rs             ← child-event mailbox accessor
 
 bloxide-supervisor/src/actions.rs  ← in-crate action functions (concrete &SupervisorEvent<R>)
   start_children, stop_all_children
@@ -741,7 +740,7 @@ let result = spawn_child::<_, _, SupervisorRegistrar>(
     req,
     &ctx.spawn_ref,   // supervisor control mailbox
     &ctx.notify_ref,  // child lifecycle event mailbox
-    ctx.self_id(),
+    ctx.self_id,
 );
 ```
 
@@ -833,7 +832,7 @@ pointer stored in its context) and the `spawn_ref` (the managing blox's control 
 ref).
 
 ```rust
-// In the Pool's action crate
+// In the Pool's context crate
 
 /// Handle a SpawnWorker request: call the spawn helper to create a child,
 /// then transition to the Spawning state to wait for the reply.
@@ -858,12 +857,12 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
             req,
             &ctx.spawn_ref,         // managing blox's control mailbox
             &ctx.notify_ref,        // managing blox's child-notify mailbox
-            ctx.self_id(),
+            ctx.self_id,
         );
 
         if result.is_err() {
             bloxide_log::blox_log_warn!(
-                ctx.self_id(),
+                ctx.self_id,
                 "spawn failed (supervisor control mailbox full), dropping task_id={}",
                 task_id
             );
@@ -899,9 +898,8 @@ pub notify_ref: ActorRef<ChildLifecycleEvent, R>,
 
 The spawn function is injected into the requesting blox's context as a **constructor
 field** — a `fn` pointer provided at wiring time. The naming convention is
-`foo_factory: fn(...) -> ...` (or `spawn_fn: SpawnFn<R, Req>`). The `#[derive(BloxCtx)]`
-macro auto-detects constructor-only fields (those not updated by transitions) and
-includes them in the context's `new()` constructor.
+`foo_factory: fn(...) -> ...` (or `spawn_fn: SpawnFn<R, Req>`). The codegen
+includes constructor-only fields in the context's `new()` constructor.
 
 The factory lives in a **Layer 3 impl crate** consumed by the wiring binary — the only
 place that knows the concrete child type (`WorkerCtx`, `WorkerSpec`). This keeps the
@@ -978,9 +976,7 @@ channel is separate from the domain channel, so existing message ordering is una
 The pool and worker use the generic `PeerCtrl<WorkerMsg, R>` from the `bloxide-peers`
 crate directly — no domain-specific control enum is needed. The `PeerCtrl` type is
 generic over the domain message type (`WorkerMsg`), so it carries the right `ActorRef`
-type for peer introduction. The `#[delegates]` annotation on the context crate
-(`blox-ctx-worker-peers`) provides accessor traits (`HasWorkerPeers<R>`) that expose
-the peer list to action functions.
+type for peer introduction. Context crates provide action functions for peer management.
 
 ```rust
 // In bloxide-peers
@@ -1055,17 +1051,17 @@ workers and vice versa:
 
 ```rust
 // In pool-blox handle_spawned_worker — inline peer introduction
-let n = ctx.worker_refs().len();
+let n = ctx.worker_refs.len();
 if n >= 2 {
     let new_idx = n - 1;
-    let from = ctx.self_id();
-    let new_id = ctx.worker_refs()[new_idx].id();
-    let new_ref = ctx.worker_refs()[new_idx].clone();
-    let new_ctrl = ctx.worker_ctrls()[new_idx].clone();
+    let from = ctx.self_id;
+    let new_id = ctx.worker_refs[new_idx].id();
+    let new_ref = ctx.worker_refs[new_idx].clone();
+    let new_ctrl = ctx.worker_ctrls[new_idx].clone();
     for i in 0..new_idx {
-        let old_id = ctx.worker_refs()[i].id();
-        let old_ref = ctx.worker_refs()[i].clone();
-        let old_ctrl = ctx.worker_ctrls()[i].clone();
+        let old_id = ctx.worker_refs[i].id();
+        let old_ref = ctx.worker_refs[i].clone();
+        let old_ctrl = ctx.worker_ctrls[i].clone();
         introduce_peers(
             from,
             new_id, new_ref.clone(), new_ctrl.clone(),

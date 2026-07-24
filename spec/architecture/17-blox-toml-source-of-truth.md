@@ -8,7 +8,7 @@ This means:
 
 - Every actor fact that *can* be expressed in TOML *is* expressed in TOML.
 - The codegen is deterministic: same TOML → same Rust.
-- Hand-written Rust lives only where TOML cannot express intent: action function bodies, behavior implementations, and complex guard logic.
+- Hand-written Rust lives only where TOML cannot express intent: action function bodies and complex guard logic.
 - The visualizer reads `blox.toml` directly and writes `blox.toml` directly.
 
 ## Design
@@ -131,68 +131,60 @@ From `crates/bloxes/ping/blox.toml`:
 ```toml
 [context]
 name = "PingCtx"
-generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
-extra_where = ["B: Default", "B::Round: Into<u32>"]
-on_init = "ctx.behavior = B::default();"
+generics = "<R: BloxRuntime>"
 imports = [
-    "ping_pong_actions::{HasPeerRef, HasSelfRef}",
     "ping_pong_messages::PingPongMsg",
-    "bloxide_timer::{HasTimerRef, TimerCommand, TimerId}",
+    "bloxide_timer::{TimerCommand, TimerId}",
 ]
 
-# self_id and behavior are auto-emitted by the codegen — do NOT declare them.
-# Fields come from [[context.uses]] entries:
+# self_id is auto-emitted by the codegen as the first field — do NOT declare it.
+# Fields come from [[context.uses]] and [[context.fields]] entries:
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasPeerRef<R, PingPongMsg>"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "accessor"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasSelfRef<R, PingPongMsg>"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "accessor"
 
 [[context.uses]]
 crate = "bloxide_timer"
-trait = "HasTimerRef<R>"
 field = "timer_ref"
 field_type = "ActorRef<TimerCommand, R>"
 role = "accessor"
 
-[[context.uses]]
-crate = "blox_ctx_current_timer"
-trait = "HasCurrentTimer"
-delegatable = true
+[[context.fields]]
+name = "current_timer"
+field_type = "Option<TimerId>"
+init = "None"
 
-[[context.uses]]
-crate = "blox_ctx_rounds"
-trait = "CountsRounds"
-delegatable = true
+[[context.fields]]
+name = "round"
+field_type = "u32"
+init = "0"
 ```
 
 `[context]` declares:
 
 - The struct name and generics.
-- `[[context.uses]]` entries that pull traits and fields from composable context crates.
-- `self_id: ActorId` (first field) and `behavior: B` (last field, with `#[delegates(...)]`) are auto-emitted by the codegen — never declared manually.
+- `[[context.uses]]` entries that pull fields from composable context crates.
+- `[[context.fields]]` entries for state fields on the context struct.
+- `self_id: ActorId` (first field) is auto-emitted by the codegen — never declared manually.
 - Imports needed by the generated `ctx.rs`.
-- `extra_where` predicates appended to the `MachineSpec` impl.
-- `on_init` body for `on_init_entry`.
 
 The `role` field tells the codegen how to emit each field:
 
 | Role | Codegen behavior |
 |------|-----------------|
-| `self_id` | Adds `self_id: ActorId`; auto-impls `HasSelfId`. |
-| `accessor` | Adds field; auto-impls accessor trait from naming convention. |
-| `ctor` | Adds field to the `BloxCtx`-generated constructor signature. |
+| `self_id` | Adds `self_id: ActorId` as the first field. |
+| `accessor` | Adds field; constructor parameter. |
+| `ctor` | Adds field to the generated constructor signature. |
 | `state` | Adds field; zero-initialized in the generated constructor. |
-| `delegate` | Adds `#[delegates(...)]` attribute on a behavior field. |
 
 #### `[mailboxes]` — mailbox arity
 
@@ -214,8 +206,6 @@ runtime = "tokio"
 [[wiring.actors]]
 blox = "ping"
 name = "ping"
-behavior = "DemoBehavior"
-behavior_traits = ["CountsRounds", "HasCurrentTimer"]
 
   [wiring.actors.context_fields]
   peer_ref = "pong"
@@ -253,7 +243,7 @@ strategy = "one_for_one"
 | `messages_<name>.rs` | `[[messages]]` | Enum + struct variants for one message type. |
 | `events.rs` | `[event]` | Event enum wrapping mailbox variants, plus trait impls. |
 | `topology.rs` | `[topology]` + `[actor]` | State enum, `StateTopology` impl, and `StateFns` constants or handler table. |
-| `ctx.rs` | `[context]` | Context struct with `#[derive(BloxCtx)]`, imports, and field attributes. |
+| `ctx.rs` | `[context]` | Context struct with imports and plain fields. |
 | `spec_skeleton.rs` | `[actor]` + `[topology]` + `[event]` + `[context]` | `MachineSpec` impl skeleton. |
 | `mailboxes_impls.rs` | `[mailboxes]` | Mailbox tuple impls up to `max_arity`. |
 | `wiring_main.rs` | `[wiring]` or `system.toml` | Complete binary `main.rs`. |
@@ -316,22 +306,18 @@ macro_rules! ping_state_handler_table {
 `ctx.rs` emits the context struct with all imports and field attributes. From `crates/bloxes/ping/src/generated/ctx.rs`:
 
 ```rust
-use ping_pong_actions::{HasCurrentTimer, CountsRounds, __delegate_HasCurrentTimer, __delegate_CountsRounds};
-use ping_pong_actions::{HasPeerRef, HasSelfRef};
 use ping_pong_messages::PingPongMsg;
-use bloxide_timer::{HasTimerRef, TimerCommand, TimerId};
+use bloxide_timer::{TimerCommand, TimerId};
 use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef};
 use ::bloxide_core::ActorId;
-use ::bloxide_macros::BloxCtx;
 
-#[derive(BloxCtx)]
-pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds> {
+pub struct PingCtx<R: BloxRuntime> {
     pub self_id: ActorId,
     pub peer_ref: ActorRef<PingPongMsg, R>,
     pub self_ref: ActorRef<PingPongMsg, R>,
     pub timer_ref: ActorRef<TimerCommand, R>,
-    #[delegates(HasCurrentTimer, CountsRounds)]
-    pub behavior: B,
+    pub current_timer: Option<TimerId>,
+    pub round: u32,
 }
 ```
 
@@ -345,34 +331,23 @@ use ::bloxide_core::capability::BloxRuntime;
 use ::bloxide_core::spec::{MachineSpec, StateFns};
 use crate::{PingCtx, PingEvent};
 pub use crate::generated::topology::PingState;
-use ping_pong_actions::{HasCurrentTimer, CountsRounds};
-use ping_pong_actions::{HasPeerRef, HasSelfRef};
 use ping_pong_messages::PingPongMsg;
-use bloxide_timer::{HasTimerRef, TimerCommand, TimerId};
+use bloxide_timer::{TimerCommand, TimerId};
 
-pub struct PingSpec<R: BloxRuntime, B: HasCurrentTimer + CountsRounds + 'static>
-where
-    B: Default,
-    B::Round: Into<u32>,
-{
-    _phantom: PhantomData<(R, B)>,
+pub struct PingSpec<R: BloxRuntime> {
+    _phantom: PhantomData<R>,
 }
 
-impl<R: BloxRuntime, B: HasCurrentTimer + CountsRounds + 'static> MachineSpec for PingSpec<R, B>
-where
-    B: Default,
-    B::Round: Into<u32>,
-{
+impl<R: BloxRuntime> MachineSpec for PingSpec<R> {
     type State = PingState;
     type Event = PingEvent;
-    type Ctx = PingCtx<R, B>;
+    type Ctx = PingCtx<R>;
     type Mailboxes<Rt: ::bloxide_core::capability::BloxRuntime> = (
         Rt::Stream<ping_pong_messages::PingPongMsg>,
     );
     const HANDLER_TABLE: &'static [&'static StateFns<Self>] = ping_state_handler_table!(Self);
     fn initial_state() -> PingState { PingState::Active }
     fn is_error(state: &PingState) -> bool { ::core::matches!(state, PingState::Error) }
-    fn on_init_entry(ctx: &mut Self::Ctx) { ctx.behavior = B::default(); }
 }
 ```
 
@@ -384,10 +359,9 @@ From `[wiring]` or `system.toml`, the codegen emits a complete `main.rs` that cr
 
 Not everything can be expressed in TOML. The following pieces remain hand-written and live *outside* `src/generated/`:
 
-1. **Action function implementations** — the bodies referenced by `topology.transitions[].actions` and `topology.entry/exit[].actions`. These live in `*-actions` crates.
-2. **Behavior implementations** — concrete types that implement delegatable traits such as `CountsRounds` or `HasCurrentTimer`. These live in `*-impl` crates.
-3. **Complex guard logic** — when a guard cannot be expressed as a simple TOML condition string, it is written as a Rust function and referenced from the TOML.
-4. **Tests** — `TestRuntime`-based tests in `tests.rs` or inline in `src/lib.rs`.
+1. **Action function implementations** — the bodies referenced by `topology.transitions[].actions` and `topology.entry/exit[].actions`. These live in context crates.
+2. **Complex guard logic** — when a guard cannot be expressed as a simple TOML condition string, it is written as a Rust function and referenced from the TOML.
+3. **Tests** — `TestRuntime`-based tests in `tests.rs` or inline in `src/lib.rs`.
 
 The rule is: if it is in `src/generated/`, it is produced by `cargo blox generate`. If it is anywhere else, it is hand-written and preserved across regeneration.
 
@@ -409,7 +383,7 @@ Never edit generated files by hand
 - `cargo blox generate` (and `cargo blox watch`) rewrites `src/generated/` from the TOML.
 - Generated files carry the header `// Auto-generated by bloxide-codegen. Do not edit manually.`
 - Editing generated Rust is forbidden. If a generated file is wrong, fix `blox.toml` or the codegen, not the file.
-- Hand-written Rust (actions, behaviors, tests) is allowed, but it is never placed inside `src/generated/`.
+- Hand-written Rust (actions, tests) is allowed, but it is never placed inside `src/generated/`.
 
 #### Round-trip verification
 
@@ -454,7 +428,7 @@ The visualizer reads `blox.toml` directly (not Rust source):
 5. The developer reviews the regenerated Rust and runs tests.
 6. The visualizer never writes Rust directly.
 
-This is the vision behind issue #71: a Simulink-like development flow where the actor is built visually from `blox.toml`, regenerated into Rust, and the only hand-written code is action function bodies and behavior implementations.
+This is the vision behind issue #71: a Simulink-like development flow where the actor is built visually from `blox.toml`, regenerated into Rust, and the only hand-written code is action function bodies.
 
 ### Validation rules
 
@@ -479,7 +453,7 @@ Additional validation that should be enforced (some by the Rust compiler after g
 The TOML schema is designed to be extended without breaking existing codegen:
 
 1. **New field roles** — adding a role such as `config` or `metric` only requires a new branch in `ctx.rs` generation; existing roles are unaffected.
-2. **New `[[context.uses]]` shapes** — the `ContextUse` struct already supports `trait`, `traits`, `field`, `field_type`, `role`, `delegatable`, `impl_macro`, and sub-fields. New optional fields can be added without breaking existing TOML files.
+2. **New `[[context.uses]]` shapes** — the `ContextUse` struct already supports `field`, `field_type`, `role`, and sub-fields. New optional fields can be added without breaking existing TOML files.
 3. **New topology attributes** — optional flags on `StateConfig` (like `composite`, `error`) can be extended with more optional booleans.
 4. **Custom annotations** — unknown keys in TOML are ignored by serde by default, so experimental annotations can be added to `blox.toml` and consumed by future codegen versions or UI tools without breaking current builds.
 5. **New generated file types** — `generate_all` can emit additional files; `mod.rs` is generated from the file list, so new modules are re-exported automatically.
@@ -508,7 +482,7 @@ The UI is a `blox.toml` (and optionally `system.toml`) editor:
 - A wiring canvas that edits `[[wiring.actors]]`, `[[wiring.connections]]`, and `[[wiring.supervisors]]` (or the equivalent `system.toml` tables).
 - A "Generate" button that runs `cargo blox generate` and reports validation errors.
 
-The only hand-written Rust the UI cannot produce is action function bodies, behavior implementations, and complex guards — and those live in actions/impl crates, not in generated files.
+The only hand-written Rust the UI cannot produce is action function bodies and complex guards — and those live in context crates, not in generated files.
 
 ## Related documents
 
@@ -516,4 +490,4 @@ The only hand-written Rust the UI cannot produce is action function bodies, beha
 - `spec/architecture/16-declarative-wiring.md` — the `system.toml` wiring manifest and handle injection.
 - `spec/architecture/02-hsm-engine.md` — `MachineSpec`, `StateTopology`, and the declarative `[[topology.transitions]]` schema.
 - `spec/architecture/05-handler-patterns.md` — transition patterns and guard semantics.
-- `spec/architecture/12-action-crate-pattern.md` — the relationship between actions crates, impl crates, and bloxes.
+- `spec/architecture/12-action-crate-pattern.md` — the relationship between context crates and bloxes.

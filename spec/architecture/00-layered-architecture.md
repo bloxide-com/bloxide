@@ -26,11 +26,11 @@ The remaining docs (04, 06, 07, 09, 10, 11, 12, 16, 17) are reference material â
 
 ```
 Layer 3: Bloxes
-  HSM specs using accessor traits + action functions.
+  HSM specs using action functions.
   Generic over R: BloxRuntime. Never import runtime code.
 
 Layer 2: Standard Library (patterns)
-  Message types, accessor traits, action functions, shared data structures,
+  Message types, action functions, shared data structures,
   and runtime-facing service traits.
   Only depend on BloxRuntime. Crates: bloxide-timer, bloxide-child-management,
   bloxide-supervisor, bloxide-spawn, bloxide-peers, bloxide-messaging.
@@ -63,11 +63,11 @@ These traits formalize the contract that runtime crates must fulfill. They enabl
 
 Each standard library crate defines both sides:
 
-- **Blox-facing**: messages, accessor traits, action functions, shared data structures
+- **Blox-facing**: messages, action functions, shared data structures
 - **Runtime-facing**: a service trait that runtimes implement
 
 Example with `bloxide-timer`:
-- Blox-facing: `TimerCommand`, `TimerId`, `HasTimerRef<R>`, `set_timer()`, `cancel_timer()`, `TimerQueue`
+- Blox-facing: `TimerCommand`, `TimerId`, `set_timer()`, `cancel_timer()`, `TimerQueue`
 - Runtime-facing: `TimerService` trait
 
 ## Decision Rule
@@ -94,7 +94,7 @@ bloxide-log (feature-gated logging: log / defmt / no-op)
   No dependency on bloxide-core â€” standalone crate consumed directly by blox crates.
 
 bloxide-timer (depends on bloxide-core)
-  Blox-facing: TimerCommand, TimerQueue, HasTimerRef, set_timer, cancel_timer
+  Blox-facing: TimerCommand, TimerQueue, set_timer, cancel_timer
   Runtime-facing: trait TimerService
 
 bloxide-supervisor (depends on bloxide-core, bloxide-child-management, bloxide-spawn)
@@ -102,7 +102,7 @@ bloxide-supervisor (depends on bloxide-core, bloxide-child-management, bloxide-s
   Runtime-facing: trait SupervisedRunLoop
 
 bloxide-child-management (depends on bloxide-core)
-  ChildGroup, ChildEntry, ChildPhase, HasChildGroup
+  ChildGroup, ChildEntry, ChildPhase
 
 bloxide-spawn (depends on bloxide-core)
   SpawnCap, SpawnFn, SpawnOutput, ChildRegistrar, spawn_child helper
@@ -111,7 +111,7 @@ bloxide-peers (depends on bloxide-core)
   Peer introduction: PeerCtrl, AddPeer, RemovePeer, HasPeers, introduce_peers
 
 bloxide-messaging (depends on bloxide-core)
-  Accessor traits: HasSelfRef<R,M>, HasPeerRef<R,M> for peer/self messaging
+  Action functions for peer/self messaging
 
 bloxide-embassy (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-supervisor, bloxide-child-management)
   impl BloxRuntime + StaticChannelCap + TimerService

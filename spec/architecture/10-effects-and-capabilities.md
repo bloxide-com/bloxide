@@ -19,22 +19,22 @@ future runtimes.
 
 Effects are modeled through the **two-tier trait system** (see [00-layered-architecture.md](00-layered-architecture.md) for the full reference), not as orthogonal HSM state regions or background threads. The HSM engine remains pure: it calls `on_entry`, `on_exit`, and `actions` functions and updates the current state. It never calls runtime methods directly. All side effects originate from user-written functions in those callbacks.
 
-Blox crates are generic over a single Tier 1 trait: `R: BloxRuntime`. All additional capabilities (timers, supervision) are exposed through **standard library crates** that define accessor traits, action functions, and messages — never as additional runtime bounds on the blox.
+Blox crates are generic over a single Tier 1 trait: `R: BloxRuntime`. All additional capabilities (timers, supervision) are exposed through **standard library crates** that define action functions and messages — never as additional runtime bounds on the blox.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                          Blox Crate                         │
 │  on_entry / on_exit / actions  ──calls──▶  action functions │
-│       (pure logic + guard)       set_timer(ctx, ...)        │
-│                                  cancel_timer(ctx, ...)     │
+│       (pure logic + guard)       send_ping(...)             │
+│                                  cancel_timer(...)          │
 └─────────────────────────────────────────────────────────────┘
                             │
           Tier 1: R: BloxRuntime only
                             │
 ┌─────────────────────────────────────────────────────────────┐
 │               Standard Library Crates (Layer 2)             │
-│  bloxide-timer: TimerCommand, TimerQueue, HasTimerRef<R>,   │
-│                 set_timer(), cancel_timer()                  │
+│  bloxide-timer: TimerCommand, TimerQueue,                  │
+│                 set_timer(), cancel_timer()                 │
 │  bloxide-supervisor: LifecycleCommand, ChildGroup, ...      │
 └─────────────────────────────────────────────────────────────┘
                             │
@@ -68,37 +68,32 @@ pub enum TimerCommand {
 
 /// Queue of pending timer commands. Held by contexts that need timers.
 pub struct TimerQueue { /* ... */ }
-
-/// Accessor trait for contexts that hold a timer ref.
-pub trait HasTimerRef<R: BloxRuntime> {
-    fn timer_ref(&self) -> &ActorRef<TimerCommand, R>;
-}
 ```
 
-Action functions for blox code:
+Action functions for blox code take concrete params:
 
 ```rust
 /// Schedule `event` to be delivered to `target` after `after_ms` milliseconds.
 /// Returns a `TimerId` for cancellation.
-pub fn set_timer<R, C, M>(
-    ctx: &C,
+pub fn set_timer<R, M>(
+    self_id: ActorId,
+    timer_ref: &ActorRef<TimerCommand, R>,
     after_ms: u64,
     target: &ActorRef<M, R>,
     event: M,
 ) -> TimerId
 where
     R: BloxRuntime,
-    C: HasSelfId + HasTimerRef<R>,
     M: Send + 'static;
 
 /// Cancel a pending timer.
-pub fn cancel_timer<R, C>(
-    ctx: &C,
+pub fn cancel_timer<R>(
+    self_id: ActorId,
+    timer_ref: &ActorRef<TimerCommand, R>,
     id: TimerId,
 )
 where
-    R: BloxRuntime,
-    C: HasSelfId + HasTimerRef<R>;
+    R: BloxRuntime;
 ```
 
 ### Runtime-facing (implemented by runtime crates)
@@ -116,42 +111,36 @@ identical.
 
 ### Usage in a blox context
 
-A blox that uses timers stores a `timer_ref` (an `ActorRef<TimerCommand, R>`) plus timer state in a behavior type injected at wiring time. The context is generic over `B` so the blox crate never references the concrete behavior:
+A blox that uses timers stores a `timer_ref` (an `ActorRef<TimerCommand, R>`) plus timer state as plain fields. The context is a plain struct — no `B` generic, no accessor traits:
 
 ```rust
-#[derive(BloxCtx)]
-pub struct PingCtx<
-    R: BloxRuntime,
-    B: HasCurrentTimer + CountsRounds,
-> {
-    #[self_id]
+pub struct PingCtx<R: BloxRuntime> {
     pub self_id: ActorId,
-    #[provides(HasPeerRef<R>)]
     pub peer_ref: ActorRef<PingPongMsg, R>,
-    #[provides(HasSelfRef<R>)]
     pub self_ref: ActorRef<PingPongMsg, R>,
-    #[provides(HasTimerRef<R>)]
     pub timer_ref: ActorRef<TimerCommand, R>,
-    #[delegates(HasCurrentTimer, CountsRounds)]
-    pub behavior: B,
+    pub current_timer: Option<TimerId>,
+    pub round: u32,
 }
 ```
 
-Timer state (the current `TimerId`) is held by `B` via the `HasCurrentTimer` trait. The blox spec wires trait-bounded action functions from `ping-pong-actions` into `on_entry`/`on_exit` slices:
+Timer state (the current `TimerId`) is held as a plain field. The blox spec wires action functions from context crates into `on_entry`/`on_exit` slices:
 
 ```rust
-// In ping-pong-actions — generic over HasTimerRef + HasCurrentTimer
-pub fn schedule_resume<R, C>(ctx: &mut C, duration_ms: u64)
-where
-    R: BloxRuntime,
-    C: HasSelfId + HasSelfRef<R> + HasTimerRef<R> + HasCurrentTimer,
-{ ... }
+// In blox-ctx-current-timer — takes concrete params
+pub fn schedule_resume<R: BloxRuntime>(
+    self_id: ActorId,
+    self_ref: &ActorRef<PingPongMsg, R>,
+    timer_ref: &ActorRef<TimerCommand, R>,
+    current_timer: &mut Option<TimerId>,
+    duration_ms: u64,
+) { ... }
 
-pub fn cancel_current_timer<R, C>(ctx: &mut C)
-where
-    R: BloxRuntime,
-    C: HasSelfId + HasTimerRef<R> + HasCurrentTimer,
-{ ... }
+pub fn cancel_timer_by_id<R: BloxRuntime>(
+    self_id: ActorId,
+    timer_ref: &ActorRef<TimerCommand, R>,
+    timer_id: Option<TimerId>,
+) { ... }
 ```
 
 ### Timer Pool in Embassy
@@ -222,13 +211,13 @@ Event arrives
 StateMachine::process_event
      │
      ├─▶ rule.actions(&mut ctx, &event)
-     │       └─▶ set_timer(ctx, ...)              ← action function call in user code
+     │       └─▶ send_ping(...)               ← action function call in user code
      │
      ├─▶ state.on_entry(&mut ctx)
-     │       └─▶ set_timer(ctx, ...)              ← action function call in user code
+     │       └─▶ set_timer(...)              ← action function call in user code
      │
      └─▶ state.on_exit(&mut ctx)
-             └─▶ cancel_timer(ctx, ...)           ← action function call in user code
+             └─▶ cancel_timer(...)           ← action function call in user code
 ```
 
 **Guards are pure.** `guard: fn(&Ctx, &ActionResults, &Event) -> Guard<S>` receives
@@ -274,7 +263,7 @@ fn paused_state_resumes_after_timeout() {
     let (timer_ref, mut timer_rx) =
         <TestRuntime as DynamicChannelCap>::channel::<TimerCommand>(timer_id, 16);
 
-    let ctx = PingCtx::new(ping_id, pong_ref, self_ref, timer_ref, TestBehavior::default());
+    let ctx = PingCtx::new(ping_id, pong_ref, self_ref, timer_ref);
     let mut machine = StateMachine::new(ctx);
 
     machine.dispatch(PingEvent::Lifecycle(LifecycleCommand::Start));
@@ -304,7 +293,7 @@ with `no_std`:
 | Actor ID generation (test) | `TestRuntime` uses a runtime `AtomicUsize` via `DynamicChannelCap::alloc_actor_id()` |
 | Timer ID generation | `TimerId` assigned by `set_timer()` in `bloxide-timer`; uses core atomics on pointer-atomic targets and a `critical-section`-protected counter otherwise |
 | `TestRuntime` | Uses `std` (enabled by the `std` feature); only used in host tests |
-| Action crates | `#![no_std]`; call only trait methods; no OS imports |
+| Action crates | `#![no_std]`; call only concrete params; no OS imports |
 | Core traits | Defined in `bloxide-core` which is `#![no_std]` |
 | `critical-section` | Used by `bloxide-timer` as the fallback for targets without pointer-sized atomics; embedded apps must provide an implementation via their HAL/runtime stack |
 

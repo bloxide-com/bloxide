@@ -47,7 +47,7 @@ Research across actor frameworks (Erlang/OTP, Akka, XState, Boost.SML), CLI-driv
 | `cargo blox run` | Generate + `cargo run` |
 | `cargo blox watch` | Watch + regenerate on change |
 | `cargo blox new <name>` | Scaffold a new blox crate |
-| `cargo blox new-actions <name>` | Scaffold a new actions crate |
+| `cargo blox new-impl <name>` | Scaffold a new impl crate |
 | `cargo blox new-messages <name>` | Scaffold a new messages crate |
 | `cargo blox new-binary <name>` | Scaffold a new wiring binary crate |
 | `cargo blox new-all <name>` | Scaffold all layers |

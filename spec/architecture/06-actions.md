@@ -23,16 +23,13 @@ flowchart LR
         PongMsg
     end
 
-    subgraph ctx_crates [Context Crates — traits + action functions]
+    subgraph ctx_crates [Context Crates — action functions]
         Rounds["blox-ctx-rounds
-        CountsRounds trait
         increment_round(&mut u32)"]
         Timer["blox-ctx-current-timer
-        HasCurrentTimer trait
         schedule_resume(...)
         cancel_timer_by_id(...)"]
         Msg["bloxide-messaging
-        HasPeerRef, HasSelfRef
         send_ping(...)
         send_pong(...)"]
     end
