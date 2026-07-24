@@ -24,41 +24,34 @@ bloxide/
   crates/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits, messaging data types (ActorRef, Envelope, ActorId) (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
-    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[delegatable], #[blox_event], etc.
-    bloxide-messaging/         ← service crate: accessor traits (HasSelfRef<R,M>, HasPeerRef<R,M>) for peer/self messaging — data types live in bloxide-core::messaging
+    bloxide-macros/            ← proc macros: #[derive(BloxCtx)], #[blox_event], etc.
+    bloxide-messaging/         ← service crate: accessor traits (HasSelfRef<R,M>, HasPeerRef<R,M>) + action functions (send_ping, send_pong, etc.) for peer/self messaging
     bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, HasTimerRef, TimerService trait
     bloxide-child-management/  ← reusable child tracking: ChildGroup, ChildEntry, ChildPhase, HasChildGroup (platform primitive)
     bloxide-supervisor/        ← supervisor blox: SupervisorSpec, SupervisorControl, RegisterChild, action functions; re-exports ChildGroup/ChildPolicy/etc. from bloxide-child-management
-    bloxide-peers/             ← peer introduction: PeerCtrl<M,R>, AddPeer, RemovePeer, HasPeers<M,R>, introduce_peers
+    bloxide-peers/             ← peer introduction: PeerCtrl<M,R>, AddPeer, RemovePeer, HasPeers<M,R>, introduce_peers, broadcast_to_peers
     bloxide-spawn/             ← spawn capability: SpawnFn, SpawnOutput, SpawnCap (platform primitive)
     messages/
       ping-pong-messages/      ← PingPongMsg shared by both ping and pong bloxes
       pool-messages/           ← PoolMsg, WorkerMsg, DoWork, WorkDone, etc. shared by pool and worker
       counter-messages/        ← CounterMsg shared by counter blox and minimal wiring demo
       bhsm-tst-messages/       ← BhsmTstMsg shared by the bhsm-tst HSM topology demo
-    actions/
-      ping-pong-actions/       ← HasPeerRef, CountsRounds, send_initial_ping, send_pong, etc. (no concrete types)
-      pool-actions/            ← WorkerSpawnFn, HasWorkers, HasWorkerFactory, HasCurrentTask, introduce_new_worker, etc.
-      counter-actions/         ← CountsTicks behavior trait and increment_count action
-      bhsm-tst-actions/        ← action traits and generic functions for the bhsm-tst HSM topology demo
     context/
       blox-ctx-workers/        ← HasWorkers<R> domain context crate
-      blox-ctx-pool-ref/       ← HasPoolRef<R> domain context crate
-      blox-ctx-rounds/         ← CountsRounds delegatable domain context crate
-      blox-ctx-current-timer/  ← HasCurrentTimer delegatable domain context crate
-      blox-ctx-current-task/   ← HasCurrentTask delegatable domain context crate
-      blox-ctx-ticks/          ← CountsTicks delegatable domain context crate
+      blox-ctx-pool-ref/       ← HasPoolRef<R> domain context crate + notify_pool_done action function
+      blox-ctx-rounds/         ← CountsRounds trait + increment_round action function
+      blox-ctx-current-timer/  ← HasCurrentTimer trait + schedule_resume/cancel_timer_by_id action functions
+      blox-ctx-current-task/   ← HasCurrentTask domain context crate
+      blox-ctx-ticks/          ← CountsTicks trait + increment_count action function
     bloxes/
-      ping/                    ← declarative Ping actor; depends on ping-pong-actions
-      pong/                    ← declarative Pong actor; depends on ping-pong-actions
-      worker/                  ← declarative Worker actor; depends on pool-actions (no pool-blox dependency)
-      pool/                    ← declarative Pool actor; depends on pool-actions (no worker-blox dependency)
-      counter/                 ← declarative Counter actor; depends on counter-actions
-      bhsm-tst/                ← declarative Miro Samek HSM test blox (states S/S1/S11/S2/S21/S211); depends on bhsm-tst-actions
+      ping/                    ← declarative Ping actor; depends on context crates (blox-ctx-rounds, blox-ctx-current-timer, bloxide-messaging)
+      pong/                    ← declarative Pong actor; depends on context crates (bloxide-messaging)
+      worker/                  ← declarative Worker actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
+      pool/                    ← declarative Pool actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
+      counter/                 ← declarative Counter actor; depends on context crates (blox-ctx-ticks)
+      bhsm-tst/                ← declarative Miro Samek HSM test blox (states S/S1/S11/S2/S21/S211)
     impl/
-      ping-pong-impl/          ← impl crate: PingBehavior (concrete behavior for Ping)
-      counter-demo-impl/       ← impl crate: CounterBehavior for tokio-minimal-demo
-      tokio-pool-demo-impl/    ← impl crate: tokio worker factory for pool demo
+      tokio-pool-demo-impl/    ← impl crate: free functions (process_work, spawn_worker, pool action handlers) for pool demo
     tools/
       bloxide-codegen/         ← TOML-driven code generator library
       cargo-blox/              ← CLI: cargo blox generate / new / build / check / test / run
@@ -84,7 +77,7 @@ Bloxide is easiest to understand if you keep three related mental models in your
 | Model | Use It For | Main Pieces |
 |---|---|---|
 | Three-layer principle | Understanding the framework itself | Runtime, standard library crates, bloxes |
-| Five-layer application structure | Organizing an application that uses Bloxide | Messages, actions, impl, blox, binary |
+| Four-layer application structure | Organizing an application that uses Bloxide | Messages, context, blox, binary |
 | Two-tier trait system | Knowing who implements which traits | Tier 1 blox-facing traits, Tier 2 runtime-facing capabilities |
 
 ### 1. Three-layer principle
@@ -97,15 +90,20 @@ This is the framework architecture described in `spec/architecture/00-layered-ar
 
 Use this model when you are deciding where a new capability belongs.
 
-### 2. Five-layer application structure
+### 2. Four-layer application structure
 
 This is the application-author view described in `skills/building-with-bloxide/SKILL.md` and `spec/architecture/12-action-crate-pattern.md`.
 
-- Layer 1: messages
-- Layer 2: actions
-- Layer 3: impl
-- Layer 4: blox
-- Layer 5: binary
+```
+Before:  messages → actions → context → impl → blox → (codegen) → binary
+After:   messages → context (includes actions) → blox → binary
+         impl = optional reusable behavior libraries
+```
+
+- Layer 1: messages — shared plain-data enums/structs
+- Layer 2: context — traits + free action functions taking concrete params (was: actions + context + impl)
+- Layer 3: blox — purely declarative topology, no logic
+- Layer 4: binary — system.toml + two-stage codegen + optional impl crates
 
 Use this model when you are creating or reviewing a real app that uses Bloxide.
 
@@ -115,6 +113,10 @@ This is the trait boundary that keeps blox code runtime-agnostic.
 
 - Tier 1: blox-facing traits such as `BloxRuntime`
 - Tier 2: runtime-facing capabilities such as `StaticChannelCap`, `DynamicChannelCap`, `TimerService`, `SupervisedRunLoop`, `SpawnCap`
+
+With the elimination of the `B` generic and `#[delegatable]`/`#[delegates]`,
+there are no forwarding impls to generate. Context traits are implemented directly
+on the context struct (generated by codegen), not delegated to a behavior object.
 
 Use this model when you are wiring runtimes, reading macro output, or adding new framework capabilities.
 
@@ -147,7 +149,7 @@ Then dive deeper as needed:
 | How does supervision work? | `spec/architecture/08-supervision.md` |
 | How is an application wired end to end? | `spec/architecture/09-application.md` |
 | How do effects (timers) and capabilities work? | `spec/architecture/10-effects-and-capabilities.md` |
-| **How do action crates, impl crates, and bloxes fit together?** | **`spec/architecture/12-action-crate-pattern.md`** |
+| **How do context crates, impl crates, and bloxes fit together?** | **`spec/architecture/12-action-crate-pattern.md`** |
 | How do dynamic actors, factory injection, and peer introduction work? | `spec/architecture/11-dynamic-actors.md` |
 | How does factory injection interact with supervision? | `spec/architecture/13-factory-injection-and-supervision.md` |
 | How does the unified lifecycle model work? | `spec/architecture/14-unified-lifecycle.md` |
@@ -183,32 +185,43 @@ The building guide is portable — downstream projects that depend on bloxide sh
 
 ## Context Definition Conventions
 
-Context fields are defined entirely via `[[context.uses]]` entries in `blox.toml`.
-The codegen auto-emits `self_id: ActorId` (always, first field) and `behavior: B`
-(when delegatable `[[context.uses]]` entries exist, last field with `#[delegates(...)]`).
-These are never declared manually — they are implicit.
+Context fields are defined via `[[context.fields]]` and `[[context.uses]]` entries in `blox.toml`.
+The codegen auto-emits `self_id: ActorId` (always, first field).
+There is no `B` generic, no `behavior: B` field, and no `#[delegates(...)]`.
+State fields are declared directly in the context struct.
 
 | Field | Source | Generates |
 |-------|--------|-----------|
 | `self_id: ActorId` | Auto-emitted by codegen (always) | `impl HasSelfId` |
 | `foo_ref: ActorRef<M, R>` | `[[context.uses]]` with `field = "foo_ref"` | `#[provides(HasFooRef)]` accessor impl |
 | `foo_factory: fn(...) -> ...` | `[[context.uses]]` with `role = "ctor"` | Constructor parameter |
-| `behavior: B` | Auto-emitted when delegatable uses exist | `#[delegates(...)]` forwarding impls |
+| `round: u32` | `[[context.fields]]` with `name = "round"` | Direct field, zero-initialized in `on_init` |
 
-All mutable state belongs in the behavior object, not as direct context fields.
+All mutable state lives as direct fields on the context struct, not in a behavior object.
+
+### Action Declarations
+
+Actions are declared in `[[context.actions]]` entries in `blox.toml`. Each action specifies:
+- `name` — action identifier used in transition/entry/exit declarations
+- `kind` — `"entry"`, `"exit"`, or `"transition"` (determines closure signature)
+- `fields` — list of ctx fields the action needs, with access mode (`"round:mut"`, `"self_id"`, `"peer_ref:ref"`)
+- `event_payload` — optional, name of the extracted payload variable (e.g., `"do_work"`)
+- `impl_required` — `true` if the function comes from an impl crate, `false` if from a context crate
+- `crate` — the crate providing the function (for context crate actions)
+- `fn_name` — optional, the actual function name if different from `name`
 
 ### Example
 
 ```rust
+// Generated ctx.rs — plain fields, no B generic
 #[derive(BloxCtx)]
-pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds> {
+pub struct PingCtx<R: BloxRuntime> {
     pub self_id: ActorId,
     pub peer_ref: ActorRef<PingPongMsg, R>,
     pub self_ref: ActorRef<PingPongMsg, R>,
     pub timer_ref: ActorRef<TimerCommand, R>,
-    
-    #[delegates(HasCurrentTimer, CountsRounds)]
-    pub behavior: B,
+    pub current_timer: Option<TimerId>,
+    pub round: u32,
 }
 ```
 
@@ -216,13 +229,12 @@ pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds> {
 
 The `#[derive(BloxCtx)]` macro supports these field annotations:
 
-- **`#[delegates(Trait1, Trait2, ...)]`** — Required for behavior fields. Generates forwarding impls
-  to the inner type. Traits must be marked with `#[delegatable]` in their definition crate.
+- **`#[provides(Trait)]`** — Auto-detected from `_ref` field naming convention. Generates accessor trait impls.
 
 **Auto-detected by convention:**
-- `#[self_id]` — Auto-detected from `self_id: ActorId` field
-- `#[provides(Trait)]` — Auto-detected from `_ref` field naming convention
-- `#[ctor]` — Auto-detected for non-`_ref` fields (factories, etc.)
+- `self_id: ActorId` — Auto-detected, generates `impl HasSelfId`
+- `foo_ref: ActorRef<M, R>` — Auto-detected, generates `#[provides(HasFooRef)]`
+- Non-`_ref` fields — Constructor parameters or state fields (from `[[context.fields]]`)
 
 
 1. **`bloxide-core` is `no_std`** — zero OS, Tokio, or Embassy imports. `futures-core` is the only always-on runtime library dep; optional instrumentation deps (such as feature-gated `tracing`) must remain `no_std` compatible. Proc-macro crates (e.g., `bloxide-macros`) are exempt — they compile for the host and have no `no_std` impact.
@@ -233,15 +245,17 @@ The `#[derive(BloxCtx)]` macro supports these field annotations:
 6. **`on_entry` / `on_exit` are infallible** — they are `fn(&mut Ctx)` with no `Result`. Fallible work belongs in a `TransitionRule`'s `actions` function or is deferred to the target state's `on_entry`.
 7. **Actions before guards** — event handlers use `TransitionRule { matches, actions, guard }`. All side effects go in `actions: fn(&mut Ctx, &Event)`. Guards are pure: `guard: fn(&Ctx, &ActionResults, &Event) -> Guard`. The borrow checker enforces this — `guard` receives `&Ctx` and `&ActionResults`, not `&mut Ctx`.
 8. **Bubbling is implicit** — states with no matching rule automatically bubble to the parent. Empty `transitions: &[]` means all events bubble. Never add a catch-all rule that manually returns a parent; bubbling happens automatically when no rule matches.
-9. **Blox crates never import impl crates** — concrete types are only referenced by the binary. Blox crates depend on actions crates (traits + generic functions) only.
-10. **Action crates are portable interface layers** — action crates (`*-actions`) define traits and trait-bounded generic functions. They may contain portable generic action logic and `bloxide-log` macros, but no runtime-specific imports, file I/O, or Embassy/Tokio code.
+9. **Blox crates never import impl crates** — concrete types are only referenced by the binary. Blox crates depend on context crates (traits + free action functions) only.
+10. **Context crates are portable interface layers** — context crates (`blox-ctx-*`, `bloxide-messaging`, `bloxide-peers`, etc.) define traits and free action functions taking concrete params. They may contain portable generic action logic, but no runtime-specific imports, file I/O, or Embassy/Tokio code.
 11. **Use named struct variants in message enums** — `PingPongMsg::Ping(Ping { round })` not `PingPongMsg::Ping(u32)`. Named fields are accessible by name across module boundaries without positional fragility.
 12. **Lifecycle commands flow through dispatch() at VirtualRoot level** — actors handle them as domain events via `root_transitions()`. The VirtualRoot intercepts `LifecycleCommand` variants (Start, Reset, Stop, Ping) before they reach user-declared states. `Start` exits Init and enters `initial_state()`; `Reset` goes to user-defined `initial_state()` (actor immediately operational); `Stop` goes to Init (suspended, can be restarted with `Start`). Actors never implement `is_start()` or call `machine.start()`/`machine.reset()` explicitly — lifecycle is driven entirely by dispatch. `root_transitions()` returns `&[]` for supervised actors (lifecycle handled by VirtualRoot, not user code). Actors can also self-stop via `Guard::Stop` (goes to Init, reports `Stopped` to supervisor) or self-restart via `Guard::Reset`.
 13. **`is_error` takes precedence** — if a state returns `true` for `is_error()`, the runtime reports `ChildLifecycleEvent::Failed`. There is no `is_terminal()` — actors self-suspend via `Guard::Stop` (returns `DispatchOutcome::Stopped`) instead of reaching terminal states. Use `is_error` for fault states that should trigger supervisor intervention; use `Guard::Stop` for normal completion (the actor self-suspends to Init and the supervisor decides next steps via `ChildPolicy`).
-14. **Logging via `bloxide-log` macros** — use `blox_log_info!`, `blox_log_debug!`, etc. from `bloxide-log`. Logging is a compile-time feature flag (`log` or `defmt`), not a runtime trait. Never add a `Logs` trait or logger generic parameter to blox contexts.
+14. **No `B` generic, no `#[delegatable]`, no `#[delegates]`** — the `B` behavior generic has been eliminated from `Ctx` and `Spec`. There are no forwarding impls to generate. Context traits (e.g., `CountsRounds`, `HasCurrentTimer`) are implemented directly on the context struct by the codegen. State fields are plain fields on the context struct, not delegated to a behavior object.
 
-15. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (auto-detected by naming convention, e.g. `foo_factory: fn(...) -> ...`). The binary (or impl crate) provides the concrete factory closure at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
-16. **KillCapability is a runtime capability, not a message** — `KillCapability::kill(handle)` immediately aborts the child's task without any callbacks firing. No `on_exit` handlers run; the task is dropped in-place. KillCapability is for (1) unresponsive actors that cannot process Stop, or (2) cleanup of stopped actors whose resources should be freed immediately. Kill works for both static and dynamic actors; killed actors are permanently dead and cannot be restarted — normal lifecycle uses Reset/Stop through dispatch(). KillCapability lives in `bloxide-core` as a trait; runtimes implement it (`NoKill` for Embassy, `Kill` for Tokio via `R::abort`). Supervisors store the concrete `TaskHandle` per child; actors never see it.
+15. **Logging ripped out of blox crates** — all `bloxide-log` usage has been removed from blox crates. The `bloxide-log` crate stays in place for runtime/context crate usage. Domain-level logging re-design is a deferred decision. Never add `blox_log_*!` calls to blox crates or add `bloxide-log` as a dependency of a blox crate.
+
+16. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (auto-detected by naming convention, e.g. `foo_factory: fn(...) -> ...`). The binary (or impl crate) provides the concrete factory closure at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
+17. **KillCapability is a runtime capability, not a message** — `KillCapability::kill(handle)` immediately aborts the child's task without any callbacks firing. No `on_exit` handlers run; the task is dropped in-place. KillCapability is for (1) unresponsive actors that cannot process Stop, or (2) cleanup of stopped actors whose resources should be freed immediately. Kill works for both static and dynamic actors; killed actors are permanently dead and cannot be restarted — normal lifecycle uses Reset/Stop through dispatch(). KillCapability lives in `bloxide-core` as a trait; runtimes implement it (`NoKill` for Embassy, `Kill` for Tokio via `R::abort`). Supervisors store the concrete `TaskHandle` per child; actors never see it.
 
 ## Development Workflow
 

@@ -38,10 +38,12 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
 
 | Question | Answer | Implementation |
 |----------|--------|----------------|
-| Does the binary need to inject it? | Yes | Behavior trait + `#[delegates]` on field |
-| Is it specific to this blox only? | Yes | Direct field, no annotation (Default::default()) |
-| Is it an ActorRef? | — | `foo_ref: ActorRef<M, R>` (auto-detected) |
-| Is it the ActorId? | — | `self_id: ActorId` (auto-detected) |
+| Is it an ActorRef? | — | `foo_ref: ActorRef<M, R>` in `[[context.uses]]` (auto-detected) |
+| Is it the ActorId? | — | `self_id: ActorId` (auto-emitted by codegen) |
+| Is it a constructor param (factory)? | Yes | `[[context.uses]]` with `role = "ctor"` |
+| Is it state data? | Yes | `[[context.fields]]` entry — direct field, zero-initialized |
+
+State fields are plain fields on the context struct. There is no `B` generic, no behavior object.
 
 ---
 
@@ -56,11 +58,12 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
                    YES                  NO
                     │                   │
                     ▼                   ▼
-         ┌──────────────────┐    ┌───────────────────────────────┐
-         │ Create dedicated │    │ Is it only received (never   │
-         │ *-messages crate │    │ sent by other bloxes)?        │
-         │ (ping-pong-msgs) │    └────────────┬──────────────────┘
-         └──────────────────┘          ┌─────┴─────┐
+         ┌──────────────────┐    ┌───────────────────────┐
+         │ Create dedicated │    │ Is it only received   │
+         │ *-messages crate │    │ (never sent by other  │
+         │ (ping-pong-msgs) │    │ bloxes)?              │
+         └──────────────────┘    └────────────┬──────────┘
+                                       ┌─────┴─────┐
                                        │           │
                                       YES          NO
                                        │           │
@@ -103,7 +106,8 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
 | Test Type | Location |
 |-----------|----------|
 | Blox unit tests (TestRuntime) | `crates/bloxes/*/src/tests.rs` |
-| Action crate tests | `crates/actions/*/src/tests.rs` |
+| Context crate tests | `crates/context/*/src/tests.rs` |
+| Impl crate tests | `crates/impl/*/src/tests.rs` |
 | Integration tests (full runtime) | `apps/*-demo/` (system.toml + generated main.rs) or `tests/` |
 
 ---
@@ -113,97 +117,78 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
 ### Emit a Message
 
 ```rust
-// In action crate:
-pub fn send_foo<R: BloxRuntime>(ctx: &mut impl HasFooRef<R>) {
-    ctx.foo_ref().send(FooMsg::Bar(Bar { value: 42 })).unwrap_or_else(|e| {
-        blox_log_error!("failed to send Bar: {:?}", e);
-    });
+// In context crate (e.g., bloxide-messaging):
+pub fn send_ping<R: BloxRuntime>(
+    self_id: ActorId,
+    peer_ref: &ActorRef<PingPongMsg, R>,
+    round: u32,
+) {
+    let _ = peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round }));
 }
 ```
 
-## Timer Pattern
+### Timer Pattern
 
-Use `bloxide-timer` action functions instead of manual message construction.
+Use `bloxide-timer` and `blox-ctx-current-timer` action functions instead of manual message construction.
 
-### Setup
+#### Setup
 
 1. Add dependency:
    ```toml
    [dependencies]
    bloxide-timer = { version = "0.1", features = ["std"] }
+   blox-ctx-current-timer = { path = "..." }
    ```
 
-2. Add timer fields to context:
-   ```rust
-   #[derive(BloxCtx)]
-   pub struct MyCtx<R: BloxRuntime> {
-       pub self_id: ActorId,
-       pub self_ref: ActorRef<MyMsg, R>,
-       pub timer_ref: ActorRef<TimerCommand, R>,  // Auto-detected (matches HasTimerRef::timer_ref)
-   }
+2. Add timer fields to context in `blox.toml`:
+   ```toml
+   [[context.uses]]
+   crate = "bloxide_timer"
+   trait = "HasTimerRef<R>"
+   field = "timer_ref"
+   field_type = "ActorRef<TimerCommand, R>"
+   role = "accessor"
+
+   [[context.fields]]
+   name = "current_timer"
+   type = "Option<TimerId>"
    ```
 
-3. Implement `HasTimerRef` (auto-derived via `#[provides(TimerRef)]`).
+3. Declare timer action functions in `[[context.actions]]`:
+   ```toml
+   [[context.actions]]
+   name = "schedule_pause_timer"
+   fn_name = "schedule_resume"
+   crate = "blox_ctx_current_timer"
+   kind = "transition"
+   fields = ["self_id", "self_ref:ref", "timer_ref:ref", "round", "current_timer:mut"]
+   impl_required = false
 
-### Setting a Timer
-
-```rust
-use bloxide_timer::{set_timer, next_timer_id, TimerCommand};
-
-// In an action function:
-fn start_timeout<R: BloxRuntime>(ctx: &mut MyCtx<R>, event: &MyEvent) {
-    let timer_id = next_timer_id();
-    set_timer(ctx, timer_id, Duration::from_secs(5), MyMsg::Timeout { id: timer_id });
-}
-```
-
-### Canceling a Timer
-
-```rust
-use bloxide_timer::cancel_timer;
-
-fn cancel_timeout<R: BloxRuntime>(ctx: &mut MyCtx<R>, timer_id: TimerId) {
-    cancel_timer(ctx, timer_id);
-}
-```
-
-### Handling Timer Expiration
-
-```toml
-# In blox.toml — declare a transition that matches the timer message.
-# The action extracts the timer id from the event and stores it in context;
-# the guard then inspects context (not the event) to decide the next state.
-[[topology.transitions]]
-state = "Active"
-event = "MyMsg::Timeout { .. }"
-actions = ["record_timer_id"]
-guards = [
-  { condition = "ctx.last_timer_id() == ctx.expected_id", target = "TimedOut" },
-  { condition = "_", target = "stay" },
-]
-```
-
-> **Why the guard reads context, not a bound variable:** the codegen emits
-> the `matches` predicate and the `guard` closure as **separate** function
-> pointers (`fn(&Event) -> bool` and `fn(&Ctx, &ActionResults, &Event) -> Guard`).
-> A binding like `{ id }` is scoped to the `matches!` macro inside the
-> `matches` closure and is **not** visible in the guard or in actions.
-> To act on a field's value, have an action extract it from `&Event` and
-> store it in `&mut Ctx`; the guard then reads it from `&Ctx`.
-> The `{ .. }` struct-rest pattern (shown above) is the idiomatic way to
-> match a struct variant without binding — see "Event Pattern Forms" below.
+   [[context.actions]]
+   name = "cancel_pause_timer"
+   fn_name = "cancel_timer_by_id"
+   crate = "blox_ctx_current_timer"
+   kind = "transition"
+   fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
+   impl_required = false
+   ```
 
 ### Spawn a Child Actor
 
 ```rust
-// In wiring (binary):
-let spawn_fn = pool_ctx.worker_factory.clone();
-let (worker_ref, worker_ctrl) = spawn_fn(spawner, pool_ref).await;
+// In wiring (binary) — factory injection via constructor field:
+let pool_ctx = PoolCtx::new(
+    pool_id,
+    pool_ref,
+    spawn_worker_tokio,  // factory closure
+);
 
-// In blox crate (via action crate):
-pub fn spawn_worker<R: BloxRuntime + SpawnCap>(ctx: &mut impl HasWorkerFactory<R>) {
-    let factory = ctx.worker_factory();
-    // ... spawn logic
+// In impl crate — free function, no struct, no trait impl:
+pub fn spawn_worker(
+    req: SpawnRequest<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
+    notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
+) -> SpawnOutput<TokioRuntime> {
+    // ... spawn logic ...
 }
 ```
 
@@ -263,20 +248,7 @@ If `LifecycleCommand::Start` is dispatched while the machine is already operatio
 
 This means supervisors can safely send `Start` multiple times without state corruption.
 
-## Macro Quick Reference
-
-### `#[derive(BloxCtx)]` Annotations
-
-Context fields are defined via `[[context.uses]]` in `blox.toml`. The codegen auto-emits `self_id` (first field) and `behavior` (last field, when delegatable uses exist).
-
-| Field | Source | Generates |
-|-------|--------|-----------|
-| `self_id: ActorId` | Auto-emitted (always) | `fn self_id(&self) -> ActorId` |
-| `foo_ref: ActorRef<M, R>` | `[[context.uses]]` with `field = "foo_ref"` | `fn foo_ref(&self) -> &ActorRef<Msg, R>` |
-| `foo_factory: fn(...) -> ...` | `[[context.uses]]` with `role = "ctor"` | `fn foo_factory(&self) -> ...` |
-| `behavior: B` | Auto-emitted (when delegatable uses exist) | `#[delegates(Trait1, Trait2)]` forwarding impls |
-
-### Declarative Transitions (`blox.toml`)
+## Declarative Transitions (`blox.toml`)
 
 Transition rules are declared in `blox.toml` under `[[topology.transitions]]`. The codegen (`bloxide-codegen`) emits raw `StateRule { event_tag, matches, actions, guard }` struct literals from these entries — no proc macro is involved.
 
@@ -284,7 +256,7 @@ Transition rules are declared in `blox.toml` under `[[topology.transitions]]`. T
 # One [[topology.transitions]] entry per transition rule.
 # `state`     — which state's handler table owns this rule.
 # `event`     — event pattern, e.g. "PingPongMsg::Ping(_)" or "MyMsg::A(_) | MyMsg::B(_)".
-# `target`    — fallback target when no guard matches: a state name, "stay", "reset", or "fail".
+# `target`    — fallback target when no guard matches: a state name, "stay", "reset", or "stop".
 # `actions`   — ordered list of action fn paths (called in order, results collected into ActionResults).
 # `guards`    — optional list of { condition, target } pairs; evaluated in order; first match wins.
 #               `target` is the same vocabulary as the top-level `target` field.
@@ -293,17 +265,33 @@ Transition rules are declared in `blox.toml` under `[[topology.transitions]]`. T
 [[topology.transitions]]
 state = "Active"
 event = "PingPongMsg::Pong(_)"
-actions = ["log_pong_received", "forward_ping"]
-guards = [
-  { condition = "results.any_failed()", target = "Error" },
-  { condition = "ctx.round() >= MAX_ROUNDS", target = "stop" },
-  { condition = "ctx.round() == PAUSE_AT_ROUND", target = "Paused" },
-  { condition = "_", target = "Active" },  # default / self-transition
-]
+target = "Active"
+actions = ["Self::forward_ping"]
+
+  [[topology.transitions.guards]]
+  condition = "results.any_failed()"
+  target = "Error"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round >= MAX_ROUNDS as u32"
+  target = "stop"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round == PAUSE_AT_ROUND as u32"
+  target = "Paused"
+
+  [[topology.transitions.guards]]
+  target = "stay"
 
 # Multiple patterns for the same state are expressed as separate
 # [[topology.transitions]] entries with the same `state`.
 ```
+
+**Guard expressions** use direct field access (no trait methods, no `B::Type::from()`):
+- `ctx.round >= MAX_ROUNDS as u32` — direct field comparison
+- `ctx.pending == 0` — direct field comparison
+- `results.any_failed()` — method on `ActionResults`
+- Boolean operators (`&&`, `||`, `!`) are supported
 
 ### Event Pattern Forms
 
@@ -337,7 +325,7 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 > 1. Use `{ .. }` (no binding) in the `event` pattern — it matches the
 >    variant without creating an unused binding.
 > 2. Write an action that destructures `&Event` and stores the value in
->    `&mut Ctx` (e.g. `ctx.set_last_timer_id(id)`).
+>    `&mut Ctx` (e.g. `ctx.last_timer_id = id`).
 > 3. Reference `ctx.*` in the guard condition.
 >
 > If you do write `{ id }` in the pattern, the bound `id` is unused and will
@@ -358,8 +346,8 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 |-----------|------------------|
 | Blox crate | `crates/bloxes/<name>/` |
 | Messages crate | `crates/messages/<name>-messages/` |
-| Actions crate | `crates/actions/<name>-actions/` |
-| Impl crate | `crates/impl/<name>-impl/` |
+| Context crate | `crates/context/<name>/` or `crates/bloxide-<service>/` |
+| Impl crate (optional) | `crates/impl/<name>-impl/` |
 | Binary | `apps/<name>-demo/` (system.toml + generated main.rs) |
 | Blox spec | `spec/bloxes/<name>.md` |
 
@@ -386,6 +374,14 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 - [ ] Actions called before guard (side effects in actions, pure checks in guard)
 - [ ] No catch-all rule that manually returns parent — bubbling is automatic
 - [ ] `is_error` states report `Failed`; actors self-stop via `Guard::Stop` (no `is_terminal`)
+- [ ] No `B` generic on any `Ctx` or `Spec` type
+- [ ] No `#[delegatable]` attribute anywhere
+- [ ] No `#[delegates]` annotation anywhere
+- [ ] No `actions.rs` file in any blox crate
+- [ ] No `crates/actions/` directory
+- [ ] No `bloxide-log` dependency in any blox crate
+- [ ] No `behavior: B` field in any context struct
+- [ ] Guard expressions use direct field access (no trait methods, no `B::Type::from()`)
 
 ---
 

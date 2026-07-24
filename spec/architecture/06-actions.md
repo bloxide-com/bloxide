@@ -1,21 +1,18 @@
-# Actions: Portable Building Blocks
+# Actions: Free Functions in Context Crates
 
 > **When would I use this?** Use this document when implementing action functions,
-> understanding the composition model (messages + actions + blox), or learning the
-> portable building-block pattern for bloxide actors.
+> understanding the composition model (messages + context + blox), or learning how
+> the two-stage codegen generates stub and concrete action closures.
 
-> ⚠️ **Syntax Update (Phase 4, July 2026):** Transition rules are
-> declared declaratively in `blox.toml` via `[[topology.transitions]]`,
-> and `bloxide-codegen` emits raw `StateRule { ... }` struct literals
-> from those entries. The **composition model** (messages + actions +
-> blox) and the `TransitionRule` struct shape described here are
-> unchanged — only the *syntax* for producing rules moved to TOML.
-> The code blocks below show the TOML syntax. See
-> `spec/architecture/17-blox-toml-source-of-truth.md` for the current
-> TOML schema and `QUICK_REFERENCE.md` → "Declarative Transitions
-> (blox.toml)" for a worked example.
+> **Architecture Update (Phase 1-3, July 2026):** Action crates have been
+> eliminated. Action functions now live in **context crates** as free functions
+> taking concrete params. The `B` generic has been eliminated. Blox crates
+> contain zero logic — they are purely declarative topology + event matching.
+> Two-stage codegen generates stub actions at the blox level and concrete
+> actions at the system level. See `spec/architecture/12-action-crate-pattern.md`
+> (now "Context Crate Pattern") for the full layer model.
 
-Bloxide uses a composition model inspired by visual block programming: a blox is assembled from three kinds of reusable building blocks — **messages**, **actions**, and **state machine logic**. This keeps each concern in its own crate and ensures the blox itself contains no platform-specific code.
+Bloxide uses a composition model where a blox is assembled from reusable building blocks — **messages**, **context crates** (which include action functions), and **state machine logic**. This keeps each concern in its own crate and ensures the blox itself contains no platform-specific code or logic.
 
 ## Composition Model
 
@@ -26,29 +23,199 @@ flowchart LR
         PongMsg
     end
 
-    subgraph bloxide_log [bloxide-log]
-        log_info["blox_log_info!(actor_id, ...)"]
-        log_debug["blox_log_debug!(actor_id, ...)"]
-        log_warn["blox_log_warn!(actor_id, ...)"]
-        log_error["blox_log_error!(actor_id, ...)"]
+    subgraph ctx_crates [Context Crates — traits + action functions]
+        Rounds["blox-ctx-rounds
+        CountsRounds trait
+        increment_round(&mut u32)"]
+        Timer["blox-ctx-current-timer
+        HasCurrentTimer trait
+        schedule_resume(...)
+        cancel_timer_by_id(...)"]
+        Msg["bloxide-messaging
+        HasPeerRef, HasSelfRef
+        send_ping(...)
+        send_pong(...)"]
     end
 
-    subgraph blox [Blox crate — pure composition]
-        Handler["active_on_entry:\n  blox_log_info!(id, round {})\n  ctx.round += 1\n  try_send Ping(round)"]
+    subgraph blox [Blox crate — pure declaration]
+        Topology["blox.toml
+        topology + event matching
+        + action names + guard expressions"]
     end
 
-    subgraph platform [Platform via Cargo features]
-        log_backend["log → log::info!"]
-        defmt["defmt → defmt::info!"]
-        noop["(none) → no-op"]
+    subgraph binary [Binary — two-stage codegen]
+        Stubs["Stage 1: stub actions
+        (no-op closures, real guards)"]
+        Concrete["Stage 2: concrete actions
+        (context/impl functions inlined)"]
     end
 
-    msg_crates --> blox
-    bloxide_log --> blox
-    platform -. "selects impl" .-> bloxide_log
+    msg_crates --> ctx_crates
+    ctx_crates --> blox
+    blox --> Stubs
+    ctx_crates --> Concrete
+    Stubs --> Concrete
 ```
 
-The **blox explicitly calls actions** — this is part of the state machine definition, not an injection. The blox does not import `tracing`, `defmt`, or any platform crate. It imports `bloxide-log`. Which backend runs is selected by enabling a Cargo feature on `bloxide-log` in the application crate. Because Cargo features are additive, enabling the feature anywhere in the build activates it everywhere.
+The **blox declares what actions to call** via `[[context.actions]]` entries in `blox.toml`, but does not contain the action logic. The system codegen resolves the action functions from context crates or impl crates and inlines them into the generated `Spec`.
+
+## Action Functions
+
+Action functions are **free functions** in context crates (or impl crates for impl-specific behavior). They take **concrete params** extracted from the context struct, not trait-bounded `&mut C` references.
+
+### Function signatures by `kind`
+
+Each action is declared in `blox.toml` with a `kind` field that determines the closure signature the codegen generates:
+
+| `kind` | Closure signature | When called |
+|--------|-------------------|-------------|
+| `"entry"` | `fn(&mut Ctx) -> ()` | State entry (infallible) |
+| `"exit"` | `fn(&mut Ctx) -> ()` | State exit (infallible) |
+| `"transition"` | `fn(&mut Ctx, &Event) -> ActionResult` | Transition rule action |
+
+### Example: context crate action function
+
+```rust
+// crates/blox-ctx-rounds/src/lib.rs
+pub fn increment_round(round: &mut u32) {
+    *round += 1;
+}
+```
+
+```rust
+// crates/bloxide-messaging/src/lib.rs
+pub fn send_ping<R: BloxRuntime>(
+    self_id: ActorId,
+    peer_ref: &ActorRef<PingPongMsg, R>,
+    round: u32,
+) {
+    let _ = peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round }));
+}
+```
+
+### Example: impl crate action function
+
+```rust
+// crates/impl/tokio-pool-demo-impl/src/lib.rs
+pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) {
+    *task_id = do_work.task_id;
+    *result = do_work.task_id * 2;
+}
+```
+
+### Action declaration in `blox.toml`
+
+```toml
+[[context.actions]]
+name = "increment_round"
+crate = "blox_ctx_rounds"
+kind = "transition"
+fields = ["round:mut"]
+impl_required = false
+
+[[context.actions]]
+name = "send_initial_ping"
+crate = "bloxide_messaging"
+kind = "transition"
+fields = ["self_id", "peer_ref:ref", "round"]
+impl_required = false
+
+[[context.actions]]
+name = "process_work"
+kind = "transition"
+fields = ["task_id:mut", "result:mut"]
+event_payload = "do_work"
+impl_required = true
+```
+
+### Field access modes
+
+Each field in the `fields` list has an access mode suffix:
+
+| Suffix | Meaning | Generated code |
+|--------|---------|---------------|
+| `:mut` | Mutable borrow | `&mut ctx.field` |
+| `:ref` | Immutable borrow | `&ctx.field` |
+| (none) | Copy/move | `ctx.field` (or `ctx.self_id` for `ActorId`) |
+
+### `event_payload` extraction
+
+When `event_payload` is set, the codegen wraps the action call in an event destructuring:
+
+```rust
+// Generated closure for "process_work" with event_payload = "do_work"
+|ctx, ev| {
+    if let Some(WorkerMsg::DoWork(do_work)) = ev.msg_payload() {
+        tokio_pool_demo_impl::process_work(&mut ctx.task_id, &mut ctx.result, do_work);
+    }
+    ActionResult::Ok
+}
+```
+
+## Two-Stage Codegen
+
+### Stage 1 — Blox-level (`cargo blox generate`)
+
+Generates **stub action closures** (no-op) with **real guards**. The blox compiles standalone without any impl dependency.
+
+```rust
+// generated/spec_skeleton.rs — stub actions, REAL guards
+impl<R: BloxRuntime> PingSpec<R> {
+    const ACTIVE_FNS: StateFns<Self> = StateFns {
+        on_entry: &[
+            |_ctx| { /* stub: increment_round */ },
+            |_ctx| { /* stub: send_initial_ping */ },
+        ],
+        transitions: &[StateRule {
+            matches: |ev| ev.msg_payload()
+                .is_some_and(|m| matches!(m, PingPongMsg::Pong(_))),
+            actions: &[
+                |_ctx, _ev| { /* stub: forward_ping */ ActionResult::Ok },
+            ],
+            // REAL guard — direct field access, no B, no trait methods
+            guard: |_ctx, _results, _ev| {
+                if _ctx.round >= MAX_ROUNDS as u32 { Guard::Stop }
+                else if _ctx.round == PAUSE_AT_ROUND as u32 { Guard::Transition(LeafState::new(PingState::Paused)) }
+                else { Guard::Transition(LeafState::new(PingState::Active)) }
+            },
+        }],
+    };
+}
+```
+
+### Stage 2 — System-level (`cargo blox build`)
+
+Reads `system.toml`, resolves impl crates, generates **concrete action closures** with real function calls. Guards are unchanged from blox-level (already real).
+
+```rust
+// generated/spec_skeleton.rs — concrete, impl inlined
+use blox_ctx_rounds::increment_round;
+use bloxide_messaging::send_ping;
+
+impl<R: BloxRuntime> PingSpec<R> {
+    const ACTIVE_FNS: StateFns<Self> = StateFns {
+        on_entry: &[
+            |ctx| { increment_round(&mut ctx.round); },
+            |ctx| { send_ping(ctx.self_id, &ctx.peer_ref, ctx.round); },
+        ],
+        transitions: &[StateRule {
+            matches: |ev| ev.msg_payload()
+                .is_some_and(|m| matches!(m, PingPongMsg::Pong(_))),
+            actions: &[
+                |ctx, _ev| {
+                    send_ping(ctx.self_id, &ctx.peer_ref, ctx.round);
+                    ActionResult::Ok
+                },
+            ],
+            guard: |_ctx, _results, _ev| {  // same as blox-level
+                if _ctx.round >= MAX_ROUNDS as u32 { Guard::Stop }
+                else if _ctx.round == PAUSE_AT_ROUND as u32 { Guard::Transition(LeafState::new(PingState::Paused)) }
+                else { Guard::Transition(LeafState::new(PingState::Active)) }
+            },
+        }],
+    };
+}
+```
 
 ## Guards
 
@@ -56,191 +223,83 @@ Guards are the `guard` function in a `TransitionRule` — a pure `fn(&Ctx, &Acti
 
 **`ActionResult` vs `ActionResults`**: Each action returns `ActionResult` (Ok/Err). The engine collects all results into `ActionResults` before calling the guard. Guards receive `&ActionResults` to inspect `any_failed()`, `all_ok()`, etc.
 
-### Explicit struct form
+### Guard expression translation
 
-In practice transition rules are declared in `blox.toml` as `[[topology.transitions]]` entries and the codegen emits the struct form. The struct form is shown here for reference only — it makes the field types concrete.
+Guards in `blox.toml` are pure expressions over ctx fields and `ActionResults`. The blox-level codegen translates them to direct field access:
 
-`actions` is a `&'static` slice of `fn` pointers (not closures). `guard` is a `fn` pointer. `event_tag` is always the first field — the engine uses it to pre-filter rules without calling `matches`.
+| `blox.toml` expression | Generated Rust |
+|---|---|
+| `ctx.round >= MAX_ROUNDS as u32` | `ctx.round >= MAX_ROUNDS as u32` (direct field access) |
+| `ctx.round == PAUSE_AT_ROUND as u32` | `ctx.round == PAUSE_AT_ROUND as u32` |
+| `ctx.pending == 0` | `ctx.pending == 0` |
+| `results.any_failed()` | `results.any_failed()` (unchanged — method on `ActionResults`) |
 
-```rust
-fn my_action(ctx: &mut MyCtx<R>, ev: &MyEvent<R>) -> ActionResult {
-    if let Some(e) = ev.msg_payload() {
-        blox_log_info!(ctx.self_id(), "received {}", e.payload);
-        ctx.count += 1;
-    }
-    ActionResult::Ok
-}
-
-fn my_guard(ctx: &MyCtx<R>, _results: &ActionResults, _ev: &MyEvent<R>) -> Guard<MySpec<R>> {
-    if ctx.count >= MAX {
-        Guard::Transition(LeafState::new(MyState::Done))
-    } else {
-        Guard::Transition(LeafState::new(MyState::Active))
-    }
-}
-
-TransitionRule {
-    event_tag: MyEvent::<R>::MSG_TAG,   // pre-filter tag; WILDCARD_TAG matches all
-    matches: |ev| matches!(ev, MyEvent::Msg(_)),
-    actions: &[my_action],
-    guard: my_guard,
-}
-```
+The codegen parser:
+1. Leaves `ctx.field` direct field access unchanged (already correct)
+2. Leaves `results.*()` calls unchanged (they're methods on `ActionResults`)
+3. Leaves boolean operators (`&&`, `||`, `!`) unchanged
 
 ### Declarative form (`[[topology.transitions]]` in `blox.toml`)
 
-Transition rules are declared as `[[topology.transitions]]` entries in `blox.toml`. The codegen (`bloxide-codegen`) builds a `&'static [TransitionRule<S>]` from these entries. Actions are specified as a list of `fn` paths — `actions = ["fn1", "fn2"]`. Inline closures are not accepted; action logic lives in named functions defined on the spec `impl` block or in an actions crate.
-
-Guards are specified as `guards = [{ condition = "...", target = "..." }, ...]`. The condition expression sees `ctx` as `&Ctx` and `results` as `&ActionResults`; the engine calls `guard(ctx, results, event)` — the event is passed implicitly by the generated code.
-
-#### `[[topology.transitions]]` entry -> `TransitionRule` field mapping
-
-Each `[[topology.transitions]]` entry expands into one `TransitionRule`:
-
-- Pattern (`MyEvent::Foo(_)`, `MyMsg::Ping(_)`, `_`) -> `event_tag` + `matches`
-- `actions [fn1, fn2]` -> `actions`
-- `stay` / `transition MyState::X` / `reset` / `guard(ctx, results) { ... }` -> `guard`
-
-The execution order is engine-defined: actions always run before the guard, regardless
-of how the arm is visually arranged.
-
-**Event pattern shorthand:**
-- **`*Msg`** — patterns on types ending in `Msg` (e.g. `PingPongMsg::Ping(ping)`) use `msg_payload()` for matching. The macro expands to `ev.msg_payload().map_or(false, |m| matches!(m, ...))`. Bindings like `ping` are extracted via `msg_payload()` in actions/guards.
-- **`*Ctrl`** — patterns on types ending in `Ctrl` (e.g. `PeerCtrl::AddPeer(p)`) use `ctrl_payload()` for matching. Bindings are extracted via `ctrl_payload()`.
+Transition rules are declared as `[[topology.transitions]]` entries in `blox.toml`. The codegen builds `StateRule` struct literals from these entries. Actions are specified as a list of action names — `actions = ["increment_round", "send_initial_ping"]`. The action function bodies are resolved from context/impl crates by the system codegen.
 
 ```toml
-# Sink — absorb without side-effects
-[[topology.transitions]]
-pattern = "MyEvent::Foo(_)"
-to = "stay"
-
-# Pure transition — no side-effects
-[[topology.transitions]]
-pattern = "MyEvent::Bar(_)"
-to = "Done"
-
-# Actions + stay
-[[topology.transitions]]
-pattern = "MyEvent::Msg(_)"
-actions = ["my_action"]
-to = "stay"
-
-# Actions + unconditional transition
-[[topology.transitions]]
-pattern = "MyEvent::Baz(_)"
-actions = ["reset_count"]
-to = "Active"
-
 # Actions + conditional guard
 [[topology.transitions]]
-pattern = "MyEvent::Msg(_)"
-actions = ["increment_count"]
+state = "Active"
+event = "PingPongMsg::Pong(_)"
+target = "Active"
+actions = ["Self::forward_ping"]
 
   [[topology.transitions.guards]]
-  condition = "ctx.count >= MAX"
-  to = "Done"
+  condition = "results.any_failed()"
+  target = "Error"
 
   [[topology.transitions.guards]]
-  to = "Active"
+  condition = "ctx.round >= MAX_ROUNDS as u32"
+  target = "stop"
+
+  [[topology.transitions.guards]]
+  condition = "ctx.round == PAUSE_AT_ROUND as u32"
+  target = "Paused"
 
 # Guard only (no side-effects)
 [[topology.transitions]]
-pattern = "MyEvent::Check(_)"
+state = "Waiting"
+event = "CounterMsg::Tick(_)"
+actions = ["Self::count_tick"]
 
   [[topology.transitions.guards]]
   condition = "ctx.count >= MAX"
-  to = "Done"
+  target = "Done"
 
   [[topology.transitions.guards]]
-  to = "Active"
+  target = "stay"
 ```
 
-Both state-level (`[[topology.transitions]]`) and root-level (`[[topology.transitions]]` with `scope = "root"`) rules support `reset` as a terminal outcome (in place of a state target or `stay`). When a guard returns `Reset`, the engine fires the full LCA exit chain (leaf → root) then enters `initial_state()` directly — `on_init_entry` does NOT fire (Reset skips Init):
+The execution order is engine-defined: actions always run before the guard, regardless of how the arm is visually arranged.
 
-```toml
-# State-level — actor self-terminates when a condition is met
-[[topology.transitions]]
-pattern = "MyEvent::AllDone(_)"
-to = "reset"
+**Event pattern shorthand:**
+- **`*Msg`** — patterns on types ending in `Msg` (e.g. `PingPongMsg::Ping(ping)`) use `msg_payload()` for matching.
+- **`*Ctrl`** — patterns on types ending in `Ctrl` (e.g. `PeerCtrl::AddPeer(p)`) use `ctrl_payload()` for matching.
 
-[[topology.transitions]]
-pattern = "MyEvent::PartialDone(_)"
-actions = ["my_action_fn"]
+## Logging
 
-  [[topology.transitions.guards]]
-  condition = "ctx.is_complete()"
-  to = "reset"
+Logging has been **ripped out of blox crates**. All `bloxide-log` usage has been removed from blox crates. The `bloxide-log` crate stays in place for runtime/context crate usage. Domain-level logging re-design is a deferred decision.
 
-  [[topology.transitions.guards]]
-  to = "stay"
-
-# Root-level — same syntax with `scope = "root"`, evaluated when events bubble past all states
-[[topology.transitions]]
-scope = "root"
-pattern = "MyEvent::SomeCondition(_)"
-to = "reset"
-```
-
-For supervised actors, the runtime handles Start/Reset/Ping via `machine.start()` and `machine.reset()` — no lifecycle root rules are needed. `root_transitions()` defaults to `&[]` and is optional.
-
-## `bloxide-log` Crate
-
-Location: `crates/bloxide-log/`
-
-### Features
-
-| Feature | Backend | Use case |
-|---------|---------|----------|
-| `log` | `log::info!` / `log::debug!` | std / Embassy on a hosted target |
-| `defmt` | `defmt::info!` | bare-metal with defmt |
-| (none) | no-op | production embedded, benchmarks |
-
-### Macros
-
-| Macro | Level |
-|-------|-------|
-| `blox_log_info!(actor_id, fmt, ...)` | INFO |
-| `blox_log_debug!(actor_id, fmt, ...)` | DEBUG |
-| `blox_log_warn!(actor_id, fmt, ...)` | WARN |
-| `blox_log_error!(actor_id, fmt, ...)` | ERROR |
-
-All four macros expand to a call to a `#[doc(hidden)]` function defined inside `bloxide-log`. The `cfg(feature = "log")` check is evaluated in `bloxide-log`'s own context, not the caller's, so enabling the feature on `bloxide-log` in the application crate activates logging everywhere the macros are used.
-
-### Usage in a blox
-
-```rust
-// In Cargo.toml:
-// bloxide-log = { path = "..." }   ← no features here
-
-use bloxide_log::{blox_log_info, blox_log_debug, blox_log_warn, blox_log_error};
-
-fn active_on_entry(ctx: &mut MyCtx<R>) {
-    ctx.count += 1;
-    blox_log_info!(ctx.self_id(), "count now {}", ctx.count);
-    let _ = ctx.peer_ref().try_send(ctx.self_id(), PeerMsg::Update(ctx.count));
-}
-```
-
-### Activating in the application
-
-```toml
-# Cargo.toml (workspace root package)
-[dev-dependencies]
-bloxide-log = { workspace = true, features = ["log"] }
-```
-
-No changes to the blox crates are needed. Cargo's additive feature resolution enables `log` in `bloxide-log` for the entire build graph.
+Never add `blox_log_*!` calls to blox crates or add `bloxide-log` as a dependency of a blox crate.
 
 ## Rules
 
-- Blox crates depend on `bloxide-log` with **no features** enabled — they must compile without any logging backend.
-- Logging macros live in `bloxide-log`; domain action functions live in action crates or reusable standard-library crates such as `bloxide-supervisor`.
-- Application / wiring crates select the backend by enabling a feature on `bloxide-log`.
-- `bloxide-log` is `no_std` — it must compile for bare-metal targets.
+- Action functions live in **context crates** (traits + free functions) or **impl crates** (impl-specific behavior).
+- Action functions take **concrete params** extracted from context fields, not trait-bounded `&mut C` references.
+- Context crates must not import Embassy, Tokio, file I/O, or executor-specific code.
+- Blox crates contain zero logic — no `actions.rs`, no `Self::` methods, no logging, no computation.
+- The `kind` field (`"entry"`, `"exit"`, `"transition"`) determines the closure signature the codegen generates.
+- Guards are pure field comparisons generated at the blox level — they don't depend on impl crates.
 
 ## Related Docs
 
+- **Context crate pattern** → `spec/architecture/12-action-crate-pattern.md`
 - **Handler patterns** → `spec/architecture/05-handler-patterns.md`
-- **Action crate pattern** → `spec/architecture/12-action-crate-pattern.md`
-- **Logging macros** → `crates/bloxide-log/src/lib.rs`
 - **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/17-blox-toml-source-of-truth.md`
