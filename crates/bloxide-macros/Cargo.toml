@@ -3,7 +3,7 @@
 name = "bloxide-macros"
 version.workspace = true
 edition.workspace = true
-description = "Procedural macros for bloxide — #[derive(BloxCtx)], channels!, dyn_channels!"
+description = "Procedural macros for bloxide — channels!, dyn_channels!, EventTag, ..."
 repository.workspace = true
 license.workspace = true
 

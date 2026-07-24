@@ -5,9 +5,6 @@
 //!
 //! # Available macros
 //!
-//! - `#[derive(BloxCtx)]` — derive accessor trait impls and a `fn new(...)`
-//!   constructor for a blox context struct.
-//!
 //! - `channels!(RuntimeType; MsgType1(CAP1), MsgType2(CAP2), ...)` — generate
 //!   channel creation code for any number of mailboxes via `StaticChannelCap`.
 //!
@@ -15,18 +12,13 @@
 //!   generate channel creation code for any number of mailboxes via
 //!   `DynamicChannelCap`.
 //!
-//! - `#[delegatable]` — keep a trait definition unchanged and emit a companion
-//!   `macro_rules! __delegate_TraitName` macro that generates forwarding impls.
-//!
 //! - `next_actor_id!()` — allocate the next compile-time actor ID from the
 //!   same counter used by `channels!`.
 
 use proc_macro::TokenStream;
 
-mod blox_ctx;
 mod blox_event;
 mod channels;
-mod delegatable;
 mod dyn_channels;
 mod event_tag;
 mod mailboxes_impls;
@@ -34,71 +26,6 @@ mod mailboxes_impls;
 mod blox_event_new;
 mod blox_mailboxes;
 mod blox_messages;
-
-// ── BloxCtx derive ────────────────────────────────────────────────────────────
-
-/// Derive accessor trait impls and a `fn new(...)` constructor for a blox context struct.
-///
-/// # Convention-based detection (primary)
-///
-/// Field roles are inferred from naming convention and type:
-///
-/// - `self_id: ActorId` → `impl HasSelfId`
-/// - `foo_ref: ActorRef<M, R>` → `impl HasFooRef<R>`
-/// - `foo_factory: fn(...) -> ...` → `impl HasFooFactory`
-/// - Other fields → constructor parameter (no trait impl)
-///
-/// # Example
-///
-/// ```ignore
-/// // Doc test ignored: imports not resolvable in rustdoc compilation context
-/// #[derive(BloxCtx)]
-/// pub struct PingCtx<R: BloxRuntime> {
-///     pub self_id: ActorId,                    // → impl HasSelfId
-///     pub peer_ref: ActorRef<PingPongMsg, R>,   // → impl HasPeerRef<R>
-///     pub timer_ref: ActorRef<TimerCommand, R>, // → impl HasTimerRef<R>
-///     #[delegates(HasCurrentTimer, CountsRounds)]
-///     pub behavior: B,
-/// }
-/// ```
-///
-/// Generates:
-/// - `impl HasSelfId for PingCtx<R>`
-/// - `impl HasPeerRef<R> for PingCtx<R> { fn peer_ref(&self) -> &ActorRef<...> }`
-/// - `impl HasTimerRef<R> for PingCtx<R> { fn timer_ref(&self) -> &ActorRef<...> }`
-/// - Forwarding `impl HasCurrentTimer for PingCtx<R> { ... }` via `__delegate_HasCurrentTimer!`
-/// - Forwarding `impl CountsRounds for PingCtx<R> { ... }` via `__delegate_CountsRounds!`
-/// - `fn new(self_id, peer_ref, timer_ref, behavior) -> Self`
-///
-/// # Supported field annotations
-///
-/// Most field roles are auto-detected by naming convention. Only a few
-/// explicit annotations are required:
-///
-/// - `#[provides(TraitName<R>)]` — generates `impl TraitName<R> for Struct` with a
-///   single accessor method (method name = field name, return type = `&FieldType`).
-///   This is the canonical way to bind multi-param accessor traits (e.g.
-///   `HasPeerRef<R, PingPongMsg>`) that convention-based inference cannot infer.
-/// - `#[delegates(TraitName)]` — emits `__delegate_TraitName!(...)` companion macro
-///   invocations that generate forwarding impls (the trait must be annotated with
-///   `#[delegatable]` from this crate).
-/// - `#[blox_ctx(skip)]` — suppresses auto-detection for a field and makes it a
-///   plain constructor parameter without generating any trait impl. Use this when
-///   a field matches a naming convention (e.g. ends with `_ref`) but you don't want
-///   the associated accessor trait generated.
-///
-/// # Constructor
-///
-/// `fn new(...)` takes annotated or convention-detected constructor fields as
-/// parameters and zero-initializes plain state fields via `Default::default()`.
-#[proc_macro_derive(BloxCtx, attributes(provides, provides_mut, delegates, blox_ctx))]
-pub fn derive_blox_ctx(input: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(input as syn::DeriveInput);
-    match blox_ctx::derive_blox_ctx_inner(&input) {
-        Ok(ts) => ts.into(),
-        Err(e) => e.to_compile_error().into(),
-    }
-}
 
 // ── EventTag derive ───────────────────────────────────────────────────────────
 
@@ -250,52 +177,6 @@ pub fn next_actor_id(_input: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn dyn_channels(input: TokenStream) -> TokenStream {
     dyn_channels::dyn_channels_inner(input)
-}
-
-// ── #[delegatable] attribute ────────────────────────────────────────────────
-
-/// Keep a trait definition unchanged and generate a companion
-/// `macro_rules! __delegate_TraitName` macro.
-///
-/// The generated macro accepts struct/field/generics parameters and produces
-/// a forwarding `impl TraitName for Struct` that delegates every associated
-/// type and method to a named field.
-///
-/// # Example
-///
-/// ```ignore
-/// // Doc test ignored: imports not resolvable in rustdoc compilation context
-/// use bloxide_macros::delegatable;
-///
-/// #[delegatable]
-/// pub trait CountsRounds {
-///     type Round: Copy;
-///     fn round(&self) -> Self::Round;
-///     fn set_round(&mut self, round: Self::Round);
-/// }
-/// ```
-///
-/// Generates `__delegate_CountsRounds!` which, when invoked, emits:
-/// ```ignore
-/// impl<...> CountsRounds for MyStruct<...>
-/// where FieldType: CountsRounds, ...
-/// {
-///     type Round = <FieldType as CountsRounds>::Round;
-///     fn round(&self) -> Self::Round { self.field.round() }
-///     fn set_round(&mut self, round: Self::Round) { self.field.set_round(round) }
-/// }
-/// ```
-///
-/// # Limitations
-///
-/// The trait must not have generic type parameters. Associated types are supported.
-/// Applying `#[delegatable]` to a trait with type parameters will produce a compilation
-/// error from the generated macro.
-#[proc_macro_attribute]
-pub fn delegatable(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    delegatable::delegatable_inner(item.into())
-        .unwrap_or_else(|e| e.to_compile_error())
-        .into()
 }
 
 // ── blox_messages!(...) ──────────────────────────────────────────────────────

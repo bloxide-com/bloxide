@@ -492,13 +492,10 @@ delegatable = true
         .expect("ctx.rs missing");
     let content = &ctx_file.1;
 
-    assert!(content.contains("#[derive(BloxCtx)]"));
+    // Plain struct — no #[derive(BloxCtx)], no behavior field, no delegate macros.
     assert!(content.contains("pub struct CounterCtx"));
     assert!(content.contains("pub self_id: ::bloxide_core::ActorId"));
-    assert!(content.contains("#[delegates(CountsTicks)]"));
-    assert!(content.contains("pub behavior: B"));
-    assert!(content.contains("blox_ctx_ticks"));
-    assert!(content.contains("use ::bloxide_macros::BloxCtx"));
+    assert!(content.contains("pub fn new(self_id: ::bloxide_core::ActorId) -> Self"));
 }
 
 #[test]
@@ -553,17 +550,18 @@ delegatable = true
         .expect("ctx.rs missing");
     let content = &ctx_file.1;
 
-    assert!(content.contains("#[derive(BloxCtx)]"));
+    // Plain struct — no #[derive(BloxCtx)], no delegate macros, no behavior field.
     assert!(
         content.contains("pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>")
     );
-    assert!(content.contains("HasCurrentTimer"));
-    assert!(content.contains("CountsRounds"));
-    assert!(content.contains("__delegate_HasCurrentTimer"));
-    assert!(content.contains("__delegate_CountsRounds"));
     assert!(content.contains("use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef}"));
-    assert!(content.contains("#[delegates(HasCurrentTimer, CountsRounds)]"));
-    assert!(content.contains("pub behavior: B"));
+    // Fields from accessor uses (role = "accessor" → ctor fields)
+    assert!(content.contains("pub peer_ref: ActorRef<PingPongMsg, R>"));
+    assert!(content.contains("pub self_ref: ActorRef<PingPongMsg, R>"));
+    assert!(content.contains("pub timer_ref: ActorRef<TimerCommand, R>"));
+    assert!(content.contains("pub self_id: ::bloxide_core::ActorId"));
+    // Constructor takes ctor fields, zero-inits state fields
+    assert!(content.contains("pub fn new("));
 }
 
 #[test]
@@ -591,10 +589,11 @@ delegatable = true
         .expect("ctx.rs missing");
     let content = &ctx_file.1;
 
-    assert!(content.contains("blox_ctx_ticks"));
+    // The codegen now emits a plain struct; the old crate-name inference
+    // for delegatable traits no longer applies.
+    assert!(content.contains("pub struct CounterCtx<B: CountsTicks>"));
+    assert!(content.contains("pub self_id: ::bloxide_core::ActorId"));
 }
-
-// ─── context.uses tests ──────────────────────────────────────────────────
 
 #[test]
 fn test_generate_ctx_uses_single_field_accessor() {
@@ -636,72 +635,19 @@ delegatable = true
         .expect("ctx.rs missing");
     let content = &ctx_file.1;
 
-    // Struct + derive
-    assert!(content.contains("#[derive(BloxCtx)]"));
+    // Plain struct — no #[derive(BloxCtx)], no #[provides], no delegate macros.
     assert!(content.contains("pub struct PingCtx"));
+    assert!(content.contains("pub self_id: ::bloxide_core::ActorId"));
 
-    // role = "accessor" with trait → emits #[provides(...)] (not #[blox_ctx(skip)])
-    // The old #[blox_ctx(skip)] was replaced by #[provides(Trait)] for accessor fields.
-    assert!(content.contains("#[provides"));
-
-    // Single-field accessor fields from uses
+    // Single-field accessor fields from uses (role = "ctor" → constructor params)
     assert!(content.contains("pub peer_ref: ActorRef<PingPongMsg, R>"));
     assert!(content.contains("pub self_ref: ActorRef<PingPongMsg, R>"));
 
-    // Import: bloxide_messaging grouped import for both traits
-    assert!(content.contains("bloxide_messaging"));
-    assert!(content.contains("HasPeerRef"));
-    assert!(content.contains("HasSelfRef"));
+    // Framework imports (auto-detected from field types containing ActorRef + BloxRuntime)
+    assert!(content.contains("use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef}"));
 
-    // Delegatable trait import + delegate macro
-    assert!(content.contains("blox_ctx_rounds"));
-    assert!(content.contains("CountsRounds"));
-    assert!(content.contains("__delegate_CountsRounds"));
-
-    // Behavior field with #[delegates]
-    assert!(content.contains("#[delegates(CountsRounds)]"));
-    assert!(content.contains("pub behavior: B"));
-
-    // Framework imports
-    assert!(content.contains("use ::bloxide_macros::BloxCtx"));
-}
-
-#[test]
-fn test_generate_ctx_uses_delegatable_only() {
-    let toml = r#"
-[actor]
-name = "Counter"
-
-[context]
-name = "CounterCtx"
-generics = "<B: CountsTicks>"
-
-[[context.uses]]
-crate = "blox_ctx_ticks"
-trait = "CountsTicks"
-delegatable = true
-
-[[context.uses]]
-crate = "blox_ctx_ticks"
-trait = "CountsTicks"
-delegatable = true
-"#;
-
-    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
-    let files = generate_all(&config, "counter-blox").expect("generate failed");
-    let ctx_file = files
-        .iter()
-        .find(|(n, _)| n == "ctx.rs")
-        .expect("ctx.rs missing");
-    let content = &ctx_file.1;
-
-    // Delegatable trait from uses, not from actions_crate
-    assert!(content.contains("blox_ctx_ticks"));
-    assert!(content.contains("CountsTicks"));
-    assert!(content.contains("__delegate_CountsTicks"));
-
-    // Should NOT import from counter_actions (trait comes from uses)
-    assert!(!content.contains("counter_actions"));
+    // Constructor takes ctor fields
+    assert!(content.contains("pub fn new("));
 }
 
 #[test]
@@ -734,65 +680,19 @@ impl_macro = "impl_has_workers"
         .expect("ctx.rs missing");
     let content = &ctx_file.1;
 
-    // Multi-field sub-field
+    // Multi-field sub-field (role = "state" → zero-initialized)
     assert!(content.contains("pub worker_refs:"));
+    assert!(content.contains("pub self_id: ::bloxide_core::ActorId"));
 
-    // Trait imports from blox_ctx_workers
-    assert!(content.contains("blox_ctx_workers"));
-    assert!(content.contains("HasWorkers"));
-    assert!(content.contains("HasWorkerFactory"));
+    // Framework imports (auto-detected from field types containing ActorRef + BloxRuntime)
+    assert!(content.contains("use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef}"));
 
-    // Impl macro call
-    assert!(content.contains("impl_has_workers"));
+    // Struct name
     assert!(content.contains("PoolCtx"));
-}
 
-#[test]
-fn test_generate_spec_skeleton_uses_delegatable() {
-    let toml = r#"
-[actor]
-name = "Counter"
-
-[event]
-name = "CounterEvent"
-
-[[event.mailboxes]]
-variant = "Msg"
-message = "CounterMsg"
-message_path = "counter_messages::CounterMsg"
-
-[context]
-name = "CounterCtx"
-generics = "<B: CountsTicks>"
-
-[[context.uses]]
-crate = "blox_ctx_ticks"
-trait = "CountsTicks"
-delegatable = true
-
-[topology]
-
-[[topology.states]]
-name = "Ready"
-initial = true
-
-[[topology.states]]
-name = "Done"
-terminal = true
-"#;
-
-    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
-    let files = generate_all(&config, "counter-blox").expect("generate failed");
-    let skeleton_file = files
-        .iter()
-        .find(|(n, _)| n == "spec_skeleton.rs")
-        .expect("spec_skeleton.rs missing");
-    let content = &skeleton_file.1;
-
-    // The spec_skeleton should import the delegatable trait from its crate
-    // so the where-clause bound resolves.
-    assert!(content.contains("blox_ctx_ticks"));
-    assert!(content.contains("CountsTicks"));
+    // Constructor takes only ctor fields (self_id); state fields are zero-initialized
+    assert!(content.contains("pub fn new(self_id: ::bloxide_core::ActorId) -> Self"));
+    assert!(content.contains("worker_refs: ::core::default::Default::default()"));
 }
 
 #[test]
@@ -2158,9 +2058,10 @@ name = "Active"
         .expect("spec_skeleton.rs missing");
     let content = &skeleton_file.1;
 
-    // Non-delegatable uses (impl_macro) should still be imported in spec_skeleton.rs
-    // when referenced by on_init code.
-    assert!(content.contains("blox_ctx_workers"));
-    assert!(content.contains("HasWorkers"));
+    // The spec_skeleton should emit on_init_entry with the on_init body.
+    // The old non-delegatable (impl_macro) crate imports are no longer emitted
+    // by the codegen since accessor traits are gone.
     assert!(content.contains("on_init_entry"));
+    assert!(content.contains("ctx.worker_refs_mut().clear();"));
+    assert!(content.contains("ctx.set_pending(0);"));
 }
