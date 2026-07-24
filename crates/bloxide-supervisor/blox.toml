@@ -15,7 +15,7 @@ on_init = "ctx.children.clear_counters(); ctx.pending = ChildAction::default();"
 # ActorRef, BloxRuntime) are auto-detected by the codegen from field types.
 imports = [
     "bloxide_core::lifecycle::ChildLifecycleEvent",
-    "bloxide_child_management::{ChildAction, ChildGroup, HasChildGroupMut}",
+    "bloxide_child_management::{ChildAction, ChildGroup}",
 ]
 
 # Extra impl blocks emitted after the struct. {ctx} is replaced with the
@@ -135,21 +135,16 @@ message_path = "crate::control::SupervisorControl<R>"
 # children: ChildGroup<R> from bloxide-child-management
 [[context.uses]]
 crate = "bloxide_child_management"
-trait = "HasChildGroup<R>"
 field = "children"
 field_type = "ChildGroup<R>"
 role = "ctor"
-provides = "HasChildGroup<R>"
-provides_mut = "HasChildGroupMut<R>, children_mut"
 
 # child_notify: ActorRef<ChildLifecycleEvent, R> from bloxide-supervisor
 [[context.uses]]
 crate = "crate"
-trait = "HasChildNotify<R>"
 field = "child_notify"
 field_type = "ActorRef<ChildLifecycleEvent, R>"
 role = "ctor"
-provides = "HasChildNotify<R>"
 
 # pending: ChildAction — state field
 [[context.uses]]

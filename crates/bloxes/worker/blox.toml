@@ -32,12 +32,10 @@ imports = [
     "alloc::vec::Vec",
 ]
 
-# Accessor trait from context crate — pool_ref is a constructor parameter
-# (passed to WorkerCtx::new), not a state field. HasPoolRef provides the
-# pool_ref() accessor used by notify_pool_done.
+# pool_ref is a constructor parameter (passed to WorkerCtx::new),
+# not a state field. Accessed directly as ctx.pool_ref.
 [[context.uses]]
 crate = "blox_ctx_pool_ref"
-trait = "HasPoolRef<R>"
 field = "pool_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "accessor"

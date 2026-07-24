@@ -1,21 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Domain context crate for round-counting behavior.
 //!
-//! Provides the `CountsRounds` behavior trait.
-//! definition lives here (with the data contract), not in the actions crate.
+//! Provides the `increment_round` action function.
+//! The `round` field is now a plain struct field on the context.
 #![no_std]
-
-/// Tracks the current round number in the ping-pong exchange.
-pub trait CountsRounds {
-    type Round: Copy
-        + PartialEq
-        + PartialOrd
-        + core::ops::Add<Output = Self::Round>
-        + From<u8>
-        + core::fmt::Display;
-    fn round(&self) -> Self::Round;
-    fn set_round(&mut self, round: Self::Round);
-}
 
 /// Increment the round counter by 1.
 pub fn increment_round(round: &mut u32) {

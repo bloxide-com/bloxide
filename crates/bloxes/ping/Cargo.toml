@@ -13,7 +13,6 @@ std = ["bloxide-core/std", "bloxide-timer/std"]
 
 [dependencies]
 bloxide-core        = { workspace = true, features = ["alloc"] }
-bloxide-macros      = { workspace = true }
 bloxide-timer       = { workspace = true }
 bloxide-messaging   = { workspace = true }
 blox-ctx-current-timer = { workspace = true }

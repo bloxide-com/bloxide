@@ -14,5 +14,4 @@ codegen = []
 
 [dependencies]
 bloxide-core = { workspace = true, features = ["alloc"] }
-bloxide-macros = { workspace = true }
 bhsm-tst-messages = { workspace = true }

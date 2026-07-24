@@ -7,9 +7,6 @@ extern crate alloc;
 // SupervisorControl, SupervisorRegistrar)
 pub mod control;
 
-// Spawn accessor trait (HasChildNotify)
-pub mod spawn;
-
 // Hand-written action functions (concrete, take &SupervisorEvent<R> directly)
 pub mod actions;
 
@@ -21,15 +18,11 @@ pub mod generated;
 mod tests;
 
 // Re-export child-management types from bloxide-child-management
-pub use bloxide_child_management::{
-    ChildAction, ChildGroup, ChildPolicy, GroupShutdown, HasChildGroup, HasChildGroupMut,
-    HasPending,
-};
+pub use bloxide_child_management::{ChildAction, ChildGroup, ChildPolicy, GroupShutdown};
 pub use bloxide_core::lifecycle::AbortCommand;
 
 // Re-export supervisor-specific types from local modules
 pub use control::{RegisterChild, RegisterDynamicChild, SupervisorControl, SupervisorRegistrar};
-pub use spawn::HasChildNotify;
 
 // Re-export from generated (SupervisorEvent now codegen-generated, not hand-written)
 pub use generated::{SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState};

@@ -87,10 +87,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
         bloxide_core::messaging::ActorRef<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
     >,
     _pending: &mut u32,
-    _spawned_worker: &pool_messages::SpawnedWorker<
-        bloxide_peers::PeerCtrl<WorkerMsg, R>,
-        R,
-    >,
+    _spawned_worker: &pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
 ) {
     *spawn_in_flight = false;
     // TODO: Full implementation needs self_ref, spawn_fn, spawn_ref, notify_ref,

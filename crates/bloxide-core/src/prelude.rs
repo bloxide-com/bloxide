@@ -23,6 +23,5 @@ pub use crate::{
     Envelope,
     // Event infrastructure (needed by bloxide-codegen generated events)
     EventTag,
-    HasSelfId,
     WILDCARD_TAG,
 };

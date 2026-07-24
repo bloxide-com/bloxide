@@ -9,10 +9,9 @@ imports = [
     "ping_pong_messages::PingPongMsg",
 ]
 
-# Accessor trait from bloxide-messaging (2-param, requires #[provides])
+# Accessor traits removed — fields are now plain struct fields.
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasPeerRef<R, PingPongMsg>"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "accessor"

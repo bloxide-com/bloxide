@@ -44,10 +44,9 @@ feature_imports = [
     "bloxide_supervisor::SupervisorControl",
 ]
 
-# Accessor trait from bloxide-messaging (2-param, requires #[provides])
+# Accessor traits removed — fields are now plain struct fields.
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasSelfRef<R, PoolMsg>"
 field = "self_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "accessor"

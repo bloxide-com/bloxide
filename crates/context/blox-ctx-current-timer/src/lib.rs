@@ -1,8 +1,8 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Domain context crate for the current-timer-id behavior.
 //!
-//! Provides the `HasCurrentTimer` behavior trait.
-//! definition lives here (with the data contract), not in the actions crate.
+//! Provides action functions for scheduling and cancelling resume timers.
+//! The `current_timer` field is now a plain struct field on the context.
 #![no_std]
 
 extern crate alloc;
@@ -10,12 +10,6 @@ extern crate alloc;
 use bloxide_core::{capability::BloxRuntime, messaging::ActorRef, ActorId};
 use bloxide_timer::command::{next_timer_id, TimerCommand, TimerId, TIMER_ACTOR_ID};
 use ping_pong_messages::{PingPongMsg, Resume};
-
-/// Provides read/write access to the current pending timer ID.
-pub trait HasCurrentTimer {
-    fn current_timer(&self) -> Option<TimerId>;
-    fn set_current_timer(&mut self, timer: Option<TimerId>);
-}
 
 /// Schedule a resume timer delivering `PingPongMsg::Resume` to self after
 /// a duration derived from the current round number. Stores the `TimerId`

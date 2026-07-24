@@ -52,11 +52,7 @@ where
 ///
 /// Logs a warning if the timer channel is full and the cancel command was dropped
 /// (the timer may still fire).
-pub fn cancel_timer<R>(
-    self_id: ActorId,
-    timer_ref: &ActorRef<TimerCommand, R>,
-    id: TimerId,
-)
+pub fn cancel_timer<R>(self_id: ActorId, timer_ref: &ActorRef<TimerCommand, R>, id: TimerId)
 where
     R: BloxRuntime,
 {

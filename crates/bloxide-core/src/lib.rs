@@ -9,7 +9,6 @@ extern crate std;
 
 #[macro_use]
 pub mod tracing;
-pub mod accessor;
 pub mod capability;
 pub mod engine;
 pub mod event_tag;
@@ -27,7 +26,6 @@ pub mod transition;
 #[cfg(test)]
 mod tests;
 
-pub use accessor::HasSelfId;
 pub use capability::{BloxRuntime, DynamicChannelCap, KillCapability, NoKill, StaticChannelCap};
 pub use engine::{DispatchOutcome, MachineState, StateMachine};
 pub use event_tag::{EventTag, LifecycleEvent, LIFECYCLE_TAG, WILDCARD_TAG};

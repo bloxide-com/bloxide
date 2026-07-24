@@ -9,33 +9,24 @@ on_init = "ctx.round = 0; ctx.current_timer = None;"
 imports = [
     "ping_pong_messages::PingPongMsg",
     "bloxide_timer::{TimerCommand, TimerId}",
-    "blox_ctx_current_timer::HasCurrentTimer",
-    "blox_ctx_rounds::CountsRounds",
-]
-extra_impls = [
-    "HasCurrentTimer for {ctx} { fn current_timer(&self) -> Option<TimerId> { self.current_timer } fn set_current_timer(&mut self, t: Option<TimerId>) { self.current_timer = t; } }",
-    "CountsRounds for {ctx} { type Round = u32; fn round(&self) -> u32 { self.round } fn set_round(&mut self, r: u32) { self.round = r; } }",
 ]
 
-# Accessor traits from bloxide-messaging (2-param, require #[provides])
+# Accessor traits removed — fields are now plain struct fields.
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasPeerRef<R, PingPongMsg>"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "accessor"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasSelfRef<R, PingPongMsg>"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "accessor"
 
-# Accessor trait from bloxide-timer (1-param, convention-based inference works)
+# Timer ref — plain struct field
 [[context.uses]]
 crate = "bloxide_timer"
-trait = "HasTimerRef<R>"
 field = "timer_ref"
 field_type = "ActorRef<TimerCommand, R>"
 role = "accessor"

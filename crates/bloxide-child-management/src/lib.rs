@@ -105,22 +105,6 @@ pub struct ChildGroup<R: BloxRuntime> {
     stopped_count: usize,
 }
 
-/// Accessor trait for the child group.
-pub trait HasChildGroup<R: BloxRuntime> {
-    fn children(&self) -> &ChildGroup<R>;
-}
-
-/// Mutable accessor trait for the child group.
-pub trait HasChildGroupMut<R: BloxRuntime> {
-    fn children_mut(&mut self) -> &mut ChildGroup<R>;
-}
-
-/// Accessor trait for the pending action field.
-pub trait HasPending {
-    fn pending(&self) -> ChildAction;
-    fn set_pending(&mut self, action: ChildAction);
-}
-
 impl<R: BloxRuntime> ChildGroup<R> {
     pub fn new(shutdown: GroupShutdown) -> Self {
         Self {
