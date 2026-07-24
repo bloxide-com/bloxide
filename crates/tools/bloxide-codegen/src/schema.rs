@@ -274,6 +274,13 @@ pub struct ContextActionConfig {
     /// e.g. `"do_work"` means the action receives the `DoWork` payload.
     #[serde(default)]
     pub event_payload: Option<String>,
+    /// When true, the transition action closure passes the full event
+    /// reference (`_ev`) as the last argument to the action function.
+    /// Use this when the action function takes `ev: &Event` directly
+    /// (rather than a destructured payload via `event_payload`).
+    /// Entry/exit actions ignore this field (they never receive an event).
+    #[serde(default)]
+    pub event_arg: bool,
     /// Whether the action function lives in an impl crate (true) or
     /// a context/peer crate (false).
     #[serde(default)]
@@ -287,6 +294,12 @@ pub struct ContextActionConfig {
     /// named function in the crate (e.g. `send_ping`).
     #[serde(default)]
     pub fn_name: Option<String>,
+    /// Optional module path segment between the crate path and the function
+    /// name. When set, the generated call is `<crate>::<module>::<fn_name>`
+    /// instead of `<crate>::<fn_name>`. e.g. `module = "actions"` produces
+    /// `crate::actions::start_children(...)`.
+    #[serde(default)]
+    pub module: Option<String>,
 }
 
 /// A `[[context.uses]]` entry — pulls traits and fields from a composable

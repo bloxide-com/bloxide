@@ -15,15 +15,104 @@ on_init = "ctx.children.clear_counters(); ctx.pending = ChildAction::default();"
 # ActorRef, BloxRuntime) are auto-detected by the codegen from field types.
 imports = [
     "bloxide_core::lifecycle::ChildLifecycleEvent",
-    "bloxide_child_management::{ChildAction, ChildGroup, HasChildGroupMut, HasPending}",
+    "bloxide_child_management::{ChildAction, ChildGroup, HasChildGroupMut}",
 ]
 
 # Extra impl blocks emitted after the struct. {ctx} is replaced with the
 # actual ctx type (SupervisorCtx<R>).
 extra_impls = [
-    "HasPending for {ctx} { fn pending(&self) -> ChildAction { self.pending } fn set_pending(&mut self, action: ChildAction) { self.pending = action; } }",
     "{ctx} { pub fn all_children_stopped(&self) -> bool { self.children.all_stopped() } }",
 ]
+
+# ── Action declarations ─────────────────────────────────────────────────────
+# Each action is a free function in crate::actions that takes concrete params.
+# The codegen generates wrapper closures that extract ctx fields and call them.
+
+[[context.actions]]
+name = "start_children"
+crate = "crate"
+module = "actions"
+kind = "entry"
+fields = ["self_id", "children:mut", "pending:mut"]
+
+[[context.actions]]
+name = "stop_all_children"
+crate = "crate"
+module = "actions"
+kind = "entry"
+fields = ["self_id", "children:ref"]
+
+[[context.actions]]
+name = "handle_done_or_failed"
+crate = "crate"
+module = "actions"
+kind = "transition"
+fields = ["self_id", "children:mut", "child_notify:ref", "pending:mut"]
+event_arg = true
+
+[[context.actions]]
+name = "record_started"
+crate = "crate"
+module = "actions"
+kind = "transition"
+fields = ["children:mut"]
+event_arg = true
+
+[[context.actions]]
+name = "record_stopped"
+crate = "crate"
+module = "actions"
+kind = "transition"
+fields = ["children:mut"]
+event_arg = true
+
+[[context.actions]]
+name = "record_aborted"
+crate = "crate"
+module = "actions"
+kind = "transition"
+fields = ["children:mut"]
+event_arg = true
+
+[[context.actions]]
+name = "record_killed"
+crate = "crate"
+module = "actions"
+kind = "transition"
+fields = ["children:mut"]
+event_arg = true
+
+[[context.actions]]
+name = "record_alive"
+crate = "crate"
+module = "actions"
+kind = "transition"
+fields = ["children:mut"]
+event_arg = true
+
+[[context.actions]]
+name = "register_child"
+crate = "crate"
+module = "actions"
+kind = "transition"
+fields = ["self_id", "children:mut"]
+event_arg = true
+
+[[context.actions]]
+name = "handle_register_dynamic_child"
+crate = "crate"
+module = "actions"
+kind = "transition"
+fields = ["self_id", "children:mut"]
+event_arg = true
+
+[[context.actions]]
+name = "handle_health_check"
+crate = "crate"
+module = "actions"
+kind = "transition"
+fields = ["self_id", "children:mut", "child_notify:ref", "pending:mut"]
+event_arg = true
 
 # ── Event type (standard codegen-generated event enum) ──────────────────────
 
@@ -62,7 +151,7 @@ field_type = "ActorRef<ChildLifecycleEvent, R>"
 role = "ctor"
 provides = "HasChildNotify<R>"
 
-# pending: ChildAction — state field, HasPending impl via extra_impls
+# pending: ChildAction — state field
 [[context.uses]]
 crate = "bloxide_child_management"
 fields = [
@@ -74,7 +163,6 @@ fields = [
 
 [topology]
 spec_imports = [
-    "crate::actions::{start_children, stop_all_children, handle_done_or_failed, record_aborted, record_killed, record_started, record_alive, record_stopped, register_child, handle_health_check, handle_register_dynamic_child}",
     "bloxide_child_management::ChildAction",
 ]
 
@@ -83,57 +171,57 @@ spec_imports = [
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
-actions = ["handle_done_or_failed::<{R}>"]
+actions = ["Self::handle_done_or_failed"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { .. }))"
 target = "stay"
-actions = ["handle_done_or_failed::<{R}>"]
+actions = ["Self::handle_done_or_failed"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Started { .. }))"
 target = "stay"
-actions = ["record_started::<{R}>"]
+actions = ["Self::record_started"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { .. }))"
 target = "stay"
-actions = ["record_aborted::<{R}>"]
+actions = ["Self::record_aborted"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))"
 target = "stay"
-actions = ["record_killed::<{R}>"]
+actions = ["Self::record_killed"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Alive { .. }))"
 target = "stay"
-actions = ["record_alive::<{R}>"]
+actions = ["Self::record_alive"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterChild(_)))"
 target = "stay"
-actions = ["register_child::<{R}>"]
+actions = ["Self::register_child"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterDynamicChild(_)))"
 target = "stay"
-actions = ["handle_register_dynamic_child::<{R}>"]
+actions = ["Self::handle_register_dynamic_child"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::HealthCheckTick))"
 target = "stay"
-actions = ["handle_health_check::<{R}>"]
+actions = ["Self::handle_health_check"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 # Running state — catch-alls
@@ -152,7 +240,7 @@ target = "stay"
 state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
-actions = ["record_stopped::<{R}>"]
+actions = ["Self::record_stopped"]
 guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
 
 [[topology.transitions]]
@@ -168,11 +256,11 @@ target = "stay"
 # Entry actions
 [[topology.entry]]
 state = "Running"
-actions = ["start_children::<{R}>"]
+actions = ["Self::start_children"]
 
 [[topology.entry]]
 state = "ShuttingDown"
-actions = ["stop_all_children::<{R}>"]
+actions = ["Self::stop_all_children"]
 
 # State declarations
 [[topology.states]]

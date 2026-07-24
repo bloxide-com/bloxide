@@ -132,7 +132,17 @@ pub fn resolve_concrete_action(
     }
 
     // Determine the function path.
-    let fn_path = if config.impl_required {
+    // When `crate = "crate"` is set on the action config, use the relative
+    // `crate` path (for blox-level codegen where the actions live in the
+    // blox crate itself). Otherwise, build an absolute `::crate_name` path.
+    let fn_path = if config
+        .crate_name
+        .as_deref()
+        .map(|c| c == "crate")
+        .unwrap_or(false)
+    {
+        "crate".to_string()
+    } else if config.impl_required {
         // Use the impl crate from the system.toml.
         let crate_name = impl_crate.unwrap_or("unknown_impl");
         format!("::{}", crate_name.replace('-', "_"))
@@ -146,6 +156,11 @@ pub fn resolve_concrete_action(
         .as_deref()
         .unwrap_or(&config.name)
         .replace('-', "_");
+    // Optional module segment between crate path and function name.
+    let fn_full_path = match &config.module {
+        Some(module) => format!("{fn_path}::{module}::{fn_name}"),
+        None => format!("{fn_path}::{fn_name}"),
+    };
 
     // Build the field arguments.
     let field_args: Vec<String> = config.fields.iter().map(|f| field_access(f)).collect();
@@ -154,20 +169,32 @@ pub fn resolve_concrete_action(
     let has_payload = config.event_payload.is_some();
 
     if !is_transition {
-        // Entry/exit action: |ctx| { <fn_path>::<fn_name>(<args>); }
+        // Entry/exit action: |ctx| { <fn_full_path>(<args>); }
         let args = field_args.join(", ");
-        let code = format!("|ctx| {{ {fn_path}::{fn_name}({args}); }}");
+        let code = format!("|ctx| {{ {fn_full_path}({args}); }}");
         Some(
             syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|_| {
                 quote::quote! { |_ctx| { /* error: cannot parse concrete action #name */ } }
             }),
         )
     } else if !has_payload {
-        // Transition without event payload:
-        // |ctx, _ev| { <fn_path>::<fn_name>(<args>); ActionResult::Ok }
-        let args = field_args.join(", ");
+        // Transition without event payload.
+        // When event_arg is true, pass the full event reference as the last arg:
+        //   |ctx, ev| { <fn_full_path>(<args>, ev); ActionResult::Ok }
+        // Otherwise (no event needed):
+        //   |ctx, _ev| { <fn_full_path>(<args>); ActionResult::Ok }
+        let args = if config.event_arg {
+            if field_args.is_empty() {
+                "ev".to_string()
+            } else {
+                format!("{}, ev", field_args.join(", "))
+            }
+        } else {
+            field_args.join(", ")
+        };
+        let ev_param = if config.event_arg { "ev" } else { "_ev" };
         let code = format!(
-            "|ctx, _ev| {{ {fn_path}::{fn_name}({args}); \
+            "|ctx, {ev_param}| {{ {fn_full_path}({args}); \
              ::bloxide_core::transition::ActionResult::Ok }}"
         );
         Some(syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|_| {
@@ -229,7 +256,7 @@ pub fn resolve_concrete_action(
         let code = format!(
             "|ctx, ev| {{ \
              if let {if_let_pattern} = {payload_accessor} {{ \
-             {fn_path}::{fn_name}({args_with_payload}); \
+             {fn_full_path}({args_with_payload}); \
              }} \
              ::bloxide_core::transition::ActionResult::Ok \
              }}"
@@ -261,8 +288,10 @@ pub fn build_action_map(blox_config: &BloxConfig) -> HashMap<String, &ContextAct
 ///
 /// # Arguments
 /// * `blox_config` - The parsed blox.toml configuration
-/// * `impl_crate` - The impl crate name from system.toml (for `impl_required` actions)
+/// * `impl_crate` - The impl crate name from system.toml (for `impl_required = true` actions)
 /// * `crate_name` - The blox crate name (for file naming / handler table generation)
+/// * `blox_crate_path` - The Rust path prefix for referencing the blox crate's types.
+///   Use `"crate"` for blox-level generation, or `"::crate_name"` for system-level.
 ///
 /// # Returns
 /// A complete `spec_skeleton.rs` file as a String, with concrete action closures.
@@ -270,6 +299,7 @@ pub fn generate_concrete_spec_skeleton(
     blox_config: &BloxConfig,
     impl_crate: Option<&str>,
     crate_name: &str,
+    blox_crate_path: &str,
 ) -> anyhow::Result<String> {
     let actor = blox_config
         .actor
@@ -285,7 +315,20 @@ pub fn generate_concrete_spec_skeleton(
         .ok_or_else(|| anyhow::anyhow!("blox config has no [context] section"))?;
 
     // Collect the action declarations — these are moved into the closure.
-    let actions: Vec<ContextActionConfig> = context.actions.clone();
+    // Translate `crate = "crate"` to the actual blox crate path so that
+    // system-level codegen references the blox crate correctly.
+    let actions: Vec<ContextActionConfig> = context
+        .actions
+        .iter()
+        .map(|a| {
+            let mut a = a.clone();
+            if a.crate_name.as_deref() == Some("crate") && blox_crate_path != "crate" {
+                // System-level: replace "crate" with the absolute blox crate path.
+                a.crate_name = Some(blox_crate_path.to_string());
+            }
+            a
+        })
+        .collect();
     let impl_crate_owned = impl_crate.map(|s| s.to_string());
 
     // Build the concrete action resolver closure.
@@ -321,18 +364,16 @@ pub fn generate_concrete_spec_skeleton(
         }
     };
 
-    // Convert the blox crate name (e.g. "ping-blox") to a Rust path prefix
-    // (e.g. "::ping_blox") for referencing types in the blox crate from the
-    // app crate's generated spec_skeleton.rs.
-    let blox_crate_path = format!("::{}", crate_name.replace('-', "_"));
-
+    // Use the provided blox_crate_path for referencing types.
+    // For blox-level generation this is "crate"; for system-level it's
+    // e.g. "::ping_blox".
     spec_skeleton::generate(
         actor,
         topology,
         context,
         blox_config.event.as_ref(),
         crate_name,
-        &blox_crate_path,
+        blox_crate_path,
         &resolver,
     )
 }
@@ -366,8 +407,13 @@ pub fn generate_concrete_spec_files(
             )
         })?;
 
-        let code =
-            generate_concrete_spec_skeleton(blox_config, actor.impl_crate.as_deref(), &actor.blox)?;
+        let blox_crate_path = format!("::{}", actor.blox.replace('-', "_"));
+        let code = generate_concrete_spec_skeleton(
+            blox_config,
+            actor.impl_crate.as_deref(),
+            &actor.blox,
+            &blox_crate_path,
+        )?;
 
         results.push((actor.name.clone(), code));
     }
@@ -393,9 +439,11 @@ mod tests {
             kind: kind.to_string(),
             fields: fields.iter().map(|s| s.to_string()).collect(),
             event_payload: event_payload.map(|s| s.to_string()),
+            event_arg: false,
             impl_required,
             feature: None,
             fn_name: None,
+            module: None,
         }
     }
 
@@ -571,7 +619,8 @@ mod tests {
 
         // Generate the concrete spec skeleton (no impl crate for ping)
         let generated =
-            generate_concrete_spec_skeleton(&blox_config, None, "ping-blox").expect("generate");
+            generate_concrete_spec_skeleton(&blox_config, None, "ping-blox", "::ping_blox")
+                .expect("generate");
 
         // ── Verify the generated code is valid Rust (parses with syn) ────────
         syn::parse_str::<syn::File>(&generated).expect("generated code should parse as valid Rust");
