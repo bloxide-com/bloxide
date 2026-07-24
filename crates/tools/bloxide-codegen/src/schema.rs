@@ -544,6 +544,22 @@ pub struct ActorInstance {
     /// ```
     #[serde(default)]
     pub inject: BTreeMap<String, InjectSource>,
+
+    /// Features enabled for this actor's blox crate.
+    ///
+    /// The codegen uses this to filter feature-gated mailboxes: only
+    /// mailboxes whose `feature` field is `None` or is listed here are
+    /// included in the generated `channels!` macro call. This must match
+    /// the `features = [...]` list in the app's Cargo.toml dependency.
+    ///
+    /// ```toml
+    /// [actors]
+    /// name = "pool"
+    /// blox = "pool-blox"
+    /// features = ["dynamic"]
+    /// ```
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 /// A value in `[actors.inject]` — where a constructor param's handle comes from.

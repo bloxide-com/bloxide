@@ -110,14 +110,64 @@ fn toml_value_to_tokens(value: &toml::Value) -> anyhow::Result<proc_macro2::Toke
     }
 }
 
-/// Replace `<R>` or `<R: ...>` in a message type path with the concrete runtime type.
+/// Replace the generic type parameter `R` with the concrete runtime name
+/// in a message_path string.
 ///
-/// e.g. `"pool_messages::SpawnedWorker<R>"` → `"pool_messages::SpawnedWorker<TokioRuntime>"`
+/// Handles all positions where `R` can appear as a type argument:
+///   - `<R>`           → `<TokioRuntime>`
+///   - `<R: BloxRuntime>` → `<TokioRuntime>`
+///   - `<Foo, R>`      → `<Foo, TokioRuntime>`
+///   - `<R, Bar>`      → `<TokioRuntime, Bar>`
+///   - `<Foo<R>>`     → `<Foo<TokioRuntime>>`
+///
+/// Scans the string char-by-char, replacing standalone `R` identifiers
+/// that appear inside angle brackets (as generic arguments), avoiding
+/// partial matches like `PeerCtrl`.
 fn substitute_runtime_generic(path: &str, runtime_name: &str) -> String {
-    // Replace <R> → <RuntimeName>
-    let result = path.replace("<R>", &format!("<{}>", runtime_name));
-    // Also handle <R: BloxRuntime> → <RuntimeName>
-    result.replace("<R: BloxRuntime>", &format!("<{}>", runtime_name))
+    // First handle the explicit `<R: BloxRuntime>` form.
+    let s = path.replace("<R: BloxRuntime>", &format!("<{}>", runtime_name));
+
+    // Scan and replace standalone `R` inside angle brackets.
+    let chars: Vec<char> = s.chars().collect();
+    let mut result = String::with_capacity(s.len());
+    let mut depth: i32 = 0;
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        match c {
+            '<' => {
+                depth += 1;
+                result.push(c);
+            }
+            '>' => {
+                depth -= 1;
+                result.push(c);
+            }
+            'R' if depth > 0 => {
+                // Check this is a standalone identifier: not preceded or
+                // followed by an identifier character.
+                let prev_is_ident =
+                    i > 0 && (chars[i - 1].is_alphanumeric() || chars[i - 1] == '_');
+                let next_is_ident =
+                    i + 1 < chars.len() && (chars[i + 1].is_alphanumeric() || chars[i + 1] == '_');
+
+                if !prev_is_ident && !next_is_ident {
+                    // Standalone `R` inside generics — replace with runtime name.
+                    result.push_str(runtime_name);
+                } else {
+                    result.push(c);
+                }
+            }
+            _ => {
+                result.push(c);
+            }
+        }
+        i += 1;
+    }
+
+    result
 }
 
 /// Return the primary mailbox message type and its crate from a blox config.
@@ -131,6 +181,53 @@ fn primary_message(blox_config: &BloxConfig) -> Option<(String, String)> {
     } else {
         Some((parts[0].to_string(), mailbox.message.clone()))
     }
+}
+
+/// Extract all crate names referenced in a message_path string.
+///
+/// A message_path like `pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>, R>`
+/// references two crates: `pool_messages` and `bloxide_peers`.
+///
+/// Scans for `crate_name::` patterns, handling nested generics.
+pub fn extract_crates_from_path(path: &str) -> Vec<String> {
+    let mut crates = Vec::new();
+    let bytes = path.as_bytes();
+    let mut i = 0;
+
+    while i < bytes.len() {
+        // Accumulate an identifier.
+        let start = i;
+        while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            i += 1;
+        }
+        if i > start {
+            let ident = &path[start..i];
+            // Check if followed by `::`
+            if i + 1 < bytes.len() && bytes[i] == b':' && bytes[i + 1] == b':' {
+                crates.push(ident.to_string());
+            }
+        } else {
+            // Skip non-identifier char.
+            i += 1;
+        }
+    }
+
+    crates
+}
+
+/// Collect all crate names referenced by any mailbox's message_path in a blox config.
+/// Returns a set of crate names (with underscores, not hyphensated).
+fn all_message_crates(blox_config: &BloxConfig) -> BTreeSet<String> {
+    let mut crates = BTreeSet::new();
+    if let Some(event) = &blox_config.event {
+        for mailbox in &event.mailboxes {
+            let path = mailbox.message_path.as_deref().unwrap_or(&mailbox.message);
+            for c in extract_crates_from_path(path) {
+                crates.insert(c);
+            }
+        }
+    }
+    crates
 }
 
 fn validate(
@@ -336,18 +433,49 @@ pub fn generate(
             }
         }
     }
-    for (msg_crate, variant) in bootstrap_imports {
+    for (msg_crate, variant) in &bootstrap_imports {
         let crate_ident = format_ident!("{}", msg_crate);
         let variant_ident = format_ident!("{}", variant);
         use_stmts.push(quote! {
             use ::#crate_ident::#variant_ident;
         });
     }
-    for (msg_crate, msg_type) in message_imports {
+    for (msg_crate, msg_type) in &message_imports {
         let crate_ident = format_ident!("{}", msg_crate);
         let type_ident = format_ident!("{}", msg_type);
         use_stmts.push(quote! {
             use ::#crate_ident::#type_ident;
+        });
+    }
+
+    // Crate-level imports for all crates referenced in any mailbox message_path.
+    // This handles multi-mailbox actors whose secondary mailbox types reference
+    // crates beyond the primary message crate (e.g. bloxide_peers in
+    // pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<...>, R>).
+    // We import the crate root so that fully-qualified paths in the channels!
+    // macro call resolve correctly.
+    let mut all_crates: BTreeSet<String> = BTreeSet::new();
+    for actor in &config.actors {
+        if actor.kind.as_deref() == Some("timer") {
+            continue;
+        }
+        if let Some(blox_config) = blox_configs.get(&actor.blox) {
+            for c in all_message_crates(blox_config) {
+                all_crates.insert(c);
+            }
+        }
+    }
+    // Also add crates from bootstrap and message type imports.
+    for (msg_crate, _) in &bootstrap_imports {
+        all_crates.insert(msg_crate.clone());
+    }
+    for (msg_crate, _) in &message_imports {
+        all_crates.insert(msg_crate.clone());
+    }
+    for crate_name in all_crates {
+        let crate_ident = format_ident!("{}", crate_name);
+        use_stmts.push(quote! {
+            use ::#crate_ident;
         });
     }
 

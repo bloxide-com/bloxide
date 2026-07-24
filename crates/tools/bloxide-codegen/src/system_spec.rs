@@ -300,6 +300,7 @@ pub fn generate_concrete_spec_skeleton(
     impl_crate: Option<&str>,
     crate_name: &str,
     blox_crate_path: &str,
+    active_feature: Option<&str>,
 ) -> anyhow::Result<String> {
     let actor = blox_config
         .actor
@@ -375,6 +376,7 @@ pub fn generate_concrete_spec_skeleton(
         crate_name,
         blox_crate_path,
         &resolver,
+        active_feature,
     )
 }
 
@@ -408,11 +410,15 @@ pub fn generate_concrete_spec_files(
         })?;
 
         let blox_crate_path = format!("::{}", actor.blox.replace('-', "_"));
+        // Pass the active feature (if any) so the spec skeleton emits only
+        // the matching variant without #[cfg] gates.
+        let active_feature = actor.features.first().map(|s| s.as_str());
         let code = generate_concrete_spec_skeleton(
             blox_config,
             actor.impl_crate.as_deref(),
             &actor.blox,
             &blox_crate_path,
+            active_feature,
         )?;
 
         results.push((actor.name.clone(), code));
@@ -619,7 +625,7 @@ mod tests {
 
         // Generate the concrete spec skeleton (no impl crate for ping)
         let generated =
-            generate_concrete_spec_skeleton(&blox_config, None, "ping-blox", "::ping_blox")
+            generate_concrete_spec_skeleton(&blox_config, None, "ping-blox", "::ping_blox", None)
                 .expect("generate");
 
         // ── Verify the generated code is valid Rust (parses with syn) ────────

@@ -331,6 +331,7 @@ pub(crate) fn generate_state_rule(
         Option<&str>,
         bool,
     ) -> proc_macro2::TokenStream,
+    strip_feature_cfg: bool,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
     let kind = classify_pattern_str(&trans.event);
     let event_tag_ts = extract_event_tag_str(&trans.event, kind, type_params);
@@ -370,11 +371,17 @@ pub(crate) fn generate_state_rule(
         }
     };
 
-    // Emit #[cfg(feature = "...")] on the individual StateRule literal
+    // Emit #[cfg(feature = "...")] on the individual StateRule literal,
+    // unless strip_feature_cfg is true (system-level codegen where the
+    // feature is already selected via Cargo.toml).
     Ok(if let Some(ref feat) = trans.feature {
-        quote! {
-            #[cfg(feature = #feat)]
-            #rule
+        if strip_feature_cfg {
+            rule
+        } else {
+            quote! {
+                #[cfg(feature = #feat)]
+                #rule
+            }
         }
     } else {
         rule

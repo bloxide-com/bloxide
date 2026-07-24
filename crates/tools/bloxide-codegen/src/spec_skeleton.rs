@@ -112,6 +112,7 @@ pub(crate) fn generate_state_fns_impl(
     spec_ty_generics: proc_macro2::TokenStream,
     spec_where_clause: Option<&syn::WhereClause>,
     feature_filter: Option<&str>,
+    strip_feature_cfg: bool,
     action_resolver: &dyn Fn(
         &str,
         &str,
@@ -222,6 +223,7 @@ pub(crate) fn generate_state_fns_impl(
                         event_type_str,
                         type_params,
                         action_resolver,
+                        strip_feature_cfg,
                     )
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -260,6 +262,7 @@ pub fn generate(
         Option<&str>,
         bool,
     ) -> proc_macro2::TokenStream,
+    active_feature: Option<&str>,
 ) -> anyhow::Result<String> {
     let actor_name = &actor.name;
     let spec_ident = format_ident!("{}", format!("{}Spec", actor_name));
@@ -806,6 +809,19 @@ pub fn generate(
     let mut variant_tokens = Vec::new();
 
     for var in &variants {
+        // When active_feature is set (system-level codegen), skip variants
+        // that don't match the active feature. This strips #[cfg] gates and
+        // emits only the active variant, since the feature is selected in
+        // the blox crate's Cargo.toml dependency, not the app crate.
+        if let Some(active) = active_feature {
+            let matches = match &var.cfg_attr {
+                None => true, // non-feature variant — only if no feature gate at all
+                Some(cfg) => cfg == &format!("feature = \"{}\"", active),
+            };
+            if !matches {
+                continue;
+            }
+        }
         let (spec_impl_generics, spec_ty_generics, spec_where_clause) =
             var.spec_generics.split_for_impl();
 
@@ -852,6 +868,7 @@ pub fn generate(
             spec_ty_generics.to_token_stream(),
             spec_where_clause,
             var.feature_filter.as_deref(),
+            active_feature.is_some(),
             action_resolver,
         )?;
 
@@ -894,21 +911,31 @@ pub fn generate(
             })
             .collect();
 
-        // Wrap each item in #[cfg] if needed (#[cfg] only applies to the
-        // immediately following item, not a sequence of items)
+        // Wrap each item in #[cfg] if needed. When active_feature is set,
+        // we've already filtered to only the active variant, so strip #[cfg].
         let wrapped = if let Some(ref cfg) = var.cfg_attr {
-            let cfg_ts: proc_macro2::TokenStream = cfg
-                .parse()
-                .map_err(|e| anyhow::anyhow!("invalid cfg attr '{}': {}", cfg, e))?;
-            quote! {
-                #[cfg(#cfg_ts)]
-                #(#extra_import_tokens)*
-                #[cfg(#cfg_ts)]
-                #struct_def
-                #[cfg(#cfg_ts)]
-                #state_fns_impl
-                #[cfg(#cfg_ts)]
-                #impl_block
+            if active_feature.is_some() {
+                // System-level: feature already selected via Cargo.toml, no #[cfg] needed.
+                quote! {
+                    #(#extra_import_tokens)*
+                    #struct_def
+                    #state_fns_impl
+                    #impl_block
+                }
+            } else {
+                let cfg_ts: proc_macro2::TokenStream = cfg
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("invalid cfg attr '{}': {}", cfg, e))?;
+                quote! {
+                    #[cfg(#cfg_ts)]
+                    #(#extra_import_tokens)*
+                    #[cfg(#cfg_ts)]
+                    #struct_def
+                    #[cfg(#cfg_ts)]
+                    #state_fns_impl
+                    #[cfg(#cfg_ts)]
+                    #impl_block
+                }
             }
         } else {
             quote! {

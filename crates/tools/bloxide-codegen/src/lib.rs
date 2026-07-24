@@ -73,7 +73,9 @@ pub fn generate_all(
                 .iter()
                 .any(|a| a.crate_name.as_deref() == Some("crate"));
             let code = if has_self_actions {
-                system_spec::generate_concrete_spec_skeleton(config, None, crate_name, "crate")?
+                system_spec::generate_concrete_spec_skeleton(
+                    config, None, crate_name, "crate", None,
+                )?
             } else {
                 spec_skeleton::generate(
                     actor,
@@ -83,6 +85,7 @@ pub fn generate_all(
                     crate_name,
                     "crate",
                     &spec_skeleton::resolve_action,
+                    None,
                 )?
             };
             files.push(("spec_skeleton.rs".to_string(), code));
@@ -335,14 +338,22 @@ fn infer_active_features(
     let mut result = BTreeMap::new();
 
     for actor in &config.actors {
-        // Check if this actor has a factory injection.
+        // 1. Explicit features declared in system.toml.
+        for feat in &actor.features {
+            result
+                .entry(actor.blox.clone())
+                .or_insert_with(BTreeSet::new)
+                .insert(feat.clone());
+        }
+
+        // 2. Inferred from factory injection: if the actor has a factory
+        //    injection, activate the feature declared on the blox's context
+        //    or event config. This is a convenience so simple cases don't
+        //    need explicit features in system.toml.
         let has_factory = actor.inject.values().any(|src| src.source == "factory");
 
         if has_factory {
             if let Some(blox_config) = blox_configs.get(&actor.blox) {
-                // Look for feature declarations in the blox config.
-                // The `feature` field on context or event indicates a
-                // feature-gated variant. We activate it.
                 if let Some(ctx) = &blox_config.context {
                     if let Some(feat) = &ctx.feature {
                         result
@@ -509,17 +520,16 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
         }
 
         // Message crates: extract from the blox.toml's event.mailboxes[].message_path.
+        // A message_path may reference multiple crates in nested generics, e.g.
+        // "pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<...>, R>" — we
+        // need all of them as Cargo.toml dependencies.
         if let Some(blox_config) = blox_configs.get(blox_name) {
             if let Some(event) = &blox_config.event {
                 for mailbox in &event.mailboxes {
-                    if let Some(path) = &mailbox.message_path {
-                        // message_path is like "ping_pong_messages::PingPongMsg"
-                        // Extract the crate name (first segment) and convert
-                        // underscores to hyphens for Cargo.toml.
-                        if let Some(crate_part) = path.split("::").next() {
-                            let cargo_name = crate_part.replace('_', "-");
-                            deps.entry(cargo_name).or_insert_with(|| (vec![], true));
-                        }
+                    let path = mailbox.message_path.as_deref().unwrap_or(&mailbox.message);
+                    for crate_part in system_wiring::extract_crates_from_path(path) {
+                        let cargo_name = crate_part.replace('_', "-");
+                        deps.entry(cargo_name).or_insert_with(|| (vec![], true));
                     }
                 }
             }
@@ -553,9 +563,16 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
         }
 
         // Concrete action impl crate (Phase 3 system codegen).
+        // Forward the actor's features to the impl crate so that
+        // feature-gated action functions are compiled in.
         if let Some(impl_crate) = &actor.impl_crate {
             let cargo_name = impl_crate.replace('_', "-");
-            deps.entry(cargo_name).or_insert_with(|| (vec![], true));
+            let entry = deps.entry(cargo_name).or_insert_with(|| (vec![], true));
+            for feat in &actor.features {
+                if !entry.0.contains(feat) {
+                    entry.0.push(feat.clone());
+                }
+            }
         }
 
         // Factory injection crates.
