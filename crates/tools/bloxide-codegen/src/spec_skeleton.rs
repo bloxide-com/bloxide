@@ -79,11 +79,11 @@ pub(crate) fn resolve_action(
         let name = resolved.strip_prefix("Self::").unwrap_or(&resolved);
         if is_transition {
             quote! {
-                |_ctx, _ev| { /* stub: #name */ ::bloxide_core::transition::ActionResult::Ok }
+                |_ctx, _ev| { let _stub = #name; ::bloxide_core::transition::ActionResult::Ok }
             }
         } else {
             quote! {
-                |_ctx| { /* stub: #name */ }
+                |_ctx| { let _stub = #name; }
             }
         }
     } else {

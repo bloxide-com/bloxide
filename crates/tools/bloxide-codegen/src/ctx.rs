@@ -120,16 +120,17 @@ fn generate_variant(
             continue;
         }
 
+        // Per-use feature gate for single-field uses. Mirrors the sub-field
+        // logic below: when building the feature variant, the whole variant
+        // is already under #[cfg(feature = "...")], so no per-field attr is
+        // needed. Otherwise, emit #[cfg(feature = #feat)] for feature-gated
+        // uses. Sub-fields without their own feature inherit this via
+        // `field_cfg.clone()`.
         let field_cfg = if let Some(ref feat) = u.feature {
             if feature_filter.is_some() {
-                // In the feature variant, feature-gated uses are included
-                // without per-field #[cfg] — the whole variant is already
-                // under #[cfg(feature = "...")].
                 None
             } else {
-                // Non-feature variant skips feature-gated uses entirely
-                // (already filtered above), so this branch is unreachable.
-                None
+                Some(quote! { #[cfg(feature = #feat)] })
             }
         } else {
             None

@@ -61,32 +61,19 @@ pub fn generate_all(
         (&config.actor, &config.topology, &config.context)
     {
         if context.event_name.is_some() || config.event.is_some() {
-            // When [[context.actions]] entries are declared with `crate = "crate"`
-            // (actions that live in the blox crate itself), use the concrete action
-            // resolver to generate wrapper closures that extract ctx fields and
-            // call the action functions. For actions referencing external crates
-            // (crate = "blox_ctx_rounds" etc.), keep using stubs — those are
-            // resolved at the system level.
-            let has_self_actions = context
-                .actions
-                .iter()
-                .any(|a| a.crate_name.as_deref() == Some("crate"));
-            let code = if has_self_actions {
-                system_spec::generate_concrete_spec_skeleton(
-                    config, None, crate_name, "crate", None,
-                )?
-            } else {
-                spec_skeleton::generate(
-                    actor,
-                    topology,
-                    context,
-                    config.event.as_ref(),
-                    crate_name,
-                    "crate",
-                    &spec_skeleton::resolve_action,
-                    None,
-                )?
-            };
+            // Blox-crate-level codegen ALWAYS produces stub spec_skeletons.
+            // Concrete action closures are generated exclusively at the system
+            // level from system.toml via generate_concrete_spec_files.
+            let code = spec_skeleton::generate(
+                actor,
+                topology,
+                context,
+                config.event.as_ref(),
+                crate_name,
+                "crate",
+                &spec_skeleton::resolve_action,
+                None,
+            )?;
             files.push(("spec_skeleton.rs".to_string(), code));
         }
     }

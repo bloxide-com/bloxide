@@ -40,12 +40,12 @@ pub fn handle_work_done(pending: &mut u32, _work_done: &pool_messages::WorkDone)
 /// Spawn a new worker via the supervisor, then set in-flight flag.
 #[cfg(feature = "dynamic")]
 pub fn handle_spawn_worker<R: BloxRuntime>(
-    self_id: bloxide_core::ActorId,
-    spawn_fn: &bloxide_spawn::SpawnFn<
+    _self_id: bloxide_core::ActorId,
+    _spawn_fn: &bloxide_spawn::SpawnFn<
         R,
         pool_messages::SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
     >,
-    spawn_ref: &bloxide_core::messaging::ActorRef<bloxide_supervisor::SupervisorControl<R>, R>,
+    _spawn_ref: &bloxide_core::messaging::ActorRef<bloxide_supervisor::SupervisorControl<R>, R>,
     pending_task_id: &mut u32,
     spawn_in_flight: &mut bool,
     _spawn_queue: &mut alloc::vec::Vec<u32>,

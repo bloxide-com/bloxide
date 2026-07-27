@@ -6,7 +6,6 @@
 #[cfg(all(test, feature = "std"))]
 mod worker_tests {
     extern crate alloc;
-    use alloc::vec::Vec;
 
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::{capability::DynamicChannelCap, Envelope, MachineState, StateMachine};

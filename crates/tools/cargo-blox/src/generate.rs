@@ -171,7 +171,7 @@ fn ensure_generated_mod(
     // from previous generations are NOT preserved, so removing a blox from the
     // manifest correctly removes its module from mod.rs.
     let generated_mod = src_dir.join("generated").join("mod.rs");
-    let mut mod_names: Vec<String> = generated_files
+    let mod_names: Vec<String> = generated_files
         .iter()
         .filter_map(|(filename, _)| {
             if filename.ends_with(".rs") && filename != "mod.rs" {
