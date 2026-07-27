@@ -317,7 +317,7 @@ pub struct ContextActionConfig {
 /// **Multi-field** (domain context crate):
 /// ```toml
 /// [[context.uses]]
-/// crate = "blox_ctx_workers"
+/// crate = "blox_ctx_pool_ref"
 ///
 ///   [[context.uses.fields]]
 ///   name = "worker_refs"

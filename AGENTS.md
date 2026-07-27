@@ -37,11 +37,9 @@ bloxide/
       counter-messages/        ← CounterMsg shared by counter blox and minimal wiring demo
       bhsm-tst-messages/       ← BhsmTstMsg shared by the bhsm-tst HSM topology demo
     context/
-      blox-ctx-workers/        ← domain context crate + action functions
       blox-ctx-pool-ref/       ← domain context crate + notify_pool_done action function
       blox-ctx-rounds/         ← increment_round action function
       blox-ctx-current-timer/  ← schedule_resume/cancel_timer_by_id action functions
-      blox-ctx-current-task/   ← domain context crate
       blox-ctx-ticks/          ← increment_count action function
     bloxes/
       ping/                    ← declarative Ping actor; depends on context crates (blox-ctx-rounds, blox-ctx-current-timer, bloxide-messaging)
@@ -243,6 +241,7 @@ pub struct PingCtx<R: BloxRuntime> {
 
 16. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (auto-detected by naming convention, e.g. `foo_factory: fn(...) -> ...`). The binary (or impl crate) provides the concrete factory closure at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
 17. **KillCapability is a runtime capability, not a message** — `KillCapability::kill(handle)` immediately aborts the child's task without any callbacks firing. No `on_exit` handlers run; the task is dropped in-place. KillCapability is for (1) unresponsive actors that cannot process Stop, or (2) cleanup of stopped actors whose resources should be freed immediately. Kill works for both static and dynamic actors; killed actors are permanently dead and cannot be restarted — normal lifecycle uses Reset/Stop through dispatch(). KillCapability lives in `bloxide-core` as a trait; runtimes implement it (`NoKill` for Embassy, `Kill` for Tokio via `R::abort`). Supervisors store the concrete `TaskHandle` per child; actors never see it.
+18. **System.toml is the single source of truth for concrete action wiring** — Blox-crate-level codegen ALWAYS produces stub `spec_skeletons`. The system-level codegen (from `system.toml`) ALWAYS produces concrete action closures, for every actor including dynamically spawned ones. There is no `crate = "crate"` path at the blox-crate level. Dynamic actors are declared in `system.toml` with `kind = "dynamic"` — they get a concrete spec generated but no channels/tasks/bootstrap in main.rs. The impl crate's spawn function is generic over the spec type; the generated main.rs monomorphizes it with the system-level concrete spec.
 
 ## Development Workflow
 

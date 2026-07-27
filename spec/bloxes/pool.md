@@ -17,8 +17,7 @@ This blox showcases:
 
 - Blox crate: `crates/bloxes/pool/`
 - Messages crate: `crates/messages/pool-messages/`
-- Context crate: `crates/context/blox-ctx-workers/` (provides `WorkerSpawnFn` type)
-- Impl crate: `crates/impl/tokio-pool-demo-impl/` (provides worker factory function)
+- Impl crate: `crates/impl/tokio-pool-demo-impl/` (provides worker factory function and pool action handlers)
 
 ## State Hierarchy
 
@@ -119,7 +118,6 @@ pub struct PoolCtx<R: BloxRuntime> {
 
 | Action function / type | From crate | Description |
 |-------|-----------|----------------|
-| `WorkerSpawnFn<R>` | `blox-ctx-workers` | Function pointer type for worker spawning |
 | `notify_pool_done` | `blox-ctx-pool-ref` | Worker sends WorkDone to pool |
 
 ## Implementation Notes

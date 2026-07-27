@@ -1532,19 +1532,13 @@ name = "PoolCtx"
 generics = "<R: BloxRuntime>"
 on_init = "ctx.worker_refs_mut().clear(); ctx.set_pending(0);"
 
-[[context.uses]]
-crate = "blox_ctx_workers"
-traits = ["HasWorkers<R>"]
+[[context.fields]]
+name = "worker_refs"
+type = "Vec<ActorRef<WorkerMsg, R>>"
 
-  [[context.uses.fields]]
-  name = "worker_refs"
-  ty = "Vec<ActorRef<WorkerMsg, R>>"
-  role = "state"
-
-  [[context.uses.fields]]
-  name = "pending"
-  ty = "u32"
-  role = "state"
+[[context.fields]]
+name = "pending"
+type = "u32"
 
 [topology]
 

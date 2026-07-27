@@ -138,7 +138,7 @@ pub struct RemovePeer {
 Peer action functions are defined in the **context crate**:
 
 ```rust
-// In blox-ctx-workers/src/lib.rs
+// In the impl crate (tokio-pool-demo-impl/src/lib.rs)
 use bloxide_core::actor::{ActorId, ActorRef};
 use bloxide_core::capability::BloxRuntime;
 use pool_messages::WorkerMsg;
@@ -207,7 +207,7 @@ to = "stay"
 The spawn factory returns the domain-specific control type:
 
 ```rust
-// In pool-messages/src/lib.rs (or blox-ctx-workers)
+// In pool-messages/src/lib.rs
 pub type WorkerSpawnFn<R> = fn(
     ActorId,
     &ActorRef<PoolMsg, R>,
@@ -382,7 +382,7 @@ pub type ChildSpawnFn<ParentMsg, ChildMsg, R> = fn(
 The concrete pool example specializes this:
 
 ```rust
-// In pool-messages/src/lib.rs (or blox-ctx-workers)
+// In pool-messages/src/lib.rs
 pub type WorkerSpawnFn<R> = fn(
     ActorId,
     &ActorRef<PoolMsg, R>,

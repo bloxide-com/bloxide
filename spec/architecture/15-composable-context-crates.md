@@ -36,11 +36,9 @@ service crates        ← infrastructure capabilities (optional)
   bloxide-timer       ← set_timer, cancel_timer (action functions)
 
 domain context crates ← domain-specific data composition (optional)
-  blox-ctx-workers    ← WorkerSpawnFn<R> type, spawn-related action functions
   blox-ctx-pool-ref   ← notify_pool_done action function
   blox-ctx-rounds     ← increment_round action function
   blox-ctx-current-timer ← schedule_resume, cancel_timer_by_id action functions
-  blox-ctx-current-task  ← (task state helpers)
   blox-ctx-ticks        ← increment_count action function
 
 blox crates           ← TOML → codegen (depend on context crates)
