@@ -903,13 +903,13 @@ pub fn generate(
             .iter()
             .map(|imp| {
                 let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", imp))
-                    .unwrap_or_else(|_| panic!("invalid extra_import: {}", imp));
-                quote! {
+                    .map_err(|e| anyhow::anyhow!("invalid extra_import '{}': {}", imp, e))?;
+                Ok(quote! {
                     #[allow(unused_imports)]
                     #use_item
-                }
+                })
             })
-            .collect();
+            .collect::<anyhow::Result<Vec<_>>>()?;
 
         // Wrap each item in #[cfg] if needed. When active_feature is set,
         // we've already filtered to only the active variant, so strip #[cfg].

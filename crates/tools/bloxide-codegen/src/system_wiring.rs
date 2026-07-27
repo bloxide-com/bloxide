@@ -556,12 +556,14 @@ pub fn generate(
         let primary_path = primary.message_path.as_deref().unwrap_or(&primary.message);
         let primary_msg = substitute_runtime_generic(primary_path, &runtime_ident_str);
         let primary_msg_tokens: proc_macro2::TokenStream = syn::parse_str(&primary_msg)
-            .unwrap_or_else(|e| {
-                panic!(
+            .map_err(|e| {
+                anyhow::anyhow!(
                     "failed to parse message type '{}' for actor '{}': {}",
-                    primary_msg, actor.name, e
+                    primary_msg,
+                    actor.name,
+                    e
                 )
-            });
+            })?;
         msg_type_tokens.push(quote! { #primary_msg_tokens(#capacity_lit) });
 
         // Secondary mailboxes.
@@ -588,12 +590,15 @@ pub fn generate(
 
             let path = mbox.message_path.as_deref().unwrap_or(&mbox.message);
             let msg = substitute_runtime_generic(path, &runtime_ident_str);
-            let msg_tokens: proc_macro2::TokenStream = syn::parse_str(&msg).unwrap_or_else(|e| {
-                panic!(
-                    "failed to parse secondary message type '{}' for actor '{}': {}",
-                    msg, actor.name, e
-                )
-            });
+            let msg_tokens: proc_macro2::TokenStream = syn::parse_str(&msg)
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "failed to parse secondary message type '{}' for actor '{}': {}",
+                        msg,
+                        actor.name,
+                        e
+                    )
+                })?;
             let cap_lit = proc_macro2::Literal::usize_unsuffixed(capacity);
             msg_type_tokens.push(quote! { #msg_tokens(#cap_lit) });
         }

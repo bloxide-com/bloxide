@@ -294,8 +294,10 @@ fn generate_variant(
             if let Some(ref cfg) = cfg_attr {
                 let cfg_ts: proc_macro2::TokenStream = cfg
                     .parse()
-                    .map_err(|e| anyhow::anyhow!("invalid cfg attr '{}': {}", cfg, e))
-                    .unwrap_or_else(|e| panic!("{}", e));
+                    .unwrap_or_else(|e| {
+                        eprintln!("bloxide: warning: invalid cfg attr '{}': {}", cfg, e);
+                        quote! {}
+                    });
                 quote! { #[cfg(#cfg_ts)] #b }
             } else {
                 quote! { #b }
