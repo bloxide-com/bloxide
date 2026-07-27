@@ -10,6 +10,26 @@ fn crate_name(s: &str) -> String {
     s.replace("-", "_")
 }
 
+/// Returns true if this actor is a timer service actor (no blox.toml, no
+/// channels, no task, no context — just a timer mailbox spawned directly).
+fn is_timer(actor: &crate::schema::ActorInstance) -> bool {
+    actor.kind.as_deref() == Some("timer")
+}
+
+/// Returns true if this actor is dynamically spawned (concrete spec generated
+/// at system level, but no channels/task/bootstrap/context in main.rs — the
+/// impl crate's spawn function handles construction at runtime).
+fn is_dynamic(actor: &crate::schema::ActorInstance) -> bool {
+    actor.kind.as_deref() == Some("dynamic")
+}
+
+/// Returns true if this actor should be skipped during main.rs body generation
+/// (channels, tasks, context, machine, bootstrap). Both timer and dynamic
+/// actors are skipped — they have no presence in the generated main function.
+fn skip_in_main_body(actor: &crate::schema::ActorInstance) -> bool {
+    is_timer(actor) || is_dynamic(actor)
+}
+
 /// A constructor field in declaration order (state fields excluded).
 #[derive(Debug, Clone)]
 struct CtorField {
@@ -241,7 +261,7 @@ fn validate(
     let has_supervisor = !config.supervision.is_empty();
 
     for actor in &config.actors {
-        if actor.kind.as_deref() == Some("timer") {
+        if skip_in_main_body(actor) {
             continue;
         }
         if !blox_configs.contains_key(&actor.blox) {
@@ -274,7 +294,7 @@ fn validate(
     }
 
     for actor in &config.actors {
-        if actor.kind.as_deref() == Some("timer") {
+        if skip_in_main_body(actor) {
             continue;
         }
         let blox_config = blox_configs.get(&actor.blox).ok_or_else(|| {
@@ -404,7 +424,7 @@ pub fn generate(
     // Message type imports and bootstrap struct imports.
     let mut bootstrap_imports: BTreeSet<(String, String)> = BTreeSet::new();
     for actor in &config.actors {
-        if actor.kind.as_deref() == Some("timer") {
+        if skip_in_main_body(actor) {
             continue;
         }
         if let Some(blox_config) = blox_configs.get(&actor.blox) {
@@ -510,7 +530,7 @@ pub fn generate(
     // ── Channel creation ────────────────────────────────────────────────────
     let mut channel_stmts = Vec::new();
     for actor in &config.actors {
-        if actor.kind.as_deref() == Some("timer") {
+        if skip_in_main_body(actor) {
             continue;
         }
         let id_ident = format_ident!("{}_id", actor.name);
@@ -795,7 +815,7 @@ pub fn generate(
     // ── Actor task declarations (file level) ──────────────────────────────
     let mut task_decls = Vec::new();
     for actor in &config.actors {
-        if actor.kind.as_deref() == Some("timer") {
+        if skip_in_main_body(actor) {
             continue;
         }
         let blox_config = blox_configs.get(&actor.blox).ok_or_else(|| {
@@ -835,7 +855,7 @@ pub fn generate(
     // ── Context construction ────────────────────────────────────────────────
     let mut ctx_stmts = Vec::new();
     for actor in &config.actors {
-        if actor.kind.as_deref() == Some("timer") {
+        if skip_in_main_body(actor) {
             continue;
         }
         let blox_config = blox_configs.get(&actor.blox).ok_or_else(|| {
@@ -933,7 +953,7 @@ pub fn generate(
     // ── Machine construction ────────────────────────────────────────────────
     let mut machine_stmts = Vec::new();
     for actor in &config.actors {
-        if actor.kind.as_deref() == Some("timer") {
+        if skip_in_main_body(actor) {
             continue;
         }
         let machine_ident = format_ident!("{}_machine", actor.name);
@@ -983,7 +1003,7 @@ pub fn generate(
     // ── Bootstrap message sends ─────────────────────────────────────────────
     let mut bootstrap_send_stmts = Vec::new();
     for actor in &config.actors {
-        if actor.kind.as_deref() == Some("timer") {
+        if skip_in_main_body(actor) {
             continue;
         }
         if actor.bootstrap.is_empty() {

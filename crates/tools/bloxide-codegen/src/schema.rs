@@ -440,7 +440,10 @@ pub struct ActorInstance {
     pub name: String,
     /// Blox crate name (e.g. `"ping-blox"`).
     pub blox: String,
-    /// Actor kind: "timer" for timer service actors, None for normal blox actors.
+    /// Actor kind: "timer" for timer service actors, "dynamic" for dynamically
+    /// spawned actors (concrete spec generated, but no channels/task/bootstrap
+    /// in main.rs — the impl crate's spawn function handles construction).
+    /// None (or absent) for normal static actors.
     pub kind: Option<String>,
     /// Impl crate for concrete action closures (Phase 3 system codegen).
     /// When set, actions with `impl_required = true` resolve functions from this crate.
