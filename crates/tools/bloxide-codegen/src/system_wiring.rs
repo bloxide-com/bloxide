@@ -1139,7 +1139,8 @@ fn rustfmt_source(source: &str) -> anyhow::Result<String> {
         let formatted = String::from_utf8_lossy(&output.stdout).to_string();
         Ok(formatted)
     } else {
-        // rustfmt failed — return the source as-is rather than panicking.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("bloxide: warning: rustfmt failed, returning unformatted code:\n{}", stderr);
         Ok(source.to_string())
     }
 }
