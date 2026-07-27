@@ -51,7 +51,7 @@ field = "self_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "accessor"
 
-# Direct context fields (formerly provided by blox_ctx_workers / impl_has_workers)
+# Direct context fields for worker tracking and spawn state.
 [[context.fields]]
 name = "worker_refs"
 type = "Vec<ActorRef<WorkerMsg, R>>"
