@@ -2,7 +2,7 @@
 pub mod model;
 
 use bloxide_codegen::schema::{
-    BloxConfig, ContextConfig, StateConfig, TopologyConfig, TransitionConfig, WiringConfig,
+    BloxConfig, ContextConfig, StateConfig, TopologyConfig, TransitionConfig,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -71,7 +71,6 @@ fn config_to_spec(name: &str, crate_path: &str, config: &BloxConfig) -> BloxSpec
         handlers: Vec::new(),
         entry_exit: HashMap::new(),
         message_sets: Vec::new(),
-        wiring: None,
         messages: Vec::new(),
         actions: Vec::new(),
         context: None,
@@ -152,11 +151,6 @@ fn config_to_spec(name: &str, crate_path: &str, config: &BloxConfig) -> BloxSpec
         .map(|(name, variants)| model::MessageSet { name, variants })
         .collect();
 
-    // --- Wiring (connections view) ---
-    if let Some(wiring) = &config.wiring {
-        extract_wiring(&mut spec, wiring);
-    }
-
     spec
 }
 
@@ -181,8 +175,6 @@ fn extract_states(spec: &mut BloxSpec, topology: &TopologyConfig) {
 fn state_kind(state_cfg: &StateConfig) -> model::StateKind {
     if state_cfg.error.unwrap_or(false) {
         model::StateKind::Error
-    } else if state_cfg.terminal.unwrap_or(false) {
-        model::StateKind::Terminal
     } else if state_cfg.composite.unwrap_or(false) {
         model::StateKind::Composite
     } else {
@@ -367,54 +359,6 @@ fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
         struct_name: context.name.clone(),
         fields,
         uses,
-    });
-}
-
-fn extract_wiring(spec: &mut BloxSpec, wiring: &WiringConfig) {
-    let actors: Vec<model::WiringActor> = wiring
-        .actors
-        .iter()
-        .map(|a| model::WiringActor {
-            blox: a.blox.clone(),
-            name: a.name.clone(),
-            behavior: a.behavior.clone(),
-            behavior_traits: a.behavior_traits.clone(),
-        })
-        .collect();
-
-    let connections: Vec<model::WiringConnection> = wiring
-        .connections
-        .iter()
-        .map(|c| model::WiringConnection {
-            from: c.from.clone(),
-            to: c.to.clone(),
-            message: c.message.clone(),
-            channel_capacity: c.channel_capacity,
-        })
-        .collect();
-
-    let supervisors: Vec<model::WiringSupervisor> = wiring
-        .supervisors
-        .iter()
-        .map(|s| model::WiringSupervisor {
-            name: s.name.clone(),
-            strategy: s.strategy.clone(),
-            children: s
-                .children
-                .iter()
-                .map(|c| model::WiringSupervisorChild {
-                    actor: c.actor.clone(),
-                    restart_max: c.restart_max,
-                })
-                .collect(),
-        })
-        .collect();
-
-    spec.wiring = Some(model::WiringGraph {
-        runtime: wiring.runtime.clone(),
-        actors,
-        connections,
-        supervisors,
     });
 }
 

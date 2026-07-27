@@ -15,7 +15,6 @@ struct StateRow {
     name: String,
     initial: bool,
     composite: bool,
-    terminal: bool,
     error: bool,
     parent: Option<String>,
 }
@@ -32,10 +31,6 @@ fn state_row_from_value(state: &toml::Value) -> Option<StateRow> {
         .get("composite")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let terminal = table
-        .get("terminal")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
     let error = table
         .get("error")
         .and_then(|v| v.as_bool())
@@ -48,7 +43,6 @@ fn state_row_from_value(state: &toml::Value) -> Option<StateRow> {
         name,
         initial,
         composite,
-        terminal,
         error,
         parent,
     })
@@ -89,16 +83,15 @@ pub fn list_states(blox_name: &str, json: bool) -> anyhow::Result<()> {
 
     // Table output with fixed-width columns.
     println!(
-        "{:<20} {:<8} {:<10} {:<10} {:<8} {:<20}",
-        "NAME", "INITIAL", "COMPOSITE", "TERMINAL", "ERROR", "PARENT"
+        "{:<20} {:<8} {:<10} {:<8} {:<20}",
+        "NAME", "INITIAL", "COMPOSITE", "ERROR", "PARENT"
     );
     for row in &rows {
         println!(
-            "{:<20} {:<8} {:<10} {:<10} {:<8} {:<20}",
+            "{:<20} {:<8} {:<10} {:<8} {:<20}",
             row.name,
             row.initial,
             row.composite,
-            row.terminal,
             row.error,
             row.parent.as_deref().unwrap_or("")
         );

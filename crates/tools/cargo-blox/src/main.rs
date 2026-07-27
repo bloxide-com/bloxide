@@ -153,8 +153,6 @@ enum BloxSubcommand {
         #[arg(long)]
         composite: bool,
         #[arg(long)]
-        terminal: bool,
-        #[arg(long)]
         error: bool,
     },
     /// Remove a state from a blox topology
@@ -258,16 +256,8 @@ fn main() -> anyhow::Result<()> {
                 state_name,
                 parent,
                 composite,
-                terminal,
                 error,
-            } => state::add_state(
-                &blox_name,
-                &state_name,
-                parent.as_deref(),
-                composite,
-                terminal,
-                error,
-            ),
+            } => state::add_state(&blox_name, &state_name, parent.as_deref(), composite, error),
             BloxSubcommand::RemoveState {
                 blox_name,
                 state_name,

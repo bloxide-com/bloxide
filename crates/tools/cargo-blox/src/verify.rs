@@ -12,11 +12,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+use crate::utils::find_workspace_root_from;
+
 pub fn verify(workspace: Option<PathBuf>) -> anyhow::Result<()> {
     let root = workspace.unwrap_or_else(|| {
         let manifest_dir =
             PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string()));
-        find_workspace_root(&manifest_dir).unwrap_or(manifest_dir)
+        find_workspace_root_from(&manifest_dir).unwrap_or(manifest_dir)
     });
 
     println!(
@@ -168,43 +170,6 @@ pub fn verify(workspace: Option<PathBuf>) -> anyhow::Result<()> {
                 }
             }
         }
-
-        // Verify wiring
-        if let Some(wiring) = &config.wiring {
-            if !wiring.actors.is_empty() {
-                let exported_wiring = match &spec.wiring {
-                    Some(w) => w,
-                    None => {
-                        errors.push(format!("spec '{}': wiring missing", spec.name));
-                        continue;
-                    }
-                };
-                if exported_wiring.runtime != wiring.runtime {
-                    errors.push(format!(
-                        "spec '{}': wiring runtime '{}' != '{}'",
-                        spec.name, exported_wiring.runtime, wiring.runtime
-                    ));
-                }
-                for actor in &wiring.actors {
-                    if !exported_wiring.actors.iter().any(|a| a.name == actor.name) {
-                        errors.push(format!(
-                            "spec '{}': wiring actor '{}' missing",
-                            spec.name, actor.name
-                        ));
-                    }
-                }
-                for conn in &wiring.connections {
-                    if !exported_wiring.connections.iter().any(|c| {
-                        c.from == conn.from && c.to == conn.to && c.message == conn.message
-                    }) {
-                        errors.push(format!(
-                            "spec '{}': wiring connection {} → {} ({}) missing",
-                            spec.name, conn.from, conn.to, conn.message
-                        ));
-                    }
-                }
-            }
-        }
     }
 
     // Step 6: Report
@@ -247,21 +212,6 @@ fn find_blox_tomls(root: &Path) -> Vec<PathBuf> {
         })
         .map(|e| e.path().to_path_buf())
         .collect()
-}
-
-fn find_workspace_root(start: &Path) -> Option<PathBuf> {
-    let mut current = start;
-    loop {
-        let cargo_toml = current.join("Cargo.toml");
-        if cargo_toml.exists() {
-            if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
-                if content.contains("[workspace]") {
-                    return Some(current.to_path_buf());
-                }
-            }
-        }
-        current = current.parent()?;
-    }
 }
 
 fn parse_event_pattern(pattern: &str) -> (String, String) {

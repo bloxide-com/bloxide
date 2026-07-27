@@ -44,7 +44,6 @@ name = \"Active\"
 
 [[topology.states]]
 name = \"Done\"
-terminal = true
 ";
 
 /// A fixture with a topology section but no states.
@@ -94,10 +93,6 @@ fn list_three_states_table() {
         stdout.contains("COMPOSITE"),
         "header COMPOSITE should be present"
     );
-    assert!(
-        stdout.contains("TERMINAL"),
-        "header TERMINAL should be present"
-    );
     assert!(stdout.contains("ERROR"), "header ERROR should be present");
     assert!(stdout.contains("PARENT"), "header PARENT should be present");
     assert!(stdout.contains("Idle"), "state Idle should be listed");
@@ -129,13 +124,11 @@ fn list_three_states_json() {
     assert_eq!(idle["name"], "Idle");
     assert_eq!(idle["initial"], true);
     assert_eq!(idle["composite"], false);
-    assert_eq!(idle["terminal"], false);
     assert_eq!(idle["error"], false);
     assert!(idle["parent"].is_null(), "Idle parent should be null");
 
     let done = &parsed[2];
     assert_eq!(done["name"], "Done");
-    assert_eq!(done["terminal"], true);
     assert_eq!(done["initial"], false);
 }
 

@@ -11,7 +11,6 @@ pub mod system_spec;
 pub mod system_wiring;
 mod topology;
 pub mod util;
-pub mod wiring;
 
 use schema::{BloxConfig, SystemConfig};
 use std::collections::{BTreeMap, BTreeSet};
@@ -92,13 +91,6 @@ pub fn generate_all(
         }
     }
 
-    if let Some(wiring) = &config.wiring {
-        if !wiring.actors.is_empty() {
-            let code = wiring::generate(wiring, crate_name)?;
-            files.push(("wiring_main.rs".to_string(), code));
-        }
-    }
-
     if let Some(mailboxes) = &config.mailboxes {
         let code = mailboxes::generate(mailboxes)?;
         files.push(("mailboxes_impls.rs".to_string(), code));
@@ -154,37 +146,6 @@ pub fn generate_from_toml(input_path: &Path) -> anyhow::Result<Vec<(String, Stri
     generate_all(&config, &crate_name)
 }
 
-/// Generate artifacts and write them to a directory.
-///
-/// Files are written only if their content has changed, preserving mtime for
-/// caching.
-pub fn generate_to_dir(
-    config: &BloxConfig,
-    crate_name: &str,
-    output_dir: &Path,
-) -> anyhow::Result<Vec<String>> {
-    std::fs::create_dir_all(output_dir)?;
-
-    let files = generate_all(config, crate_name)?;
-    let mut written = Vec::new();
-
-    for (filename, content) in files {
-        let path = output_dir.join(&filename);
-        let needs_write = if path.exists() {
-            std::fs::read_to_string(&path)? != content
-        } else {
-            true
-        };
-
-        if needs_write {
-            std::fs::write(&path, &content)?;
-            written.push(filename);
-        }
-    }
-
-    Ok(written)
-}
-
 pub fn generate_system_wiring_from_toml(
     system_path: &Path,
     workspace_root: &Path,
@@ -193,45 +154,7 @@ pub fn generate_system_wiring_from_toml(
     let config: SystemConfig = toml::from_str(&content)?;
 
     // Discover all blox.toml files in the workspace (excluding target/).
-    let mut blox_configs = BTreeMap::new();
-    for entry in walkdir::WalkDir::new(workspace_root)
-        .into_iter()
-        .filter_entry(|e| e.file_name() != "target")
-        .filter_map(|e| e.ok())
-    {
-        if entry.file_name() == "blox.toml" {
-            let blox_content = std::fs::read_to_string(entry.path())?;
-            let blox_config: BloxConfig = toml::from_str(&blox_content)?;
-            // Use the parent directory name as the key (e.g. "ping" for crates/bloxes/ping/blox.toml)
-            // But the system.toml references blox crates by their crate name (e.g. "ping-blox")
-            // so we need to derive the crate name from the Cargo.toml in the same directory.
-            let dir = entry.path().parent().unwrap();
-            let cargo_toml_path = dir.join("Cargo.toml");
-            let key = if cargo_toml_path.exists() {
-                let cargo_content = std::fs::read_to_string(&cargo_toml_path)?;
-                // Parse [package] name = "..." from Cargo.toml
-                cargo_content
-                    .lines()
-                    .find_map(|line| {
-                        let trimmed = line.trim();
-                        if trimmed.starts_with("name = ") {
-                            let name = trimmed
-                                .strip_prefix("name = ")
-                                .unwrap()
-                                .trim()
-                                .trim_matches('"');
-                            Some(name.to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| dir.file_name().unwrap().to_string_lossy().to_string())
-            } else {
-                dir.file_name().unwrap().to_string_lossy().to_string()
-            };
-            blox_configs.insert(key, blox_config);
-        }
-    }
+    let blox_configs = util::discover_blox_configs(workspace_root)?;
 
     // Infer active features from the system.toml + blox configs.
     //
@@ -393,43 +316,8 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
     let content = std::fs::read_to_string(system_path)?;
     let config: SystemConfig = toml::from_str(&content)?;
 
-    // Discover all blox.toml files (same logic as generate_system_wiring_from_toml,
-    // excluding target/).
-    let mut blox_configs = BTreeMap::new();
-    for entry in walkdir::WalkDir::new(workspace_root)
-        .into_iter()
-        .filter_entry(|e| e.file_name() != "target")
-        .filter_map(|e| e.ok())
-    {
-        if entry.file_name() == "blox.toml" {
-            let blox_content = std::fs::read_to_string(entry.path())?;
-            let blox_config: BloxConfig = toml::from_str(&blox_content)?;
-            let dir = entry.path().parent().unwrap();
-            let cargo_toml_path = dir.join("Cargo.toml");
-            let key = if cargo_toml_path.exists() {
-                let cargo_content = std::fs::read_to_string(&cargo_toml_path)?;
-                cargo_content
-                    .lines()
-                    .find_map(|line| {
-                        let trimmed = line.trim();
-                        if trimmed.starts_with("name = ") {
-                            let name = trimmed
-                                .strip_prefix("name = ")
-                                .unwrap()
-                                .trim()
-                                .trim_matches('"');
-                            Some(name.to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_else(|| dir.file_name().unwrap().to_string_lossy().to_string())
-            } else {
-                dir.file_name().unwrap().to_string_lossy().to_string()
-            };
-            blox_configs.insert(key, blox_config);
-        }
-    }
+    // Discover all blox.toml files (same logic as generate_system_wiring_from_toml).
+    let blox_configs = util::discover_blox_configs(workspace_root)?;
 
     // Infer active features.
     let inferred = infer_active_features(&config, &blox_configs);

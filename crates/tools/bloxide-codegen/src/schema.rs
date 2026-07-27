@@ -9,7 +9,6 @@ pub struct BloxConfig {
     pub event: Option<EventConfig>,
     pub topology: Option<TopologyConfig>,
     pub context: Option<ContextConfig>,
-    pub wiring: Option<WiringConfig>,
     pub mailboxes: Option<MailboxesConfig>,
 }
 
@@ -147,7 +146,6 @@ pub struct StateConfig {
     pub composite: Option<bool>,
     pub parent: Option<String>,
     pub initial: Option<bool>,
-    pub terminal: Option<bool>,
     pub error: Option<bool>,
 }
 
@@ -307,22 +305,19 @@ pub struct ContextActionConfig {
 ///
 /// # Variants
 ///
-/// **Single-field accessor** (from a service crate like `bloxide-messaging`):
+/// **Single-field** (from a service crate like `bloxide-messaging`):
 /// ```toml
 /// [[context.uses]]
 /// crate = "bloxide_messaging"
-/// trait = "HasPeerRef<R, PingPongMsg>"
 /// field = "peer_ref"
 /// field_type = "ActorRef<PingPongMsg, R>"
 /// role = "ctor"
 /// ```
 ///
-/// **Multi-field trait** (domain context crate):
+/// **Multi-field** (domain context crate):
 /// ```toml
 /// [[context.uses]]
 /// crate = "blox_ctx_workers"
-/// traits = ["HasWorkers<R>", "HasWorkerFactory<R>"]
-/// impl_macro = "impl_has_workers"
 ///
 ///   [[context.uses.fields]]
 ///   name = "worker_refs"
@@ -336,35 +331,22 @@ pub struct ContextUse {
     #[serde(rename = "crate")]
     pub crate_name: String,
 
-    /// Single trait provided by this crate (e.g. `"HasPeerRef<R, PingPongMsg>"`).
-    /// Mutually exclusive with `traits`; use whichever fits the entry.
-    #[serde(rename = "trait")]
-    pub trait_: Option<String>,
-
-    /// Multiple traits provided by this crate (for multi-field context crates).
-    /// Mutually exclusive with `trait`.
-    #[serde(default)]
-    pub traits: Vec<String>,
-
-    /// Field name for single-field accessor traits (e.g. `"peer_ref"`).
+    /// Field name for single-field context crates (e.g. `"peer_ref"`).
     pub field: Option<String>,
 
-    /// Field type for single-field accessor traits (e.g. `"ActorRef<PingPongMsg, R>"`).
+    /// Field type for single-field context crates (e.g. `"ActorRef<PingPongMsg, R>"`).
     pub field_type: Option<String>,
 
     /// Field role: `"accessor"`, `"ctor"`, or `"state"`.
     /// Controls how the codegen emits the field and attributes.
     pub role: Option<String>,
 
-    /// `#[provides(TraitPath)]` annotation for the BloxCtx derive macro.
-    /// Generates `impl TraitPath for Struct` that returns `&self.field`.
-    /// May include associated type bindings.
-    /// Sub-fields for multi-field traits.
+    /// Sub-fields for multi-field context crates.
     #[serde(default)]
     pub fields: Vec<ContextUseField>,
 
     /// Feature gate for this entire `uses` entry. When set, the entry's
-    /// trait imports, fields, and impl_macro call are emitted only under
+    /// imports and fields are emitted only under
     /// `#[cfg(feature = "...")]`.
     #[serde(default)]
     pub feature: Option<String>,
@@ -378,70 +360,10 @@ pub struct ContextUseField {
     pub ty: String,
     /// Field role: `"state"` (zero-initialized) or `"ctor"` (constructor param).
     pub role: Option<String>,
-    /// `#[provides(TraitPath)]` annotation for the BloxCtx derive macro.
-    /// Generates `impl TraitPath for Struct` that returns `&self.field`.
-    #[serde(default)]
-    pub provides: Option<String>,
-    /// `#[provides_mut(TraitPath, method_name)]` annotation for BloxCtx.
-    /// Generates `impl TraitPath for Struct` with a mutable accessor.
-    #[serde(default)]
-    pub provides_mut: Option<String>,
     /// Feature gate for this sub-field. When set, the field is emitted only
     /// under `#[cfg(feature = "...")]`.
     #[serde(default)]
     pub feature: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct WiringConfig {
-    pub runtime: String,
-    #[serde(default)]
-    pub channels: Vec<ChannelConfig>,
-    #[serde(default)]
-    pub actors: Vec<WiringActorConfig>,
-    #[serde(default)]
-    pub connections: Vec<WiringConnectionConfig>,
-    #[serde(default)]
-    pub supervisors: Vec<WiringSupervisorConfig>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct WiringActorConfig {
-    pub blox: String,
-    pub name: String,
-    pub behavior: Option<String>,
-    #[serde(default)]
-    pub behavior_traits: Vec<String>,
-    #[serde(default)]
-    pub context_fields: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct WiringConnectionConfig {
-    pub from: String,
-    pub to: String,
-    pub message: String,
-    pub channel_capacity: Option<usize>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct WiringSupervisorConfig {
-    pub name: String,
-    pub strategy: String,
-    #[serde(default)]
-    pub children: Vec<WiringSupervisorChildConfig>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct WiringSupervisorChildConfig {
-    pub actor: String,
-    pub restart_max: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct ChannelConfig {
-    pub message: String,
-    pub capacity: usize,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -518,9 +440,6 @@ pub struct ActorInstance {
     pub name: String,
     /// Blox crate name (e.g. `"ping-blox"`).
     pub blox: String,
-    /// Behavior type name (e.g. `"DemoBehavior"`).
-    /// Required when the blox context has a generic behavior parameter `B`.
-    pub behavior: Option<String>,
     /// Actor kind: "timer" for timer service actors, None for normal blox actors.
     pub kind: Option<String>,
     /// Impl crate for concrete action closures (Phase 3 system codegen).
@@ -528,9 +447,6 @@ pub struct ActorInstance {
     pub impl_crate: Option<String>,
     /// Channel capacity for this actor's primary mailbox (default 16).
     pub channel_capacity: Option<usize>,
-    /// Traits the behavior type implements (e.g. `["CountsRounds", "HasCurrentTimer"]`).
-    #[serde(default)]
-    pub behavior_traits: Vec<String>,
     /// Bootstrap messages to send after supervisor starts.
     #[serde(default)]
     pub bootstrap: Vec<BootstrapMessage>,

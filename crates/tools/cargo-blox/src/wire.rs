@@ -4,6 +4,8 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
+use crate::utils::find_workspace_root;
+
 pub fn wire(system: Option<PathBuf>, output: Option<PathBuf>, run: bool) -> Result<()> {
     let workspace_root = find_workspace_root()?;
     let system_path = system.unwrap_or_else(|| workspace_root.join("system.toml"));
@@ -73,24 +75,4 @@ fn parse_package_name(cargo_toml: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn find_workspace_root() -> Result<PathBuf> {
-    let manifest_dir =
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string()));
-    let mut current = manifest_dir.as_path();
-    loop {
-        let cargo_toml = current.join("Cargo.toml");
-        if cargo_toml.exists() {
-            if let Ok(content) = std::fs::read_to_string(&cargo_toml) {
-                if content.contains("[workspace]") {
-                    return Ok(current.to_path_buf());
-                }
-            }
-        }
-        match current.parent() {
-            Some(parent) => current = parent,
-            None => anyhow::bail!("workspace root not found"),
-        }
-    }
 }

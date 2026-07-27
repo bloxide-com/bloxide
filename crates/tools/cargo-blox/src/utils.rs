@@ -3,7 +3,86 @@
 
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Walk up from `start` to find the workspace root (directory containing
+/// `Cargo.toml` with a `[workspace]` section).
+pub fn find_workspace_root_from(start: &Path) -> Option<PathBuf> {
+    let mut current = if start.is_absolute() {
+        start.to_path_buf()
+    } else {
+        std::env::current_dir().ok()?.join(start)
+    };
+    loop {
+        let cargo_toml = current.join("Cargo.toml");
+        if cargo_toml.exists() {
+            if let Ok(content) = fs::read_to_string(&cargo_toml) {
+                if content.contains("[workspace]") {
+                    return Some(current);
+                }
+            }
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
+}
+
+/// Find the workspace root from the current directory.
+pub fn find_workspace_root() -> Result<PathBuf> {
+    find_workspace_root_from(&std::env::current_dir()?)
+        .ok_or_else(|| anyhow::anyhow!("not inside a Cargo workspace"))
+}
+
+/// Extract the `[package] name = "..."` value from a Cargo.toml file.
+#[allow(dead_code)]
+pub fn parse_package_name(cargo_toml_path: &Path) -> Option<String> {
+    let content = fs::read_to_string(cargo_toml_path).ok()?;
+    content.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.starts_with("name = ") {
+            let name = trimmed
+                .strip_prefix("name = ")
+                .unwrap()
+                .trim()
+                .trim_matches('"');
+            Some(name.to_string())
+        } else {
+            None
+        }
+    })
+}
+
+/// Discover all `blox.toml` files under `workspace_root` (excluding `target/`),
+/// parse each, and return a map keyed by the crate name from the sibling
+/// `Cargo.toml`.
+#[allow(dead_code)]
+pub fn discover_blox_configs(
+    workspace_root: &Path,
+) -> Result<std::collections::BTreeMap<String, bloxide_codegen::schema::BloxConfig>> {
+    use bloxide_codegen::schema::BloxConfig;
+    let mut blox_configs = std::collections::BTreeMap::new();
+    for entry in walkdir::WalkDir::new(workspace_root)
+        .into_iter()
+        .filter_entry(|e| e.file_name() != "target")
+        .filter_map(|e| e.ok())
+    {
+        if entry.file_name() == "blox.toml" {
+            let blox_content = fs::read_to_string(entry.path())?;
+            let blox_config: BloxConfig = toml::from_str(&blox_content)?;
+            let dir = entry.path().parent().unwrap();
+            let cargo_toml_path = dir.join("Cargo.toml");
+            let key = if cargo_toml_path.exists() {
+                parse_package_name(&cargo_toml_path)
+                    .unwrap_or_else(|| dir.file_name().unwrap().to_string_lossy().to_string())
+            } else {
+                dir.file_name().unwrap().to_string_lossy().to_string()
+            };
+            blox_configs.insert(key, blox_config);
+        }
+    }
+    Ok(blox_configs)
+}
 
 pub fn to_camel_case(name: &str) -> String {
     name.split(['-', '_'])

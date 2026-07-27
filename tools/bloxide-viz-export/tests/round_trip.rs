@@ -100,8 +100,7 @@ fn test_all_blox_tomls_parse() {
             config.actor.is_some()
                 || config.topology.is_some()
                 || config.messages.is_some()
-                || config.mailboxes.is_some()
-                || config.wiring.is_some(),
+                || config.mailboxes.is_some(),
             "blox.toml at {} has no recognized sections",
             toml_path.display()
         );
@@ -297,69 +296,6 @@ fn test_context_preserved() {
     }
 }
 
-#[test]
-fn test_wiring_preserved() {
-    let ws = workspace_root();
-    let tomls = find_blox_tomls(&ws);
-    let specs = export_workspace(&ws).expect("export should succeed");
-
-    for toml_path in &tomls {
-        let (_name, config) = parse_blox_toml(toml_path);
-
-        if let Some(wiring) = &config.wiring {
-            if !wiring.actors.is_empty() {
-                // Find the spec that has wiring — it might not match by actor
-                // name since wiring is a separate concern. Look for any spec
-                // with wiring that matches the runtime.
-                let spec_with_wiring = specs.iter().find(|s| s.wiring.is_some());
-
-                if let Some(spec) = spec_with_wiring {
-                    let exported_wiring = spec.wiring.as_ref().unwrap();
-
-                    assert_eq!(
-                        exported_wiring.runtime, wiring.runtime,
-                        "wiring runtime mismatch"
-                    );
-
-                    // Verify all actors are present
-                    for actor in &wiring.actors {
-                        assert!(
-                            exported_wiring.actors.iter().any(|a| a.name == actor.name),
-                            "wiring actor '{}' missing from export",
-                            actor.name
-                        );
-                    }
-
-                    // Verify all connections are present
-                    for conn in &wiring.connections {
-                        assert!(
-                            exported_wiring.connections.iter().any(|c| {
-                                c.from == conn.from && c.to == conn.to && c.message == conn.message
-                            }),
-                            "wiring connection {} → {} ({}) missing from export",
-                            conn.from,
-                            conn.to,
-                            conn.message
-                        );
-                    }
-
-                    // Verify all supervisors are present
-                    for sup in &wiring.supervisors {
-                        assert!(
-                            exported_wiring
-                                .supervisors
-                                .iter()
-                                .any(|s| { s.name == sup.name && s.strategy == sup.strategy }),
-                            "wiring supervisor '{}' missing from export",
-                            sup.name
-                        );
-                    }
-                }
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Step 6: Full round-trip — BloxConfig → BloxSpec → JSON → BloxSpec → compare
 // ---------------------------------------------------------------------------
@@ -409,8 +345,6 @@ fn test_full_round_trip_no_data_loss() {
                 // Verify kind
                 let expected_kind = if state.error.unwrap_or(false) {
                     bloxide_viz_export::model::StateKind::Error
-                } else if state.terminal.unwrap_or(false) {
-                    bloxide_viz_export::model::StateKind::Terminal
                 } else if state.composite.unwrap_or(false) {
                     bloxide_viz_export::model::StateKind::Composite
                 } else {
@@ -585,82 +519,6 @@ fn test_full_round_trip_no_data_loss() {
                     "context field '{}' type mismatch for {}",
                     name, spec.name
                 );
-            }
-        }
-
-        // --- Wiring round-trip ---
-        if let Some(wiring) = &config.wiring {
-            if !wiring.actors.is_empty() {
-                let exported_wiring = spec
-                    .wiring
-                    .as_ref()
-                    .unwrap_or_else(|| panic!("wiring missing from export for {}", spec.name));
-
-                assert_eq!(
-                    exported_wiring.runtime, wiring.runtime,
-                    "wiring runtime mismatch for {}",
-                    spec.name
-                );
-
-                assert_eq!(
-                    exported_wiring.actors.len(),
-                    wiring.actors.len(),
-                    "wiring actor count mismatch for {}",
-                    spec.name
-                );
-
-                for (i, actor) in wiring.actors.iter().enumerate() {
-                    assert_eq!(exported_wiring.actors[i].blox, actor.blox);
-                    assert_eq!(exported_wiring.actors[i].name, actor.name);
-                    assert_eq!(exported_wiring.actors[i].behavior, actor.behavior);
-                    assert_eq!(
-                        exported_wiring.actors[i].behavior_traits,
-                        actor.behavior_traits
-                    );
-                }
-
-                assert_eq!(
-                    exported_wiring.connections.len(),
-                    wiring.connections.len(),
-                    "wiring connection count mismatch for {}",
-                    spec.name
-                );
-
-                for (i, conn) in wiring.connections.iter().enumerate() {
-                    assert_eq!(exported_wiring.connections[i].from, conn.from);
-                    assert_eq!(exported_wiring.connections[i].to, conn.to);
-                    assert_eq!(exported_wiring.connections[i].message, conn.message);
-                    assert_eq!(
-                        exported_wiring.connections[i].channel_capacity,
-                        conn.channel_capacity
-                    );
-                }
-
-                assert_eq!(
-                    exported_wiring.supervisors.len(),
-                    wiring.supervisors.len(),
-                    "wiring supervisor count mismatch for {}",
-                    spec.name
-                );
-
-                for (i, sup) in wiring.supervisors.iter().enumerate() {
-                    assert_eq!(exported_wiring.supervisors[i].name, sup.name);
-                    assert_eq!(exported_wiring.supervisors[i].strategy, sup.strategy);
-                    assert_eq!(
-                        exported_wiring.supervisors[i].children.len(),
-                        sup.children.len()
-                    );
-                    for (j, child) in sup.children.iter().enumerate() {
-                        assert_eq!(
-                            exported_wiring.supervisors[i].children[j].actor,
-                            child.actor
-                        );
-                        assert_eq!(
-                            exported_wiring.supervisors[i].children[j].restart_max,
-                            child.restart_max
-                        );
-                    }
-                }
             }
         }
 
