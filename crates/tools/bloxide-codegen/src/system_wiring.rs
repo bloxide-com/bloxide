@@ -278,7 +278,9 @@ fn validate(
         if actor.kind.as_deref() == Some("timer") {
             continue;
         }
-        let blox_config = blox_configs.get(&actor.blox).unwrap();
+        let blox_config = blox_configs.get(&actor.blox).ok_or_else(|| {
+            anyhow::anyhow!("actor '{}' references unknown blox '{}'", actor.name, actor.blox)
+        })?;
         let ctor_fields = collect_ctor_fields(blox_config, &actor.blox, active_features);
         let ctor_names: BTreeSet<String> = ctor_fields.iter().map(|f| f.name.clone()).collect();
 
@@ -511,7 +513,9 @@ pub fn generate(
         let id_ident = format_ident!("{}_id", actor.name);
         let mbox_ident = format_ident!("{}_mbox", actor.name);
 
-        let blox_config = blox_configs.get(&actor.blox).unwrap();
+        let blox_config = blox_configs.get(&actor.blox).ok_or_else(|| {
+            anyhow::anyhow!("actor '{}' references unknown blox '{}'", actor.name, actor.blox)
+        })?;
         let event = blox_config.event.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "actor '{}' blox '{}' has no event config",
@@ -783,7 +787,9 @@ pub fn generate(
         if actor.kind.as_deref() == Some("timer") {
             continue;
         }
-        let blox_config = blox_configs.get(&actor.blox).unwrap();
+        let blox_config = blox_configs.get(&actor.blox).ok_or_else(|| {
+            anyhow::anyhow!("actor '{}' references unknown blox '{}'", actor.name, actor.blox)
+        })?;
         let actor_name = blox_config
             .actor
             .as_ref()
@@ -817,7 +823,9 @@ pub fn generate(
         if actor.kind.as_deref() == Some("timer") {
             continue;
         }
-        let blox_config = blox_configs.get(&actor.blox).unwrap();
+        let blox_config = blox_configs.get(&actor.blox).ok_or_else(|| {
+            anyhow::anyhow!("actor '{}' references unknown blox '{}'", actor.name, actor.blox)
+        })?;
         let actor_name = blox_config
             .actor
             .as_ref()
