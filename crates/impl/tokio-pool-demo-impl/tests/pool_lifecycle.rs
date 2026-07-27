@@ -69,7 +69,7 @@ async fn pool_lifecycle_spawn_and_done() {
     let pool_ctx = PoolCtx::new(
         pool_id,
         pool_ref.clone(),
-        spawn_worker as _,
+        spawn_worker::<worker_blox::WorkerSpec<TokioRuntime>> as _,
         sup_control_ref.clone(),
         sup_notify_ref.clone(),
         spawn_reply_ref.clone(),
