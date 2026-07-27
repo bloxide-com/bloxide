@@ -40,32 +40,40 @@ pub fn handle_work_done(pending: &mut u32, _work_done: &pool_messages::WorkDone)
 /// Spawn a new worker via the supervisor, then set in-flight flag.
 #[cfg(feature = "dynamic")]
 pub fn handle_spawn_worker<R: BloxRuntime>(
-    _self_id: bloxide_core::ActorId,
-    _spawn_fn: &bloxide_spawn::SpawnFn<
+    self_id: bloxide_core::ActorId,
+    self_ref: &bloxide_core::messaging::ActorRef<pool_messages::PoolMsg, R>,
+    spawn_fn: &bloxide_spawn::SpawnFn<
         R,
         pool_messages::SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
     >,
-    _spawn_ref: &bloxide_core::messaging::ActorRef<bloxide_supervisor::SupervisorControl<R>, R>,
+    spawn_ref: &bloxide_core::messaging::ActorRef<bloxide_supervisor::SupervisorControl<R>, R>,
+    notify_ref: &bloxide_core::messaging::ActorRef<ChildLifecycleEvent, R>,
+    spawn_reply_ref: &bloxide_core::messaging::ActorRef<
+        pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
+        R,
+    >,
     pending_task_id: &mut u32,
     spawn_in_flight: &mut bool,
-    _spawn_queue: &mut alloc::vec::Vec<u32>,
-    _worker_refs: &mut alloc::vec::Vec<bloxide_core::messaging::ActorRef<WorkerMsg, R>>,
-    _worker_ctrls: &mut alloc::vec::Vec<
-        bloxide_core::messaging::ActorRef<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
-    >,
     pending: &mut u32,
     spawn_worker: &pool_messages::SpawnWorker,
 ) {
     let task_id = spawn_worker.task_id;
     *pending_task_id = task_id;
     *spawn_in_flight = true;
-
-    // We need the reply and pool refs — but these aren't in the field list.
-    // The spawn_child helper needs them. For now, we can't call spawn_child
-    // because we don't have spawn_reply_ref or self_ref.
-    // TODO: Add spawn_reply_ref and self_ref to the action's field list.
-    // For now, just increment pending to track the in-flight work.
     *pending += 1;
+
+    let req = pool_messages::SpawnRequest::Worker {
+        task_id,
+        reply_to: spawn_reply_ref.clone(),
+        pool_ref: self_ref.clone(),
+    };
+    let _ = bloxide_spawn::spawn_child::<_, _, bloxide_supervisor::SupervisorRegistrar>(
+        *spawn_fn,
+        req,
+        spawn_ref,
+        notify_ref,
+        self_id,
+    );
 }
 
 /// Buffer a SpawnWorker request while already in Spawning state.
@@ -77,25 +85,80 @@ pub fn handle_spawn_worker_queued(
     spawn_queue.push(spawn_worker.task_id);
 }
 
-/// Handle a SpawnedWorker reply: store worker refs, send DoWork, process queue.
+/// Handle a SpawnedWorker reply: store worker refs, introduce peers,
+/// send DoWork, and process the next queued spawn if any.
 #[cfg(feature = "dynamic")]
 pub fn handle_spawned_worker<R: BloxRuntime>(
+    self_id: bloxide_core::ActorId,
+    self_ref: &bloxide_core::messaging::ActorRef<pool_messages::PoolMsg, R>,
+    spawn_fn: &bloxide_spawn::SpawnFn<
+        R,
+        pool_messages::SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
+    >,
+    spawn_ref: &bloxide_core::messaging::ActorRef<bloxide_supervisor::SupervisorControl<R>, R>,
+    notify_ref: &bloxide_core::messaging::ActorRef<ChildLifecycleEvent, R>,
+    spawn_reply_ref: &bloxide_core::messaging::ActorRef<
+        pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
+        R,
+    >,
+    pending_task_id: &mut u32,
     spawn_in_flight: &mut bool,
     spawn_queue: &mut alloc::vec::Vec<u32>,
-    _worker_refs: &mut alloc::vec::Vec<bloxide_core::messaging::ActorRef<WorkerMsg, R>>,
-    _worker_ctrls: &mut alloc::vec::Vec<
+    worker_refs: &mut alloc::vec::Vec<bloxide_core::messaging::ActorRef<WorkerMsg, R>>,
+    worker_ctrls: &mut alloc::vec::Vec<
         bloxide_core::messaging::ActorRef<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
     >,
-    _pending: &mut u32,
-    _spawned_worker: &pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
+    spawned_worker: &pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
 ) {
     *spawn_in_flight = false;
-    // TODO: Full implementation needs self_ref, spawn_fn, spawn_ref, notify_ref,
-    // spawn_reply_ref, and self_id to introduce peers and send DoWork.
-    // For now, just clear in-flight and drain the queue.
-    if !spawn_queue.is_empty() {
+
+    let new_worker_id = spawned_worker.child_id;
+    let new_domain_ref = spawned_worker.domain_ref.clone();
+    let new_ctrl_ref = spawned_worker.ctrl_ref.clone();
+
+    // Introduce the new worker to all existing workers (bidirectional).
+    for i in 0..worker_refs.len() {
+        bloxide_peers::introduce_peers(
+            self_id,
+            worker_refs[i].id(),
+            worker_refs[i].clone(),
+            worker_ctrls[i].clone(),
+            new_worker_id,
+            new_domain_ref.clone(),
+            new_ctrl_ref.clone(),
+        );
+    }
+
+    // Send DoWork to the new worker.
+    let _ = new_domain_ref.try_send(
+        self_id,
+        WorkerMsg::DoWork(DoWork {
+            task_id: *pending_task_id,
+        }),
+    );
+
+    // Store the new worker's refs.
+    worker_refs.push(new_domain_ref);
+    worker_ctrls.push(new_ctrl_ref);
+
+    // Process the next queued spawn if any.
+    if let Some(&next_task_id) = spawn_queue.first() {
         spawn_queue.remove(0);
+        *pending_task_id = next_task_id;
         *spawn_in_flight = true;
+
+        let req = pool_messages::SpawnRequest::Worker {
+            task_id: next_task_id,
+            reply_to: spawn_reply_ref.clone(),
+            pool_ref: self_ref.clone(),
+        };
+        let _ = bloxide_spawn::spawn_child::<_, _, bloxide_supervisor::SupervisorRegistrar>(
+            *spawn_fn,
+            req,
+            spawn_ref,
+            notify_ref,
+            self_id,
+        );
     }
 }
 
