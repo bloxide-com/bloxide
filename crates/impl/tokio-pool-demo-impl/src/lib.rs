@@ -68,11 +68,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
         pool_ref: self_ref.clone(),
     };
     let _ = bloxide_spawn::spawn_child::<_, _, bloxide_supervisor::SupervisorRegistrar>(
-        *spawn_fn,
-        req,
-        spawn_ref,
-        notify_ref,
-        self_id,
+        *spawn_fn, req, spawn_ref, notify_ref, self_id,
     );
 }
 
@@ -153,11 +149,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
             pool_ref: self_ref.clone(),
         };
         let _ = bloxide_spawn::spawn_child::<_, _, bloxide_supervisor::SupervisorRegistrar>(
-            *spawn_fn,
-            req,
-            spawn_ref,
-            notify_ref,
-            self_id,
+            *spawn_fn, req, spawn_ref, notify_ref, self_id,
         );
     }
 }
