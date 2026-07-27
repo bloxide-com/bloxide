@@ -270,6 +270,9 @@ pub fn generate(
     // For blox-level generation this is "crate"; for system-level it's e.g. "::ping_blox".
     let is_system_level = blox_crate_path.starts_with("::");
 
+    // Save the string form before parsing into syn::Path.
+    let blox_crate_path_str = blox_crate_path.to_string();
+
     // Parse the blox_crate_path into a syn::Path for use in quote! macros.
     let blox_crate_path: syn::Path = syn::parse_str(blox_crate_path)
         .map_err(|e| anyhow::anyhow!("invalid blox_crate_path '{}': {}", blox_crate_path, e))?;
@@ -279,13 +282,9 @@ pub fn generate(
     // occurrences in the middle of a path.
     let translate_crate_import = |imp: &str| -> String {
         if imp.starts_with("crate::") {
-            format!(
-                "{}::{}",
-                blox_crate_path.to_token_stream(),
-                &imp["crate::".len()..]
-            )
+            format!("{}::{}", blox_crate_path_str, &imp["crate::".len()..])
         } else if imp == "crate" {
-            blox_crate_path.to_token_stream().to_string()
+            blox_crate_path_str.clone()
         } else {
             imp.to_string()
         }
@@ -445,8 +444,14 @@ pub fn generate(
         }
     }
     for path in &msg_import_paths {
-        let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", path))
-            .map_err(|e| anyhow::anyhow!("invalid message import '{}': {}", path, e))?;
+        // Translate leading `crate::` to blox_crate_path for system-level codegen.
+        let translated = if path.starts_with("crate::") && blox_crate_path_str != "crate" {
+            format!("{}::{}", blox_crate_path_str, &path["crate::".len()..])
+        } else {
+            path.clone()
+        };
+        let use_item: syn::ItemUse = syn::parse_str(&format!("use {};", translated))
+            .map_err(|e| anyhow::anyhow!("invalid message import '{}': {}", translated, e))?;
         use_stmts.push(quote! {
             #[allow(unused_imports)]
             #use_item
@@ -505,8 +510,11 @@ pub fn generate(
                 .filter(|mb| mb.feature.is_none())
                 .map(|mb| {
                     let msg_type = if let Some(ref path) = mb.message_path {
-                        syn::parse_str::<syn::Path>(path).map_err(|e| {
-                            anyhow::anyhow!("invalid message_path '{}': {}", path, e)
+                        // Translate `crate::` prefix to blox_crate_path for
+                        // system-level codegen.
+                        let translated = translate_crate_import(path);
+                        syn::parse_str::<syn::Path>(&translated).map_err(|e| {
+                            anyhow::anyhow!("invalid message_path '{}': {}", translated, e)
                         })?
                     } else {
                         syn::parse_str::<syn::Path>(&mb.message).map_err(|e| {
@@ -606,8 +614,11 @@ pub fn generate(
                 .iter()
                 .map(|mb| {
                     let msg_type = if let Some(ref path) = mb.message_path {
-                        syn::parse_str::<syn::Path>(path).map_err(|e| {
-                            anyhow::anyhow!("invalid message_path '{}': {}", path, e)
+                        // Translate `crate::` prefix to blox_crate_path for
+                        // system-level codegen.
+                        let translated = translate_crate_import(path);
+                        syn::parse_str::<syn::Path>(&translated).map_err(|e| {
+                            anyhow::anyhow!("invalid message_path '{}': {}", translated, e)
                         })?
                     } else {
                         syn::parse_str::<syn::Path>(&mb.message).map_err(|e| {
@@ -741,8 +752,11 @@ pub fn generate(
                 .iter()
                 .map(|mb| {
                     let msg_type = if let Some(ref path) = mb.message_path {
-                        syn::parse_str::<syn::Path>(path).map_err(|e| {
-                            anyhow::anyhow!("invalid message_path '{}': {}", path, e)
+                        // Translate `crate::` prefix to blox_crate_path for
+                        // system-level codegen.
+                        let translated = translate_crate_import(path);
+                        syn::parse_str::<syn::Path>(&translated).map_err(|e| {
+                            anyhow::anyhow!("invalid message_path '{}': {}", translated, e)
                         })?
                     } else {
                         syn::parse_str::<syn::Path>(&mb.message).map_err(|e| {

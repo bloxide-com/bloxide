@@ -11,8 +11,9 @@ use alloc::vec::Vec;
 use crate::RegisterDynamicChild;
 use crate::{
     control::{RegisterChild, SupervisorControl},
-    SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState,
+    SupervisorCtx, SupervisorEvent, SupervisorState,
 };
+use crate::concrete_spec::ConcreteSupervisorSpec;
 use bloxide_child_management::{ChildGroup, ChildPolicy, GroupShutdown};
 use bloxide_core::lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
@@ -21,7 +22,7 @@ use bloxide_core::{
 };
 use bloxide_test_runtime::{TestReceiver, TestRuntime};
 
-type Spec = SupervisorSpec<TestRuntime>;
+type Spec = ConcreteSupervisorSpec<TestRuntime>;
 
 fn make_supervisor(
     shutdown: GroupShutdown,

@@ -790,8 +790,11 @@ pub fn generate(
             let (children, #sup_notify_rx_ident, #sup_control_rx_ident) = #group_ident.finish();
         });
 
+        // Use the system-level generated concrete supervisor spec, not the
+        // blox-crate-level stub. The concrete spec has real action closures
+        // wired from the context crates.
         let supervisor_spec_path: syn::Path =
-            syn::parse_str("::bloxide_supervisor::SupervisorSpec")
+            syn::parse_str("crate::generated::bloxide_supervisor_spec_skeleton::SupervisorSpec")
                 .expect("valid supervisor spec path");
         let supervisor_ctx_path: syn::Path = syn::parse_str("::bloxide_supervisor::SupervisorCtx")
             .expect("valid supervisor ctx path");

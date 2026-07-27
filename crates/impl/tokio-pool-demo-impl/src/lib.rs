@@ -76,9 +76,11 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
 #[cfg(feature = "dynamic")]
 pub fn handle_spawn_worker_queued(
     spawn_queue: &mut alloc::vec::Vec<u32>,
+    pending: &mut u32,
     spawn_worker: &pool_messages::SpawnWorker,
 ) {
     spawn_queue.push(spawn_worker.task_id);
+    *pending += 1;
 }
 
 /// Handle a SpawnedWorker reply: store worker refs, introduce peers,

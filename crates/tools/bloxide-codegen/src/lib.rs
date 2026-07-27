@@ -164,26 +164,52 @@ pub fn generate_system_wiring_from_toml(
         .parent()
         .ok_or_else(|| anyhow::anyhow!("system.toml has no parent directory"))?;
     let generated_dir = app_dir.join("src").join("generated");
+
+    // Collect all spec files: actors + supervisors
+    let mut all_spec_files = Vec::new();
+
+    // Generate concrete specs for regular actors
     if !config.actors.is_empty() {
         let spec_files = system_spec::generate_concrete_spec_files(&blox_configs, &config.actors)?;
-        if !spec_files.is_empty() {
-            std::fs::create_dir_all(&generated_dir)?;
-            let mut mod_content = String::from(
-                "// Copyright 2025 Bloxide, all rights reserved\n\
-                 // Auto-generated module. Do not edit manually.\n",
-            );
-            for (actor_name, spec_code) in &spec_files {
-                let module_name = actor_name.replace('-', "_").to_lowercase() + "_spec_skeleton";
-                let filename = format!("{}.rs", module_name);
-                std::fs::write(generated_dir.join(&filename), spec_code)?;
-                mod_content.push_str(&format!("pub mod {};\n", module_name));
-                mod_content.push_str(&format!(
-                    "#[allow(unused_imports)]\npub use {}::*;\n",
-                    module_name
-                ));
-            }
-            std::fs::write(generated_dir.join("mod.rs"), &mod_content)?;
+        all_spec_files.extend(spec_files);
+    }
+
+    // Generate concrete specs for supervisors referenced in [[supervision]]
+    for sup in &config.supervision {
+        let supervisor_crate = &sup.supervisor;
+        if let Some(blox_config) = blox_configs.get(supervisor_crate) {
+            let blox_crate_path = format!("::{}", supervisor_crate.replace('-', "_"));
+            let code = system_spec::generate_concrete_spec_skeleton(
+                blox_config,
+                None, // supervisors don't have impl_crate
+                supervisor_crate,
+                &blox_crate_path,
+                None, // no active feature for supervisor
+            )?;
+            // Use the supervisor crate name as the identifier (the loop
+            // below appends the _spec_skeleton suffix).
+            let module_name = supervisor_crate.replace('-', "_").to_lowercase();
+            all_spec_files.push((module_name, code));
         }
+    }
+
+    if !all_spec_files.is_empty() {
+        std::fs::create_dir_all(&generated_dir)?;
+        let mut mod_content = String::from(
+            "// Copyright 2025 Bloxide, all rights reserved\n\
+             // Auto-generated module. Do not edit manually.\n",
+        );
+        for (actor_name, spec_code) in &all_spec_files {
+            let module_name = actor_name.replace('-', "_").to_lowercase() + "_spec_skeleton";
+            let filename = format!("{}.rs", module_name);
+            std::fs::write(generated_dir.join(&filename), spec_code)?;
+            mod_content.push_str(&format!("pub mod {};\n", module_name));
+            mod_content.push_str(&format!(
+                "#[allow(unused_imports)]\npub use {}::*;\n",
+                module_name
+            ));
+        }
+        std::fs::write(generated_dir.join("mod.rs"), &mod_content)?;
     }
 
     Ok(generated)
@@ -322,6 +348,13 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
     deps.insert("bloxide-log".to_string(), (vec!["log".to_string()], true));
     deps.insert(
         "bloxide-supervisor".to_string(),
+        (vec!["std".to_string()], true),
+    );
+    // The system-level generated supervisor spec imports types from
+    // bloxide-child-management (ChildAction, ChildGroup), so it must be
+    // a dependency of every app that uses the supervisor.
+    deps.insert(
+        "bloxide-child-management".to_string(),
         (vec!["std".to_string()], true),
     );
 

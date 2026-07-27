@@ -101,7 +101,7 @@ feature = "dynamic"
 [[context.actions]]
 name = "handle_spawn_worker_queued"
 kind = "transition"
-fields = ["spawn_queue:mut"]
+fields = ["spawn_queue:mut", "pending:mut"]
 event_payload = "spawn_worker"
 impl_required = true
 feature = "dynamic"

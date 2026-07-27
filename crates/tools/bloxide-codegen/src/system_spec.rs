@@ -148,8 +148,15 @@ pub fn resolve_concrete_action(
         format!("::{}", crate_name.replace('-', "_"))
     } else {
         // Use the crate from the [[context.actions]] entry.
+        // The crate_name may already be an absolute path (e.g. "::bloxide_supervisor")
+        // if it was translated by generate_concrete_spec_skeleton. In that case,
+        // don't prepend another "::".
         let crate_name = config.crate_name.as_deref().unwrap_or("unknown_crate");
-        format!("::{}", crate_name.replace('-', "_"))
+        if crate_name.starts_with("::") {
+            crate_name.replace('-', "_")
+        } else {
+            format!("::{}", crate_name.replace('-', "_"))
+        }
     };
     let fn_name = config
         .fn_name

@@ -10,6 +10,10 @@ pub mod control;
 // Hand-written action functions (concrete, take &SupervisorEvent<R> directly)
 pub mod actions;
 
+// Concrete supervisor spec for in-crate testing (wires actions::* closures).
+// System-level apps get their own concrete spec from the codegen.
+pub mod concrete_spec;
+
 // Generated state machine code
 pub mod generated;
 
