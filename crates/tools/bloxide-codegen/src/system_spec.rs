@@ -236,6 +236,13 @@ pub fn resolve_concrete_action(
                 let pattern = ep.split('|').next().unwrap_or(ep).trim();
                 let path = pattern.split('(').next().unwrap_or(pattern).trim();
                 let variant_name = path.split("::").last().unwrap_or(path);
+                // Extract the first identifier for shorthand classification
+                // (e.g. "PeerCtrl" → CtrlShorthand, "WorkerMsg" → MsgShorthand).
+                let first_ident: String = path
+                    .chars()
+                    .skip_while(|c| !c.is_alphabetic() && *c != '_')
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect();
 
                 if path.starts_with(event_type_name) {
                     // Event-variant pattern: use the per-mailbox payload accessor.
@@ -244,6 +251,13 @@ pub fn resolve_concrete_action(
                     let accessor = format!("ev.{snake}_payload()");
                     // The accessor returns Option<&InnerType>, so bind directly.
                     (accessor, format!("Some({payload_var})"))
+                } else if first_ident.ends_with("Ctrl") {
+                    // Ctrl shorthand: the Ctrl mailbox wraps a PeerCtrl<M, R>.
+                    // Use ctrl_payload() which returns Option<&PeerCtrl<M, R>>.
+                    // Bind the whole PeerCtrl value — the action function
+                    // (e.g. apply_peer_control) takes &PeerCtrl<M, R>, not a
+                    // destructured variant.
+                    (format!("ev.ctrl_payload()"), format!("Some({payload_var})"))
                 } else {
                     // Message-variant pattern: use msg_payload() and pattern match.
                     let pat = make_payload_pattern(ep, &payload_var);

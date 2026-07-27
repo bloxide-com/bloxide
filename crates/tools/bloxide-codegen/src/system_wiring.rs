@@ -196,9 +196,13 @@ fn primary_message(blox_config: &BloxConfig) -> Option<(String, String)> {
     let message_path = mailbox.message_path.as_deref().unwrap_or(&mailbox.message);
     let parts: Vec<&str> = message_path.split("::").collect();
     if parts.len() >= 2 {
-        Some((parts[0].to_string(), parts[1].to_string()))
+        // Strip generic args from the type name (e.g. "PeerCtrl<pool_messages"
+        // becomes "PeerCtrl" when the path is "bloxide_peers::PeerCtrl<...>").
+        let type_name = parts[1].split('<').next().unwrap_or(parts[1]);
+        Some((parts[0].to_string(), type_name.to_string()))
     } else {
-        Some((parts[0].to_string(), mailbox.message.clone()))
+        let type_name = parts[0].split('<').next().unwrap_or(parts[0]);
+        Some((type_name.to_string(), mailbox.message.clone()))
     }
 }
 
@@ -410,12 +414,17 @@ pub fn generate(
         }
         // Look up the actor name from the blox config to get the Spec name.
         let blox_config = blox_configs.get(&actor.blox);
-        let actor_name = blox_config
+        let blox_actor_name = blox_config
             .and_then(|bc| bc.actor.as_ref())
             .map(|a| a.name.clone())
             .unwrap_or_else(|| actor.name.clone());
-        let spec_ident = format_ident!("{}Spec", actor_name);
-        let module_name = format_ident!("{}_spec_skeleton", actor_name.to_lowercase());
+        let spec_ident = format_ident!("{}Spec", blox_actor_name);
+        // Module name is derived from the system.toml actor name, not the
+        // blox.toml actor name (e.g. "worker" → "worker_spec_skeleton").
+        let module_name = format_ident!(
+            "{}_spec_skeleton",
+            actor.name.replace('-', "_").to_lowercase()
+        );
         use_stmts.push(quote! {
             use crate::generated::#module_name::#spec_ident;
         });
@@ -852,6 +861,47 @@ pub fn generate(
         });
     }
 
+    // ── Dynamic actor spawn wrappers ────────────────────────────────────────
+    // For each dynamic actor, build a map from impl_crate → (spec_module, spec_type)
+    // so that factory injection can generate monomorphization wrappers.
+    let mut dynamic_actor_specs: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
+    for actor in &config.actors {
+        if is_dynamic(actor) {
+            if let Some(impl_crate) = &actor.impl_crate {
+                let blox_config = blox_configs.get(&actor.blox).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "dynamic actor '{}' references unknown blox '{}'",
+                        actor.name,
+                        actor.blox
+                    )
+                })?;
+                let blox_actor_name = blox_config
+                    .actor
+                    .as_ref()
+                    .map(|a| a.name.clone())
+                    .unwrap_or_else(|| actor.name.clone());
+                let spec_ident_str = format!("{}Spec", blox_actor_name);
+                let spec_module = format!(
+                    "{}_spec_skeleton",
+                    actor.name.replace('-', "_").to_lowercase()
+                );
+                let generics_str = blox_config
+                    .context
+                    .as_ref()
+                    .and_then(|c| c.generics.as_deref())
+                    .unwrap_or("");
+                let has_r = generics_str.contains("R:");
+                let spec_ty = if has_r {
+                    format!("{}<{}>", spec_ident_str, runtime_ident_str)
+                } else {
+                    spec_ident_str.clone()
+                };
+                dynamic_actor_specs.insert(impl_crate.clone(), (spec_module, spec_ty));
+            }
+        }
+    }
+
     // ── Context construction ────────────────────────────────────────────────
     let mut ctx_stmts = Vec::new();
     for actor in &config.actors {
@@ -905,7 +955,29 @@ pub fn generate(
                     })?;
                     let crate_ident = format_ident!("{}", factory_crate);
                     let fn_ident = format_ident!("{}", factory_fn);
-                    ctor_args.push(quote! { ::#crate_ident::#fn_ident as _ });
+
+                    // If this factory crate is a dynamic actor's impl_crate,
+                    // generate a monomorphization wrapper that fills in the
+                    // system-level concrete spec type.
+                    if let Some((spec_module, spec_ty)) = dynamic_actor_specs.get(factory_crate) {
+                        let spec_module_ident = format_ident!("{}", spec_module);
+                        let spec_ty_tokens: proc_macro2::TokenStream =
+                            spec_ty.parse().map_err(|e| {
+                                anyhow::anyhow!("failed to parse spec type '{}': {}", spec_ty, e)
+                            })?;
+                        let spec_path =
+                            quote! { crate::generated::#spec_module_ident::#spec_ty_tokens };
+                        // Use a closure that monomorphizes the generic spawn
+                        // function with the system-level concrete spec type.
+                        // The `as _` cast on the constructor argument tells
+                        // Rust to infer the closure's parameter types from
+                        // the target field type (a SpawnFn<R, Req>).
+                        ctor_args.push(quote! {
+                            (|req, notify| ::#crate_ident::#fn_ident::<#spec_path>(req, notify)) as _
+                        });
+                    } else {
+                        ctor_args.push(quote! { ::#crate_ident::#fn_ident as _ });
+                    }
                 } else if source.source == "actor" {
                     let src_actor = source.actor.as_deref().ok_or_else(|| {
                         anyhow::anyhow!(

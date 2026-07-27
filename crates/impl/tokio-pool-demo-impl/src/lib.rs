@@ -18,7 +18,7 @@ use bloxide_peers::PeerCtrl;
 use bloxide_spawn::{SpawnCap, SpawnOutput};
 use bloxide_tokio::{run, RunConfig, TokioRuntime};
 use pool_messages::{DoWork, SpawnRequest, SpawnedWorker, WorkerMsg};
-use worker_blox::{WorkerCtx, WorkerSpec};
+use worker_blox::WorkerCtx;
 
 /// Process a work request: store the task ID and compute the result (task_id * 2).
 pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) {
@@ -105,12 +105,22 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
 /// This is a plain function (not a trait impl) — the wiring layer passes
 /// it to `spawn_child()` as a `SpawnFn<R, SpawnRequest<R>>`.
 ///
+/// Generic over the worker spec type `S` so the system-level codegen can
+/// inject the concrete `WorkerSpec` (with real action closures) instead of
+/// the blox-crate-level stub spec. The generated main.rs monomorphizes this
+/// function with the system-level spec via a wrapper.
+///
 /// All state comes from the request — `pool_ref` is in the message, not
 /// captured from a struct field.
-pub fn spawn_worker(
+pub fn spawn_worker<S>(
     req: SpawnRequest<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
     notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
-) -> SpawnOutput<TokioRuntime> {
+) -> SpawnOutput<TokioRuntime>
+where
+    S: bloxide_core::spec::MachineSpec<Ctx = WorkerCtx<TokioRuntime>>,
+    S::Event: From<bloxide_core::messaging::Envelope<PeerCtrl<WorkerMsg, TokioRuntime>>>
+        + From<bloxide_core::messaging::Envelope<WorkerMsg>>,
+{
     match req {
         SpawnRequest::Worker {
             task_id: _,
@@ -129,7 +139,7 @@ pub fn spawn_worker(
                 <TokioRuntime as DynamicChannelCap>::channel::<AbortCommand>(worker_id, 4);
 
             let worker_ctx = WorkerCtx::new(worker_id, pool_ref);
-            let machine = StateMachine::<WorkerSpec<TokioRuntime>>::new(worker_ctx);
+            let machine = StateMachine::<S>::new(worker_ctx);
 
             let notify_sender = notify.sender();
             let task_handle = <TokioRuntime as SpawnCap>::spawn(async move {
@@ -146,7 +156,7 @@ pub fn spawn_worker(
                 .await
             });
 
-            // Convert the JoinHandle (not Clone) into a KillHandle (Clone)
+            // Convert the JoinHandle (not Clone) into a Kill Handle (Clone)
             // so it can be stored in RegisterDynamicChild and cloned from
             // &Event by the supervisor's action function.
             let kill_handle = <TokioRuntime as SpawnCap>::kill_handle(task_handle);

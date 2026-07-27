@@ -36,3 +36,13 @@ children = ["pool"]
 
   [supervision.policies]
   pool = { stop = true }
+
+# Worker is a dynamic actor — spawned at runtime by the pool via factory
+# injection. It gets a concrete spec generated at the system level, but no
+# channels/task/bootstrap in main.rs. The impl crate's spawn_worker function
+# constructs the worker context and machine at spawn time.
+[[actors]]
+name = "worker"
+blox = "worker-blox"
+impl_crate = "tokio_pool_demo_impl"
+kind = "dynamic"
