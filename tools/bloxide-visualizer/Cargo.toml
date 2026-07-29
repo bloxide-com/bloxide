@@ -3,6 +3,7 @@
 name = "bloxide-visualizer"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
 dioxus = { version = "0.7.6", features = ["fullstack"] }

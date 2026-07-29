@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 description = "Concrete worker factory for the Tokio pool demo"
 publish = false
+license.workspace = true
 
 [dependencies]
 bloxide-core = { workspace = true, features = ["std"] }

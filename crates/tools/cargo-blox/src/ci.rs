@@ -189,6 +189,29 @@ pub fn ci() -> anyhow::Result<()> {
         println!("OK: all source files have correct copyright notices");
     }
 
+    // Dependency audit (cargo-deny, issue #39). Optional tool: warn and skip
+    // when not installed rather than failing the local run.
+    println!();
+    println!("========================================");
+    println!("  cargo deny check");
+    println!("========================================");
+    let deny_available = Command::new("cargo")
+        .args(["deny", "--version"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !deny_available {
+        println!("SKIP: cargo-deny not installed (cargo install cargo-deny --locked)");
+    } else {
+        let status = Command::new("cargo").args(["deny", "check"]).status()?;
+        if !status.success() {
+            eprintln!("FAILED: cargo deny check");
+            failed += 1;
+        } else {
+            println!("OK: cargo deny check");
+        }
+    }
+
     println!();
     println!("========================================");
     if failed == 0 {

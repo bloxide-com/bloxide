@@ -13,6 +13,7 @@ on:
       - "tools/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "deny.toml"
   workflow_dispatch:
 
 concurrency:
@@ -21,23 +22,8 @@ concurrency:
 
 jobs:
 
-  copyright_compliance:
-    name: Check Copyright Compliance
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check Copyright Compliance
-        run: |
-          INCORRECT_COPYRIGHT=$(find . \( -name '*.rs' -o -name 'Cargo.toml' \) -not -path '*/target/*' \
-          | xargs grep -LE '(#|//) Copyright 202[0-9] Bloxide, all rights reserved')
-          if [ -n "$INCORRECT_COPYRIGHT" ]; then
-            echo "Incorrect copyright notice found:"
-            echo "$INCORRECT_COPYRIGHT" | tr ' ' '\n'
-            exit 1
-          fi
-
-  lint:
-    name: Lint
+  ci:
+    name: CI (cargo blox ci)
     runs-on: ubuntu-latest
 
     steps:
@@ -50,89 +36,43 @@ jobs:
           rustup target add riscv32imc-unknown-none-elf
 
       - name: Cargo Build
-        run: |
-          echo "Building with default features..."
-          cargo build
+        run: cargo build
 
-      - name: Cargo Feature Matrix Check (no_std / alloc / std / all-features)
-        run: |
-          # no_std (bare, no alloc) — verifies true no_std compatibility
-          cargo check -p bloxide-core --no-default-features
-          cargo check -p bloxide-messaging --no-default-features
-          cargo check -p bloxide-peers --no-default-features
-          cargo check -p bloxide-supervisor --no-default-features
-          cargo check -p bloxide-supervisor-context --no-default-features
-          cargo check -p bloxide-timer --no-default-features
-          cargo check -p ping-pong-messages --no-default-features
+      - name: Install cargo-blox
+        run: cargo install --path crates/tools/cargo-blox
 
-          # alloc-only (no_std + alloc) — verifies heap-based no_std
-          cargo check -p bloxide-core --no-default-features --features alloc
-          cargo check -p bloxide-messaging --no-default-features --features alloc
-          cargo check -p bloxide-peers --no-default-features --features alloc
-          cargo check -p bloxide-supervisor --no-default-features --features alloc
-          cargo check -p bloxide-supervisor-context --no-default-features --features alloc
-          cargo check -p bloxide-timer --no-default-features --features alloc
+      # Single source of truth for the check matrix: auto-discovered from the
+      # workspace (see #133). Covers: cargo check feature matrix, no_std
+      # audit, tests, fmt, clippy, doc build, copyright compliance.
+      - name: cargo blox ci
+        run: cargo blox ci
 
-          # std — verifies std-gated code paths
-          cargo check -p bloxide-core --features std
-          cargo check -p bloxide-messaging --features std
-          cargo check -p bloxide-peers --features std
-          cargo check -p bloxide-supervisor --features std
-          cargo check -p bloxide-supervisor-context --features std
-          cargo check -p bloxide-timer --features std
-
-          # all host-compatible features (excludes defmt — embedded-only)
-          cargo check --workspace --features bloxide-log/log
-
-          # Embassy target (riscv32imc, no_std)
-          cargo check -p bloxide-timer --target riscv32imc-unknown-none-elf
-
-          # Optional features
-          cargo check -p bloxide-core --features tracing
-          cargo check -p bloxide-supervisor-context --features dynamic
-
-      - name: Cargo Format
-        run: |
-          cargo fmt -- --check
-
-      - name: Cargo Clippy
-        run: |
-          cargo clippy --all-targets -- -W warnings -D warnings
-
-  test:
-    name: Test
+  feature-tests:
+    name: Feature-specific tests
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Run workspace tests (default features)
-        run: |
-          cargo test --workspace
-
-      - name: Run std-gated tests (all crates with std feature)
-        run: |
-          cargo test -p bloxide-core --features std
-          cargo test -p bloxide-messaging --features std
-          cargo test -p bloxide-peers --features std
-          cargo test -p bloxide-supervisor --features std
-          cargo test -p bloxide-supervisor-context --features std
-          cargo test -p bloxide-timer --features std
-
-      - name: Run alloc-only tests
-        run: |
-          cargo test -p bloxide-supervisor --no-default-features --features alloc
-          cargo test -p bloxide-supervisor-context --no-default-features --features alloc
-
       - name: Run optional-feature tests
         run: |
           cargo test -p bloxide-core --features tracing
-          cargo test -p bloxide-supervisor-context --features dynamic
-
-      - name: Run all host-compatible feature tests
-        run: |
           cargo test --workspace --features bloxide-log/log
+
+  deny:
+    name: Dependency audit (cargo-deny)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+
+      - name: cargo deny check
+        run: cargo deny check
 
   coverage:
     name: Coverage

@@ -514,6 +514,7 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
     out.push_str(&format!("name = \"{}\"\n", app_name));
     out.push_str("version.workspace = true\n");
     out.push_str("edition.workspace = true\n");
+    out.push_str("license.workspace = true\n");
     out.push_str("publish = false\n\n");
     out.push_str("[dependencies]\n");
 
