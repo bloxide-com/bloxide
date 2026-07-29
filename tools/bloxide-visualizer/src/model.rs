@@ -14,8 +14,6 @@ pub struct WiringGraph {
 pub struct WiringActor {
     pub blox: String,
     pub name: String,
-    pub behavior: Option<String>,
-    pub behavior_traits: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -37,6 +35,9 @@ pub struct WiringSupervisor {
 pub struct WiringSupervisorChild {
     pub actor: String,
     pub restart_max: Option<u32>,
+    /// `stop = true` — the supervisor stops the group when this child ends.
+    #[serde(default)]
+    pub stop: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

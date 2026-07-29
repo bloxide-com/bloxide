@@ -135,6 +135,7 @@ enum ViewMode {
     Heatmap,
     Diagram,
     System,
+    Supervision,
     Context,
     RawToml,
 }
@@ -145,6 +146,7 @@ impl ViewMode {
             ViewMode::Heatmap => "Heatmap",
             ViewMode::Diagram => "State Diagram",
             ViewMode::System => "System View",
+            ViewMode::Supervision => "Supervision",
             ViewMode::Context => "Context",
             ViewMode::RawToml => "Raw TOML",
         }
@@ -265,7 +267,7 @@ fn App() -> Element {
             // View mode toggle
             div {
                 style: "display: flex; gap: 0; margin-bottom: 20px;",
-                for mode in [ViewMode::Heatmap, ViewMode::Diagram, ViewMode::System, ViewMode::Context, ViewMode::RawToml] {
+                for mode in [ViewMode::Heatmap, ViewMode::Diagram, ViewMode::System, ViewMode::Supervision, ViewMode::Context, ViewMode::RawToml] {
                     button {
                         style: if view_mode.read().clone() == mode {
                             "padding: 8px 16px; background: #2563eb; color: white; border: 1px solid #2563eb; cursor: pointer;"
@@ -313,6 +315,9 @@ fn App() -> Element {
                                     selected_cell: selected_cell,
                                     selected_diagram: selected_diagram,
                                 }
+                            },
+                            ViewMode::Supervision => rsx! {
+                                SupervisionTreeView { spec: spec.clone() }
                             },
                             ViewMode::Context => rsx! {
                                 ContextView { spec: spec.clone() }
@@ -1276,7 +1281,6 @@ const SUPERVISOR_Y: f64 = 40.0;
 struct ActorPosition {
     name: String,
     blox: String,
-    behavior: Option<String>,
     x: f64,
     y: f64,
 }
@@ -1308,7 +1312,6 @@ fn layout_actors(wiring: &WiringGraph) -> Vec<ActorPosition> {
         .map(|(idx, actor)| ActorPosition {
             name: actor.name.clone(),
             blox: actor.blox.clone(),
-            behavior: actor.behavior.clone(),
             x: ACTOR_START_X + idx as f64 * (ACTOR_BLOCK_WIDTH + ACTOR_SPACING_X),
             y: ACTOR_START_Y,
         })
@@ -1379,8 +1382,12 @@ fn SystemView(
     selected_cell: Signal<Option<(String, String)>>,
     selected_diagram: Signal<Option<DiagramSelection>>,
 ) -> Element {
-    // Find the first spec with wiring data.
-    let wiring_opt: Option<WiringGraph> = specs.read().iter().find_map(|s| s.wiring.clone());
+    // Render the wiring of the currently selected system spec (#128 — the
+    // spec tabs are the selector across multiple system.toml manifests).
+    let wiring_opt: Option<WiringGraph> = specs
+        .read()
+        .get(*selected_spec.read())
+        .and_then(|s| s.wiring.clone());
 
     let mut selected_connection = use_signal(|| None::<ConnectionDetail>);
 
@@ -1388,8 +1395,8 @@ fn SystemView(
         None => rsx! {
             div {
                 style: "padding: 40px; text-align: center; color: #6b7280; font-size: 14px;",
-                "No wiring data available. "
-                "Scan a workspace with blox.toml wiring sections to see the actor connection graph."
+                "This spec has no wiring data. "
+                "Select a system spec tab (an app like tokio-demo or tokio-pool-demo) to see its actor connection graph."
             }
         },
         Some(wiring) => {
@@ -1534,7 +1541,6 @@ fn ActorNode(
 ) -> Element {
     let blox_name = actor.blox.clone();
     let instance_name = actor.name.clone();
-    let behavior_text = actor.behavior.clone().unwrap_or_default();
 
     // Find matching spec by blox name for drill-down.
     let mut selected_spec_clone = selected_spec.clone();
@@ -1596,20 +1602,6 @@ fn ActorNode(
                 "blox: {blox_name}"
             }
 
-            // Behavior type (if present).
-            if !behavior_text.is_empty() {
-                text {
-                    x: "{actor.x + ACTOR_BLOCK_WIDTH / 2.0}",
-                    y: "{actor.y + 62.0}",
-                    "text-anchor": "middle",
-                    "font-size": "10",
-                    fill: "#9ca3af",
-                    "font-family": "system-ui, sans-serif",
-                    "font-style": "italic",
-                    "pointer-events": "none",
-                    "{behavior_text}"
-                }
-            }
         }
     }
 }
@@ -1869,6 +1861,74 @@ fn ContextView(spec: BloxSpec) -> Element {
                                 "{v.name}"
                                 if !v.fields.is_empty() {
                                     span { style: "color: #6b7280;", "({v.fields.join(\", \")})" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Supervision tree view (#123): supervisor hierarchy with policies ───────
+
+#[component]
+fn SupervisionTreeView(spec: BloxSpec) -> Element {
+    let Some(wiring) = &spec.wiring else {
+        return rsx! {
+            div {
+                style: "padding: 40px; text-align: center; color: #6b7280; font-size: 14px;",
+                "This spec has no supervision data. "
+                "Select a system spec tab (an app like tokio-pool-demo) to see its supervision tree."
+            }
+        };
+    };
+
+    if wiring.supervisors.is_empty() {
+        return rsx! {
+            div {
+                style: "padding: 40px; text-align: center; color: #6b7280; font-size: 14px;",
+                "No [[supervision]] sections in this system."
+            }
+        };
+    }
+
+    rsx! {
+        div {
+            style: "display: flex; gap: 24px; align-items: flex-start; padding: 12px;",
+            for sup in &wiring.supervisors {
+                div {
+                    style: "background: #f9fafb; border-radius: 8px; padding: 16px; min-width: 280px;",
+                    // Supervisor node
+                    div {
+                        style: "padding: 12px 16px; background: #6366f1; color: white; border-radius: 6px; text-align: center; margin-bottom: 4px;",
+                        div { style: "font-weight: 700; font-size: 14px;", "{sup.name}" }
+                        div { style: "font-size: 11px; opacity: 0.85;", "strategy: {sup.strategy}" }
+                    }
+                    // Failure escalation arrow
+                    div {
+                        style: "text-align: center; color: #9ca3af; font-size: 12px; margin: 4px 0;",
+                        "▲ child failure events (Started / Stopped / Done / Failed / Aborted / Killed)"
+                    }
+                    // Children with policy badges
+                    for child in &sup.children {
+                        div {
+                            style: "display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; background: white; border-radius: 4px; margin-top: 8px; border: 1px solid #e5e7eb;",
+                            span { style: "font-family: monospace; font-size: 13px; color: #1f2937;", "{child.actor}" }
+                            span {
+                                style: "display: flex; gap: 6px;",
+                                if let Some(max) = child.restart_max {
+                                    span {
+                                        style: "padding: 2px 8px; background: #dcfce7; color: #166534; border-radius: 9999px; font-size: 11px; font-weight: 600;",
+                                        "restart: max {max}"
+                                    }
+                                }
+                                if child.stop == Some(true) {
+                                    span {
+                                        style: "padding: 2px 8px; background: #fee2e2; color: #991b1b; border-radius: 9999px; font-size: 11px; font-weight: 600;",
+                                        "stop"
+                                    }
                                 }
                             }
                         }

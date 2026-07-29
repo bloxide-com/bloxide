@@ -3,6 +3,44 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringGraph {
+    pub runtime: String,
+    pub actors: Vec<WiringActor>,
+    pub connections: Vec<WiringConnection>,
+    pub supervisors: Vec<WiringSupervisor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringActor {
+    pub blox: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringConnection {
+    pub from: String,
+    pub to: String,
+    pub message: String,
+    pub channel_capacity: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringSupervisor {
+    pub name: String,
+    pub strategy: String,
+    pub children: Vec<WiringSupervisorChild>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WiringSupervisorChild {
+    pub actor: String,
+    pub restart_max: Option<u32>,
+    /// `stop = true` — the supervisor stops the group when this child ends.
+    #[serde(default)]
+    pub stop: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BloxSpec {
     pub name: String,
     pub crate_path: String,
@@ -14,6 +52,10 @@ pub struct BloxSpec {
     pub messages: Vec<MessageDef>,
     pub actions: Vec<ActionDef>,
     pub context: Option<ContextDef>,
+    /// Wiring graph — present only for system specs (exported from
+    /// a `system.toml` manifest, not a blox crate).
+    #[serde(default)]
+    pub wiring: Option<WiringGraph>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

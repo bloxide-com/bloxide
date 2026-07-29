@@ -38,7 +38,115 @@ pub fn export_workspace(workspace_path: &Path) -> Result<Vec<BloxSpec>, String> 
         specs.push(spec);
     }
 
+    // System specs: one per system.toml in the workspace, carrying the
+    // wiring graph (actors, connections, supervisors) used by the System
+    // and Supervision views (#123, #128).
+    for system_path in find_system_tomls(workspace_path) {
+        match export_system_spec(&system_path) {
+            Ok(spec) => specs.push(spec),
+            Err(e) => eprintln!(
+                "bloxide-viz-export: warning: skipping {}: {}",
+                system_path.display(),
+                e
+            ),
+        }
+    }
+
     Ok(specs)
+}
+
+/// Discover `system.toml` manifests under the workspace (excluding target/).
+fn find_system_tomls(workspace_path: &Path) -> Vec<PathBuf> {
+    walkdir_tomls(workspace_path)
+        .into_iter()
+        .filter(|p| p.file_name() == Some(std::ffi::OsStr::new("system.toml")))
+        .filter(|p| !p.components().any(|c| c.as_os_str() == std::ffi::OsStr::new("target")))
+        .collect()
+}
+
+/// Build a system spec from a `system.toml` manifest.
+fn export_system_spec(system_path: &Path) -> Result<BloxSpec, String> {
+    let content = fs::read_to_string(system_path)
+        .map_err(|e| format!("could not read {}: {}", system_path.display(), e))?;
+    let config: bloxide_codegen::schema::SystemConfig = toml::from_str(&content)
+        .map_err(|e| format!("failed to parse {}: {}", system_path.display(), e))?;
+
+    let app_name = config.system.name.clone().unwrap_or_else(|| {
+        system_path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("system")
+            .to_string()
+    });
+
+    let actors = config
+        .actors
+        .iter()
+        .map(|a| model::WiringActor {
+            blox: a.blox.clone(),
+            name: a.name.clone(),
+        })
+        .collect();
+
+    let mut connections = Vec::new();
+    for actor in &config.actors {
+        for (field, source) in &actor.inject {
+            if source.source == "actor" {
+                if let Some(from) = &source.actor {
+                    connections.push(model::WiringConnection {
+                        from: from.clone(),
+                        to: actor.name.clone(),
+                        message: field.clone(),
+                        channel_capacity: actor.channel_capacity,
+                    });
+                }
+            }
+        }
+    }
+
+    let supervisors = config
+        .supervision
+        .iter()
+        .map(|sup| model::WiringSupervisor {
+            name: sup.supervisor.clone(),
+            strategy: sup.strategy.clone(),
+            children: sup
+                .children
+                .iter()
+                .map(|c| {
+                    let policy = sup.policies.get(c);
+                    model::WiringSupervisorChild {
+                        actor: c.clone(),
+                        restart_max: policy.and_then(|p| p.restart.as_ref().map(|r| r.max)),
+                        stop: policy.and_then(|p| p.stop),
+                    }
+                })
+                .collect(),
+        })
+        .collect();
+
+    Ok(BloxSpec {
+        name: app_name,
+        crate_path: system_path
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        states: Vec::new(),
+        events: Vec::new(),
+        handlers: Vec::new(),
+        entry_exit: std::collections::HashMap::new(),
+        message_sets: Vec::new(),
+        messages: Vec::new(),
+        actions: Vec::new(),
+        context: None,
+        wiring: Some(model::WiringGraph {
+            runtime: config.system.runtime.clone(),
+            actors,
+            connections,
+            supervisors,
+        }),
+    })
 }
 
 /// Write exported specs as JSON files to the given output directory.
@@ -74,6 +182,7 @@ fn config_to_spec(name: &str, crate_path: &str, config: &BloxConfig) -> BloxSpec
         messages: Vec::new(),
         actions: Vec::new(),
         context: None,
+        wiring: None,
     };
 
     // --- States ---
@@ -207,7 +316,7 @@ fn extract_transitions(spec: &mut BloxSpec, topology: &TopologyConfig) {
 
         let guard = model::Guard {
             description: build_guard_description(trans, &guard_branches),
-            raw: build_guard_raw(trans, &guard_branches, &target),
+            raw: build_guard_raw(&guard_branches, &target),
             branches: guard_branches,
         };
 
@@ -231,7 +340,6 @@ fn extract_transitions(spec: &mut BloxSpec, topology: &TopologyConfig) {
 
 /// Render the raw guard as an if/else-if/else chain (the Rust decision text).
 fn build_guard_raw(
-    trans: &TransitionConfig,
     branches: &[model::GuardBranch],
     fallback: &model::Target,
 ) -> String {
@@ -665,7 +773,7 @@ fn walk_dir_recursive(path: &Path, depth: usize, max_depth: usize, results: &mut
 
         if entry_path.is_dir() {
             walk_dir_recursive(&entry_path, depth + 1, max_depth, results);
-        } else if entry_path.file_name() == Some(std::ffi::OsStr::new("blox.toml")) {
+        } else if matches!(entry_path.file_name().and_then(|n| n.to_str()), Some("blox.toml") | Some("system.toml")) {
             results.push(entry_path);
         }
     }
