@@ -34,7 +34,7 @@ never sees the application's concrete spawn request type.
 
 4. **KillCapability as the ripcord mechanism.** Kill is a type-level property of the runtime,
    encoded via the `KillCapability<R>` trait. Tokio uses `Kill` (external abort via
-   `AbortHandle::abort()`); Embassy uses `NoKill` (no-op, `Handle = ()`). No trait
+   `KillHandle::abort()`); Embassy uses `NoKill` (no-op, `Handle = ()`). No trait
    objects, no dynamic dispatch, no heap allocation in the kill path. Kill is the
    ripcord — used only for unresponsive actors that can't cooperate. For cooperative
    self-termination, use `ChildPolicy::Abort` (sends `AbortCommand` on the abort mailbox).
@@ -42,7 +42,7 @@ never sees the application's concrete spawn request type.
 5. **Per-child abort mailboxes.** Each dynamically spawned child has a dedicated abort
    mailbox (`ActorRef<AbortCommand, R>`). The supervisor sends `AbortCommand::Abort` on this
    mailbox (cooperative self-termination — the child exits cleanly via its select loop).
-   For unresponsive actors, `ChildPolicy::Abort` calls `R::Kill::kill(abort_handle)` (ripcord —
+   For unresponsive actors, `ChildPolicy::Abort` calls `R::Kill::kill(kill_handle)` (ripcord —
    external abort that bypasses the task entirely).
 
 6. **Spawn lifecycle: create → wire peers → start.** The spawn helper creates the child,
@@ -117,7 +117,7 @@ bloxide-core              ← engine + runtime capabilities
   AbortCommand, ChildPolicy, GroupShutdown (child_management module)
 
 bloxide-spawn/            ← spawn capability (separate crate)
-  SpawnCap (TaskHandle, AbortHandle, spawn, abort_handle, abort)
+  SpawnCap (TaskHandle, KillHandle, spawn, kill_handle, kill)
   SpawnOutput<R>, SpawnFn<R, Req>, ChildRegistrar<R>, spawn_child<R, Req, C>
 
 bloxide-child-management/ ← reusable child tracking (separate crate)
@@ -134,7 +134,7 @@ bloxide-supervisor/       ← the supervisor blox (codegen-ed from blox.toml)
 
 bloxide-supervisor/src/actions.rs  ← in-crate action functions (concrete &SupervisorEvent<R>)
   start_children, stop_all_children
-  handle_done_or_failed, record_stopped, record_started, record_alive, record_aborted
+  handle_stopped_or_failed, record_stopped, record_started, record_alive, record_aborted
   register_child, handle_register_dynamic_child, handle_health_check
   (NO handle_spawn — spawning is not a supervisor action)
   (abort_child sends an AbortCommand message; kill_child calls R::Kill::kill, not a trait method call)
@@ -143,7 +143,7 @@ bloxide-tokio/            ← Tokio runtime
   run() + RunConfig::supervised (static children)
   run() + RunConfig::supervised_with_abort (abort mailbox for dynamic children)
   ChildGroupBuilder (control_ref + notify_ref extraction)
-  SpawnCap impl: TaskHandle = JoinHandle<()>, KillHandle = AbortHandle
+  SpawnCap impl: TaskHandle = JoinHandle<()>, KillHandle = KillHandle
   KillCapability impl: type Kill = Kill
 
 bloxide-embassy/          ← Embassy runtime (no dynamic spawning)
@@ -190,11 +190,17 @@ use pool_messages::{SpawnRequest, SpawnedWorker, WorkerMsg};
 ///      running run() with RunConfig::supervised_with_abort
 ///   4. Sends the app-specific reply via the request's reply_to field
 ///   5. Returns SpawnOutput for supervisor registration (includes abort_ref
-///      and abort_handle)
+///      and kill_handle)
 ///
 /// The function is fast (run-to-completion): channel creation and R::spawn()
 /// are non-blocking. The child's own initialization (which may be slow) runs
 /// in the child's task and reports back via lifecycle events.
+///
+/// The function is generic over the worker spec type `S`: the system-level
+/// codegen monomorphizes it with the concrete `WorkerSpec` (real action
+/// closures) instead of the blox-crate-level stub spec (invariant #18).
+/// Context construction uses plain fields — there is no behavior generic
+/// (invariant #14).
 pub fn spawn_worker<R>(req: SpawnRequest<R>, notify: ActorRef<ChildLifecycleEvent, R>) -> SpawnOutput<R>
 where
     R: BloxRuntime + SpawnCap + DynamicChannelCap,
@@ -209,10 +215,9 @@ where
             let (lifecycle_ref, lifecycle_rx) = R::channel::<LifecycleCommand>(worker_id, 4);
             let (abort_ref, abort_rx) = R::channel::<AbortCommand>(worker_id, 4);
 
-            // Construct the child's context (app-specific)
-            let behavior = WorkerBehavior::<R>::default();
-            let worker_ctx = WorkerCtx::new(pool_ref, worker_id, behavior);
-            let machine = StateMachine::<WorkerSpec<R, WorkerBehavior<R>>>::new(worker_ctx);
+            // Construct the child's context — plain fields, no behavior generic
+            let worker_ctx = WorkerCtx::new(worker_id, pool_ref);
+            let machine = StateMachine::<WorkerSpec<R>>::new(worker_ctx);
 
             // Spawn the child task with abort mailbox support (non-blocking).
             let notify_sender = notify.sender();
@@ -225,8 +230,8 @@ where
                 ).await;
             });
 
-            // Convert the TaskHandle to a cloneable AbortHandle for the ripcord.
-            let abort_handle = R::abort_handle(task_handle);
+            // Convert the TaskHandle to a cloneable KillHandle for the ripcord.
+            let kill_handle = R::kill_handle(task_handle);
 
             // Send app-specific handles back to the requester
             let _ = reply_to.try_send(worker_id, SpawnedWorker {
@@ -236,15 +241,15 @@ where
             });
 
             // Return what the supervisor needs for lifecycle management + kill.
-            // The abort_handle flows to the managing blox via
-            // SpawnOutput::abort_handle → RegisterDynamicChild::abort_handle →
-            // ChildEntry::abort_handle. The managing blox uses it as the
+            // The kill_handle flows to the managing blox via
+            // SpawnOutput::kill_handle → RegisterDynamicChild::kill_handle →
+            // ChildEntry::kill_handle. The managing blox uses it as the
             // ripcord for unresponsive children (§3.13).
             SpawnOutput {
                 child_id: worker_id,
                 lifecycle_ref,
-                abort_ref,       // kill capability mailbox (send side)
-                abort_handle,   // cloneable ripcord for external abort
+                abort_ref,      // abort capability mailbox (send side)
+                kill_handle,   // cloneable ripcord for external kill
                 policy: ChildPolicy::Stop,
             }
         }
@@ -335,9 +340,9 @@ use bloxide_core::child_management::{AbortCommand, ChildPolicy};
 /// app-specific handles (domain_ref, ctrl_ref, etc.) go back to the requester
 /// via the spawn request's reply-to channel, not through here.
 ///
-/// The `abort_handle` is the cloneable ripcord: the spawn function gets a
-/// `TaskHandle` from `R::spawn()`, converts it to an `AbortHandle` via
-/// `R::abort_handle()`, and passes it here so the managing blox can call
+/// The `kill_handle` is the cloneable ripcord: the spawn function gets a
+/// `TaskHandle` from `R::spawn()`, converts it to an `KillHandle` via
+/// `R::kill_handle()`, and passes it here so the managing blox can call
 /// `R::Kill::kill(handle)` for unresponsive children. For `NoKill` runtimes
 /// this is `()`.
 pub struct SpawnOutput<R: BloxRuntime> {
@@ -350,10 +355,10 @@ pub struct SpawnOutput<R: BloxRuntime> {
     pub abort_ref: ActorRef<AbortCommand, R>,
     /// Cloneable abort handle for external task abort (the ripcord). The
     /// managing blox calls `R::Kill::kill(handle)` when the child is
-    /// unresponsive. `()` for `NoKill` runtimes, `R::AbortHandle` for `Kill`
+    /// unresponsive. `()` for `NoKill` runtimes, `R::KillHandle` for `Kill`
     /// runtimes. Must be `Clone` so action functions can extract it from
     /// `&Event` (the HSM engine passes `&Event`, not `&mut Event`).
-    pub abort_handle: <R::Kill as KillCapability<R>>::Handle,
+    pub kill_handle: <R::Kill as KillCapability<R>>::Handle,
     /// Supervision policy for this child.
     pub policy: ChildPolicy,
 }
@@ -401,7 +406,7 @@ impl<R: BloxRuntime> ChildRegistrar<R> for ChildCtrlRegistrar {
             id: output.child_id,
             lifecycle_ref: output.lifecycle_ref,
             abort_ref: output.abort_ref,
-            abort_handle: output.abort_handle,
+            kill_handle: output.kill_handle,
             policy: output.policy,
         })
     }
@@ -468,7 +473,7 @@ pub enum ChildCtrl<R: BloxRuntime> {
 
     /// Register a dynamically spawned child (has kill capability).
     /// Sent by the spawn helper after creating the child. Carries the
-    /// abort_ref and abort_handle for external abort (see §3.8).
+    /// abort_ref and kill_handle for external abort (see §3.8).
     RegisterDynamicChild(RegisterDynamicChild<R>),
 
     /// Trigger one health-check round.
@@ -485,7 +490,7 @@ the kill capability fields.
 
 `RegisterChild` is for static children (wired at startup, no kill capability).
 `RegisterDynamicChild` is for dynamically spawned children (has `abort_ref` +
-`abort_handle`). Both are variants of `ChildCtrl<R>`.
+`kill_handle`). Both are variants of `ChildCtrl<R>`.
 
 Two separate structs avoid `Option` on the kill fields — the type system encodes the
 capability (static children don't have `abort_ref`):
@@ -504,9 +509,9 @@ pub struct RegisterChild<R: BloxRuntime> {
 /// Register a dynamically spawned child. Has a kill capability mailbox.
 /// Used by the spawn helper when SpawnCap is available.
 ///
-/// The `abort_handle` is `Clone` (it's `R::AbortHandle`, which requires
+/// The `kill_handle` is `Clone` (it's `R::KillHandle`, which requires
 /// `Clone` on the `SpawnCap` trait). This allows the supervisor's action
-/// function to clone the `abort_handle` from `&Event` (the HSM engine passes
+/// function to clone the `kill_handle` from `&Event` (the HSM engine passes
 /// `&Event`, not `&mut Event`).
 pub struct RegisterDynamicChild<R: BloxRuntime> {
     pub id: ActorId,
@@ -514,8 +519,8 @@ pub struct RegisterDynamicChild<R: BloxRuntime> {
     /// Kill capability mailbox (send side).
     pub abort_ref: ActorRef<AbortCommand, R>,
     /// Cloneable abort handle for external task abort (the ripcord).
-    /// `()` for NoKill runtimes, `R::AbortHandle` for Kill runtimes.
-    pub abort_handle: <R::Kill as KillCapability<R>>::Handle,
+    /// `()` for NoKill runtimes, `R::KillHandle` for Kill runtimes.
+    pub kill_handle: <R::Kill as KillCapability<R>>::Handle,
     pub policy: ChildPolicy,
 }
 ```
@@ -524,7 +529,7 @@ Both variants are available regardless of runtime — `RegisterDynamicChild` is 
 with a `abort_ref` field; it doesn't require `R: SpawnCap` to name the type (the
 `ActorRef<AbortCommand, R>` only needs `R: BloxRuntime`). The supervisor's `register_child`
 action handles both variants: adds the child to the list, stores the `abort_ref` and
-`abort_handle` if present, sends `Start`.
+`kill_handle` if present, sends `Start`.
 
 ### 3.9 The Supervisor Event Enum
 
@@ -576,7 +581,7 @@ and dynamic apps. The supervisor doesn't spawn — it only registers and manages
 ### 3.11 ChildGroup and ChildEntry
 
 `ChildGroup<R>` is the supervisor's child list. Each `ChildEntry` carries an `abort_ref`
-(an `ActorRef<AbortCommand, R>`) for the cooperative abort message, and an `abort_handle`
+(an `ActorRef<AbortCommand, R>`) for the cooperative abort message, and an `kill_handle`
 (`<R::Kill as KillCapability<R>>::Handle`) for the external-abort ripcord. Both are
 `Option` — `None` for static children registered via `RegisterChild`, `Some` for dynamic
 children registered via `RegisterDynamicChild`.
@@ -598,8 +603,8 @@ struct ChildEntry<R: BloxRuntime> {
     abort_ref: Option<ActorRef<AbortCommand, R>>,
     /// Cloneable abort handle for external task abort (ripcord). None for static
     /// children. Consumed by R::Kill::kill(handle) when ChildPolicy::Kill fires.
-    /// This is R::AbortHandle (Clone), not R::TaskHandle (not Clone).
-    abort_handle: Option<<R::Kill as KillCapability<R>>::Handle>,
+    /// This is R::KillHandle (Clone), not R::TaskHandle (not Clone).
+    kill_handle: Option<<R::Kill as KillCapability<R>>::Handle>,
 }
 
 pub struct ChildGroup<R: BloxRuntime> {
@@ -610,14 +615,14 @@ pub struct ChildGroup<R: BloxRuntime> {
 ```
 
 The `Option` on `abort_ref` is an `Option` on a *mailbox ref* (cheap, cloneable, no `dyn`).
-The `Option` on `abort_handle` is an `Option` on a *concrete type* selected at the type
-level (`()` for Embassy, `R::AbortHandle` for Tokio). Neither is a trait object. The
+The `Option` on `kill_handle` is an `Option` on a *concrete type* selected at the type
+level (`()` for Embassy, `R::KillHandle` for Tokio). Neither is a trait object. The
 `Option` exists because `ChildGroup` is a single type that handles both static and dynamic
 children — the `Option` encodes "this child has an abort mailbox" vs "this child doesn't."
 
-`handle_done_or_failed` evaluates the child's `ChildPolicy` — four variants:
+`handle_stopped_or_failed` evaluates the child's `ChildPolicy` — four variants:
 
-- **`ChildPolicy::Kill`** (ripcord): Takes the `abort_handle`, calls `R::Kill::kill(handle)`.
+- **`ChildPolicy::Kill`** (ripcord): Takes the `kill_handle`, calls `R::Kill::kill(handle)`.
   External abort — works even if the child is stuck. No callbacks fire. Marks permanently done.
 - **`ChildPolicy::Abort`** (cooperative): Sends `AbortCommand::Abort` on the child's
   `abort_ref`. The child self-terminates via its select loop and reports `Aborted`.
@@ -629,15 +634,15 @@ children — the `Option` encodes "this child has an abort mailbox" vs "this chi
   Marks permanently done.
 
 ```rust
-// In ChildGroup::handle_done_or_failed (simplified)
+// In ChildGroup::handle_stopped_or_failed (simplified)
 
 match policy {
     ChildPolicy::Kill => {
         // Ripcord: external abort. Works even if the child is stuck and
         // never polls the abort mailbox. For NoKill runtimes this is a no-op
-        // (kill(()) does nothing). For Kill runtimes this calls AbortHandle::abort().
-        let abort_handle = self.children[idx].abort_handle.take();
-        if let Some(handle) = abort_handle {
+        // (kill(()) does nothing). For Kill runtimes this calls KillHandle::abort().
+        let kill_handle = self.children[idx].kill_handle.take();
+        if let Some(handle) = kill_handle {
             R::Kill::kill(handle);
         }
         self.children[idx].permanently_done = true;
@@ -1078,16 +1083,16 @@ it is.
 /// Type-level kill capability for a runtime.
 ///
 /// `NoKill` — no external task abort (Embassy, static-only). `Handle = ()` (ZST).
-/// `Kill`   — external abort via SpawnCap::abort(handle) (Tokio, dynamic).
+/// `Kill`   — external abort via `SpawnCap::kill(handle)` (Tokio, dynamic).
 ///
 /// This is a type-level enum, not a trait object. The runtime picks the
 /// variant; the supervisor is monomorphized for whichever it is.
 ///
-/// The `Handle` type is the cloneable `AbortHandle` from `SpawnCap`, NOT the
+/// The `Handle` type is the cloneable `KillHandle` from `SpawnCap`, NOT the
 /// `TaskHandle`. This is because the handle must be `Clone` so it can be
 /// extracted from `&Event` in action functions (the HSM engine passes `&Event`,
-/// not `&mut Event`). The spawn function calls `SpawnCap::abort_handle()` to
-/// convert the non-Clone `TaskHandle` into the Clone `AbortHandle` before
+/// not `&mut Event`). The spawn function calls `SpawnCap::kill_handle()` to
+/// convert the non-Clone `TaskHandle` into the Clone `KillHandle` before
 /// placing it in RegisterDynamicChild.
 pub trait KillCapability<R: BloxRuntime> {
     type Handle: Clone + Send + 'static;
@@ -1101,12 +1106,12 @@ impl<R: BloxRuntime> KillCapability<R> for NoKill {
     fn kill(_: ()) {}
 }
 
-/// Kill capability via SpawnCap::abort. Used by dynamic runtimes (Tokio).
+/// Kill capability via `SpawnCap::kill`. Used by dynamic runtimes (Tokio).
 pub struct Kill;
 impl<R: BloxRuntime + SpawnCap> KillCapability<R> for Kill {
-    type Handle = R::AbortHandle;
-    fn kill(handle: R::AbortHandle) {
-        R::abort(handle);
+    type Handle = R::KillHandle;
+    fn kill(handle: R::KillHandle) {
+        R::kill(handle);
     }
 }
 ```
@@ -1118,8 +1123,8 @@ pub trait BloxRuntime: Clone + Send + 'static {
     // ... associated types for channels, streams, errors ...
 
     /// Kill capability. NoKill for static runtimes, Kill for dynamic.
-    /// Determines the Handle type stored in ChildEntry::abort_handle —
-    /// () (ZST) for NoKill, R::AbortHandle for Kill.
+    /// Determines the Handle type stored in ChildEntry::kill_handle —
+    /// () (ZST) for NoKill, R::KillHandle for Kill.
     ///
     /// Each runtime impl specifies this explicitly (no default — associated
     /// type defaults are unstable on stable Rust).
@@ -1129,14 +1134,14 @@ pub trait BloxRuntime: Clone + Send + 'static {
 
 Runtime implementations:
 - **Embassy**: `type Kill = NoKill`. No `SpawnCap` impl. `Handle = ()` (ZST, zero space).
-- **Tokio**: `type Kill = Kill`. Requires `TokioRuntime: SpawnCap`. `Handle = AbortHandle`.
+- **Tokio**: `type Kill = Kill`. Requires `TokioRuntime: SpawnCap`. `Handle = KillHandle`.
 - **TestRuntime**: default `NoKill` unless a test specifically exercises kill.
 
 **Key properties:**
 - `ChildGroup<R>` is bounded by `R: BloxRuntime` only — no `SpawnCap` bound leaks.
 - The `SpawnCap` bound is satisfied at the runtime impl site, not in the supervisor crate.
-- For Embassy: `ChildEntry::abort_handle` is `Option<()>` (ZST, zero space). No `alloc`.
-- For Tokio: `ChildEntry::abort_handle` is `Option<AbortHandle>`. Stored by value, no `Arc`.
+- For Embassy: `ChildEntry::kill_handle` is `Option<()>` (ZST, zero space). No `alloc`.
+- For Tokio: `ChildEntry::kill_handle` is `Option<KillHandle>`. Stored by value, no `Arc`.
 - No trait object. No dynamic dispatch. No heap allocation in the kill path.
 
 ### 6.2 SpawnCap Trait
@@ -1151,30 +1156,30 @@ that `KillCapability` builds upon.
 /// Tier 2 capability for runtimes that support spawning actor tasks at runtime.
 ///
 /// The associated `TaskHandle` type is returned by `spawn` and is used to
-/// produce an `AbortHandle` (the cloneable ripcord). For Tokio,
-/// `TaskHandle = JoinHandle<()>` and `AbortHandle = tokio::task::AbortHandle`.
+/// produce an `KillHandle` (the cloneable ripcord). For Tokio,
+/// `TaskHandle = JoinHandle<()>` and `KillHandle = tokio::task::KillHandle`.
 ///
 /// All types are concrete, by-value — no Arc<dyn>, no dynamic dispatch.
 pub trait SpawnCap: DynamicChannelCap {
-    /// Handle to a spawned task. Used to derive an AbortHandle.
-    /// Consumed by abort_handle. NOT Clone.
+    /// Handle to a spawned task. Used to derive an KillHandle.
+    /// Consumed by kill_handle. NOT Clone.
     type TaskHandle: Send + 'static;
 
     /// Cloneable handle for external task abort. Must be Clone so it can
     /// be extracted from &Event in action functions. () for runtimes
     /// without external abort.
-    type AbortHandle: Clone + Send + 'static;
+    type KillHandle: Clone + Send + 'static;
 
     /// Spawn a future as an independent task and return a handle.
     fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle;
 
     /// Derive a cloneable abort handle from a task handle.
     /// The task handle is consumed; the task continues running (drop does not abort).
-    fn abort_handle(handle: Self::TaskHandle) -> Self::AbortHandle;
+    fn kill_handle(handle: Self::TaskHandle) -> Self::KillHandle;
 
     /// Abort a spawned task immediately via its abort handle. No callbacks fire —
     /// the task is dropped in-place. The handle is consumed and cannot be reused.
-    fn abort(handle: Self::AbortHandle);
+    fn abort(handle: Self::KillHandle);
 }
 ```
 
@@ -1185,17 +1190,17 @@ Tokio's implementation:
 
 impl SpawnCap for TokioRuntime {
     type TaskHandle = tokio::task::JoinHandle<()>;
-    type AbortHandle = tokio::task::AbortHandle;
+    type KillHandle = tokio::task::KillHandle;
 
     fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle {
         tokio::spawn(future)
     }
 
-    fn abort_handle(handle: Self::TaskHandle) -> Self::AbortHandle {
-        handle.abort_handle()
+    fn kill_handle(handle: Self::TaskHandle) -> Self::KillHandle {
+        handle.kill_handle()
     }
 
-    fn abort(handle: Self::AbortHandle) {
+    fn abort(handle: Self::KillHandle) {
         handle.abort();
     }
 }
@@ -1203,9 +1208,9 @@ impl SpawnCap for TokioRuntime {
 
 The kill path in full:
 1. `SpawnCap::spawn()` returns `TaskHandle` (not `Clone`)
-2. `SpawnCap::abort_handle(task_handle)` converts to `AbortHandle` (`Clone`)
-3. `AbortHandle` stored in `SpawnOutput::abort_handle` → `RegisterDynamicChild::abort_handle` → `ChildEntry::abort_handle`
-4. When `ChildPolicy::Kill` fires: `R::Kill::kill(abort_handle)` → `R::abort(abort_handle)` → `AbortHandle::abort()`
+2. `SpawnCap::kill_handle(task_handle)` converts to `KillHandle` (`Clone`)
+3. `KillHandle` stored in `SpawnOutput::kill_handle` → `RegisterDynamicChild::kill_handle` → `ChildEntry::kill_handle`
+4. When `ChildPolicy::Kill` fires: `R::Kill::kill(kill_handle)` → `R::kill(kill_handle)` → `KillHandle::abort()`
 
 ### 6.3 Abort vs Kill — Two Termination Paths
 
@@ -1218,13 +1223,13 @@ Termination uses two distinct mechanisms — cooperative abort and ripcord kill:
    cooperatively. This is the common case for terminating responsive dynamic actors.
 
 2. **External abort / ripcord (`ChildPolicy::Kill`):** If the task is stuck (not yielding
-   to the select loop), `R::Kill::kill(handle)` is called with the `AbortHandle` stored in
-   `ChildEntry::abort_handle`. This bypasses the task entirely — no cooperation, no
+   to the select loop), `R::Kill::kill(handle)` is called with the `KillHandle` stored in
+   `ChildEntry::kill_handle`. This bypasses the task entirely — no cooperation, no
    callbacks. For `NoKill` runtimes (Embassy), the ripcord is a no-op — `kill(())` does
-   nothing. For `Kill` runtimes (Tokio), this calls `AbortHandle::abort()`.
+   nothing. For `Kill` runtimes (Tokio), this calls `KillHandle::abort()`.
 
 Both `Abort` and `Kill` result in permanent termination — no restart, no reset. The
-`handle_done_or_failed` method marks the child `permanently_done` and sets the phase to
+`handle_stopped_or_failed` method marks the child `permanently_done` and sets the phase to
 `ChildPhase::PermanentlyDone`. The difference is cooperation: `Abort` lets the child exit
 cleanly, `Kill` forces it.
 
@@ -1277,7 +1282,7 @@ Pool                      Spawn Helper            Managing Blox            Child
   |                            |                       | 7. register_child:    |
   |                            |                       |    add to ChildGroup  |
   |                            |                       |    store abort_ref +   |
-  |                            |                       |     abort_handle      |
+  |                            |                       |     kill_handle      |
   |                            |                       |    send Start          |
   |                            |                       |---------------------->|
   |                            |                       |                       |
@@ -1300,7 +1305,7 @@ Pool                      Spawn Helper            Managing Blox            Child
   |                            |                       |                       |
   |                            |                       | [if ChildPolicy::Abort]|
   |                            |                       | 13. R::Kill::kill     |
-  |                            |                       |     (abort_handle)    |
+  |                            |                       |     (kill_handle)    |
   |                            |                       |     + send AbortCommand|
   |                            |                       |     on abort_ref       |
   |                            |                       |---------------------->|
@@ -1339,7 +1344,7 @@ lifecycle event types are needed.
 - **Birth**: The spawn helper creates the child (channels, context, task) and sends the
   registration message (via `C::register(output)`) to the managing blox's control mailbox.
   For the standard supervisor: `ChildCtrl::RegisterDynamicChild(RegisterDynamicChild
-  { id, lifecycle_ref, abort_ref, abort_handle, policy })`. The managing blox registers it
+  { id, lifecycle_ref, abort_ref, kill_handle, policy })`. The managing blox registers it
   in its child list.
 
 - **Start**: The managing blox sends `LifecycleCommand::Start` to the child (in the
@@ -1360,7 +1365,7 @@ lifecycle event types are needed.
   reports `Aborted`. No `on_exit` callbacks fire, but the task exits cleanly. Permanently
   done — no restart.
 
-- **Kill** (`ChildPolicy::Kill`): The supervisor calls `R::Kill::kill(abort_handle)` (ripcord —
+- **Kill** (`ChildPolicy::Kill`): The supervisor calls `R::Kill::kill(kill_handle)` (ripcord —
   external abort for stuck tasks). No cooperation, no callbacks. For `NoKill` runtimes the
   ripcord is a no-op. Permanently dead — no restart.
 
@@ -1370,7 +1375,7 @@ The `RegisterChild` message is the entry point for static children. The
 `RegisterDynamicChild` message is the entry point for dynamic children. Both go to the
 supervisor's control mailbox, and the supervisor's `register_child` action handles both:
 add to `ChildGroup`, send `Start`. The only difference is `RegisterDynamicChild` carries
-an `abort_ref` and `abort_handle` that the supervisor stores for `ChildPolicy::Abort` and
+an `abort_ref` and `kill_handle` that the supervisor stores for `ChildPolicy::Abort` and
 `ChildPolicy::Kill`.
 
 `RegisterChild`/`RegisterDynamicChild` is the *only* message the supervisor receives about
@@ -1435,11 +1440,11 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
 - The spawn helper creates children (including abort mailbox) and sends
   `RegisterDynamicChild` to the supervisor
 - Supervisor registers and manages lifecycle — same code path as static, plus stores
-  `abort_ref` and `abort_handle` for `ChildPolicy::Abort` and `ChildPolicy::Kill`
+  `abort_ref` and `kill_handle` for `ChildPolicy::Abort` and `ChildPolicy::Kill`
 - `ChildPolicy::Abort` sends `AbortCommand::Abort` on `abort_ref` (cooperative self-termination)
-- `ChildPolicy::Kill` calls `R::Kill::kill(abort_handle)` (ripcord — external abort)
+- `ChildPolicy::Kill` calls `R::Kill::kill(kill_handle)` (ripcord — external abort)
 - `run` with `RunConfig::supervised_with_abort` (with abort mailbox support) is used
-- `type Kill = Kill` — `Handle = AbortHandle`
+- `type Kill = Kill` — `Handle = KillHandle`
 
 The `dynamic` feature is on the **Pool's** crate, not the supervisor's. The Pool gates its
 `spawn_fn` field, `spawn_ref` field, and spawn-related transitions behind
@@ -1603,9 +1608,9 @@ A `fn` pointer is the simplest type that works:
    provides the concrete function. No `Box<dyn>`, no dynamic dispatch.
 
 4. **No abort-capability threading in the spawn function.** The abort mailbox is created
-   inside the spawn function (alongside the lifecycle channel). The `AbortHandle` from
-   `R::abort_handle()` is returned in `SpawnOutput`. The supervisor gets the `abort_ref`
-   (send side) and the `abort_handle` (ripcord). No trait object threading, no `&'static`
+   inside the spawn function (alongside the lifecycle channel). The `KillHandle` from
+   `R::kill_handle()` is returned in `SpawnOutput`. The supervisor gets the `abort_ref`
+   (send side) and the `kill_handle` (ripcord). No trait object threading, no `&'static`
    hack, no `static` singleton.
 
 5. **If state is needed in the future:** the state can go in the `SpawnRequest`
