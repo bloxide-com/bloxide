@@ -11,6 +11,7 @@ mod context_cmd;
 mod entry_exit_cmd;
 mod forward;
 mod generate;
+mod init;
 mod lint;
 mod list_cmd;
 mod message_cmd;
@@ -310,6 +311,14 @@ enum BloxSubcommand {
         #[arg(long)]
         stop: bool,
     },
+    /// Bootstrap a new bloxide workspace
+    Init {
+        /// Target directory to create (e.g. ./my-app)
+        dir: String,
+        /// Runtime for the hello-world app: tokio or embassy
+        #[arg(long, default_value = "tokio")]
+        runtime: String,
+    },
     /// Add a constructor injection to an actor in a system.toml
     AddInjection {
         app_name: String,
@@ -562,6 +571,7 @@ fn main() -> anyhow::Result<()> {
                 restart_max,
                 stop,
             } => system_cmd::set_policy(&app_name, &actor, restart_max, stop),
+            BloxSubcommand::Init { dir, runtime } => init::init(&dir, &runtime),
             BloxSubcommand::AddInjection {
                 app_name,
                 actor,

@@ -7,7 +7,7 @@
 
 use crate::schema::BloxConfig;
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Standard copyright + auto-generated header for emitted files.
 pub const HEADER: &str =
@@ -34,6 +34,11 @@ pub fn parse_package_name(cargo_toml_path: &Path) -> Option<String> {
 /// Discover all `blox.toml` files under `workspace_root` (excluding `target/`),
 /// parse each, and return a map keyed by the crate name from the sibling
 /// `Cargo.toml` (falling back to the directory name).
+///
+/// Also searches the source directories of path dependencies declared in the
+/// workspace's root `Cargo.toml` — apps whose blox crates live OUTSIDE the
+/// workspace (e.g. `bloxide-supervisor` from a separate bloxide checkout, as
+/// produced by `cargo blox init`) get their blox.toml discovered the same way.
 pub fn discover_blox_configs(
     workspace_root: &Path,
 ) -> anyhow::Result<BTreeMap<String, BloxConfig>> {
@@ -57,7 +62,61 @@ pub fn discover_blox_configs(
             blox_configs.insert(key, blox_config);
         }
     }
+
+    // Path-dependency source dirs from [workspace.dependencies] (and any
+    // member's [dependencies] with a `path`). Each dep dir is a crate root —
+    // look for its blox.toml directly.
+    for dep_dir in path_dependency_dirs(workspace_root) {
+        let blox_path = dep_dir.join("blox.toml");
+        if !blox_path.exists() {
+            continue;
+        }
+        let blox_content = std::fs::read_to_string(&blox_path)?;
+        let blox_config: BloxConfig = toml::from_str(&blox_content)?;
+        let cargo_toml_path = dep_dir.join("Cargo.toml");
+        let key = if cargo_toml_path.exists() {
+            parse_package_name(&cargo_toml_path)
+                .unwrap_or_else(|| dep_dir.file_name().unwrap().to_string_lossy().to_string())
+        } else {
+            dep_dir.file_name().unwrap().to_string_lossy().to_string()
+        };
+        blox_configs.entry(key).or_insert(blox_config);
+    }
+
     Ok(blox_configs)
+}
+
+/// Collect the source directories of path dependencies declared in the
+/// workspace root Cargo.toml's `[workspace.dependencies]` table.
+fn path_dependency_dirs(workspace_root: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    let content = match std::fs::read_to_string(workspace_root.join("Cargo.toml")) {
+        Ok(c) => c,
+        Err(_) => return dirs,
+    };
+    let parsed: toml::Value = match toml::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return dirs,
+    };
+    if let Some(deps) = parsed
+        .get("workspace")
+        .and_then(|w| w.get("dependencies"))
+        .and_then(|d| d.as_table())
+    {
+        for value in deps.values() {
+            if let Some(path) = value.get("path").and_then(|p| p.as_str()) {
+                let dir = if Path::new(path).is_absolute() {
+                    PathBuf::from(path)
+                } else {
+                    workspace_root.join(path)
+                };
+                if dir.exists() {
+                    dirs.push(dir);
+                }
+            }
+        }
+    }
+    dirs
 }
 
 /// Convert PascalCase to snake_case.
