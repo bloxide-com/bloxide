@@ -7,6 +7,7 @@ use std::path::PathBuf;
 mod build;
 mod check;
 mod ci;
+mod context_cmd;
 mod entry_exit_cmd;
 mod forward;
 mod generate;
@@ -319,6 +320,76 @@ enum BloxSubcommand {
         #[arg(long)]
         from: String,
     },
+    /// Add a [[context.uses]] entry to a blox
+    AddUse {
+        blox_name: String,
+        #[arg(long)]
+        crate_name: String,
+        #[arg(long)]
+        field: String,
+        #[arg(long)]
+        field_type: String,
+        #[arg(long)]
+        role: String,
+        #[arg(long)]
+        feature: Option<String>,
+        #[arg(long)]
+        if_not_exists: bool,
+    },
+    /// Remove a [[context.uses]] entry from a blox
+    RemoveUse {
+        blox_name: String,
+        #[arg(long)]
+        field: String,
+    },
+    /// Add a [[context.fields]] state field to a blox
+    AddField {
+        blox_name: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        ty: String,
+        #[arg(long)]
+        default: Option<String>,
+        #[arg(long)]
+        if_not_exists: bool,
+    },
+    /// Remove a context field from a blox (fields, uses, or uses sub-fields)
+    RemoveField {
+        blox_name: String,
+        #[arg(long)]
+        name: String,
+    },
+    /// Add a [[context.actions]] entry to a blox
+    AddAction {
+        blox_name: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        kind: String,
+        #[arg(long)]
+        field: Vec<String>,
+        #[arg(long)]
+        crate_name: Option<String>,
+        #[arg(long)]
+        module: Option<String>,
+        #[arg(long)]
+        fn_name: Option<String>,
+        #[arg(long)]
+        event_payload: Option<String>,
+        #[arg(long)]
+        impl_required: bool,
+        #[arg(long)]
+        feature: Option<String>,
+        #[arg(long)]
+        if_not_exists: bool,
+    },
+    /// Remove a [[context.actions]] entry from a blox
+    RemoveAction {
+        blox_name: String,
+        #[arg(long)]
+        name: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -497,6 +568,64 @@ fn main() -> anyhow::Result<()> {
                 field,
                 from,
             } => system_cmd::add_injection(&app_name, &actor, &field, &from),
+            BloxSubcommand::AddUse {
+                blox_name,
+                crate_name,
+                field,
+                field_type,
+                role,
+                feature,
+                if_not_exists,
+            } => context_cmd::add_use(
+                &blox_name,
+                &crate_name,
+                &field,
+                &field_type,
+                &role,
+                feature.as_deref(),
+                if_not_exists,
+            ),
+            BloxSubcommand::RemoveUse { blox_name, field } => {
+                context_cmd::remove_use(&blox_name, &field)
+            }
+            BloxSubcommand::AddField {
+                blox_name,
+                name,
+                ty,
+                default,
+                if_not_exists,
+            } => context_cmd::add_field(&blox_name, &name, &ty, default.as_deref(), if_not_exists),
+            BloxSubcommand::RemoveField { blox_name, name } => {
+                context_cmd::remove_field(&blox_name, &name)
+            }
+            BloxSubcommand::AddAction {
+                blox_name,
+                name,
+                kind,
+                field,
+                crate_name,
+                module,
+                fn_name,
+                event_payload,
+                impl_required,
+                feature,
+                if_not_exists,
+            } => context_cmd::add_action(
+                &blox_name,
+                &name,
+                &kind,
+                field,
+                crate_name.as_deref(),
+                module.as_deref(),
+                fn_name.as_deref(),
+                event_payload.as_deref(),
+                impl_required,
+                feature.as_deref(),
+                if_not_exists,
+            ),
+            BloxSubcommand::RemoveAction { blox_name, name } => {
+                context_cmd::remove_action(&blox_name, &name)
+            }
         },
     }
 }
