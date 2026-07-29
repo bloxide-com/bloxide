@@ -100,6 +100,21 @@ pub fn ci() -> anyhow::Result<()> {
         }
     }
 
+    // Lint: friendly TOML validation across all blox.toml files (#114/#122).
+    println!();
+    println!("========================================");
+    println!("  cargo blox lint");
+    println!("========================================");
+    let status = Command::new("cargo")
+        .args(["run", "-p", "cargo-blox", "--quiet", "--", "blox", "lint"])
+        .status()?;
+    if !status.success() {
+        eprintln!("FAILED: cargo blox lint");
+        failed += 1;
+    } else {
+        println!("OK: cargo blox lint");
+    }
+
     // Test suites (mirrors scripts/ci.sh): bloxide-core needs --features std
     // for its cfg-gated tests, then the full workspace with default features.
     for test_args in [

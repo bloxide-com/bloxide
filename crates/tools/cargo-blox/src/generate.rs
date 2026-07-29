@@ -13,6 +13,11 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
         find_workspace_root_from(&manifest_dir).unwrap_or(manifest_dir)
     });
 
+    // Lint before generating (issues #114/#122): invalid TOML fails fast
+    // with friendly diagnostics instead of codegen errors or Rust compile
+    // errors downstream.
+    crate::lint::lint()?;
+
     let mut count = 0;
     for entry in WalkDir::new(&root)
         .max_depth(4)
