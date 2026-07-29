@@ -21,6 +21,7 @@ mod new_impl;
 mod new_messages;
 mod run;
 mod state;
+mod system_cmd;
 mod test;
 mod toml_helpers;
 mod transition_cmd;
@@ -258,6 +259,66 @@ enum BloxSubcommand {
         #[arg(long)]
         state: String,
     },
+    /// Add an actor to a system.toml
+    AddActor {
+        app_name: String,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        blox: String,
+        #[arg(long)]
+        impl_crate: Option<String>,
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(long)]
+        feature: Vec<String>,
+        #[arg(long)]
+        if_not_exists: bool,
+    },
+    /// Remove an actor from a system.toml (also cleans supervision refs)
+    RemoveActor {
+        app_name: String,
+        #[arg(long)]
+        name: String,
+    },
+    /// Add a supervision section to a system.toml
+    AddSupervision {
+        app_name: String,
+        #[arg(long)]
+        supervisor: String,
+        #[arg(long)]
+        strategy: String,
+        #[arg(long)]
+        child: Vec<String>,
+        #[arg(long)]
+        if_not_exists: bool,
+    },
+    /// Remove a supervision section from a system.toml
+    RemoveSupervision {
+        app_name: String,
+        #[arg(long)]
+        supervisor: String,
+    },
+    /// Set a child policy in a system.toml supervision section
+    SetPolicy {
+        app_name: String,
+        #[arg(long)]
+        actor: String,
+        #[arg(long)]
+        restart_max: Option<u32>,
+        #[arg(long)]
+        stop: bool,
+    },
+    /// Add a constructor injection to an actor in a system.toml
+    AddInjection {
+        app_name: String,
+        #[arg(long)]
+        actor: String,
+        #[arg(long)]
+        field: String,
+        #[arg(long)]
+        from: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -391,6 +452,51 @@ fn main() -> anyhow::Result<()> {
             BloxSubcommand::RemoveExit { blox_name, state } => {
                 entry_exit_cmd::remove_exit(&blox_name, &state)
             }
+            BloxSubcommand::AddActor {
+                app_name,
+                name,
+                blox,
+                impl_crate,
+                kind,
+                feature,
+                if_not_exists,
+            } => system_cmd::add_actor(
+                &app_name,
+                &name,
+                &blox,
+                impl_crate.as_deref(),
+                kind.as_deref(),
+                feature,
+                if_not_exists,
+            ),
+            BloxSubcommand::RemoveActor { app_name, name } => {
+                system_cmd::remove_actor(&app_name, &name)
+            }
+            BloxSubcommand::AddSupervision {
+                app_name,
+                supervisor,
+                strategy,
+                child,
+                if_not_exists,
+            } => {
+                system_cmd::add_supervision(&app_name, &supervisor, &strategy, child, if_not_exists)
+            }
+            BloxSubcommand::RemoveSupervision {
+                app_name,
+                supervisor,
+            } => system_cmd::remove_supervision(&app_name, &supervisor),
+            BloxSubcommand::SetPolicy {
+                app_name,
+                actor,
+                restart_max,
+                stop,
+            } => system_cmd::set_policy(&app_name, &actor, restart_max, stop),
+            BloxSubcommand::AddInjection {
+                app_name,
+                actor,
+                field,
+                from,
+            } => system_cmd::add_injection(&app_name, &actor, &field, &from),
         },
     }
 }
