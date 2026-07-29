@@ -277,7 +277,16 @@ fn WorkspaceScanner(
     selected_cell: Signal<Option<(String, String)>>,
     selected_diagram: Signal<Option<DiagramSelection>>,
 ) -> Element {
-    let mut workspace_path = use_signal(|| "/home/bboganware/repos/bloxide".to_string());
+    // Default the scan path to CARGO_MANIFEST_DIR (set when launched via
+    // cargo) or the current working directory — never a hardcoded path (#120).
+    let mut workspace_path = use_signal(|| {
+        std::env::var("CARGO_MANIFEST_DIR")
+            .unwrap_or_else(|_| {
+                std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| ".".to_string())
+            })
+    });
     let mut scan_status = use_signal(|| None::<String>);
 
     rsx! {
