@@ -9,4 +9,7 @@ pub mod prelude;
 #[macro_use]
 pub mod generated;
 
+#[cfg(test)]
+mod tests;
+
 pub use generated::{BhsmTstCtx, BhsmTstEvent, BhsmTstSpec, BhsmTstState};

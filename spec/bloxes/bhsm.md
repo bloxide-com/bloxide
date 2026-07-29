@@ -29,10 +29,10 @@ stateDiagram-v2
 
     S11 --> S11 : A [self]
     S11 --> S11 : B [self]
-    S11 --> S211 : D [LCA=None]
+    S11 --> S211 : D [LCA=S]
     S1 --> S211 : C [LCA=S]
     S21 --> S211 : E [LCA=S21]
-    S211 --> S11 : F [LCA=None]
+    S211 --> S11 : F [LCA=S]
     S21 --> S11 : G [LCA=S]
     S --> S11 : H [reset]
     S --> Error : K [error]
@@ -62,11 +62,11 @@ stateDiagram-v2
 | `A` | `S11` | `S11→S11` | `S1` | Self-transition at leaf |
 | `B` | `S11` | `S11→S11` | `S1` | Same mechanics, different chain |
 | `C` | `S1` (bubbled) | `S11→S211` | `S` | Cross-sibling via parent |
-| `D` | `S11` | `S11→S211` | None | Deep cross-subtree (full exit/entry) |
+| `D` | `S11` | `S11→S211` | `S` | Deep cross-subtree |
 | `E` | `S21` | `S211→S211` | `S21` | Parent→child (single ancestor) |
-| `F` | `S211` | `S211→S11` | None | Deep cross back |
+| `F` | `S211` | `S211→S11` | `S` | Deep cross back |
 | `G` | `S21` | `S211→S11` | `S` | Mid-level cross |
-| `H` | `S` | `any→S11` | None | Top-level reset (full chain) |
+| `H` | `S` | `any→S11` | `S` | Top-level reset |
 | `I` | `S` | stay | — | Top-level absorb |
 | `K` | `S` | `any→Error` | None | Error state (supervisor restart) |
 | `X` | `S` | `any→Stop` | None | Self-suspend via Guard::Stop (supervisor notified via Stopped) |
@@ -103,20 +103,21 @@ chain machinery.
 
 ## LCA Exit/Entry Examples
 
-### `S11 → S211` via event D (deep cross-subtree, LCA = None)
+### `S11 → S211` via event D (deep cross-subtree, LCA = S)
 ```
 source_path: [S, S1, S11]
 target_path: [S, S2, S21, S211]
-LCA = None (no common user ancestor → full exit/entry)
+LCA = S (index 0)
 
 Exit:   S11.on_exit  ← s11-EXIT;
         S1.on_exit   ← s1-EXIT;
-        S.on_exit    ← s-EXIT;
-Entry:  S.on_entry   ← s-ENTRY;
-        S2.on_entry  ← s2-ENTRY;
+Entry:  S2.on_entry  ← s2-ENTRY;
         S21.on_entry ← s21-ENTRY;
         S211.on_entry← s211-ENTRY;
 ```
+> `S.on_exit` / `S.on_entry` do NOT fire — the LCA state itself never exits
+> or re-enters (spec 02). Only when source and target share NO user ancestor
+> (LCA = None, e.g. `K` → `Error`) do the full chains fire.
 
 ### `S11 → S211` via event C (bubbled to S1, LCA = S)
 ```
@@ -142,18 +143,17 @@ Exit:   S211.on_exit ← s211-EXIT;
 Entry:  S211.on_entry← s211-ENTRY;
 ```
 
-### `any → S11` via event H (top-level reset, LCA = None)
+### `any → S11` via event H (top-level reset, LCA = S)
 ```
 source_path: [S, ...]  (from any substate)
 target_path: [S, S1, S11]
-LCA = None (exits all the way out, re-enters from S)
+LCA = S (S is a common ancestor of every in-S substate and S11)
 
-Exit:   (full chain from current leaf up through S)
-        S.on_exit    ← s-EXIT;
-Entry:  S.on_entry   ← s-ENTRY;
-        S1.on_entry  ← s1-ENTRY;
+Exit:   (chain from current leaf up to — but not including — S)
+Entry:  S1.on_entry  ← s1-ENTRY;
         S11.on_entry ← s11-ENTRY;
 ```
+> `S.on_exit` / `S.on_entry` do NOT fire — `H` is an intra-`S` transition.
 
 ### `any → Error` via event K
 ```
@@ -179,22 +179,23 @@ Guard::Stop: fires exit chain from current state to root, enters Init. Superviso
 
 ## Acceptance Criteria
 
-> Note: entry/exit trace actions are no-ops in the current `bhsm-tst` blox (the
-> blox exists to prove the engine's topology handling, not to print traces).
-> These criteria describe the transition semantics a `TestRuntime` test suite
-> should verify — the suite does not exist yet (tracked as a gap).
+> Verified by `crates/bloxes/bhsm-tst/src/tests.rs` (15 tests, issue #136) —
+> a recording spec over the **generated** topology asserts the exact
+> exit/entry chain order per transition. Chains follow spec 02 LCA semantics:
+> the LCA state itself never exits or re-enters; full chains fire only when
+> `LCA = None` (e.g. `K` → `Error`, `X` → `Stop`).
 
-- [ ] `dispatch(Start)` enters `S11` through the `S→S1→S11` entry chain
-- [ ] `A` in `S11` self-transitions: exit `S11`, entry `S11`
-- [ ] `D` in `S11` cross-subtree to `S211`: full exit `S11,S1,S` then entry `S2,S21,S211`
-- [ ] `C` in `S11` bubbles to `S1`, transitions to `S211`: exit `S11,S1`, entry `S2,S21,S211`
-- [ ] `E` in `S211` bubbles to `S21`, transitions to `S211` (parent→child): exit `S211`, entry `S211`
-- [ ] `F` in `S211` cross back to `S11`: full exit/entry chain
-- [ ] `G` in `S211` bubbles to `S21`, transitions to `S11`: exit `S211,S21,S2`, entry `S,S1,S11`
-- [ ] `H` from any state resets to `S11`: full exit/entry chain
-- [ ] `I` at top level (`S`) is absorbed — stay, no transition
-- [ ] `K` from any state transitions to `Error`: `is_error()` returns true, runtime reports `Failed`
-- [ ] `X` from any state triggers `Guard::Stop`: actor self-suspends to Init, supervisor notified via `Stopped`
-- [ ] `R` (LifecycleCommand::Reset) goes directly to `initial_state()` (S11 via S→S1→S11), skipping Init
-- [ ] `Q` (LifecycleCommand::Stop) sends actor to Init (suspended)
-- [ ] Unknown events bubble to root and are silently dropped
+- [x] `dispatch(Start)` enters `S11` through the `S→S1→S11` entry chain
+- [x] `A` in `S11` self-transitions: exit `S11`, entry `S11`
+- [x] `D` in `S11` cross-subtree to `S211`: exit `S11,S1`, entry `S2,S21,S211` (LCA=`S`)
+- [x] `C` in `S11` bubbles to `S1`, transitions to `S211`: exit `S11,S1`, entry `S2,S21,S211`
+- [x] `E` in `S211` bubbles to `S21`, transitions to `S211` (parent→child): exit `S211`, entry `S211`
+- [x] `F` in `S211` cross back to `S11`: exit `S211,S21,S2`, entry `S1,S11` (LCA=`S`)
+- [x] `G` in `S211` bubbles to `S21`, transitions to `S11`: exit `S211,S21,S2`, entry `S1,S11`
+- [x] `H` from any state resets to `S11`: exit up to (not incl.) `S`, entry `S1,S11`
+- [x] `I` at top level (`S`) is absorbed — stay, no transition
+- [x] `K` from any state transitions to `Error`: `is_error()` returns true, runtime reports `Failed` (LCA=None — full exit chain)
+- [x] `X` from any state triggers `Guard::Stop`: actor self-suspends to Init, supervisor notified via `Stopped`
+- [x] `R` (LifecycleCommand::Reset) goes directly to `initial_state()` (S11 via S→S1→S11), skipping Init
+- [x] `Q` (LifecycleCommand::Stop) sends actor to Init (suspended)
+- [x] Unknown events bubble to root and are silently dropped
