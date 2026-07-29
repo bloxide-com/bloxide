@@ -49,44 +49,12 @@ pub(crate) fn topology_table(root: &DocumentMut) -> Option<&Table> {
     root.get("topology")?.as_table()
 }
 
-/// Mutable accessor for the `[topology]` table, creating it if missing.
-pub(crate) fn topology_table_mut(root: &mut DocumentMut) -> anyhow::Result<&mut Table> {
-    if root.get("topology").is_none() {
-        root["topology"] = toml_edit::Item::Table(Table::new());
-    }
-    root.get_mut("topology")
-        .and_then(|t| t.as_table_mut())
-        .ok_or_else(|| anyhow::anyhow!("topology is not a table"))
-}
-
 /// Read-only accessor for the `[[topology.states]]` array.
 pub(crate) fn states_array(topology: &Table) -> Option<&ArrayOfTables> {
     topology.get("states")?.as_array_of_tables()
 }
 
-/// Mutable accessor for the `[[topology.states]]` array, creating it if missing.
-pub(crate) fn states_array_mut(topology: &mut Table) -> anyhow::Result<&mut ArrayOfTables> {
-    if topology.get("states").is_none() {
-        topology["states"] = toml_edit::Item::ArrayOfTables(ArrayOfTables::new());
-    }
-    topology
-        .get_mut("states")
-        .and_then(|v| v.as_array_of_tables_mut())
-        .ok_or_else(|| anyhow::anyhow!("topology.states is not an array of tables"))
-}
-
 /// Read-only accessor for the `[[topology.transitions]]` array.
 pub(crate) fn transitions_array(topology: &Table) -> Option<&ArrayOfTables> {
     topology.get("transitions")?.as_array_of_tables()
-}
-
-/// Mutable accessor for the `[[topology.transitions]]` array, creating it if missing.
-pub(crate) fn transitions_array_mut(topology: &mut Table) -> anyhow::Result<&mut ArrayOfTables> {
-    if topology.get("transitions").is_none() {
-        topology["transitions"] = toml_edit::Item::ArrayOfTables(ArrayOfTables::new());
-    }
-    topology
-        .get_mut("transitions")
-        .and_then(|v| v.as_array_of_tables_mut())
-        .ok_or_else(|| anyhow::anyhow!("topology.transitions is not an array of tables"))
 }

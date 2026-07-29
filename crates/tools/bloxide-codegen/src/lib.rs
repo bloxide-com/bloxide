@@ -2,6 +2,7 @@
 //! Public API for bloxide-codegen — generate Rust source from blox.toml specs.
 
 pub mod ctx;
+pub mod edit;
 mod events;
 mod mailboxes;
 mod messages;

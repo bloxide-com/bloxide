@@ -63,6 +63,159 @@ fn main() {
     dioxus::launch(App);
 }
 
+// ── Write-back server functions (#96): UI edit → toml_edit mutation on the
+// real blox.toml → cargo blox generate → re-export → UI refresh. ──────────
+
+/// Result of an edit operation: fresh specs after write-back + regenerate.
+#[cfg(feature = "server")]
+fn apply_edit_and_reexport<F>(blox_toml_path: &str, edit: F) -> Result<Vec<BloxSpec>, ServerFnError>
+where
+    F: FnOnce(&mut toml_edit::DocumentMut) -> anyhow::Result<()>,
+{
+    let path = std::path::Path::new(blox_toml_path);
+    let server_err = |e: String| ServerFnError::ServerError {
+        message: e,
+        code: 400,
+        details: None,
+    };
+
+    let mut doc = bloxide_codegen::edit::load_blox_toml(path)
+        .map_err(|e| server_err(format!("failed to load {}: {}", blox_toml_path, e)))?;
+    edit(&mut doc).map_err(|e| server_err(format!("edit failed: {}", e)))?;
+    bloxide_codegen::edit::save_blox_toml(path, &doc)
+        .map_err(|e| server_err(format!("failed to save {}: {}", blox_toml_path, e)))?;
+
+    // Regenerate code from the edited manifest (non-fatal — the visual
+    // round-trip completes via re-export either way).
+    let _ = std::process::Command::new("cargo")
+        .args(["blox", "generate"])
+        .current_dir(path.parent().unwrap_or(std::path::Path::new(".")))
+        .output();
+
+    // Re-export fresh specs from the workspace ROOT (nearest ancestor
+    // containing a Cargo.toml with [workspace]) — not the crate dir itself.
+    let mut dir = path.parent();
+    let mut found = None;
+    for _ in 0..8 {
+        let Some(d) = dir else { break };
+        if let Ok(cargo) = std::fs::read_to_string(d.join("Cargo.toml")) {
+            if cargo.contains("[workspace]") {
+                found = Some(d.to_path_buf());
+                break;
+            }
+        }
+        dir = d.parent();
+    }
+    let Some(workspace) = found else {
+        return Err(server_err("could not locate workspace root".to_string()));
+    };
+    let specs = bloxide_viz_export::export_workspace(&workspace)
+        .map_err(|e| server_err(format!("re-export failed: {}", e)))?;
+    let json = serde_json::to_string(&specs).map_err(|e| server_err(e.to_string()))?;
+    serde_json::from_str(&json).map_err(|e| server_err(e.to_string()))
+}
+
+#[server(endpoint = "api/viz_add_state")]
+async fn viz_add_state(
+    path: String,
+    name: String,
+    parent: Option<String>,
+    composite: bool,
+    error: bool,
+) -> Result<Vec<BloxSpec>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        apply_edit_and_reexport(&path, |doc| {
+            bloxide_codegen::edit::add_state(doc, &name, parent.as_deref(), composite, error)
+        })
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = (path, name, parent, composite, error);
+        Err(ServerFnError::ServerError {
+            message: "Server feature not enabled".to_string(),
+            code: 500,
+            details: None,
+        })
+    }
+}
+
+#[server(endpoint = "api/viz_remove_state")]
+async fn viz_remove_state(path: String, name: String) -> Result<Vec<BloxSpec>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        apply_edit_and_reexport(&path, |doc| {
+            bloxide_codegen::edit::remove_state(doc, &name)
+        })
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = (path, name);
+        Err(ServerFnError::ServerError {
+            message: "Server feature not enabled".to_string(),
+            code: 500,
+            details: None,
+        })
+    }
+}
+
+#[server(endpoint = "api/viz_add_transition")]
+async fn viz_add_transition(
+    path: String,
+    state: String,
+    event: String,
+    target: String,
+    actions: Vec<String>,
+    guards: Vec<String>,
+) -> Result<Vec<BloxSpec>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        apply_edit_and_reexport(&path, |doc| {
+            bloxide_codegen::edit::add_transition(
+                doc,
+                &state,
+                &event,
+                &target,
+                actions.clone(),
+                guards.clone(),
+                None,
+            )
+        })
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = (path, state, event, target, actions, guards);
+        Err(ServerFnError::ServerError {
+            message: "Server feature not enabled".to_string(),
+            code: 500,
+            details: None,
+        })
+    }
+}
+
+#[server(endpoint = "api/viz_remove_transition")]
+async fn viz_remove_transition(
+    path: String,
+    state: String,
+    event: String,
+) -> Result<Vec<BloxSpec>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        apply_edit_and_reexport(&path, |doc| {
+            bloxide_codegen::edit::remove_transition(doc, &state, &event)
+        })
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = (path, state, event);
+        Err(ServerFnError::ServerError {
+            message: "Server feature not enabled".to_string(),
+            code: 500,
+            details: None,
+        })
+    }
+}
+
 /// Server function: export blox specs from the default workspace.
 ///
 /// The default workspace is found by starting at CARGO_MANIFEST_DIR (set by
@@ -301,10 +454,16 @@ fn App() -> Element {
                                 }
                             },
                             ViewMode::Diagram => rsx! {
-                                StateDiagram {
-                                    spec: spec.clone(),
-                                    selected_diagram: selected_diagram,
-                                    collapsed_composites: collapsed_composites,
+                                div {
+                                    EditorPanel {
+                                        spec: spec.clone(),
+                                        specs: specs.clone(),
+                                    }
+                                    StateDiagram {
+                                        spec: spec.clone(),
+                                        selected_diagram: selected_diagram,
+                                        collapsed_composites: collapsed_composites,
+                                    }
                                 }
                             },
                             ViewMode::System => rsx! {
@@ -333,6 +492,7 @@ fn App() -> Element {
                     Some((state, event)) => rsx! {
                         SidePanel {
                             spec: spec.clone(),
+                            specs: specs.clone(),
                             state,
                             event: Some(event),
                             on_close: move |_| selected_cell.set(None),
@@ -342,6 +502,7 @@ fn App() -> Element {
                         Some(DiagramSelection::State(state)) => rsx! {
                             SidePanel {
                                 spec: spec.clone(),
+                                specs: specs.clone(),
                                 state,
                                 event: None,
                                 on_close: move |_| selected_diagram.set(None),
@@ -350,6 +511,7 @@ fn App() -> Element {
                         Some(DiagramSelection::Transition { state, event }) => rsx! {
                             SidePanel {
                                 spec: spec.clone(),
+                                specs: specs.clone(),
                                 state,
                                 event: Some(event),
                                 on_close: move |_| selected_diagram.set(None),
@@ -553,6 +715,7 @@ fn HeatmapGrid(
 #[component]
 fn SidePanel(
     spec: BloxSpec,
+    specs: Signal<Vec<BloxSpec>>,
     state: String,
     event: Option<String>,
     on_close: EventHandler<()>,
@@ -629,6 +792,57 @@ fn SidePanel(
                     style: "background: none; border: none; font-size: 20px; cursor: pointer; color: #6b7280;",
                     onclick: move |_| on_close.call(()),
                     "×"
+                }
+            }
+
+            // Write-back remove actions (#96): edit the real blox.toml from the UI.
+            if let Some(e) = event.clone() {
+                {
+                    let path = format!("{}/blox.toml", spec.crate_path);
+                    let state_for_remove = state.clone();
+                    let pattern_for_remove = handler
+                        .as_ref()
+                        .map(|h| h.pattern.clone())
+                        .filter(|p| !p.is_empty())
+                        .unwrap_or_else(|| e.clone());
+                    rsx! {
+                        button {
+                            style: "margin-bottom: 16px; padding: 6px 14px; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 13px;",
+                            onclick: move |_| {
+                                let path = path.clone();
+                                let state = state_for_remove.clone();
+                                let pattern = pattern_for_remove.clone();
+                                async move {
+                                    if let Ok(new_specs) = viz_remove_transition(path, state, pattern).await {
+                                        specs.set(new_specs);
+                                    }
+                                    on_close.call(());
+                                }
+                            },
+                            "Remove Transition"
+                        }
+                    }
+                }
+            } else {
+                {
+                    let path = format!("{}/blox.toml", spec.crate_path);
+                    let state_for_remove = state.clone();
+                    rsx! {
+                        button {
+                            style: "margin-bottom: 16px; padding: 6px 14px; background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 13px;",
+                            onclick: move |_| {
+                                let path = path.clone();
+                                let state = state_for_remove.clone();
+                                async move {
+                                    if let Ok(new_specs) = viz_remove_state(path, state).await {
+                                        specs.set(new_specs);
+                                    }
+                                    on_close.call(());
+                                }
+                            },
+                            "Remove State"
+                        }
+                    }
                 }
             }
 
@@ -1933,6 +2147,182 @@ fn SupervisionTreeView(spec: BloxSpec) -> Element {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// ── Editor panel (#96): add states / transitions from the UI ───────────────
+
+fn parse_csv(input: &str) -> Vec<String> {
+    input
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+#[component]
+fn EditorPanel(spec: BloxSpec, specs: Signal<Vec<BloxSpec>>) -> Element {
+    let path = format!("{}/blox.toml", spec.crate_path);
+    let path_add_state = path.clone();
+    let path_add_transition = path.clone();
+    let mut show_state_form = use_signal(|| false);
+    let mut show_trans_form = use_signal(|| false);
+    let mut edit_status = use_signal(|| None::<String>);
+
+    // State form fields
+    let mut state_name = use_signal(String::new);
+    let mut state_parent = use_signal(String::new);
+    let mut state_composite = use_signal(|| false);
+    let mut state_error = use_signal(|| false);
+
+    // Transition form fields
+    let mut t_state = use_signal(String::new);
+    let mut t_event = use_signal(String::new);
+    let mut t_target = use_signal(String::new);
+    let mut t_actions = use_signal(String::new);
+    let mut t_guards = use_signal(String::new);
+
+    let input_style = "padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; font-family: monospace;";
+    let btn_style = "padding: 6px 14px; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;";
+
+    rsx! {
+        div {
+            style: "margin-bottom: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;",
+            button {
+                style: "{btn_style}",
+                onclick: move |_| show_state_form.set(!show_state_form()),
+                "+ State"
+            }
+            button {
+                style: "{btn_style}",
+                onclick: move |_| show_trans_form.set(!show_trans_form()),
+                "+ Transition"
+            }
+            if let Some(status) = edit_status() {
+                span { style: "font-size: 12px; color: #6b7280;", "{status}" }
+            }
+        }
+        if show_state_form() {
+            div {
+                style: "margin-bottom: 12px; padding: 12px; background: #f9fafb; border-radius: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;",
+                input {
+                    style: "{input_style}",
+                    placeholder: "StateName",
+                    value: "{state_name}",
+                    oninput: move |e| state_name.set(e.value()),
+                }
+                input {
+                    style: "{input_style}",
+                    placeholder: "parent (optional)",
+                    value: "{state_parent}",
+                    oninput: move |e| state_parent.set(e.value()),
+                }
+                label {
+                    style: "font-size: 13px; color: #374151;",
+                    input {
+                        r#type: "checkbox",
+                        checked: "{state_composite}",
+                        onchange: move |e| state_composite.set(e.checked()),
+                    }
+                    " composite"
+                }
+                label {
+                    style: "font-size: 13px; color: #374151;",
+                    input {
+                        r#type: "checkbox",
+                        checked: "{state_error}",
+                        onchange: move |e| state_error.set(e.checked()),
+                    }
+                    " error"
+                }
+                button {
+                    style: "{btn_style}",
+                    onclick: move |_| {
+                        let name = state_name();
+                        let parent = {
+                            let p = state_parent();
+                            if p.is_empty() { None } else { Some(p) }
+                        };
+                        let (composite, error) = (state_composite(), state_error());
+                        let path_add_state = path_add_state.clone();
+                        async move {
+                            if name.is_empty() {
+                                edit_status.set(Some("state name required".to_string()));
+                                return;
+                            }
+                            match viz_add_state(path_add_state, name.clone(), parent, composite, error).await {
+                                Ok(new_specs) => {
+                                    specs.set(new_specs);
+                                    edit_status.set(Some(format!("added state {}", name)));
+                                    state_name.set(String::new());
+                                    state_parent.set(String::new());
+                                }
+                                Err(e) => edit_status.set(Some(format!("error: {}", e))),
+                            }
+                        }
+                    },
+                    "Add State"
+                }
+            }
+        }
+        if show_trans_form() {
+            div {
+                style: "margin-bottom: 12px; padding: 12px; background: #f9fafb; border-radius: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;",
+                input {
+                    style: "{input_style}",
+                    placeholder: "from state",
+                    value: "{t_state}",
+                    oninput: move |e| t_state.set(e.value()),
+                }
+                input {
+                    style: "{input_style} min-width: 280px;",
+                    placeholder: "event pattern (e.g. MyMsg::Tick(_))",
+                    value: "{t_event}",
+                    oninput: move |e| t_event.set(e.value()),
+                }
+                input {
+                    style: "{input_style}",
+                    placeholder: "target (state | stay | done | stop | reset | fail)",
+                    value: "{t_target}",
+                    oninput: move |e| t_target.set(e.value()),
+                }
+                input {
+                    style: "{input_style}",
+                    placeholder: "actions (csv, optional)",
+                    value: "{t_actions}",
+                    oninput: move |e| t_actions.set(e.value()),
+                }
+                input {
+                    style: "{input_style} min-width: 220px;",
+                    placeholder: "guards (csv cond:target, optional)",
+                    value: "{t_guards}",
+                    oninput: move |e| t_guards.set(e.value()),
+                }
+                button {
+                    style: "{btn_style}",
+                    onclick: move |_| {
+                        let (state, event, target) = (t_state(), t_event(), t_target());
+                        let actions = parse_csv(&t_actions());
+                        let guards = parse_csv(&t_guards());
+                        let path_add_transition = path_add_transition.clone();
+                        async move {
+                            if state.is_empty() || event.is_empty() || target.is_empty() {
+                                edit_status.set(Some("state, event, and target are required".to_string()));
+                                return;
+                            }
+                            match viz_add_transition(path_add_transition, state.clone(), event.clone(), target, actions, guards).await {
+                                Ok(new_specs) => {
+                                    specs.set(new_specs);
+                                    edit_status.set(Some(format!("added transition {} + {}", state, event)));
+                                }
+                                Err(e) => edit_status.set(Some(format!("error: {}", e))),
+                            }
+                        }
+                    },
+                    "Add Transition"
                 }
             }
         }

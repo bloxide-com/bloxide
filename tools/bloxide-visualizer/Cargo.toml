@@ -14,9 +14,12 @@ pulldown-cmark = "0.12"
 
 # Server-only dependencies for workspace scanning
 bloxide-viz-export = { path = "../bloxide-viz-export", optional = true }
+bloxide-codegen = { path = "../../crates/tools/bloxide-codegen", optional = true }
+toml_edit = "0.25.13"
+anyhow = "1.0.104"
 
 [features]
 web = ["dioxus/web"]
-server = ["dioxus/server", "dep:bloxide-viz-export"]
+server = ["dioxus/server", "dep:bloxide-viz-export", "dep:bloxide-codegen"]
 
 [workspace]

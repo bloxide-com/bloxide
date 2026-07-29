@@ -26,6 +26,7 @@ prettyplease = "0.2"
 syn = { version = "2", default-features = false, features = ["parsing", "full", "printing"] }
 walkdir = "2"
 anyhow = "1"
+toml_edit = "0.25.13"
 
 [dev-dependencies]
 insta = "1"
