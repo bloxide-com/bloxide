@@ -18,16 +18,21 @@ pub fn watch(_cargo: Features) -> anyhow::Result<()> {
 
     watcher.watch(&root, RecursiveMode::Recursive)?;
 
-    println!("bloxide: watching for blox.toml changes...");
+    println!("bloxide: watching for blox.toml and system.toml changes...");
 
     let mut last_regen = Instant::now();
 
     loop {
         match rx.recv() {
             Ok(Ok(event)) => {
+                // Both blox.toml (per-blox codegen) and system.toml (app
+                // wiring: main.rs + Cargo.toml) trigger regeneration —
+                // generate() handles both paths.
                 if event.paths.iter().any(|p| {
-                    p.file_name()
-                        .is_some_and(|n| n == std::ffi::OsStr::new("blox.toml"))
+                    p.file_name().is_some_and(|n| {
+                        n == std::ffi::OsStr::new("blox.toml")
+                            || n == std::ffi::OsStr::new("system.toml")
+                    })
                 }) {
                     let now = Instant::now();
                     if now.duration_since(last_regen) >= Duration::from_millis(500) {
