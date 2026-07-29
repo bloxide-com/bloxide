@@ -44,6 +44,24 @@ members = [
 ]
 resolver = "2"
 
+# cargo blox ci configuration: the no_std audit matrix. Members listed here
+# must compile with --no-default-features against nostd-target.
+[workspace.metadata.bloxide-ci]
+nostd-target = "riscv32imc-unknown-none-elf"
+nostd-members = [
+    "bloxide-core",
+    "bloxide-log",
+    "bloxide-timer",
+    "bloxide-supervisor",
+    "bloxide-spawn",
+    "bloxide-child-management",
+    "bloxide-peers",
+    "ping-pong-messages",
+    "pool-messages",
+    "counter-messages",
+    "bhsm-tst-messages",
+]
+
 [workspace.package]
 version = "0.0.3"
 edition = "2021"

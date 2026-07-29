@@ -1,75 +1,97 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Run full CI feature matrix.
+//!
+//! The check matrix is discovered from the workspace, not hardcoded:
+//!
+//! - `cargo check --workspace` covers every member with default features.
+//! - Feature combos are derived per member crate: an `alloc` feature earns
+//!   `--no-default-features` (and `--features alloc` when alloc is not in
+//!   the default set); a `std` feature earns `--features std`.
+//! - The no_std audit matrix comes from `[workspace.metadata.bloxide-ci]`
+//!   in the root Cargo.toml (`nostd-target` + `nostd-members`) — new
+//!   platform crates are added there, not in this file.
+//!
+//! Tests, fmt, clippy, doc build, and the copyright check are generic.
 
 use std::process::Command;
 
+/// A workspace member with its package name and declared features.
+struct Member {
+    name: String,
+    features: Vec<String>,
+    default_features: Vec<String>,
+}
+
 pub fn ci() -> anyhow::Result<()> {
-    let checks: Vec<(&str, Vec<&str>)> = vec![
-        ("bloxide-core", vec!["--no-default-features"]),
-        (
-            "bloxide-core",
-            vec!["--no-default-features", "--features", "alloc"],
-        ),
-        ("bloxide-core", vec!["--features", "std"]),
-        (
-            "bloxide-timer",
-            vec!["--target", "riscv32imc-unknown-none-elf"],
-        ),
-        ("ping-pong-messages", vec!["--no-default-features"]),
-    ];
+    let members = discover_members()?;
+    let (nostd_target, nostd_members) = nostd_audit_config();
 
-    // no_std audit matrix (issue #37): every platform + messages crate must
-    // compile with no default features against a bare-metal target.
-    let nostd_audit = [
-        "bloxide-core",
-        "bloxide-log",
-        "bloxide-timer",
-        "bloxide-supervisor",
-        "bloxide-spawn",
-        "bloxide-child-management",
-        "bloxide-peers",
-        "ping-pong-messages",
-        "pool-messages",
-        "counter-messages",
-        "bhsm-tst-messages",
-    ];
+    let mut jobs: Vec<(String, Vec<String>)> = Vec::new();
 
-    let mut failed = 0;
-    for (pkg, args) in &checks {
-        println!();
-        println!("========================================");
-        println!("  cargo check -p {} {}", pkg, args.join(" "));
-        println!("========================================");
-        let status = Command::new("cargo")
-            .arg("check")
-            .arg("-p")
-            .arg(pkg)
-            .args(args)
-            .status()?;
-        if !status.success() {
-            eprintln!("FAILED: cargo check -p {} {}", pkg, args.join(" "));
-            failed += 1;
-        } else {
-            println!("OK: cargo check -p {} {}", pkg, args.join(" "));
+    // Workspace-wide default check covers all members at once.
+    jobs.push(("--workspace".to_string(), Vec::new()));
+
+    // Per-member feature combos, derived from each crate's [features] table.
+    for m in &members {
+        let has = |f: &str| m.features.iter().any(|x| x == f);
+        if has("alloc") {
+            jobs.push((m.name.clone(), vec!["--no-default-features".to_string()]));
+            if !m.default_features.iter().any(|x| x == "alloc") {
+                jobs.push((
+                    m.name.clone(),
+                    vec![
+                        "--no-default-features".to_string(),
+                        "--features".to_string(),
+                        "alloc".to_string(),
+                    ],
+                ));
+            }
+        }
+        if has("std") {
+            jobs.push((
+                m.name.clone(),
+                vec!["--features".to_string(), "std".to_string()],
+            ));
         }
     }
 
-    for pkg in nostd_audit {
-        let args = [
-            "--no-default-features",
-            "--target",
-            "riscv32imc-unknown-none-elf",
-        ];
+    // no_std audit matrix (issue #37), from workspace metadata.
+    if let (Some(target), Some(audit)) = (&nostd_target, &nostd_members) {
+        for pkg in audit {
+            jobs.push((
+                pkg.clone(),
+                vec![
+                    "--no-default-features".to_string(),
+                    "--target".to_string(),
+                    target.clone(),
+                ],
+            ));
+        }
+    } else {
+        eprintln!(
+            "bloxide: warning: no [workspace.metadata.bloxide-ci] nostd-target/nostd-members — skipping no_std audit"
+        );
+    }
+
+    let mut failed = 0;
+    for (pkg, args) in &jobs {
         println!();
         println!("========================================");
         println!("  cargo check -p {} {}", pkg, args.join(" "));
         println!("========================================");
-        let status = Command::new("cargo")
-            .arg("check")
-            .arg("-p")
-            .arg(pkg)
-            .args(args)
-            .status()?;
+        let status = if pkg == "--workspace" {
+            Command::new("cargo")
+                .arg("check")
+                .arg("--workspace")
+                .status()?
+        } else {
+            Command::new("cargo")
+                .arg("check")
+                .arg("-p")
+                .arg(pkg)
+                .args(args)
+                .status()?
+        };
         if !status.success() {
             eprintln!("FAILED: cargo check -p {} {}", pkg, args.join(" "));
             failed += 1;
@@ -178,6 +200,85 @@ pub fn ci() -> anyhow::Result<()> {
         println!("========================================");
         anyhow::bail!("{} CI checks failed", failed)
     }
+}
+
+/// Discover workspace members from the root Cargo.toml: package names and
+/// each crate's declared `[features]` / default set.
+fn discover_members() -> anyhow::Result<Vec<Member>> {
+    let root_toml = std::fs::read_to_string("Cargo.toml")?;
+    let root: toml::Value = toml::from_str(&root_toml)?;
+    let member_paths = root
+        .get("workspace")
+        .and_then(|w| w.get("members"))
+        .and_then(|m| m.as_array())
+        .ok_or_else(|| anyhow::anyhow!("no [workspace] members in root Cargo.toml"))?
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect::<Vec<_>>();
+
+    let mut members = Vec::new();
+    for path in member_paths {
+        let manifest = std::path::Path::new(&path).join("Cargo.toml");
+        let Ok(content) = std::fs::read_to_string(&manifest) else {
+            continue;
+        };
+        let parsed: toml::Value = toml::from_str(&content)?;
+        let name = parsed
+            .get("package")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .map(str::to_string);
+        let features = parsed
+            .get("features")
+            .and_then(|f| f.as_table())
+            .map(|t| t.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        let default_features = parsed
+            .get("features")
+            .and_then(|f| f.get("default"))
+            .and_then(|d| d.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if let Some(name) = name {
+            members.push(Member {
+                name,
+                features,
+                default_features,
+            });
+        }
+    }
+    Ok(members)
+}
+
+/// Read `[workspace.metadata.bloxide-ci]` from the root Cargo.toml.
+fn nostd_audit_config() -> (Option<String>, Option<Vec<String>>) {
+    let Ok(content) = std::fs::read_to_string("Cargo.toml") else {
+        return (None, None);
+    };
+    let Ok(parsed) = toml::from_str::<toml::Value>(&content) else {
+        return (None, None);
+    };
+    let meta = parsed
+        .get("workspace")
+        .and_then(|w| w.get("metadata"))
+        .and_then(|m| m.get("bloxide-ci"));
+    let target = meta
+        .and_then(|c| c.get("nostd-target"))
+        .and_then(|t| t.as_str())
+        .map(str::to_string);
+    let members = meta
+        .and_then(|c| c.get("nostd-members"))
+        .and_then(|m| m.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect::<Vec<_>>()
+        });
+    (target, members)
 }
 
 /// Walk the workspace for `.rs` / `Cargo.toml` files (excluding `target/`)
