@@ -73,11 +73,13 @@ fn main() {
 async fn default_specs() -> Result<Vec<BloxSpec>, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        let start = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
-            std::env::current_dir()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| ".".to_string())
-        });
+        let start = std::env::var("BLOXIDE_VIZ_WORKSPACE")
+            .or_else(|_| std::env::var("CARGO_MANIFEST_DIR"))
+            .unwrap_or_else(|_| {
+                std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| ".".to_string())
+            });
         let mut dir: Option<&std::path::Path> = Some(std::path::Path::new(&start));
         let mut found = None;
         for _ in 0..6 {
@@ -367,7 +369,8 @@ fn WorkspaceScanner(
     // Default the scan path to CARGO_MANIFEST_DIR (set when launched via
     // cargo) or the current working directory — never a hardcoded path (#120).
     let mut workspace_path = use_signal(|| {
-        std::env::var("CARGO_MANIFEST_DIR")
+        std::env::var("BLOXIDE_VIZ_WORKSPACE")
+            .or_else(|_| std::env::var("CARGO_MANIFEST_DIR"))
             .unwrap_or_else(|_| {
                 std::env::current_dir()
                     .map(|p| p.display().to_string())

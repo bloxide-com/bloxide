@@ -29,6 +29,7 @@ mod toml_helpers;
 mod transition_cmd;
 mod utils;
 mod verify;
+mod viz;
 mod watch;
 mod wire;
 
@@ -319,6 +320,18 @@ enum BloxSubcommand {
         #[arg(long, default_value = "tokio")]
         runtime: String,
     },
+    /// Launch the visualizer (or export specs as JSON)
+    Viz {
+        /// Export blox specs as JSON to this directory instead of launching
+        #[arg(long)]
+        export: Option<std::path::PathBuf>,
+        /// Server port (default 8080)
+        #[arg(long, default_value = "8080")]
+        port: u16,
+        /// Open the browser after launching
+        #[arg(long)]
+        open: bool,
+    },
     /// Add a constructor injection to an actor in a system.toml
     AddInjection {
         app_name: String,
@@ -572,6 +585,7 @@ fn main() -> anyhow::Result<()> {
                 stop,
             } => system_cmd::set_policy(&app_name, &actor, restart_max, stop),
             BloxSubcommand::Init { dir, runtime } => init::init(&dir, &runtime),
+            BloxSubcommand::Viz { export, port, open } => viz::viz(export, port, open),
             BloxSubcommand::AddInjection {
                 app_name,
                 actor,

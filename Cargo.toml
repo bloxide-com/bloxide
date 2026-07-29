@@ -99,8 +99,6 @@ pool-blox = { path = "crates/bloxes/pool" }
 counter-blox = { path = "crates/bloxes/counter" }
 bhsm-tst-blox = { path = "crates/bloxes/bhsm-tst" }
 tokio-pool-demo-impl = { path = "crates/impl/tokio-pool-demo-impl" }
-bloxide-codegen = { path = "crates/tools/bloxide-codegen" }
-cargo-blox = { path = "crates/tools/cargo-blox" }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
