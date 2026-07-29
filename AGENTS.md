@@ -2,6 +2,13 @@
 
 Read this file first whenever you start a session on this repository.
 
+> **NO BACKWARDS COMPATIBILITY.** This project does not preserve backwards
+> compatibility — not for APIs, CLIs, config formats, terminology, or
+> architecture layers. When something changes, update every call site, every
+> doc, and every fixture in the same change, and delete the old form
+> completely. Never add legacy aliases, deprecation periods, compatibility
+> shims, feature bridges, or "kept for backwards compatibility" notes.
+
 ## What This Project Is
 
 Bloxide is a `no_std` hierarchical state machine (HSM) + actor messaging framework written in Rust, with first-class Embassy and Tokio runtimes. It provides a `MachineSpec` trait that domain code implements to define state topologies, event handlers, and context — all without importing any runtime. Separate runtime crates wire actors together and run them on an executor.
@@ -110,7 +117,7 @@ Use this model when you are creating or reviewing a real app that uses Bloxide.
 This is the trait boundary that keeps blox code runtime-agnostic.
 
 - Tier 1: blox-facing traits such as `BloxRuntime`
-- Tier 2: runtime-facing capabilities such as `StaticChannelCap`, `DynamicChannelCap`, `TimerService`, `SupervisedRunLoop`, `SpawnCap`
+- Tier 2: runtime-facing capabilities such as `StaticChannelCap`, `DynamicChannelCap`, `TimerService`, `SpawnCap`, `KillCapability` (the actor run loop is the unified `run()` + `RunConfig` in `bloxide-core`, not a trait)
 
 With the elimination of accessor traits and the `B` generic,
 context structs are plain structs with plain fields. Action functions
@@ -122,7 +129,7 @@ Use this model when you are wiring runtimes, reading macro output, or adding new
 
 ## Where to Find Things
 
-## Suggested Reading Order
+### Suggested Reading Order
 
 1. **README.md** — repo map and runnable examples
 2. **AGENTS.md** (this file) — mental models, key invariants, where-to-find-things table
@@ -138,7 +145,7 @@ Then dive deeper as needed:
 | Question | File |
 |---|---|
 | What is the layered architecture and two-tier trait system? | `spec/architecture/00-layered-architecture.md` |
-| How does the overall system fit together? | `spec/architecture/01-system-architecture.md` |
+| How does the overall system fit together? | `spec/architecture/00-layered-architecture.md` (System Overview) |
 | How do HSMs / state machines work here? | `spec/architecture/02-hsm-engine.md` |
 | How do actors send messages? | `spec/architecture/03-actor-messaging.md` |
 | How are actors wired at startup? | `spec/architecture/04-static-wiring.md` |
@@ -164,8 +171,8 @@ Then dive deeper as needed:
 | Spec for the BHSM test actor | `spec/bloxes/bhsm.md` |
 | How does the reusable supervisor spec work? | `spec/architecture/08-supervision.md` |
 | Template for a new blox | `spec/templates/blox-spec.md` |
-| **How do I test a blox in isolation?** | `crates/bloxide-core/src/test_utils.rs` |
-| **What is TestRuntime for?** | `crates/bloxide-core/src/test_utils.rs` |
+| **How do I test a blox in isolation?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
+| **What is TestRuntime for?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
 | **How do I test timers without an executor?** | `crates/bloxide-timer/src/test_utils.rs` (`VirtualClock`) |
 | **Where are the proc macro implementations?** | `crates/bloxide-macros/src/` |
 | **What are the key invariants?** | This file (`AGENTS.md` → "Key Invariants") |
@@ -222,6 +229,12 @@ pub struct PingCtx<R: BloxRuntime> {
 }
 ```
 
+## Key Invariants
+
+These must never be violated. Violating them silently breaks the architecture.
+Other docs (QUICK_REFERENCE.md, spec/README.md, the skills) link here instead
+of restating the list — this is the single canonical copy.
+
 1. **`bloxide-core` is `no_std`** — zero OS, Tokio, or Embassy imports. `futures-core` is the only always-on runtime library dep; optional instrumentation deps (such as feature-gated `tracing`) must remain `no_std` compatible. Proc-macro crates (e.g., `bloxide-macros`) are exempt — they compile for the host and have no `no_std` impact.
 2. **Blox crates are runtime-agnostic** — generic over `R: BloxRuntime`. Never import `bloxide-embassy` or any executor from a blox crate.
 3. **No runtime types in messages** — domain message enums contain plain data only; no `ActorRef`, no raw senders/receivers.
@@ -239,7 +252,7 @@ pub struct PingCtx<R: BloxRuntime> {
 
 15. **Logging ripped out of blox crates** — all `bloxide-log` usage has been removed from blox crates. The `bloxide-log` crate stays in place for runtime/context crate usage. Domain-level logging re-design is a deferred decision. Never add `blox_log_*!` calls to blox crates or add `bloxide-log` as a dependency of a blox crate.
 
-16. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (auto-detected by naming convention, e.g. `foo_factory: fn(...) -> ...`). The binary (or impl crate) provides the concrete factory closure at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
+16. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (declared as `[[context.uses]]` entries with `role = "ctor"`, e.g. `spawn_fn: SpawnFn<R, Req>`). The binary (or impl crate) provides the concrete factory function at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
 17. **KillCapability is a runtime capability, not a message** — `KillCapability::kill(handle)` immediately aborts the child's task without any callbacks firing. No `on_exit` handlers run; the task is dropped in-place. KillCapability is for (1) unresponsive actors that cannot process Stop, or (2) cleanup of stopped actors whose resources should be freed immediately. Kill works for both static and dynamic actors; killed actors are permanently dead and cannot be restarted — normal lifecycle uses Reset/Stop through dispatch(). KillCapability lives in `bloxide-core` as a trait; runtimes implement it (`NoKill` for Embassy, `Kill` for Tokio via `R::abort`). Supervisors store the concrete `TaskHandle` per child; actors never see it.
 18. **System.toml is the single source of truth for concrete action wiring** — Blox-crate-level codegen ALWAYS produces stub `spec_skeletons`. The system-level codegen (from `system.toml`) ALWAYS produces concrete action closures, for every actor including dynamically spawned ones. There is no `crate = "crate"` path at the blox-crate level. Dynamic actors are declared in `system.toml` with `kind = "dynamic"` — they get a concrete spec generated but no channels/tasks/bootstrap in main.rs. The impl crate's spawn function is generic over the spec type; the generated main.rs monomorphizes it with the system-level concrete spec.
 

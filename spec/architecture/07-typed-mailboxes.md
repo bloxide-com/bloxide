@@ -82,8 +82,8 @@ commands through a separate, runtime-internal `LifecycleCommand` channel that is
 never part of the actor's `Mailboxes` tuple.
 
 - `dispatch(LifecycleCommand::Start)` — dispatched by the runtime to exit Init and enter `initial_state()`
-- `dispatch(LifecycleCommand::Reset)` — dispatched by the runtime (on Reset) to exit all operational
-  states and re-enter Init
+- `dispatch(LifecycleCommand::Reset)` — dispatched by the runtime to go **directly** to
+  `initial_state()` (skipping Init entirely; no `on_init_entry`/`on_init_exit`)
 
 Domain mailboxes contain only peer-to-peer messages. The domain run loop never
 inspects `LifecycleCommand` values as domain events.
@@ -96,24 +96,24 @@ priority over all others. Order streams by descending urgency.
 
 ## Supervised Run Loop
 
-For supervised actors, `run` with `RunConfig::supervised` polls the internal lifecycle channel
-**before** domain mailboxes. Domain events are only polled when no lifecycle command
-is pending. The actor never sees lifecycle commands as domain events.
+Supervised actors run the unified `run()` loop from `bloxide-core` with
+`RunConfig::supervised(lifecycle_rx, supervisor_notify)`. The loop polls the
+internal lifecycle channel **before** domain mailboxes. Domain events are only
+polled when no lifecycle command is pending. The actor never sees lifecycle
+commands as domain events.
 
 ```rust
-// SupervisedRunLoop trait method (implemented by the runtime crate):
-async fn run (with RunConfig::supervised)<S: MachineSpec + 'static>(
-    machine: StateMachine<S>,
-    domain_mailboxes: S::Mailboxes<Self>,
-    lifecycle_stream: Self::Stream<LifecycleCommand>,
-    actor_id: ActorId,
-    supervisor_notify: Self::Sender<ChildLifecycleEvent>,
-);
+// RunConfig variants (bloxide-core::runloop):
+RunConfig::root()                                    // root supervisor/actor
+RunConfig::supervised(lifecycle_rx, notify)          // supervised child
+RunConfig::supervised_with_abort(lifecycle_rx, abort_rx, notify)  // + kill capability
+RunConfig::unsupervised()                            // auto-start, exits on stop
+RunConfig::bare()                                    // tests: no lifecycle, no auto-start
 ```
 
-The lifecycle stream uses generic associated types (`Self::Stream`, `Self::Sender`) so the
-signature is runtime-agnostic. The Embassy implementation supplies `EmbassyStream` and
-`EmbassySender`; the `TestRuntime` can supply its own types.
+`RunConfig` is generic over `R: BloxRuntime`, so the lifecycle stream and notify
+sender use the runtime's own channel types (`R::Stream`, `R::Sender`) — the same
+signature serves Embassy, Tokio, and TestRuntime.
 
 After every dispatch the runtime observes `DispatchOutcome` and sends
 `ChildLifecycleEvent` to the supervisor's domain mailbox automatically.

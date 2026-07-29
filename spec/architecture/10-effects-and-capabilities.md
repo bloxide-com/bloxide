@@ -38,12 +38,12 @@ Blox crates are generic over a single Tier 1 trait: `R: BloxRuntime`. All additi
 │  bloxide-supervisor: LifecycleCommand, ChildGroup, ...      │
 └─────────────────────────────────────────────────────────────┘
                             │
-          Tier 2: TimerService, SupervisedRunLoop
+          Tier 2: TimerService (run loop: run() + RunConfig, in bloxide-core)
                             │
 ┌─────────────────────────────────────────────────────────────┐
 │                       Runtime Crate                          │
 │       EmbassyRuntime   or   TestRuntime   or   TokioRuntime │
-│       impl BloxRuntime + TimerService + SupervisedRunLoop    │
+│       impl BloxRuntime + TimerService                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 

@@ -938,9 +938,16 @@ pub fn generate(
                 let cfg_ts: proc_macro2::TokenStream = cfg
                     .parse()
                     .map_err(|e| anyhow::anyhow!("invalid cfg attr '{}': {}", cfg, e))?;
+                // Attach #[cfg] to each extra import individually — a bare
+                // `#[cfg] #(#imports)* #[cfg] #struct` sequence would collapse
+                // onto the struct when imports are empty, duplicating the
+                // attribute (clippy::duplicated_attributes).
+                let cfgd_imports: Vec<_> = extra_import_tokens
+                    .iter()
+                    .map(|imp| quote! { #[cfg(#cfg_ts)] #imp })
+                    .collect();
                 quote! {
-                    #[cfg(#cfg_ts)]
-                    #(#extra_import_tokens)*
+                    #(#cfgd_imports)*
                     #[cfg(#cfg_ts)]
                     #struct_def
                     #[cfg(#cfg_ts)]

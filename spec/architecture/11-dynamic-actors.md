@@ -197,9 +197,10 @@ fn handle_worker_ctrl<R: BloxRuntime>(ctx: &mut WorkerCtx<R>, ctrl: &PeerCtrl<Wo
 ```toml
 # In the [[topology.transitions]] table in blox.toml:
 [[topology.transitions]]
-pattern = "PeerCtrl(add)"
+state = "Waiting"
+event = "PeerCtrl(add)"
+target = "stay"
 actions = ["handle_worker_ctrl_inline"]
-to = "stay"
 ```
 
 ### Factory Type with Domain-Specific Ctrl
@@ -274,8 +275,10 @@ classDiagram
 | `StaticChannelCap` | yes | — | — |
 | `DynamicChannelCap` | — | yes | yes |
 | `TimerService` | yes | yes | — |
-| `SupervisedRunLoop` | yes | yes | — |
 | `SpawnCap` | — | yes | yes |
+
+(The actor run loop is not a per-runtime trait: all runtimes share the unified
+`run()` + `RunConfig` from `bloxide-core`.)
 
 ---
 
@@ -586,9 +589,10 @@ fn handle_worker_ctrl<R: BloxRuntime>(ctx: &mut WorkerCtx<R>, ctrl: &PeerCtrl<Wo
 ```toml
 # In the [[topology.transitions]] table in blox.toml:
 [[topology.transitions]]
-pattern = "PeerCtrl(_)"
+state = "Waiting"
+event = "PeerCtrl(_)"
+target = "stay"
 actions = ["handle_worker_ctrl_inline"]
-to = "stay"
 ```
 
 introduces the newcomer to all existing workers via bidirectional `AddPeer` messages.
@@ -771,7 +775,7 @@ same factory interface the production wiring binary uses.
 
 ```rust
 use bloxide_core::{capability::DynamicChannelCap, StateMachine};
-use bloxide_core::test_utils::TestRuntime;
+use bloxide_test_runtime::TestRuntime;
 use bloxide_core::SpawnCap;
 use bloxide_peers::PeerCtrl;
 
@@ -915,11 +919,11 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
 
 - **Supervised dynamic actors — implemented via explicit registration** — dynamic
   children can be supervised by using the supervisor control-plane protocol:
-  1. Spawn the child with `run (with RunConfig::supervised)(...)` and a per-child lifecycle channel.
+  1. Spawn the child with `run()` + `RunConfig::supervised(...)` and a per-child lifecycle channel.
   2. Send `SupervisorControl::RegisterChild(RegisterChild { ... })` to the supervisor.
   3. Supervisor adds the child to `ChildGroup` and sends `Start`.
-  On Tokio, prefer `spawn_dynamic_supervised_child(...)` or the
-  `spawn_child_dynamic!` macro from `bloxide-tokio` to avoid wiring boilerplate.
+  On Tokio, prefer the `spawn_child()` helper from `bloxide-spawn` (with factory
+  injection) to avoid wiring boilerplate — see the pool demo.
   This keeps the model deterministic and explicit without requiring mutable access to
   the supervisor's `ChildGroup` from inside domain action functions.
 

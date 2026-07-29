@@ -271,22 +271,13 @@ impl<S: MachineSpec> StateMachine<S> {
                 }
             }
             LifecycleCommand::Reset => {
-                match self.current {
-                    MachineState::Init => {
-                        // Reset from Init: go to initial_state() (equivalent to Start).
-                        let target = S::initial_state();
-                        self.transition_to_state(target);
-                        DispatchOutcome::Started(MachineState::State(target))
-                    }
-                    MachineState::State(_) => {
-                        // Reset directly to initial_state() — skip Init entirely.
-                        // Fire the full exit chain, then the entry chain for
-                        // initial_state(). No on_init_entry or on_init_exit.
-                        let target = S::initial_state();
-                        self.transition_to_state(target);
-                        DispatchOutcome::Started(MachineState::State(target))
-                    }
-                }
+                // Reset always goes directly to initial_state() — skip Init
+                // entirely (from Init this is equivalent to Start). Fire the
+                // full exit chain, then the entry chain for initial_state().
+                // No on_init_entry or on_init_exit.
+                let target = S::initial_state();
+                self.transition_to_state(target);
+                DispatchOutcome::Started(MachineState::State(target))
             }
             LifecycleCommand::Stop => {
                 match self.current {

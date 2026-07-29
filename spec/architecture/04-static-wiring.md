@@ -61,23 +61,29 @@ flowchart LR
 
 ## Actor Run Loop
 
-`run` with `RunConfig::supervised` is used for all actors in a supervised group. It polls lifecycle commands with priority over domain events:
+All actors run the unified `run()` loop from `bloxide-core` (re-exported by each
+runtime), configured by `RunConfig`. Supervised children use
+`RunConfig::supervised(lifecycle_rx, supervisor_notify)`; the loop polls the
+lifecycle stream with priority over domain mailboxes:
 
 ```rust
-// Runtime-specific supervised actor function (implemented by the runtime crate):
-async fn run (with RunConfig::supervised)<S, R>(
+// bloxide-core::runloop — single implementation for all runtimes:
+pub async fn run<S, M, R>(
     machine: StateMachine<S>,
-    domain_mailboxes: S::Mailboxes<R>,
-    lifecycle_stream: R::Stream<LifecycleCommand>,   // runtime-internal
+    domain_mailboxes: M,
+    config: RunConfig<R>,        // root / supervised / supervised_with_abort / unsupervised / bare
     actor_id: ActorId,
-    supervisor_notify: R::Sender<ChildLifecycleEvent>, // runtime-internal
 )
 where
     S: MachineSpec + 'static,
+    M: Mailboxes<S::Event>,
     R: BloxRuntime;
 ```
 
-The `lifecycle_stream` and `supervisor_notify` arguments are created by `ChildGroupBuilder`/`spawn_child!` and passed to the task automatically. User code never sees them.
+The lifecycle stream and supervisor notify sender inside `RunConfig` are created by
+`ChildGroupBuilder`/`spawn_child!` and passed to the task automatically. User code
+never sees them. See `crates/bloxide-core/src/runloop.rs` for the `RunConfig`
+field/variant table.
 
 ## Embassy-Specific Helpers
 

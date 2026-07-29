@@ -242,7 +242,7 @@ One paragraph. What does this actor do?
 
 - Blox crate: `crates/bloxes/<blox-name>/`
 - Messages crate: `crates/messages/<blox-name>-messages/`
-- Actions crate: `crates/actions/<blox-name>-actions/`
+- Context crate: `crates/context/blox-ctx-<name>/` _(action functions; no concrete types)_
 
 ## State Hierarchy
 

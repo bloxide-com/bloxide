@@ -502,6 +502,85 @@ fn test_topology_no_cycles() {
 }
 ```
 
+## Engine Surface Reference
+
+Small-print details of the engine's public surface that blox and wiring authors
+rely on. (Canonical source: `crates/bloxide-core/src/`.)
+
+### RunConfig variants (`runloop.rs`)
+
+All actors run the unified `run()` loop; behavior is selected entirely by config:
+
+| Variant | Use | Lifecycle | Abort | Notify | auto_start | exit_on_stop |
+|---|---|---|---|---|---|---|
+| `RunConfig::root()` | root supervisor/actor | — | — | — | no | yes |
+| `RunConfig::supervised(lc, notify)` | supervised child | ✓ | — | ✓ | no | no |
+| `RunConfig::supervised_with_abort(lc, ab, notify)` | supervised child + kill | ✓ | ✓ | ✓ | no | no |
+| `RunConfig::unsupervised()` | standalone actor | — | — | — | yes | yes |
+| `RunConfig::bare()` | tests | — | — | — | no | yes |
+
+The loop polls lifecycle → abort → domain in priority order, reports outcomes via
+`report_outcome` (supervision.rs), and yields via `R::yield_now()` after each message.
+It exits on `Failed`, `Aborted`, `Stopped` (when `exit_on_stop`), or any polled
+stream returning `Ready(None)`.
+
+### Absorbing error states
+
+When the current state is an error state (`S::is_error(&state) == true`), domain
+events are absorbed: no state rules AND no `root_transitions()` are evaluated
+(`engine.rs` — "Error states are absorbing"). The only way out of an error state
+is a lifecycle `Reset` (or `Start` from Init after a `Stop`).
+
+### Generated event enums carry a Lifecycle variant
+
+Codegen emits for each blox event enum (e.g. `PingEvent`):
+
+- A `Lifecycle(LifecycleCommand)` variant with tag `LIFECYCLE_TAG` (254)
+- Constructors `start()` / `reset()` / `stop()` / `ping()`
+- A `LifecycleEvent` impl so `dispatch()` can intercept commands at VirtualRoot
+
+Domain variants are tagged 0..=253 by declaration order; `WILDCARD_TAG` (255) is
+the rule-level sentinel.
+
+### Wildcard fallback guards
+
+In `[[topology.transitions.guards]]`, `condition = "_"` is the explicit wildcard
+fallback arm. When guards are present, the transition-level `target` is already
+the implicit fallback — use `condition = "_"` only when you want the fallback
+written as a guard arm (see `crates/bloxes/counter/blox.toml`).
+
+### `[[topology.entry]]` / `[[topology.exit]]`
+
+Per-state entry/exit action lists in `blox.toml`:
+
+```toml
+[[topology.entry]]
+state = "Paused"
+actions = ["Self::schedule_pause_timer"]
+
+[[topology.exit]]
+state = "Paused"
+actions = ["Self::cancel_pause_timer"]
+```
+
+Entry/exit actions are infallible (`fn(&mut Ctx)` — no `ActionResult`).
+
+### Full bloxide-macros surface
+
+| Macro | Kind | Purpose |
+|---|---|---|
+| `#[derive(EventTag)]` | derive | Sequential `u8` variant tags + `*_TAG` constants (rejects >254 variants) |
+| `#[blox_event]` | attribute | `From<Envelope<M>>` impls, `EventTag`, `*_TAG` constants, payload accessors for an existing enum |
+| `event!(Name { Variant: Msg })` | fn-like | Generate a complete event enum from a mailbox spec |
+| `blox_messages!(pub enum M { ... })` | fn-like | Generate message structs/enum (`copy,` prefix adds `Copy`) |
+| `mailboxes_impls!(N)` | fn-like | `Mailboxes` impls for tuples of arity 1..=N |
+| `channels!(Runtime; Msg(CAP), ...)` | fn-like | Static-capacity channel creation via `StaticChannelCap` |
+| `dyn_channels!(Runtime; Msg(CAP), ...)` | fn-like | Runtime-capacity channel creation via `DynamicChannelCap` |
+| `next_actor_id!()` | fn-like | Compile-time actor ID allocation |
+
+Runtimes re-export thin wrappers (`bloxide_tokio::channels!`, etc.) that
+hard-code the runtime type.
+
 ## Related Docs
 
 - **Dispatch semantics** → This file

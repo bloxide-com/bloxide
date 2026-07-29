@@ -1,23 +1,26 @@
 # Contributing to Bloxide
 
+> **NO BACKWARDS COMPATIBILITY.** This project does not preserve backwards
+> compatibility — not for APIs, CLIs, config formats, terminology, or
+> architecture layers. When something changes, update every call site, every
+> doc, and every fixture in the same change, and delete the old form
+> completely. Never add legacy aliases, deprecation periods, compatibility
+> shims, feature bridges, or "kept for backwards compatibility" notes.
+
 ## Development Setup
 
+Run the full CI suite locally (same commands as the GitHub workflow):
+
 ```bash
-cargo build --all
-cargo test --all
-cargo fmt
-cargo clippy --all -- -D warnings
+./scripts/ci.sh          # all checks: copyright, build, fmt, clippy, tests, docs
+./scripts/ci.sh lint     # only build / check / fmt / clippy
+./scripts/ci.sh test     # only tests
 ```
 
 ## Spec-Driven Development
 
-1. **Spec first** — Write/update `spec/bloxes/<name>.md` with state diagram, events, transitions
-2. **Generate** — Run `cargo blox generate` to regenerate boilerplate from `blox.toml`
-3. **Tests next** — Write `TestRuntime`-based tests per acceptance criteria
-4. **Then code** — Implement `MachineSpec` to pass tests
-5. **Keep in sync** — Update spec if implementation reveals spec errors
-
-See `skills/building-with-bloxide/SKILL.md` for the full workflow.
+See `AGENTS.md` → "Development Workflow" and `skills/building-with-bloxide/SKILL.md`
+for the full workflow (spec → generate → tests → implement → sync).
 
 ## Key Invariants
 
@@ -32,8 +35,11 @@ Before modifying any code, review the **Key Invariants** section in `AGENTS.md`.
 
 ## CI Checks
 
+`scripts/ci.sh` runs the same checks as CI:
+
 - Copyright header check
+- `cargo build` + feature-matrix `cargo check` runs
 - `cargo fmt --check`
-- `cargo clippy --all -- -D warnings`
-- `cargo test --all`
-- `cargo doc --all --no-deps`
+- `cargo clippy --all-targets -- -W warnings -D warnings`
+- `cargo test`
+- `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS=-Dwarnings`

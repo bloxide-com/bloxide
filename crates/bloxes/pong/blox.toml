@@ -14,7 +14,7 @@ imports = [
 crate = "bloxide_messaging"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
 # --- Action declarations (Phase 3 system codegen) ---
 

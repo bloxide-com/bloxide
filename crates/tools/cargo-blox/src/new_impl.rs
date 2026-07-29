@@ -565,7 +565,7 @@ fn generate_fn_params(
 /// Resolution order:
 /// 1. Check `payload_types` (from event mailboxes) — these include full
 ///    generic args (e.g. `SpawnedWorker<PeerCtrl<WorkerMsg, R>, R>`).
-/// 2. Check `message_variants` (from [[messages]] variants) — these are
+/// 2. Check `message_variants` (from `[[messages]]` variants) — these are
 ///    just the type name without generics.
 /// 3. Fallback: convert snake_case to PascalCase.
 fn resolve_payload_type(

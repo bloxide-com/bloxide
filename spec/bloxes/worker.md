@@ -97,28 +97,38 @@ pub struct WorkerCtx<R: BloxRuntime> {
 
 | State | on_entry | on_exit |
 |-------|----------|---------|
-| `[Init]` (engine) | clear peers, set task_id=0, result=0 | — |
-| `Waiting` | `log_waiting` | — |
-| `Waiting` → `Guard::Stop` | `log_done`, `broadcast_to_peers`, `notify_pool_done` (in transition actions) | — |
+| `[Init]` (engine) | `on_init`: task_id=0, result=0, peers cleared | — |
+| `Waiting` | — (empty) | — |
+| `Waiting` → `Guard::Stop` | `process_work`, `do_broadcast` (fn `broadcast_to_peers`), `do_notify_pool` (fn `notify_pool_done`) (in transition actions) | — |
+
+There are no logging actions (invariant #15).
 
 ## Acceptance Criteria
 
-- [ ] `dispatch(WorkerEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Waiting`
-- [ ] `PeerCtrl::AddPeer` in `Waiting` adds peer to list, stays in `Waiting`
-- [ ] `WorkerMsg::DoWork` in `Waiting` sets task_id and result, runs transition actions (broadcast, notify), then `Guard::Stop` self-suspends to Init
-- [ ] Transition actions broadcast result to all accumulated peers (before Guard::Stop)
-- [ ] Transition actions send `WorkDone` to pool (before Guard::Stop)
-- [ ] Ctrl stream is polled with higher priority than domain stream
+Blox-crate unit tests run against the blox-level **stub** spec (per invariant #18);
+they verify topology and guard outcomes, not action side effects.
+
+- [x] `dispatch(WorkerEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Waiting`
+- [x] `WorkerMsg::DoWork` in `Waiting` runs transition actions then `Guard::Stop` self-suspends to Init
+- [x] `WorkerMsg::PeerResult` in `Waiting` is ignored (`Stay`)
+- [x] With stub actions, `PeerCtrl::AddPeer` does not modify `peers` (stub verification)
+- [x] With stub actions, `process_work` does not set `task_id` (stub verification)
+- [x] With stub actions, no `WorkDone` / `PeerResult` messages are sent (stub verification)
+- [x] Ctrl stream is mailbox index 0 — polled with higher priority than the domain stream
 
 ## Acceptance Criteria → Test Mapping
 
+All tests live in `crates/bloxes/worker/src/tests.rs` and use `TestRuntime`:
+
 | Acceptance Criterion | Test Function |
 |---|---|
-| `dispatch(LifecycleCommand::Start)` enters Waiting | `test_start_enters_waiting()` |
-| AddPeer accumulates | `test_add_peer_accumulates()` |
-| DoWork triggers Guard::Stop (with broadcast/notify actions) | `test_do_work_stops()` |
-| Transition actions broadcast to peers | `test_broadcast_to_peers()` |
-| Transition actions notify pool | `test_notify_pool_done()` |
+| `dispatch(LifecycleCommand::Start)` enters Waiting | `worker_starts_in_waiting` |
+| DoWork → Guard::Stop | `do_work_transitions_to_stop` |
+| PeerResult ignored | `peer_result_in_waiting_is_ignored` |
+| Stub handle_ctrl does not add peer | `handle_ctrl_stub_does_not_add_peer` |
+| Stub process_work does not set task_id | `process_work_stub_does_not_set_task_id` |
+| Stub do_notify_pool sends nothing | `do_notify_pool_stub_does_not_send_work_done` |
+| Stub do_broadcast sends nothing | `do_broadcast_stub_does_not_send_peer_result` |
 
 ## Context Crate Dependencies
 

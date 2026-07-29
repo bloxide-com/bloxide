@@ -49,7 +49,7 @@ feature_imports = [
 crate = "bloxide_messaging"
 field = "self_ref"
 field_type = "ActorRef<PoolMsg, R>"
-role = "accessor"
+role = "ctor"
 
 # Direct context fields for worker tracking and spawn state.
 [[context.fields]]

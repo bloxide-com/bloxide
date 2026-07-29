@@ -2,6 +2,13 @@
 
 Decision trees and lookup tables for common tasks. Keep this open while you work.
 
+> **NO BACKWARDS COMPATIBILITY.** This project does not preserve backwards
+> compatibility — not for APIs, CLIs, config formats, terminology, or
+> architecture layers. When something changes, update every call site, every
+> doc, and every fixture in the same change, and delete the old form
+> completely. Never add legacy aliases, deprecation periods, compatibility
+> shims, feature bridges, or "kept for backwards compatibility" notes.
+
 ---
 
 ## Decision: Where Does New Functionality Go?
@@ -81,11 +88,11 @@ State fields are plain fields on the context struct. There is no `B` generic, no
 
 | You want to... | Trait | Layer | Who implements |
 |----------------|-------|-------|----------------|
-| Create static channels at startup | `StaticChannelCap` | Tier 2 | Runtime (`bloxide-embassy`, `bloxide-tokio`) |
-| Create channels dynamically | `DynamicChannelCap` | Tier 2 | Runtime (Tokio only) |
-| Spawn actors dynamically | `SpawnCap` | Tier 2 | Runtime (Tokio only) |
+| Create static channels at startup | `StaticChannelCap` | Tier 2 | Runtime (`bloxide-embassy`) |
+| Create channels dynamically | `DynamicChannelCap` | Tier 2 | Runtime (Tokio, TestRuntime) |
+| Spawn actors dynamically | `SpawnCap` | Tier 2 | Runtime (Tokio, TestRuntime) |
 | Get current time, set timers | `TimerService` | Tier 2 | Runtime + `bloxide-timer` |
-| Run a supervised actor | `SupervisedRunLoop` | Tier 2 | Runtime |
+| Run an actor (any mode) | `run` + `RunConfig` | core fn | `bloxide-core` (re-exported by runtimes) |
 | Emergency kill an actor | `KillCapability` | Tier 2 | Runtime (Tokio) |
 | Send/receive messages | `BloxRuntime` | Tier 1 | Runtime (blox sees only this) |
 
@@ -136,7 +143,7 @@ Use `bloxide-timer` and `blox-ctx-current-timer` action functions instead of man
 1. Add dependency:
    ```toml
    [dependencies]
-   bloxide-timer = { version = "0.1", features = ["std"] }
+   bloxide-timer = { version = "0.0.3", features = ["std"] }
    blox-ctx-current-timer = { path = "..." }
    ```
 
@@ -146,7 +153,7 @@ Use `bloxide-timer` and `blox-ctx-current-timer` action functions instead of man
    crate = "bloxide_timer"
    field = "timer_ref"
    field_type = "ActorRef<TimerCommand, R>"
-   role = "accessor"
+   role = "ctor"
 
    [[context.fields]]
    name = "current_timer"
@@ -190,8 +197,6 @@ pub fn spawn_worker(
     // ... spawn logic ...
 }
 ```
-
----
 
 ---
 
@@ -280,6 +285,7 @@ actions = ["Self::forward_ping"]
   target = "Paused"
 
   [[topology.transitions.guards]]
+  condition = "_"
   target = "stay"
 
 # Multiple patterns for the same state are expressed as separate
@@ -365,26 +371,45 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 
 ## Key Invariants Checklist
 
-- [x] `bloxide-core` imports only `futures-core` (no Tokio/Embassy)
-- [x] Blox crates are generic over `R: BloxRuntime`
+The canonical invariant list lives in `AGENTS.md` → "Key Invariants" — read
+that, not a copy. Quick sanity checks for the most commonly violated ones:
+
+- [x] Blox crates are generic over `R: BloxRuntime`, with no runtime or `bloxide-log` dependency
 - [x] Messages contain only plain data (no `ActorRef`)
-- [x] Transition targets are leaf states only
-- [x] `on_entry` / `on_exit` are infallible (`fn(&mut Ctx)`)
-- [x] Actions called before guard (side effects in actions, pure checks in guard)
-- [x] No catch-all rule that manually returns parent — bubbling is automatic
-- [x] `is_error` states report `Failed`; actors self-stop via `Guard::Stop` (no `is_terminal`)
-- [x] No `B` generic on any `Ctx` or `Spec` type
-- [x] No accessor traits anywhere
-- [x] No `#[delegatable]` attribute anywhere
-- [x] No `#[delegates]` annotation anywhere
-- [x] No `#[derive(BloxCtx)]` anywhere
-- [x] No `#[provides]` or `#[provides_mut]` in generated code
-- [x] No accessor traits (HasSelfId, HasPeerRef, etc.) in any crate
-- [x] No `actions.rs` file in any blox crate
-- [x] No `crates/actions/` directory
-- [x] No `bloxide-log` dependency in any blox crate
-- [x] No `behavior: B` field in any context struct
-- [x] Guard expressions use direct field access (no trait methods, no `B::Type::from()`)
+- [x] Transition targets are leaf states only; guards use direct field access
+- [x] No `actions.rs`, no `crates/actions/` directory, no `B` generic, no accessor traits
+
+---
+
+## cargo blox Command Reference
+
+The canonical list of `cargo blox` subcommands (from `crates/tools/cargo-blox/src/main.rs`):
+
+| Command | Purpose |
+|---|---|
+| `generate` | Generate code from all blox.toml + system.toml files in the workspace |
+| `build` / `check` / `test` / `run` | `generate`, then the corresponding cargo command |
+| `watch` | Watch and regenerate on changes |
+| `wire --system <path>` | Generate a binary `main.rs` from a system.toml wiring manifest (`--run` to execute after) |
+| `verify` | Round-trip check: blox.toml → codegen → viz-export → JSON → compare |
+| `lint` | Spec-to-code lint checks |
+| `ci` | Full CI feature matrix |
+| `new <name>` | Scaffold a new blox crate (+ `spec/bloxes/<name>.md`) |
+| `new-messages <name>` | Scaffold a new messages crate |
+| `new-context <name>` | Scaffold a new context (action-functions) crate |
+| `new-impl <name> --blox <blox>` | Scaffold a new impl crate for a blox |
+| `new-binary <name> [--runtime tokio\|embassy]` | Scaffold a new wiring binary crate |
+| `new-all <name> [--runtime ...]` | Scaffold all layers (messages, context, blox, binary) |
+| `list-bloxes [--json]` | List all blox crates in the workspace |
+| `list-states <blox> [--json]` | List states in a blox |
+| `list-transitions <blox> [--json]` | List transitions in a blox |
+| `list-messages <crate> [--json]` | List message variants in a messages crate |
+| `add-state <blox> <state> [--parent P] [--composite] [--error]` | Add a state to a topology |
+| `remove-state <blox> <state>` | Remove a state |
+| `add-transition <blox> --state S --event E --target T [--action ...] [--guard ...]` | Add a transition |
+| `remove-transition <blox> --state S --event E` | Remove a transition |
+| `add-message <crate> <Variant> [field:ty ...]` | Add a message variant |
+| `remove-message <crate> <Variant>` | Remove a message variant |
 
 ---
 

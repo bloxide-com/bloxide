@@ -18,14 +18,8 @@ pub type ActorId = usize;
 /// // Match on sender when needed:
 /// PingEvent::Msg(Envelope(from, PingMsg::Pong(Pong { round }))) => { ... }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Envelope<M>(pub ActorId, pub M);
-
-impl<M: Clone> Clone for Envelope<M> {
-    fn clone(&self) -> Self {
-        Envelope(self.0, self.1.clone())
-    }
-}
 
 /// A clonable, typed handle to an actor's mailbox.
 pub struct ActorRef<M: Send + 'static, R: BloxRuntime> {
@@ -83,10 +77,7 @@ where
     }
 }
 
-// SAFETY: The where-bounds guarantee that `R::Sender<M>` is Send/Sync at
-// every instantiation site, so the containing `ActorRef` inherits those
-// properties. Using where clauses instead of blanket `unsafe impl` lets
-// the compiler verify the invariant at each concrete use rather than
-// trusting a global assertion.
-unsafe impl<M: Send + 'static, R: BloxRuntime> Send for ActorRef<M, R> where R::Sender<M>: Send {}
-unsafe impl<M: Send + 'static, R: BloxRuntime> Sync for ActorRef<M, R> where R::Sender<M>: Sync {}
+// Note: no manual `Send`/`Sync` impls. `BloxRuntime` already bounds
+// `Sender<M>: Clone + Send + Sync` (capability.rs) and `ActorId` is `usize`,
+// so the auto implementations apply — `ActorRef<M, R>` is `Send + Sync`
+// wherever `R::Sender<M>` is, with no `unsafe` required.

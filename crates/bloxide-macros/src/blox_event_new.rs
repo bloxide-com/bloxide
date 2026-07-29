@@ -1,14 +1,17 @@
 // Copyright 2025 Bloxide, all rights reserved.
 //! Proc macro for generating event types from mailbox specifications.
 //!
+//! Exported as `event!` (see `lib.rs`). For decorating an existing
+//! hand-written enum instead, use the `#[blox_event]` attribute.
+//!
 //! ## Syntax
 //!
 //! ```ignore
 //! // Single mailbox:
-//! blox_event!(Ping { Msg: PingPongMsg });
+//! event!(Ping { Msg: PingPongMsg });
 //!
 //! // Multi-mailbox with generics:
-//! blox_event!(Worker<R: BloxRuntime> {
+//! event!(Worker<R: BloxRuntime> {
 //!     Peer: PeerCtrl<WorkerMsg, R>,
 //!     Msg: WorkerMsg,
 //! });
@@ -23,7 +26,7 @@
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 
-/// Parsed input for the `blox_event!` macro.
+/// Parsed input for the `event!` macro.
 pub struct BloxEventInput {
     derives: Vec<syn::Path>,
     blox_name: syn::Ident,

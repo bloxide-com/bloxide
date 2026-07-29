@@ -140,14 +140,14 @@ bloxide-supervisor/src/actions.rs  ← in-crate action functions (concrete &Supe
   (abort_child sends an AbortCommand message; kill_child calls R::Kill::kill, not a trait method call)
 
 bloxide-tokio/            ← Tokio runtime
-  run (with RunConfig::supervised) (existing — static children)
-  run (with RunConfig::supervised_with_abort) (abort mailbox wrapper for dynamic children)
+  run() + RunConfig::supervised (static children)
+  run() + RunConfig::supervised_with_abort (abort mailbox for dynamic children)
   ChildGroupBuilder (control_ref + notify_ref extraction)
-  SpawnCap impl: TaskHandle = JoinHandle<()>, AbortHandle = AbortHandle
+  SpawnCap impl: TaskHandle = JoinHandle<()>, KillHandle = AbortHandle
   KillCapability impl: type Kill = Kill
 
 bloxide-embassy/          ← Embassy runtime (no dynamic spawning)
-  run (with RunConfig::supervised) (existing — static children only)
+  run() + RunConfig::supervised (static children only)
   ChildGroupBuilder (existing)
   KillCapability impl: type Kill = NoKill
 
@@ -187,7 +187,7 @@ use pool_messages::{SpawnRequest, SpawnedWorker, WorkerMsg};
 ///      and an abort mailbox
 ///   2. Constructs the child's context (app-specific)
 ///   3. Spawns the child task (R::spawn) with abort mailbox support,
-///      wrapped in run (with RunConfig::supervised_with_abort)
+///      running run() with RunConfig::supervised_with_abort
 ///   4. Sends the app-specific reply via the request's reply_to field
 ///   5. Returns SpawnOutput for supervisor registration (includes abort_ref
 ///      and abort_handle)
@@ -217,13 +217,11 @@ where
             // Spawn the child task with abort mailbox support (non-blocking).
             let notify_sender = notify.sender();
             let task_handle = R::spawn(async move {
-                run (with RunConfig::supervised_with_abort)(
+                run(
                     machine,
                     (ctrl_rx, domain_rx),
-                    lifecycle_rx,
-                    abort_rx,
+                    RunConfig::supervised_with_abort(lifecycle_rx, abort_rx, notify_sender),
                     worker_id,
-                    notify_sender,
                 ).await;
             });
 
@@ -649,7 +647,7 @@ match policy {
     }
     ChildPolicy::Abort => {
         // Cooperative: send abort message. The child self-terminates
-        // via the select loop in run (with RunConfig::supervised_with_abort).
+        // via the poll cycle in run() with RunConfig::supervised_with_abort.
         if let Some(abort_ref) = &self.children[idx].abort_ref {
             let _ = abort_ref.try_send(from, AbortCommand::Abort { child_id });
         }
@@ -749,72 +747,43 @@ them without a runtime or supervisor dependency. The `SupervisorRegistrar` is th
 type the pool needs from `bloxide-supervisor` — it implements `ChildRegistrar` to wrap
 `SpawnOutput` into `SupervisorControl::RegisterDynamicChild`.
 
-### 3.13 run (with RunConfig::supervised_with_abort)
+### 3.13 `run()` with `RunConfig::supervised_with_abort`
 
-The abort mailbox's receiving end lives in a wrapper around `run` with `RunConfig::supervised`. This
-wrapper listens on the abort mailbox alongside the lifecycle and domain mailboxes. The
-abort path is **cooperative** — the child's task polls the abort mailbox in its select loop
-and self-terminates when it receives `AbortCommand::Abort`:
-
-1. **Cooperative self-termination (abort):** The abort mailbox is polled in the main event
-   `select` loop. When `AbortCommand::Abort` is received, the task breaks out of the run
-   loop, reports `DispatchOutcome::Aborted`, and returns. This is the cooperative path —
-   the child exits cleanly but no `on_exit` callbacks fire.
-
-2. **External abort (ripcord — `ChildPolicy::Kill`):** If the task is stuck (e.g., blocked
-   on a long `await` that doesn't yield to the select loop), the `AbortHandle` stored in
-   `ChildEntry` is used to call `R::Kill::kill(handle)` for an immediate external abort.
-   This bypasses the task entirely — no cooperation, no callbacks. It is the safety net for
-   unresponsive tasks.
+The abort mailbox's receiving end lives in the unified run loop itself — there is
+no separate wrapper function. `run()` in `bloxide-core`
+(`crates/bloxide-core/src/runloop.rs`) polls the abort mailbox alongside the
+lifecycle stream and domain mailboxes when the config supplies one:
 
 ```rust
-// In bloxide-tokio
-
-/// Run a supervised actor with abort mailbox support.
-///
-/// This wraps run (with RunConfig::supervised) with an additional abort mailbox.
-/// When `AbortCommand::Abort` is received, the actor self-terminates
-/// cooperatively (breaks out of the select loop, reports Aborted, drops the future).
-///
-/// Two termination paths:
-///   1. Cooperative (AbortCommand): the task breaks out of the select
-///      loop and returns. Works when the abort mailbox is actively polled.
-///   2. External abort (ripcord): the AbortHandle from
-///      SpawnCap::abort_handle() is stored in ChildEntry in the
-///      supervisor. When the child is unresponsive (not polling the abort
-///      mailbox), the supervisor calls R::Kill::kill(handle) — which
-///      calls SpawnCap::abort(handle), i.e. AbortHandle::abort() on Tokio.
-///
-/// This function handles only the cooperative path. The external
-/// abort is handled by ChildGroup::handle_done_or_failed in the
-/// supervisor (see §3.11).
-pub async fn run (with RunConfig::supervised_with_abort)<S: MachineSpec + 'static>(
-    machine: StateMachine<S>,
-    domain_mailboxes: S::Mailboxes<TokioRuntime>,
-    lifecycle_stream: TokioStream<LifecycleCommand>,
-    abort_stream: TokioStream<AbortCommand>,
-    actor_id: ActorId,
-    supervisor_notify: TokioSender<ChildLifecycleEvent>,
-) {
-    loop {
-        // Poll lifecycle (highest priority) → abort mailbox → domain mailboxes.
-        // On AbortCommand::Abort, break out of the loop and return.
-        // This drops the future and ends the task.
-        // ...
-    }
-}
+// bloxide-core::runloop — one loop for all runtimes:
+let config = RunConfig::supervised_with_abort(lifecycle_rx, abort_rx, supervisor_notify);
+run(machine, domain_mailboxes, config, actor_id).await;
 ```
 
-The poll priority is: lifecycle stream (highest) → abort mailbox → domain mailboxes. This
-ensures abort is serviced before domain messages so a cooperative abort can be processed
-promptly when the task next yields to the select loop.
+The abort path is **cooperative** — the child's task polls the abort mailbox in its
+poll cycle and self-terminates when it receives `AbortCommand::Abort`:
 
-The `TaskHandle` from `R::spawn()` is converted to a cloneable `AbortHandle` via
-`R::abort_handle()` in the spawn function, then flows to the supervisor via
-`SpawnOutput::abort_handle` → `RegisterDynamicChild::abort_handle` →
-`ChildEntry::abort_handle`. In the common case, self-termination via the select loop is
-sufficient and the external abort is never invoked. The external `R::Kill::kill(handle)`
-is the ripcord for unresponsive tasks that don't yield to the select loop.
+1. **Cooperative self-termination (abort):** When `AbortCommand::Abort` is received,
+   the run loop reports `DispatchOutcome::Aborted` to the supervisor and returns.
+   This is the cooperative path — the child exits cleanly but no `on_exit`
+   callbacks fire.
+
+2. **External kill (ripcord — `ChildPolicy::Kill`):** If the task is stuck (e.g.,
+   blocked on a long `await` that doesn't yield to the poll cycle), the
+   `KillHandle` stored in `ChildEntry` is used to call `R::Kill::kill(handle)` for
+   an immediate external abort. This bypasses the task entirely — no cooperation,
+   no callbacks. It is the safety net for unresponsive tasks.
+
+The poll priority is: lifecycle stream (highest) → abort mailbox → domain
+mailboxes. This ensures abort is serviced before domain messages so a cooperative
+abort can be processed promptly when the task next yields.
+
+The `TaskHandle` from `R::spawn()` is converted to a cloneable `KillHandle` via
+`R::kill_handle()` in the spawn function, then flows to the supervisor via
+`SpawnOutput::kill_handle` → `RegisterDynamicChild::kill_handle` →
+`ChildEntry::kill_handle`. In the common case, self-termination via the poll cycle
+is sufficient and the external kill is never invoked. The external
+`R::Kill::kill(handle)` is the ripcord for unresponsive tasks that don't yield.
 
 For static children (wired at startup, no abort mailbox), the existing
 `run` with `RunConfig::supervised` (without abort support) is used unchanged.
@@ -1282,17 +1251,18 @@ Pool                      Spawn Helper            Managing Blox            Child
   |                            | 3. spawn_fn(req, notify):                     |
   |                            |    create channels    |                       |
   |                            |    (lifecycle, domain,|                       |
-  |                            |     ctrl, kill)       |                       |
+  |                            |     ctrl, abort)      |                       |
   |                            |    construct WorkerCtx|                       |
   |                            |    R::spawn(task)     |                       |
-  |                            |    R::abort_handle()  |                       |
-  |                            |    → AbortHandle in   |                       |
+  |                            |    R::kill_handle()   |                       |
+  |                            |    → KillHandle in    |                       |
   |                            |      SpawnOutput      |                       |
   |                            |---------------------->|                       |
   |                            |                       |                       | 4. Child runs
-  |                            |                       |                       |    run (with RunConfig::supervised_with_abort)
+  |                            |                       |                       |    run() with RunConfig::
+  |                            |                       |                       |    supervised_with_abort
   |                            |                       |                       |    (polls lifecycle,
-  |                            |                       |                       |     kill, domain streams)
+  |                            |                       |                       |     abort, domain streams)
   |                            |                       |                       |
   |                            | 5. spawn_fn sends     |                       |
   |                            |    SpawnedWorker reply|                       |

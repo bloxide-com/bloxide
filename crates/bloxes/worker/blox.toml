@@ -38,7 +38,7 @@ imports = [
 crate = "blox_ctx_pool_ref"
 field = "pool_ref"
 field_type = "ActorRef<PoolMsg, R>"
-role = "accessor"
+role = "ctor"
 
 # State fields (moved from B into Ctx) — accessed directly, no trait accessor.
 # task_id, result, and peers are zero-initialized by BloxCtx derive macro.

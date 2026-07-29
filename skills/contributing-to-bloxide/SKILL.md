@@ -9,13 +9,20 @@ metadata:
 
 This guide is for modifying the bloxide framework itself — the HSM engine, proc macros, standard library crates, and runtime implementations. If you are building bloxes (actors) with bloxide, read `skills/building-with-bloxide/SKILL.md` instead.
 
+> **NO BACKWARDS COMPATIBILITY.** This project does not preserve backwards
+> compatibility — not for APIs, CLIs, config formats, terminology, or
+> architecture layers. When something changes, update every call site, every
+> doc, and every fixture in the same change, and delete the old form
+> completely. Never add legacy aliases, deprecation periods, compatibility
+> shims, feature bridges, or "kept for backwards compatibility" notes.
+
 ## Crate Map
 
 ```
-bloxide-core        HSM engine, BloxRuntime, channel traits, KillCapability, TestRuntime  (no_std)
-bloxide-macros      Proc macros: blox_event                                    (host-compiled)
+bloxide-core        HSM engine, BloxRuntime, channel traits, KillCapability, run/RunConfig  (no_std)
+bloxide-macros      Proc macros: blox_event, event!, blox_messages!, EventTag, channels!    (host-compiled)
 bloxide-codegen     TOML-driven code generator library                        (host-compiled)
-cargo-blox          CLI: cargo blox generate / new / build / check / test / run  (host-compiled)
+cargo-blox          CLI: see QUICK_REFERENCE.md → "cargo blox Command Reference"  (host-compiled)
 bloxide-log         Feature-gated logging macros                              (no_std)
 bloxide-timer       Timer service: commands, queue, timer action functions     (no_std)
 bloxide-spawn       Spawn capability: SpawnCap, ChildRegistrar, spawn_child   (no_std)
@@ -38,16 +45,22 @@ Blox crates see only this:
 - `BloxRuntime` — the sole trait bloxes are generic over
 
 ```rust
-pub trait BloxRuntime: Sized + Clone {
-    type Sender<M: Send>: Clone + Send;
-    type Receiver<M: Send>: Send;
-    type Stream<M: Send>: Stream<Item = Envelope<M>> + Send;
-    
-    fn to_stream<M: Send>(rx: Self::Receiver<M>) -> Self::Stream<M>;
-    fn send_via<M: Send>(tx: &Self::Sender<M>, msg: Envelope<M>) -> Result<(), SendError>;
-    fn try_send_via<M: Send>(tx: &Self::Sender<M>, msg: Envelope<M>) -> Result<(), TrySendError>;
+pub trait BloxRuntime: Clone + Send + 'static {
+    type SendError: Debug + Send + 'static;
+    type TrySendError: Debug + Send + 'static;
+    type Sender<M: Send + 'static>: Clone + Send + Sync + 'static;
+    type Receiver<M: Send + 'static>: Send + 'static;
+    type Stream<M: Send + 'static>: Stream<Item = Envelope<M>> + Unpin + Send + 'static;
+    type Kill: KillCapability<Self>;
+
+    fn to_stream<M: Send + 'static>(rx: Self::Receiver<M>) -> Self::Stream<M>;
+    async fn send_via<M: Send + 'static>(tx: &Self::Sender<M>, msg: Envelope<M>) -> Result<(), Self::SendError>;
+    fn try_send_via<M: Send + 'static>(tx: &Self::Sender<M>, msg: Envelope<M>) -> Result<(), Self::TrySendError>;
+    async fn yield_now() {}  // no-op default; runtimes override
 }
 ```
+
+(Simplified — see `crates/bloxide-core/src/capability.rs` for the exact definition.)
 
 Blox crates never use Tier 2 traits as bounds.
 
@@ -60,7 +73,7 @@ These traits formalize the contract runtimes must fulfill:
 | `StaticChannelCap` | `bloxide-core` | Compile-time capacity channel creation (used by `channels!` macro) |
 | `DynamicChannelCap` | `bloxide-core` | Runtime-configurable channel creation (used by `TestRuntime`) |
 | `TimerService` | `bloxide-timer` | Timer service run loop; bridges `TimerQueue` to native timer |
-| `SupervisedRunLoop` | `bloxide-supervisor` | Supervised actor run loop; merges lifecycle with domain mailboxes |
+| `run` + `RunConfig` | `bloxide-core` | Unified actor run loop (root/supervised/unsupervised/bare); merges lifecycle with domain mailboxes |
 | `SpawnCap` | `bloxide-spawn` | Dynamic actor spawning; extends `DynamicChannelCap` |
 | `KillCapability` | `bloxide-core` | Immediately aborts actor tasks for dynamic actor cleanup |
 
@@ -68,13 +81,13 @@ When adding a new capability, decide which tier it belongs to. If blox crates ne
 
 ## Key Invariants for Framework Code
 
-1. **`bloxide-core` is `no_std`** — zero OS, Tokio, or Embassy imports. `futures-core` is the only always-on runtime dep.
-2. **`on_entry`/`on_exit` are infallible** — they are `fn(&mut Ctx)` with no `Result`.
-3. **Actions before guards** — `guard` receives `&Ctx` and `&ActionResults`, not `&mut Ctx`.
-4. **Only leaf states as transition targets** — the engine `debug_assert`s this.
-5. **Lifecycle commands flow through dispatch()** — actors handle them as domain events via `root_transitions()`.
-6. **`is_error` takes precedence over `Guard::Stop`** — if a state returns `true` for `is_error()` and the guard returns `Guard::Stop`, supervisor reports `Failed`, not `Stopped`.
-7. **KillCapability immediately aborts** — no callbacks fire, task is dropped in-place.
+The canonical invariant list lives in `AGENTS.md` → "Key Invariants" — it
+applies to framework code too. Framework-specific reminders:
+
+- `bloxide-core` stays `no_std` with zero OS/executor imports
+- Lifecycle commands flow through `dispatch()` at VirtualRoot level
+- `is_error` states report `Failed`; actors self-suspend via `Guard::Stop`
+- `KillCapability::kill` fires no callbacks — the task is dropped in-place
 
 ## Adding a Standard Library Crate
 
@@ -182,7 +195,7 @@ Proc macros live in `bloxide-macros` (host-compiled, exempt from `no_std`).
 ### Key Macros:
 
 - `bloxide-codegen` — TOML-driven code generator for messages, events, topology, and mailbox impls; emits `StateRule` struct literals from `[[topology.transitions]]` entries
-- `cargo-blox` — CLI tool for `cargo blox generate / new / build / check / test / run`
+- `cargo-blox` — CLI tool (`cargo blox ...`); full subcommand list: `QUICK_REFERENCE.md` → "cargo blox Command Reference"
 
 ### Macro Testing
 
@@ -215,23 +228,24 @@ mod tests {
 
 - `Transition(target)` — run exit chain from current leaf to LCA, then entry chain from LCA to target
 - `Stay` — no callbacks
-- `Reset` — run full exit chain, enter engine-implicit Init, call `on_init_entry`
-- `Fail` — same as Reset, but report `Failed` to supervisor
+- `Reset` — go **directly** to `initial_state()` (full exit chain + entry chain); skips Init entirely — `on_init_entry`/`on_init_exit` do NOT fire
+- `Stop` — full exit chain, enter engine-implicit Init, call `on_init_entry`; actor is suspended until a `Start`
+- `Fail` — transition to `error_state()` if declared, otherwise Init; report `Failed` to supervisor
 
 ### Lifecycle Flow
 
 ```
-Init --Start--> initial_state()
-Any --Reset--> Init (on_init_entry called)
-Any --Stop--> Init (suspended, can restart)
-Any --Kill--> abort immediately (permanent death)
+Init --Start--> initial_state() (on_init_exit fires)
+Any  --Reset--> initial_state() (skips Init; no on_init_entry/exit)
+Any  --Stop-->  Init (on_init_entry fires; suspended, can restart)
+Any  --Kill-->  abort immediately (permanent death)
 ```
 
 ## Testing Guidelines
 
 ### TestRuntime
 
-Located in `bloxide-core/src/test_utils.rs`. Provides:
+Located in `runtimes/bloxide-test-runtime/src/lib.rs`. Provides:
 - In-memory channels with `try_send`/`drain` 
 - `alloc_actor_id()` for unique IDs
 - No async executor needed
@@ -248,7 +262,7 @@ Located in `bloxide-timer/src/test_utils.rs`. Provides:
 ```rust
 #[cfg(all(test, feature = "std"))]
 mod tests {
-    use bloxide_core::test_utils::TestRuntime;
+    use bloxide_test_runtime::TestRuntime;
     use bloxide_core::{spec::MachineSpec, MachineState, StateMachine};
 
     fn make_machine() -> StateMachine<MySpec<TestRuntime>> {

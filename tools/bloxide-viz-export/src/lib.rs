@@ -336,7 +336,6 @@ fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
     }
 
     // Fields contributed by composable context crates (`[[context.uses]]`).
-    // Kept for backward compat with the uses array.
     let mut uses: Vec<model::ContextField> = Vec::new();
     for u in &context.uses {
         if let (Some(name), Some(ty)) = (&u.field, &u.field_type) {

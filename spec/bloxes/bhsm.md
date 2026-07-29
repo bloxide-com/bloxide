@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The BhsmTst (Bloxide HSM Test) actor is a pedagogical demonstration of deep hierarchical state machine mechanics. It exercises every transition topology: self-transitions, parent→child transitions, cross-sibling transitions, deep cross-subtree transitions, and top-level catch-all transitions. Every state entry and exit prints its name, producing output identical to the classic QHsmTst console example from Miro Samek's "Practical UML Statecharts".
+The BhsmTst (Bloxide HSM Test) actor is a pedagogical demonstration of deep hierarchical state machine mechanics. It exercises every transition topology: self-transitions, parent→child transitions, cross-sibling transitions, deep cross-subtree transitions, and top-level catch-all transitions — the classic QHsmTst topology from Miro Samek's "Practical UML Statecharts". (The original console example printed a trace on every entry/exit; in bloxide the entry/exit actions are no-ops — the blox exists to prove the engine's topology handling.)
 
 ## Crate Location
 
@@ -60,7 +60,7 @@ stateDiagram-v2
 | Event | Handled by | Transition | LCA | Demonstrates |
 |-------|-----------|------------|-----|-------------|
 | `A` | `S11` | `S11→S11` | `S1` | Self-transition at leaf |
-| `B` | `S11` | `S11→S11` | `S1` | Same mechanics, different print |
+| `B` | `S11` | `S11→S11` | `S1` | Same mechanics, different chain |
 | `C` | `S1` (bubbled) | `S11→S211` | `S` | Cross-sibling via parent |
 | `D` | `S11` | `S11→S211` | None | Deep cross-subtree (full exit/entry) |
 | `E` | `S21` | `S211→S211` | `S21` | Parent→child (single ancestor) |
@@ -85,18 +85,21 @@ No state fields — this is a pure topology demonstration. `BhsmTstCtx::new(acto
 
 ## Entry / Exit Actions
 
-Every state has `on_entry` and `on_exit` that print `{state}-ENTRY;` and `{state}-EXIT;`.
+Every state declares `on_entry` and `on_exit` hooks; in the current blox they are
+no-ops (trace prints `{state}-ENTRY;` / `{state}-EXIT;` in the original Samek
+example). The hooks exist so the topology exercises the engine's full exit/entry
+chain machinery.
 
 | State | on_entry | on_exit |
 |-------|----------|---------|
 | `[Init]` (engine) | — | — |
-| `S` | print `s-ENTRY;` | print `s-EXIT;` |
-| `S1` | print `s1-ENTRY;` | print `s1-EXIT;` |
-| `S11` | print `s11-ENTRY;` | print `s11-EXIT;` |
-| `S2` | print `s2-ENTRY;` | print `s2-EXIT;` |
-| `S21` | print `s21-ENTRY;` | print `s21-EXIT;` |
-| `S211` | print `s211-ENTRY;` | print `s211-EXIT;` |
-| `Error` | print `error-ENTRY;` | print `error-EXIT;` |
+| `S` | (no-op) | (no-op) |
+| `S1` | (no-op) | (no-op) |
+| `S11` | (no-op) | (no-op) |
+| `S2` | (no-op) | (no-op) |
+| `S21` | (no-op) | (no-op) |
+| `S211` | (no-op) | (no-op) |
+| `Error` | (no-op) | (no-op) |
 
 ## LCA Exit/Entry Examples
 
@@ -174,23 +177,15 @@ Exit:   (full chain from current leaf up through S)
 Guard::Stop: fires exit chain from current state to root, enters Init. Supervisor reports Stopped.
 ```
 
-## Interactive Demo
-
-The `bhsm-tst-demo` binary reads stdin commands:
-
-| Key | Action |
-|-----|--------|
-| A–I, K, X | Send corresponding `BhsmTstMsg` variant |
-| R | Dispatch `LifecycleCommand::Reset` |
-| Q | Dispatch `LifecycleCommand::Stop` |
-| ? | Print usage |
-
-Run with: `RUST_LOG=info cargo run --example bhsm-tst-demo`
-
 ## Acceptance Criteria
 
-- [ ] `dispatch(Start)` enters `S11` through `S→S1→S11`; prints `s-ENTRY; s1-ENTRY; s11-ENTRY;`
-- [ ] `A` in `S11` self-transitions: prints `s11-A; s11-EXIT; s11-ENTRY;`
+> Note: entry/exit trace actions are no-ops in the current `bhsm-tst` blox (the
+> blox exists to prove the engine's topology handling, not to print traces).
+> These criteria describe the transition semantics a `TestRuntime` test suite
+> should verify — the suite does not exist yet (tracked as a gap).
+
+- [ ] `dispatch(Start)` enters `S11` through the `S→S1→S11` entry chain
+- [ ] `A` in `S11` self-transitions: exit `S11`, entry `S11`
 - [ ] `D` in `S11` cross-subtree to `S211`: full exit `S11,S1,S` then entry `S2,S21,S211`
 - [ ] `C` in `S11` bubbles to `S1`, transitions to `S211`: exit `S11,S1`, entry `S2,S21,S211`
 - [ ] `E` in `S211` bubbles to `S21`, transitions to `S211` (parent→child): exit `S211`, entry `S211`
@@ -198,8 +193,8 @@ Run with: `RUST_LOG=info cargo run --example bhsm-tst-demo`
 - [ ] `G` in `S211` bubbles to `S21`, transitions to `S11`: exit `S211,S21,S2`, entry `S,S1,S11`
 - [ ] `H` from any state resets to `S11`: full exit/entry chain
 - [ ] `I` at top level (`S`) is absorbed — stay, no transition
-- [ ] `K` from any state transitions to `Error`: `is_error()` returns true, supervisor restarts
+- [ ] `K` from any state transitions to `Error`: `is_error()` returns true, runtime reports `Failed`
 - [ ] `X` from any state triggers `Guard::Stop`: actor self-suspends to Init, supervisor notified via `Stopped`
-- [ ] `R` (LifecycleCommand::Reset) resets actor to `Init→S11`
+- [ ] `R` (LifecycleCommand::Reset) goes directly to `initial_state()` (S11 via S→S1→S11), skipping Init
 - [ ] `Q` (LifecycleCommand::Stop) sends actor to Init (suspended)
 - [ ] Unknown events bubble to root and are silently dropped

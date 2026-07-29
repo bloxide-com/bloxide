@@ -18,8 +18,8 @@ use bloxide_core::capability::BloxRuntime;
 use bloxide_core::lifecycle::ChildLifecycleEvent;
 use bloxide_core::messaging::Envelope;
 use bloxide_core::spec::{MachineSpec, StateFns};
-use bloxide_core::transition::{ActionResult, Guard, StateRule};
 use bloxide_core::topology::LeafState;
+use bloxide_core::transition::{ActionResult, Guard, StateRule};
 use core::marker::PhantomData;
 
 pub struct ConcreteSupervisorSpec<R: BloxRuntime> {
@@ -160,7 +160,10 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 matches: |ev| {
                     matches!(
                         ev,
-                        SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterDynamicChild(_)))
+                        SupervisorEvent::Control(Envelope(
+                            _,
+                            SupervisorControl::RegisterDynamicChild(_)
+                        ))
                     )
                 },
                 actions: &[|ctx, ev| {

@@ -5,13 +5,25 @@
 //!
 //! # Available macros
 //!
-//! - `channels!(RuntimeType; MsgType1(CAP1), MsgType2(CAP2), ...)` — generate
-//!   channel creation code for any number of mailboxes via `StaticChannelCap`.
+//! Event enums (two complementary forms — `bloxide-codegen` generates plain
+//! Rust from `blox.toml` and uses neither; these are for hand-written code):
 //!
-//! - `dyn_channels!(RuntimeType; MsgType1(CAP1), MsgType2(CAP2), ...)` —
-//!   generate channel creation code for any number of mailboxes via
-//!   `DynamicChannelCap`.
+//! - `#[blox_event]` (attribute) — decorate an existing hand-written event
+//!   enum whose variants each wrap one `Envelope<M>`; generates the `From`,
+//!   `EventTag`, tag-constant, and accessor impls around it.
+//! - `event!(Name { Variant: MsgType, ... })` (fn-like) — generate the whole
+//!   event enum (including the `Lifecycle` variant) from a mailbox spec.
 //!
+//! Other macros:
+//!
+//! - `#[derive(EventTag)]` — assign sequential `u8` variant tags and `*_TAG`
+//!   constants to any event enum.
+//! - `blox_messages!(pub enum M { ... })` — generate message structs/enums.
+//! - `mailboxes_impls!(N)` — generate `Mailboxes` tuple impls up to arity N.
+//! - `channels!(RuntimeType; MsgType1(CAP1), ...)` — generate
+//!   channel creation code via `StaticChannelCap`.
+//! - `dyn_channels!(RuntimeType; MsgType1(CAP1), ...)` —
+//!   generate channel creation code via `DynamicChannelCap`.
 //! - `next_actor_id!()` — allocate the next compile-time actor ID from the
 //!   same counter used by `channels!`.
 
@@ -208,8 +220,6 @@ pub fn blox_messages(input: TokenStream) -> TokenStream {
         Err(e) => e.to_compile_error().into(),
     }
 }
-
-// ── blox_event!(Name { Mailbox: Type }) ───────────────────────────────────────
 
 // ── event!(Name { Mailbox: Type }) ───────────────────────────────────────────
 

@@ -143,13 +143,13 @@ on_init = "ctx.round = 0; ctx.current_timer = None;"
 crate = "bloxide_messaging"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
 [[context.uses]]
 crate = "bloxide_messaging"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
 # State fields — plain fields on the context struct
 [[context.fields]]
@@ -182,8 +182,7 @@ Each context field has an explicit role that tells the codegen what to emit:
 
 | Role | Codegen behavior |
 |------|-----------------|
-| `accessor` | Add field, emit import, add field to constructor signature |
-| `ctor` | Add field to constructor signature (constructor parameter) |
+| `ctor` | Add field, emit import, add field to constructor signature (constructor parameter) |
 | `state` (from `[[context.fields]]`) | Add field, zero-initialize in `on_init` |
 
 `self_id` is auto-emitted by the codegen — it is not declared in `blox.toml`.
@@ -194,7 +193,7 @@ For each `uses` entry, the codegen:
 
 1. **Adds fields** to the generated struct definition
 2. **Emits imports** — `use {crate}::*;` for the action functions
-3. **Adds fields to constructor** — fields with `role = "accessor"` or `role = "ctor"` become constructor parameters
+3. **Adds fields to constructor** — fields with `role = "ctor"` become constructor parameters
 
 The codegen **never guesses imports**. Every import is a direct 1:1 mapping from the TOML.
 

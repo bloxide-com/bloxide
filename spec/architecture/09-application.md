@@ -1,104 +1,104 @@
 # Application Wiring
 
-An application wires all bloxes together: it creates channels, builds contexts,
-constructs state machines, and spawns actor tasks before the executor starts.
-All of this happens in a synchronous `setup()` function — no `await`, no runtime
-knowledge needed beyond the Embassy executor entry point.
+An application wires bloxes together: it creates channels, builds contexts,
+constructs state machines, and spawns actor tasks. In the current architecture
+this wiring is **generated**, not hand-written: `system.toml` is the source of
+truth and `cargo blox generate` (system-level codegen) emits `src/main.rs` and
+the concrete specs. See
+[16-declarative-wiring.md](16-declarative-wiring.md) and
+[17-blox-toml-source-of-truth.md](17-blox-toml-source-of-truth.md).
 
-## Lifecycle in the New Model
+The canonical examples are the demo apps: `apps/tokio-demo/`,
+`apps/tokio-minimal-demo/`, `apps/tokio-pool-demo/`, `apps/embassy-demo/` —
+each has a `system.toml` plus generated `src/main.rs`.
 
-**Actors no longer handle lifecycle events as domain events.** The runtime manages
-lifecycle through a separate internal channel and direct engine calls:
+## system.toml Drives Everything
 
-- `machine.start()` — called by the runtime when a child's supervisor sends Start
-- `machine.reset()` — called by the runtime when Reset is received
+```toml
+# apps/tokio-demo/system.toml (abridged)
+[system]
+runtime = "tokio"
+name = "tokio-demo"
 
-The runtime observes `DispatchOutcome` after every dispatch and automatically sends
-`ChildLifecycleEvent` to the supervisor's domain mailbox. Supervisors receive these
-events through their normal `Mailboxes` stream and react in their transition rules.
+[[actors]]
+name = "timer"
+blox = "bloxide-timer"
+kind = "timer"
 
-## Wiring Helpers (bloxide-embassy)
+[[actors]]
+name = "ping"
+blox = "ping-blox"
 
-### `channels!` macro
-Creates all typed **domain** channels for one actor. Returns `(refs_tuple, mailboxes_tuple)`.
-Refs are injected into peer contexts; the mailboxes tuple is passed to the actor task.
+  [actors.inject]
+  self_ref = { source = "self" }
+  peer_ref = { source = "actor", actor = "pong" }
+  timer_ref = { source = "actor", actor = "timer" }
 
-### `actor_task!` / `actor_task_supervised!` macros
-`actor_task!` declares an `#[embassy_executor::task]` for an unsupervised (root) actor.
-`actor_task_supervised!` declares the supervised variant whose task signature includes
-the lifecycle command receiver and supervisor notification sender, which are injected
-by `spawn_child!`.
+[[supervision]]
+supervisor = "bloxide-supervisor"
+strategy = "one_for_one"
+children = ["ping", "pong"]
 
-### `spawn_child!` macro
-Creates the per-child lifecycle channel, registers the child in a `ChildGroupBuilder`,
-and spawns the task with lifecycle plumbing injected automatically.
-
-### `ChildGroupBuilder`
-Builds a `ChildGroup` and the supervisor's notification channel. After all children
-are registered, `finish()` returns the `ChildGroup` (to inject into `SupervisorCtx`)
-and the notification stream (to pass as the supervisor's mailbox). The supervisor's
-own `ActorId` is allocated separately via `next_actor_id!()`.
-
-### `Ctx::new()` constructors
-Each blox crate provides a `Ctx::new()` that accepts only external wiring deps and
-defaults internal state. The wiring site never initializes counters or round numbers.
-
-## Boot Sequence
-
-```mermaid
-flowchart TD
-    A["setup(spawner) called"] --> B
-    B["channels! per domain actor\nreturns refs + mailboxes"] --> C
-    C["Ctx::new() per actor\ninject refs; zero internal state"] --> D
-    D["StateMachine::new(ctx)\nconstruction is silent"] --> E
-    E["ChildGroupBuilder::new(strategy)\nspawn_child! for each supervised actor"] --> F
-    F["builder.finish()\nreturns ChildGroup + sup_notify_rx + sup_control_rx"] --> G
-    G["sup_machine.start()\nRunning::on_entry calls start_children"] --> H
-    H["spawner.must_spawn for supervisor\nrun (with RunConfig::supervised) tasks running"]
+  [supervision.policies]
+  ping = { stop = true }
+  pong = { stop = true }
 ```
 
-Canonical wiring order matches [04-static-wiring.md](04-static-wiring.md): build refs -> contexts -> machines -> supervised child group -> supervisor.
+From this, the codegen emits: typed channels per actor, `Ctx::new(...)` calls
+with refs injected per `[actors.inject]`, a `ChildGroupBuilder` with
+`spawn_child!` per supervised child, and the supervisor boot sequence.
 
-## Example (embassy-demo wiring)
+## Lifecycle Is Dispatch-Driven
 
-See `examples/embassy-demo.rs` for the canonical implementation. Summary:
+Actors never call `machine.start()` / `machine.reset()` — lifecycle commands
+flow through `dispatch()` and are intercepted at the VirtualRoot level
+(see [14-unified-lifecycle.md](14-unified-lifecycle.md)). This includes the
+supervisor itself at boot:
 
 ```rust
-fn setup(spawner: Spawner) {
-    let timer_ref = bloxide_embassy::spawn_timer!(spawner, timer_task, 8);
-
-    // Domain channels — no lifecycle channels needed here
-    let ((ping_ref,), ping_mbox) = bloxide_embassy::channels! { PingPongMsg(16), };
-    let ping_id = ping_ref.id();
-    let ((pong_ref,), pong_mbox) = bloxide_embassy::channels! { PingPongMsg(16), };
-    let pong_id = pong_ref.id();
-
-    // Build contexts
-    let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref);
-    let pong_ctx = PongCtx::new(pong_id, ping_ref);
-    let ping_machine = StateMachine::new(ping_ctx);
-    let pong_machine = StateMachine::new(pong_ctx);
-
-    // Supervised group — lifecycle plumbing is hidden
-    let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-    bloxide_embassy::spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Reset);
-    bloxide_embassy::spawn_child!(spawner, group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
-    let sup_id = bloxide_embassy::next_actor_id!();
-    let _sup_control_ref = group.control_ref();
-    let (children, sup_notify_rx, sup_control_rx) = group.finish();
-
-    // Supervisor — started directly, no supervised wrapper needed
-    let sup_ctx = SupervisorCtx::new(sup_id, children);
-    let mut sup_machine = StateMachine::new(sup_ctx);
-    sup_machine.start();  // Running::on_entry calls start_children → sends Start to ping and pong
-    spawner.must_spawn(supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)));
-}
+// From apps/tokio-demo/src/main.rs (generated)
+let mut sup_machine = ::bloxide_core::StateMachine::<
+    crate::generated::bloxide_supervisor_spec_skeleton::SupervisorSpec<TokioRuntime>,
+>::new(sup_ctx);
+sup_machine.dispatch(
+    ::bloxide_supervisor::SupervisorEvent::<TokioRuntime>::Lifecycle(LifecycleCommand::Start),
+);
+supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
 ```
+
+`Start` enters `SupervisorState::Running`, whose `on_entry` calls
+`start_children` — sending `Start` to each child's lifecycle channel. The
+runtime observes `DispatchOutcome` after every dispatch in `run()` and reports
+`ChildLifecycleEvent` back to the supervisor automatically.
+
+## Boot Sequence (generated main.rs)
+
+1. `spawn_timer!(capacity)` — spawn the timer service, get `timer_ref`
+2. `channels! { MsgType(cap), ... }` per domain actor → `(refs, mailboxes)`
+3. `Ctx::new(self_id, ...refs)` per actor — refs injected, internal state defaulted
+4. `StateMachine::new(ctx)` per actor — construction is silent (in implicit Init)
+5. `ChildGroupBuilder::new(GroupShutdown::...)`; `spawn_child!(group, task(machine, mbox, id), ChildPolicy::...)` per supervised child — creates the per-child lifecycle channel and registers the child
+6. `group.finish()` → `(ChildGroup, sup_notify_rx, sup_control_rx)`
+7. `SupervisorCtx::new(sup_id, children, sup_notify_ref)` → supervisor machine
+8. `sup_machine.dispatch(Lifecycle(Start))` → `Running::on_entry` starts all children
+9. `root_task!` / task `.await` — the root supervisor runs until the program is done
+
+## Wiring Macros (per runtime)
+
+Provided by `bloxide-tokio` / `bloxide-embassy` (same names, runtime-specific
+implementations):
+
+- `channels! { Msg(cap), ... }` — create typed domain channels, return `(refs, mailboxes)`
+- `next_actor_id!()` — allocate a compile-time actor ID
+- `actor_task!(name, Spec)` / `actor_task_supervised!(name, Spec)` — actor task wrappers around `run()` with `RunConfig::unsupervised()` / `RunConfig::supervised(...)`
+- `root_task!(name, Spec)` — root actor wrapper around `run()` with `RunConfig::root()`
+- `spawn_child!(group, task(...), policy)` — register + spawn a supervised child
+- `spawn_timer!(capacity)` — spawn the timer service task
 
 ## Rules
 
-- All wiring happens before the executor starts for Embassy. Dynamic actor creation at runtime is now implemented for Tokio and TestRuntime — see [11-dynamic-actors.md](11-dynamic-actors.md).
-- Never pass an `ActorRef` through a message; all refs are injected at wiring time.
-- Domain `Mailboxes` tuples contain **no lifecycle stream** — lifecycle is runtime-internal.
-- Internal state fields (counters, round numbers) belong in `Ctx::new()`, not in the wiring site.
-- `machine.start()` is called **directly** on the supervisor at boot (not via lifecycle event).
+- All static wiring happens before the executor starts (Embassy) or in `main` before awaiting the root task (Tokio). Dynamic actor creation at runtime is a Tokio/TestRuntime capability — see [11-dynamic-actors.md](11-dynamic-actors.md).
+- Never pass an `ActorRef` through a message; all refs are injected via `Ctx::new()` at wiring time.
+- Domain `Mailboxes` tuples contain **no lifecycle stream** — lifecycle channels are created by `spawn_child!` and are invisible to blox code.
+- Internal state fields (counters, round numbers) are initialized by the generated `Ctx::new()` / `on_init`, never at the wiring site.
+- The supervisor is started via `dispatch()` of `LifecycleCommand::Start`, like every other lifecycle transition.

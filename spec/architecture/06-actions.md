@@ -271,6 +271,7 @@ actions = ["Self::count_tick"]
   target = "Done"
 
   [[topology.transitions.guards]]
+  condition = "_"
   target = "stay"
 ```
 

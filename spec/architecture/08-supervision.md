@@ -241,11 +241,11 @@ stateDiagram-v2
     state "[engine-implicit Init]" as Init
 
     [*] --> Init
-    Init --> Running : start() called by wiring
+    Init --> Running : "dispatch(LifecycleCommand::Start) at boot"
 
     Running --> Running : "Stopped/Failed [policy == Reset]"
     Running --> ShuttingDown : "Stopped/Failed [GroupShutdown trigger met]"
-    ShuttingDown --> [*] : "Guard::Stop (all children Stopped) → Init, run (with RunConfig::root) sees Stopped and returns"
+    ShuttingDown --> [*] : "Guard::Stop (all children Stopped) → Init, root run loop sees Stopped and returns"
 ```
 
 When a child reports `Stopped` or `Failed`:
@@ -270,99 +270,92 @@ pub struct SupervisorCtx<R: BloxRuntime> {
 > The transition rules below are declared as `[[topology.transitions]]` entries in `blox.toml` and emitted as raw `StateRule { ... }` struct literals by `bloxide-codegen`. The rule structure (event match, actions, guard, targets) is shown in TOML form.
 
 ```toml
-# RUNNING state
+# RUNNING state (mirrors crates/bloxide-supervisor/blox.toml)
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Stopped { .. })"
-actions = ["handle_done_or_failed_action::<R>"]
-
-  [[topology.transitions.guards]]
-  condition = "ctx.pending == ChildAction::BeginShutdown"
-  to = "ShuttingDown"
-
-  [[topology.transitions.guards]]
-  to = "stay"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
+target = "stay"
+actions = ["Self::handle_done_or_failed"]
+guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Failed { .. })"
-actions = ["handle_done_or_failed_action::<R>"]
-
-  [[topology.transitions.guards]]
-  condition = "ctx.pending == ChildAction::BeginShutdown"
-  to = "ShuttingDown"
-
-  [[topology.transitions.guards]]
-  to = "stay"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { .. }))"
+target = "stay"
+actions = ["Self::handle_done_or_failed"]
+guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Started { .. })"
-actions = ["record_started_action::<R>"]
-to = "stay"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Started { .. }))"
+target = "stay"
+actions = ["Self::record_started"]
 
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Alive { .. })"
-actions = ["record_alive_action::<R>"]
-to = "stay"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Alive { .. }))"
+target = "stay"
+actions = ["Self::record_alive"]
 
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Aborted { .. })"
-actions = ["record_aborted_action::<R>"]
-to = "stay"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { .. }))"
+target = "stay"
+actions = ["Self::record_aborted"]
 
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Control(SupervisorControl::RegisterChild(_))"
-actions = ["register_child_action::<R>"]
-to = "stay"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))"
+target = "stay"
+actions = ["Self::record_killed"]
 
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Control(SupervisorControl::HealthCheckTick)"
-actions = ["handle_health_check_action::<R>"]
-
-  [[topology.transitions.guards]]
-  condition = "ctx.pending == ChildAction::BeginShutdown"
-  to = "ShuttingDown"
-
-  [[topology.transitions.guards]]
-  to = "stay"
+event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterChild(_)))"
+target = "stay"
+actions = ["Self::register_child"]
 
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Child(_)"
-to = "stay"
+event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterDynamicChild(_)))"
+target = "stay"
+actions = ["Self::handle_register_dynamic_child"]
 
 [[topology.transitions]]
 state = "Running"
-pattern = "SupervisorEvent::<R>::Control(_)"
-to = "stay"
+event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::HealthCheckTick))"
+target = "stay"
+actions = ["Self::handle_health_check"]
+guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
+
+# Catch-alls: absorb any other Child / Control events
+[[topology.transitions]]
+state = "Running"
+event = "SupervisorEvent::Child(_)"
+target = "stay"
+
+[[topology.transitions]]
+state = "Running"
+event = "SupervisorEvent::Control(_)"
+target = "stay"
 
 # SHUTTING_DOWN state
 [[topology.transitions]]
 state = "ShuttingDown"
-pattern = "SupervisorEvent::<R>::Child(ChildLifecycleEvent::Stopped { .. })"
-actions = ["record_stopped_action::<R>"]
-
-  [[topology.transitions.guards]]
-  condition = "ctx.all_children_stopped()"
-  to = "stop"
-
-  [[topology.transitions.guards]]
-  to = "stay"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
+target = "stay"
+actions = ["Self::record_stopped"]
+guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
 
 [[topology.transitions]]
 state = "ShuttingDown"
-pattern = "SupervisorEvent::<R>::Child(_)"
-to = "stay"
+event = "SupervisorEvent::Child(_)"
+target = "stay"
 
 [[topology.transitions]]
 state = "ShuttingDown"
-pattern = "SupervisorEvent::<R>::Control(_)"
-to = "stay"
+event = "SupervisorEvent::Control(_)"
+target = "stay"
 ```
 
 ### `MachineSpec` Implementation
@@ -498,16 +491,19 @@ pub enum LifecycleCommand {
 
 ## Supervised Actor Run Loop
 
-Each runtime implements a supervised actor run loop that bridges lifecycle commands and abort commands with domain mailboxes. This is runtime-specific code — never used as a bound on blox crates.
+All runtimes share the unified actor run loop — `run()` in `bloxide-core`
+(`crates/bloxide-core/src/runloop.rs`), re-exported by each runtime. A
+supervised child runs with `RunConfig::supervised(lifecycle_rx, notify)` or, when
+the runtime supports kill, `RunConfig::supervised_with_abort(lifecycle_rx,
+abort_rx, notify)`, which adds an abort mailbox for cooperative self-termination.
+This is wiring-layer code — never used as a bound on blox crates.
 
-The runtime polls three streams in priority order:
+The run loop polls streams in priority order:
 1. **Lifecycle stream** (`LifecycleCommand`: `Start`/`Reset`/`Stop`/`Ping`) — highest priority.
-2. **Abort mailbox** (`AbortCommand::Abort`) — serviced before domain messages so a stuck actor can be terminated promptly when it next yields. On receipt, the run loop reports `DispatchOutcome::Aborted` to the supervisor and self-terminates (no `dispatch()`, no callbacks).
+2. **Abort mailbox** (`AbortCommand::Abort`, only with `supervised_with_abort`) — serviced before domain messages so a stuck actor can be terminated promptly when it next yields. On receipt, the run loop reports `DispatchOutcome::Aborted` to the supervisor and self-terminates (no `dispatch()`, no callbacks).
 3. **Domain mailboxes** — polled only when no lifecycle or abort command is pending.
 
-After every dispatch, the runtime inspects `DispatchOutcome` and sends the corresponding `ChildLifecycleEvent` to the supervisor automatically. The `Aborted` outcome is synthesized by the run loop itself (not by `dispatch()`), since `Abort` bypasses the dispatch pipeline.
-
-The dynamic-runtime wrapper is `run` with `RunConfig::supervised_with_abort` (in `runtimes/bloxide-tokio/src/supervision.rs`) — renamed from the old `run (with RunConfig::supervised)_with_kill` to reflect that it listens on the abort mailbox rather than a kill mailbox. (The Embassy runtime uses a static equivalent.)
+After every dispatch, the run loop inspects `DispatchOutcome` and sends the corresponding `ChildLifecycleEvent` to the supervisor automatically. The `Aborted` outcome is synthesized by the run loop itself (not by `dispatch()`), since `Abort` bypasses the dispatch pipeline.
 
 ## `SupervisorEvent` and `SupervisorControl`
 

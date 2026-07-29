@@ -7,9 +7,11 @@
 extern crate alloc;
 
 use bloxide_child_management::ChildPolicy;
+#[cfg(feature = "dynamic")]
+use bloxide_core::capability::BloxRuntime;
 use bloxide_core::lifecycle::AbortCommand;
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap},
+    capability::DynamicChannelCap,
     lifecycle::{ChildLifecycleEvent, LifecycleCommand},
     messaging::ActorRef,
     StateMachine,
@@ -38,6 +40,9 @@ pub fn handle_work_done(pending: &mut u32, _work_done: &pool_messages::WorkDone)
 }
 
 /// Spawn a new worker via the supervisor, then set in-flight flag.
+// Action functions take concrete params by design (the codegen wrapper passes
+// individual context fields), so the argument count exceeds clippy's default.
+#[allow(clippy::too_many_arguments)]
 #[cfg(feature = "dynamic")]
 pub fn handle_spawn_worker<R: BloxRuntime>(
     self_id: bloxide_core::ActorId,
@@ -85,6 +90,7 @@ pub fn handle_spawn_worker_queued(
 
 /// Handle a SpawnedWorker reply: store worker refs, introduce peers,
 /// send DoWork, and process the next queued spawn if any.
+#[allow(clippy::too_many_arguments)]
 #[cfg(feature = "dynamic")]
 pub fn handle_spawned_worker<R: BloxRuntime>(
     self_id: bloxide_core::ActorId,

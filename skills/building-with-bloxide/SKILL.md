@@ -9,6 +9,13 @@ metadata:
 
 This guide teaches you how to build actors ("bloxes") using the Bloxide framework. It is self-contained and portable — copy it into any project that depends on bloxide crates.
 
+> **NO BACKWARDS COMPATIBILITY.** This project does not preserve backwards
+> compatibility — not for APIs, CLIs, config formats, terminology, or
+> architecture layers. When something changes, update every call site, every
+> doc, and every fixture in the same change, and delete the old form
+> completely. Never add legacy aliases, deprecation periods, compatibility
+> shims, feature bridges, or "kept for backwards compatibility" notes.
+
 ## What Bloxide Is
 
 Bloxide is a `no_std` hierarchical state machine (HSM) + actor messaging framework for Rust. Domain actors ("bloxes") implement the `MachineSpec` trait to define state topologies, event handlers, and context. Blox code is generic over `R: BloxRuntime` so the same state machine runs on Embassy (embedded) and Tokio (std) without modification.
@@ -179,10 +186,11 @@ pub use crate::generated::events::*;
 ```
 
 This generates:
-- `enum PingEvent { Msg(Envelope<PingPongMsg>) }`
+- `enum PingEvent { Msg(Envelope<PingPongMsg>), Lifecycle(LifecycleCommand) }`
 - `EventTag` impl with `MSG_TAG` constant
 - `msg_payload()` helper for extracting the inner message
 - `From<Envelope<PingPongMsg>>` for stream-to-event conversion
+- `LifecycleEvent` impl plus `start()` / `reset()` / `stop()` / `ping()` constructors for lifecycle commands
 
 ### State Topology
 
@@ -354,9 +362,12 @@ cargo install --path crates/tools/cargo-blox
 cargo blox new my-actor
 ```
 
-This scaffolds the crate structure:
-- `crates/messages/my-actor-messages/`
-- `crates/bloxes/my-actor/`
+This scaffolds:
+- `spec/bloxes/my-actor.md` — the spec document (from the template)
+- `crates/bloxes/my-actor/` — the blox crate skeleton (`blox.toml` + generated stubs)
+
+Message and context crates are scaffolded separately when needed
+(`cargo blox new-messages`, `cargo blox new-context`).
 
 ### Generating Boilerplate
 
@@ -384,17 +395,16 @@ cargo blox run      # blox generate + system codegen + cargo run
 
 ## Key Invariants
 
-1. **Blox crates are runtime-agnostic** — generic over `R: BloxRuntime`. Never import a runtime crate.
-2. **No runtime types in messages** — message enums contain plain data only.
-3. **Only leaf states as transition targets** — the engine asserts this.
-4. **Actions before guards** — side effects in `actions`, pure decision in `guard`.
-5. **Bubbling is implicit** — states with no matching rule bubble to parent automatically.
-6. **Bloxes never import impl crates** — concrete types come from the binary.
-7. **Lifecycle via dispatch** — actors receive `LifecycleCommand::Start/Reset/Stop` through `dispatch()`, not direct `start()` calls.
-8. **No `B` generic** — `Ctx` and `Spec` have no `B` type parameter. State fields are plain fields on the context struct.
-9. **No context traits** — there are no accessor or behavior traits. The context struct is a plain struct with plain fields. Action functions take concrete params (e.g. `fn(&mut u32)`), not trait-bounded generics.
-10. **No blox logic** — blox crates contain zero Rust logic. No `actions.rs`, no `Self::` methods, no logging.
-11. **No `bloxide-log` in blox crates** — logging has been ripped out of blox crates. Never add `blox_log_*!` calls or `bloxide-log` dependency to a blox crate.
+The canonical invariant list lives in `AGENTS.md` → "Key Invariants". Read it
+before writing any Rust code — violating an invariant silently breaks the
+architecture. The most relevant ones when creating a blox:
+
+- Blox crates are generic over `R: BloxRuntime`; never import a runtime crate
+- Message enums contain plain data only — no `ActorRef`
+- Only leaf states may be transition targets
+- `on_entry` and `on_exit` are infallible — `fn(&mut Ctx)`, no `Result`
+- Actions before guards; guards are pure and use direct field access
+- Bubbling is implicit — never add a catch-all rule that returns a parent
 
 ## Test Pattern
 
@@ -403,7 +413,7 @@ Use `TestRuntime` for unit tests without an executor. Tests use the blox-level s
 ```rust
 #[cfg(all(test, feature = "std"))]
 mod tests {
-    use bloxide_core::test_utils::TestRuntime;
+    use bloxide_test_runtime::TestRuntime;
     use bloxide_core::{spec::MachineSpec, MachineState, StateMachine};
     use counter_messages::{CounterMsg, Tick};
 

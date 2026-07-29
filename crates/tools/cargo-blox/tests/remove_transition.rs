@@ -45,7 +45,6 @@ name = \"Active\"
 
 [[topology.states]]
 name = \"Done\"
-terminal = true
 
 [[topology.transitions]]
 state = \"Idle\"

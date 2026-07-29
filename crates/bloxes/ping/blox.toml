@@ -16,20 +16,20 @@ imports = [
 crate = "bloxide_messaging"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
 [[context.uses]]
 crate = "bloxide_messaging"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
 # Timer ref — plain struct field
 [[context.uses]]
 crate = "bloxide_timer"
 field = "timer_ref"
 field_type = "ActorRef<TimerCommand, R>"
-role = "accessor"
+role = "ctor"
 
 # State fields (moved from B into Ctx)
 [[context.fields]]

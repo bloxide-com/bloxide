@@ -122,7 +122,9 @@ pub struct TransitionConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct GuardConfig {
-    /// Guard condition expression, e.g. "ctx.round() >= MAX_ROUNDS".
+    /// Guard condition expression, e.g. "ctx.round >= MAX_ROUNDS".
+    /// `ctx` is `&Ctx` — direct field access, no accessor methods.
+    /// Use "_" for an explicit wildcard fallback arm.
     pub condition: String,
     /// Target when guard passes: a state name, or "stay", "reset", "stop", "fail".
     pub target: String,
@@ -153,9 +155,8 @@ pub struct StateConfig {
 pub struct ContextConfig {
     pub name: String,
     pub generics: Option<String>,
-    pub actions_crate: Option<String>,
     /// Extra `where`-clause predicates appended to the `MachineSpec` impl.
-    /// e.g. `["B: Default", "B::Round: Into<u32>"]`
+    /// e.g. `["R: SomeExtraBound"]`
     #[serde(default)]
     pub extra_where: Vec<String>,
     /// Body of `on_init_entry` as a raw string (inserted verbatim).
@@ -172,9 +173,9 @@ pub struct ContextConfig {
     pub imports: Vec<String>,
     /// Composable context crate declarations.
     ///
-    /// Each entry pulls in one or more traits from an external crate and
-    /// optionally contributes fields to the generated context struct.
-    /// See `spec/architecture/18-composable-context-crates.md`.
+    /// Each entry pulls in a field (or several) from an external crate into
+    /// the generated context struct.
+    /// See `spec/architecture/15-composable-context-crates.md`.
     #[serde(default)]
     pub uses: Vec<ContextUse>,
 
@@ -337,8 +338,8 @@ pub struct ContextUse {
     /// Field type for single-field context crates (e.g. `"ActorRef<PingPongMsg, R>"`).
     pub field_type: Option<String>,
 
-    /// Field role: `"accessor"`, `"ctor"`, or `"state"`.
-    /// Controls how the codegen emits the field and attributes.
+    /// Field role: `"ctor"` (constructor parameter) or `"state"`
+    /// (zero-initialized state field). These are the only values.
     pub role: Option<String>,
 
     /// Sub-fields for multi-field context crates.

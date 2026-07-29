@@ -19,14 +19,14 @@ stateDiagram-v2
     Ready --> Ready : PingPongMsg::Ping [NoTransition, sends PingPongMsg::Pong]
 ```
 
-    > `[Init]` is engine-implicit (not in the `PongState` enum). The actor enters Init at construction and waits. `dispatch(PongEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`. `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` returns to Init.
+    > `[Init]` is engine-implicit (not in the `PongState` enum). The actor enters Init at construction and waits. `dispatch(PongEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`. `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` goes **directly** to `initial_state()` (Ready) — it skips Init and `on_init_entry` does NOT fire.
 > `Ready` is the only user-declared state and is a leaf. `Ready → Ready` is `Stay`, not a self-transition — `on_entry` does not fire.
 
 ## States
 
 | State | Kind | Description |
 |-------|------|-------------|
-| `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` logs "reset" |
+| `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` is the default no-op (Pong has no state fields) |
 | `Ready` | leaf | Actively responding to pings; stays here indefinitely |
 
 ## Events
@@ -36,7 +36,7 @@ stateDiagram-v2
 | `PingPongMsg::Ping(_)` | `Ready` | `Stay` | sends `PingPongMsg::Pong` via `send_pong` action |
 | any unhandled | root (no rules) | dropped | none |
 
-Lifecycle control (`start`, `reset`) is handled by the runtime — these do not appear as events.
+Lifecycle commands (`Start`, `Reset`, `Stop`, `Ping`) arrive as `PongEvent::Lifecycle(...)` events and are intercepted by the engine at the VirtualRoot level — they are never matched against state transition rules.
 
 ## Context
 
@@ -73,36 +73,44 @@ The runtime notifies the supervisor of lifecycle events (`Started`, `Reset`) aut
 
 | State | on_entry | on_exit |
 |-------|----------|---------|
-| `[Init]` (engine) | logs "reset" via `blox_log_info!` | — |
+| `[Init]` (engine) | — (default no-op) | — |
 | `Ready` | — | — |
 
-The response message is sent inside the transition action `reply_pong_action`, defined as a method on `PongSpec<R>` in the blox crate. It extracts the `Ping` payload and delegates to the `send_pong` generic function from `bloxide-messaging`. The action is referenced from the `[[topology.transitions]]` block in the blox's `blox.toml`.
+The response message is sent inside the transition action `reply_pong_action`
+(fn `send_pong` from `bloxide-messaging`), declared in `[[context.actions]]` in
+`blox.toml` with `event_payload = "ping"` — it extracts the `Ping` payload and
+echoes the round back to `peer_ref`. There are no logging actions (invariant #15).
 
 ## Acceptance Criteria
 
-- [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`; runtime emits `ChildLifecycleEvent::Started`
-- [x] `PingPongMsg::Ping(Ping { round: n })` in `Ready` sends `PingPongMsg::Pong(Pong { round: n })` to Ping and returns `Stay`
+Blox-crate unit tests run against the blox-level **stub** spec (per invariant #18);
+they verify topology and lifecycle semantics, not action side effects.
+
+- [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`
+- [x] `PingPongMsg::Ping(Ping { round: n })` in `Ready` returns `Stay` (does not leave `Ready`)
+- [x] Multiple pings in sequence all stay in `Ready`
 - [x] `Ready::on_entry` does NOT fire on `PingPongMsg::Ping` (it is `Stay`, not a self-transition)
-- [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` goes directly to `initial_state()` (Ready); `on_init_entry` does NOT fire (Reset skips Init); runtime emits `ChildLifecycleEvent::Started`
+- [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` goes directly to `initial_state()` (Ready); `on_init_entry` does NOT fire
 - [x] Unknown events bubble to root (no root rules) and are silently dropped
 - [x] Pong has no round counter — it is stateless with respect to round tracking
 - [x] Pong has no `Guard::Stop` condition — it responds indefinitely until the supervisor stops it
-- [x] When `send_pong` fails (peer channel full), machine transitions to `Error`; `is_error(&PongState::Error)` returns `true`
 
 ## Implementation Notes
 
 - The round echo (`Pong { round: n }` echoes the same `n`) is intentional: Pong is a mirror.
 - `try_send` is used (not `send`) because `on_event` runs synchronously inside dispatch.
 - Pong does not know when the exchange ends — it will keep responding to pings indefinitely. When Ping's guard returns `Guard::Stop`, it self-suspends to `Init` and simply stops sending, and Pong's mailbox goes quiet.
-- The blox crate only imports `bloxide-messaging` for the `send_pong` function. Logging, when enabled, comes from `bloxide-log` feature flags selected by the wiring crate.
+- The blox crate only imports `bloxide-messaging` for the `send_pong` action function. It does NOT depend on `bloxide-log` (invariant #15).
 - See `spec/architecture/08-supervision.md` for how the runtime manages lifecycle.
 - See `spec/architecture/12-action-crate-pattern.md` for the full four-layer architecture.
 
 ## Acceptance Criteria → Test Mapping
 
-| Acceptance Criterion | Test Function | File |
-|---|---|---|
-| `dispatch(LifecycleCommand::Start)` exits Init → Ready | `test_start_enters_ready` | `tests.rs` |
-| Ping in Ready triggers send_pong → stay | `test_ping_sends_pong` | `tests.rs` |
-| send_pong failure → Error | `test_send_failure` | `tests.rs` |
-| `is_error(Error)` returns true | (inline assertion) | `tests.rs` |
+All tests live in `crates/bloxes/pong/src/tests.rs` and use `TestRuntime`:
+
+| Acceptance Criterion | Test Function |
+|---|---|
+| `dispatch(LifecycleCommand::Start)` exits Init → Ready | `start_enters_ready` |
+| Ping in Ready → Stay | `ping_in_ready_stays_in_ready` |
+| Repeated pings stay in Ready | `multiple_pings_stay_in_ready` |
+| Reset → initial_state() directly | `terminate_resets_to_initial_state` |

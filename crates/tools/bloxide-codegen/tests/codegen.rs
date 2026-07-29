@@ -474,12 +474,10 @@ name = "Counter"
 
 [context]
 name = "CounterCtx"
-generics = "<B: CountsTicks>"
-actions_crate = "counter_actions"
 
-[[context.uses]]
-crate = "blox_ctx_ticks"
-trait = "CountsTicks"
+[[context.fields]]
+name = "count"
+type = "u32"
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -504,37 +502,33 @@ name = "Ping"
 
 [context]
 name = "PingCtx"
-generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
-actions_crate = "ping_pong_actions"
+generics = "<R: BloxRuntime>"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasPeerRef<R, PingPongMsg>"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasSelfRef<R, PingPongMsg>"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
 [[context.uses]]
 crate = "bloxide_timer"
-trait = "HasTimerRef<R>"
 field = "timer_ref"
 field_type = "ActorRef<TimerCommand, R>"
-role = "accessor"
+role = "ctor"
 
-[[context.uses]]
-crate = "blox_ctx_current_timer"
-trait = "HasCurrentTimer"
+[[context.fields]]
+name = "current_timer"
+type = "Option<TimerId>"
 
-[[context.uses]]
-crate = "blox_ctx_rounds"
-trait = "CountsRounds"
+[[context.fields]]
+name = "round"
+type = "u32"
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -547,11 +541,9 @@ trait = "CountsRounds"
     let content = &ctx_file.1;
 
     // Plain struct — no #[derive(BloxCtx)], no delegate macros, no behavior field.
-    assert!(
-        content.contains("pub struct PingCtx<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>")
-    );
+    assert!(content.contains("pub struct PingCtx<R: BloxRuntime>"));
     assert!(content.contains("use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef}"));
-    // Fields from accessor uses (role = "accessor" → ctor fields)
+    // Fields from uses (role = "ctor" → constructor params)
     assert!(content.contains("pub peer_ref: ActorRef<PingPongMsg, R>"));
     assert!(content.contains("pub self_ref: ActorRef<PingPongMsg, R>"));
     assert!(content.contains("pub timer_ref: ActorRef<TimerCommand, R>"));
@@ -561,18 +553,18 @@ trait = "CountsRounds"
 }
 
 #[test]
-fn test_generate_ctx_actions_crate_inference() {
+fn test_generate_ctx_generics_passthrough() {
     let toml = r#"
 [actor]
 name = "Counter"
 
 [context]
 name = "CounterCtx"
-generics = "<B: CountsTicks>"
+generics = "<R: BloxRuntime>"
 
-[[context.uses]]
-crate = "blox_ctx_ticks"
-trait = "CountsTicks"
+[[context.fields]]
+name = "count"
+type = "u32"
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -584,41 +576,36 @@ trait = "CountsTicks"
         .expect("ctx.rs missing");
     let content = &ctx_file.1;
 
-    // The codegen now emits a plain struct; the old crate-name inference
-    // for delegatable traits no longer applies.
-    assert!(content.contains("pub struct CounterCtx<B: CountsTicks>"));
+    // The free-form generics string is passed through verbatim.
+    assert!(content.contains("pub struct CounterCtx<R: BloxRuntime>"));
     assert!(content.contains("pub self_id: ::bloxide_core::ActorId"));
 }
 
 #[test]
-fn test_generate_ctx_uses_single_field_accessor() {
+fn test_generate_ctx_uses_single_field_ctor() {
     let toml = r#"
 [actor]
 name = "Ping"
 
 [context]
 name = "PingCtx"
-generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
-actions_crate = "ping_pong_actions"
+generics = "<R: BloxRuntime>"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasPeerRef<R, PingPongMsg>"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasSelfRef<R, PingPongMsg>"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
-[[context.uses]]
-crate = "blox_ctx_rounds"
-trait = "CountsRounds"
-
+[[context.fields]]
+name = "round"
+type = "u32"
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -630,10 +617,10 @@ trait = "CountsRounds"
     let content = &ctx_file.1;
 
     // Plain struct — no #[derive(BloxCtx)], no #[provides], no delegate macros.
-    assert!(content.contains("pub struct PingCtx"));
+    assert!(content.contains("pub struct PingCtx<R: BloxRuntime>"));
     assert!(content.contains("pub self_id: ::bloxide_core::ActorId"));
 
-    // Single-field accessor fields from uses (role = "ctor" → constructor params)
+    // Single-field uses with role = "ctor" → constructor params
     assert!(content.contains("pub peer_ref: ActorRef<PingPongMsg, R>"));
     assert!(content.contains("pub self_ref: ActorRef<PingPongMsg, R>"));
 
@@ -660,12 +647,10 @@ message_path = "counter_messages::CounterMsg"
 
 [context]
 name = "CounterCtx"
-generics = "<B: CountsTicks>"
-actions_crate = "counter_actions"
 
-[[context.uses]]
-crate = "blox_ctx_ticks"
-trait = "CountsTicks"
+[[context.fields]]
+name = "count"
+type = "u32"
 
 [topology]
 
@@ -675,7 +660,6 @@ initial = true
 
 [[topology.states]]
 name = "Done"
-terminal = true
 "#;
 
     let config: BloxConfig = toml::from_str(toml).expect("parse failed");
@@ -714,23 +698,21 @@ message_path = "ping_pong_messages::PingPongMsg"
 
 [context]
 name = "PingCtx"
-generics = "<R: BloxRuntime, B: HasCurrentTimer + CountsRounds>"
-actions_crate = "ping_pong_actions"
+generics = "<R: BloxRuntime>"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasPeerRef<R, PingPongMsg>"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
-[[context.uses]]
-crate = "blox_ctx_current_timer"
-trait = "HasCurrentTimer"
+[[context.fields]]
+name = "current_timer"
+type = "Option<TimerId>"
 
-[[context.uses]]
-crate = "blox_ctx_rounds"
-trait = "CountsRounds"
+[[context.fields]]
+name = "round"
+type = "u32"
 
 [topology]
 
@@ -746,10 +728,6 @@ initial = true
 [[topology.states]]
 name = "Paused"
 parent = "Operating"
-
-[[topology.states]]
-name = "Done"
-terminal = true
 
 [[topology.states]]
 name = "Error"
@@ -900,7 +878,6 @@ initial = true
 
 [[topology.states]]
 name = "Done"
-terminal = true
 
 [[topology.transitions]]
 state = "Ready"
@@ -969,7 +946,6 @@ initial = true
 
 [[topology.states]]
 name = "Done"
-terminal = true
 
 [[topology.entry]]
 state = "Waiting"
@@ -1031,7 +1007,6 @@ name = "Active"
 
 [[topology.states]]
 name = "AllDone"
-terminal = true
 
 [[topology.transitions]]
 state = "Idle"
@@ -1046,7 +1021,7 @@ target = "stay"
 actions = ["handle_work_done"]
 
 [[topology.transitions.guards]]
-condition = "ctx.pending() == 0"
+condition = "ctx.pending == 0"
 target = "AllDone"
 "#;
 
@@ -1142,7 +1117,6 @@ initial = true
 
 [[topology.states]]
 name = "Done"
-terminal = true
 
 [[topology.transitions]]
 state = "Ready"
@@ -1167,7 +1141,7 @@ target = "Done"
 }
 
 #[test]
-fn test_parse_context_uses_single_field_accessor() {
+fn test_parse_context_uses_single_field_ctor() {
     let toml = r#"
 [actor]
 name = "Ping"
@@ -1178,14 +1152,12 @@ generics = "<R: BloxRuntime>"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasPeerRef<R, PingPongMsg>"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
 crate = "bloxide_messaging"
-trait = "HasSelfRef<R, PingPongMsg>"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"

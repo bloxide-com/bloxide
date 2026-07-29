@@ -101,7 +101,7 @@ cargo blox add-transition <BLOX_NAME> --state <STATE> --event <EVENT> --target <
 **Guard syntax:** `--guard "<condition>:<target>"` where condition is a Rust expression and target is a state name. Multiple guards are added in order. Example:
 
 ```
---guard "ctx.spawn_in_flight:Spawning" --guard "ctx.pending() == 0:AllDone"
+--guard "ctx.spawn_in_flight:Spawning" --guard "ctx.pending == 0:AllDone"
 ```
 
 **Dedup key:** `state` + `event` pair. If this pair already exists in the blox's transitions, exit code 5 (conflict) unless `--if-not-exists`.
@@ -142,7 +142,7 @@ condition = "ctx.spawn_in_flight || !ctx.spawn_queue.is_empty()"
 target = "Spawning"
 
 [[topology.transitions.guards]]
-condition = "ctx.pending() == 0 && !ctx.worker_refs().is_empty()"
+condition = "ctx.pending == 0 && !ctx.worker_refs.is_empty()"
 target = "AllDone"
 ```
 
@@ -296,7 +296,7 @@ Active      PoolMsg::WorkDone(_)          stay        handle_work_done          
     "actions": ["handle_spawned_worker"],
     "guards": [
       {"condition": "ctx.spawn_in_flight || !ctx.spawn_queue.is_empty()", "target": "Spawning"},
-      {"condition": "ctx.pending() == 0 && !ctx.worker_refs().is_empty()", "target": "AllDone"}
+      {"condition": "ctx.pending == 0 && !ctx.worker_refs.is_empty()", "target": "AllDone"}
     ],
     "feature": "dynamic"
   }

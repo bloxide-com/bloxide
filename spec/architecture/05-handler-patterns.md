@@ -48,13 +48,14 @@ No side effects. The event itself is the complete signal.
 
 ```toml
 [[topology.transitions]]
-pattern = "MyEvent::Foo(_)"
-to = "Bar"
+state = "Foo"
+event = "MyEvent::Go(_)"
+target = "Bar"
 ```
 
 Use when: the event variant alone determines the next state, with no context inspection needed.
 
-**Example**: `PingEvent::Msg(PingPongMsg::Resume)` always transitions to `Active`.
+**Example**: `Ping`'s `Paused` state receives `PingPongMsg::Resume(_)` and always transitions to `Active`.
 
 ---
 
@@ -64,8 +65,9 @@ Match and absorb the event. Prevents bubbling to the parent state.
 
 ```toml
 [[topology.transitions]]
-pattern = "MyEvent::Foo(_)"
-to = "stay"
+state = "Operating"
+event = "MyEvent::Foo(_)"
+target = "stay"
 ```
 
 Use when: a parent composite state should silence an event that a child state doesn't handle.
@@ -80,9 +82,10 @@ Side effects with no state change. The event is handled locally.
 
 ```toml
 [[topology.transitions]]
-pattern = "PingPongMsg::Ping(ping)"
-actions = ["reply_pong_action"]
-to = "stay"
+state = "Ready"
+event = "PingPongMsg::Ping(ping)"
+actions = ["send_pong"]
+target = "stay"
 ```
 
 Use when: an event triggers side effects but no state change (e.g., fire-and-forget response).
@@ -97,28 +100,27 @@ Side effects followed by a conditional transition. The most common pattern.
 
 ```toml
 [[topology.transitions]]
-pattern = "PingPongMsg::Pong(pong)"
-actions = ["log_pong_received", "forward_ping"]
+state = "Active"
+event = "PingPongMsg::Pong(pong)"
+target = "Active"  # fallback when no guard condition matches
+actions = ["forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "results.any_failed()"
-  to = "Error"
+  target = "Error"
 
   [[topology.transitions.guards]]
   condition = "ctx.round >= MAX_ROUNDS as u32"
-  to = "stop"
+  target = "stop"
 
   [[topology.transitions.guards]]
   condition = "ctx.round == PAUSE_AT_ROUND as u32"
-  to = "Paused"
-
-  [[topology.transitions.guards]]
-  to = "Active"
+  target = "Paused"
 ```
 
 Use when: context is updated or messages are sent, and the resulting context (or action results) determines the next state.
 
-**Example**: `Ping`'s `Active` state logs the round and sends the next ping (`forward_ping`), then guards on `results.any_failed()` first (error priority), then round counters to decide between `Error`, `Stop` (self-suspend), `Paused`, or self-transition back to `Active`.
+**Example**: `Ping`'s `Active` state sends the next ping (`forward_ping`), then guards on `results.any_failed()` first (error priority), then round counters to decide between `Error`, `Stop` (self-suspend), `Paused`, or self-transition back to `Active`.
 
 ---
 
@@ -128,14 +130,13 @@ No side effects. The guard reads context to decide the transition.
 
 ```toml
 [[topology.transitions]]
-pattern = "MyEvent::Tick(_)"
+state = "Waiting"
+event = "MyEvent::Tick(_)"
+target = "stay"  # fallback when no guard condition matches
 
   [[topology.transitions.guards]]
   condition = "ctx.deadline_elapsed"
-  to = "Timeout"
-
-  [[topology.transitions.guards]]
-  to = "stay"
+  target = "Timeout"
 ```
 
 Use when: context state (not the event) determines the transition, and the event is merely a trigger.
@@ -181,20 +182,18 @@ Since `Guard::Reset` is available in any transition rule, actors can self-restar
 # Supervisor's ShuttingDown state: reset when all children have stopped
 [[topology.transitions]]
 state = "ShuttingDown"
-pattern = "SupervisorEvent::Child(ChildLifecycleEvent::Stopped { .. })"
+event = "SupervisorEvent::Child(ChildLifecycleEvent::Stopped { .. })"
+target = "stay"  # fallback
 actions = ["record_stopped"]
 
   [[topology.transitions.guards]]
   condition = "ctx.all_children_stopped()"
-  to = "reset"
-
-  [[topology.transitions.guards]]
-  to = "stay"
+  target = "reset"
 
 [[topology.transitions]]
 state = "ShuttingDown"
-pattern = "SupervisorEvent::Child(_)"
-to = "stay"
+event = "SupervisorEvent::Child(_)"
+target = "stay"
 ```
 
 The `reset` target in a `[[topology.transitions]]` entry produces `Guard::Reset`. The full exit chain is guaranteed: `ShuttingDown::on_exit` fires, then `on_entry` for `initial_state()` (Running). The runtime observes `DispatchOutcome::Started(Running)` and emits `ChildLifecycleEvent::Started`. The supervisor self-restarts by re-entering `Running` and calling `start_children` to send `Start` to all children.
@@ -276,12 +275,13 @@ An actor that has completed its work can self-suspend by returning `Guard::Stop`
 ```toml
 [[topology.transitions]]
 state = "Active"
-pattern = "PingPongMsg::Pong(_)"
-actions = ["log_final_pong"]
+event = "PingPongMsg::Pong(_)"
+target = "stay"  # fallback
+actions = ["forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "ctx.round >= MAX_ROUNDS"
-  to = "stop"
+  target = "stop"
 ```
 
 The `stop` target in a `[[topology.transitions]]` entry produces `Guard::Stop`. The full exit chain is guaranteed, then `on_init_entry` fires for cleanup. The actor sits suspended in `Init`; the run loop stays alive (only `Abort` ends the task). The supervisor sees `Stopped` and can later send `Start` to resume.
@@ -298,14 +298,12 @@ Self-transition with a counter guard. The `Active` state increments a counter in
 # State on_entry increments ctx.attempts (via context crate function)
 [[topology.transitions]]
 state = "Active"
-pattern = "MyMsg::Timeout(_)"
+event = "MyMsg::Timeout(_)"
+target = "Active"  # fallback: self-transition retries
 
   [[topology.transitions.guards]]
   condition = "ctx.attempts >= MAX_ATTEMPTS"
-  to = "Failed"
-
-  [[topology.transitions.guards]]
-  to = "Active"  # self-transition
+  target = "Failed"
 ```
 
 Use when: the blox retries an operation a fixed number of times before giving up.
@@ -319,55 +317,66 @@ The patterns above are expressed in `blox.toml` as `[[topology.transitions]]` en
 ```toml
 # Pure Transition
 [[topology.transitions]]
-pattern = "MyEvent::Foo(_)"
-to = "Bar"
+state = "Foo"
+event = "MyEvent::Go(_)"
+target = "Bar"
 
 # Sink (Absorb)
 [[topology.transitions]]
-pattern = "MyEvent::Foo(_)"
-to = "stay"
+state = "Operating"
+event = "MyEvent::Foo(_)"
+target = "stay"
 
 # Action-Then-Stay
 [[topology.transitions]]
-pattern = "MyMsg::Ping(ping)"
-actions = ["reply_pong_action"]
-to = "stay"
+state = "Ready"
+event = "MyMsg::Ping(ping)"
+target = "stay"
+actions = ["send_pong"]
 
-# Action-Then-Guard
+# Action-Then-Guard — transition-level target is the fallback
 [[topology.transitions]]
-pattern = "MyMsg::Pong(pong)"
-actions = ["log_pong", "forward_ping"]
+state = "Active"
+event = "MyMsg::Pong(pong)"
+target = "Active"  # fallback when no guard condition matches
+actions = ["forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "results.any_failed()"
-  to = "Error"
+  target = "Error"
 
   [[topology.transitions.guards]]
-  condition = "ctx.round() >= MAX"
-  to = "stop"
+  condition = "ctx.round >= MAX"
+  target = "stop"
 
-  [[topology.transitions.guards]]
-  to = "Active"
-
-# Reset (self-terminate) — available in both state-scope and root-scope rules
+# Reset (self-restart) — available in both state-scope and root-scope rules
 [[topology.transitions]]
-pattern = "MyEvent::Shutdown(_)"
-to = "reset"
+state = "Running"
+event = "MyEvent::Shutdown(_)"
+target = "reset"
 
-# Action-Then-Reset-Guard
+# Action-Then-Reset-Guard — explicit wildcard guard as the last arm
 [[topology.transitions]]
-pattern = "MyEvent::ChildDone(_)"
+state = "ShuttingDown"
+event = "MyEvent::ChildDone(_)"
+target = "stay"
 actions = ["record_child_done"]
 
   [[topology.transitions.guards]]
-  condition = "ctx.all_done()"
-  to = "reset"
+  condition = "ctx.all_done"
+  target = "reset"
 
   [[topology.transitions.guards]]
-  to = "stay"
+  condition = "_"
+  target = "stay"
 ```
 
-In `guards = [{ condition = "...", target = "..." }]` entries, the condition expression sees `ctx` as `&Ctx` (read-only — no mutation possible) and `results` as `&ActionResults`.
+Every `[[topology.transitions]]` entry requires `state`, `event`, and `target`.
+When `guards` are present, the transition-level `target` is the fallback arm
+(taken when no guard condition matches); a last guard with `condition = "_"` is
+an explicit wildcard fallback (see `crates/bloxes/counter/blox.toml`).
+In guard conditions, `ctx` is `&Ctx` (read-only — direct field access, no mutation)
+and `results` is `&ActionResults`.
 In `actions = ["fn1", "fn2"]` lists, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.
 The `reset` target triggers the full LCA exit chain (leaf → root) followed by `on_entry` for `initial_state()`. The `stop` target triggers the full exit chain plus `on_init_entry` (the actor enters Init).
 

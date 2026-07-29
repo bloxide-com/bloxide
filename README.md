@@ -24,7 +24,7 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 
 - Read [AGENTS.md](AGENTS.md) for the three-layer principle, four-layer application structure, and two-tier trait system in one place.
 - Use [skills/building-with-bloxide/SKILL.md](skills/building-with-bloxide/SKILL.md) as the step-by-step build workflow.
-- Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the API reference while you build (being updated for bloxide-codegen workflow).
+- Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the API reference while you build.
 - For the smallest runnable app, start with `cargo run -p tokio-minimal-demo` (now fully four-layered via `counter-*` crates).
 
 ---
@@ -77,9 +77,9 @@ The blox crates (`PingSpec`, `PongSpec`) are generic over `R: BloxRuntime` — t
 ```
 bloxide/
 ├── crates/            # framework + layered application crates
-│   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, KillCapability, std-gated TestRuntime
+│   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, KillCapability, run/RunConfig
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
-│   ├── bloxide-macros/    # proc macros: #[blox_event]
+│   ├── bloxide-macros/    # proc macros: #[blox_event], event!, blox_messages!, EventTag, channels!
 │   ├── bloxide-messaging/ # messaging helpers: send_ping, broadcast_to_peers
 │   ├── bloxide-peers/     # peer introduction: PeerCtrl, introduce_peers
 │   ├── bloxide-child-management/ # reusable child tracking: ChildGroup, ChildEntry, ChildPhase
@@ -87,15 +87,16 @@ bloxide/
 │   ├── bloxide-spawn/     # spawn capability: SpawnCap, SpawnFn, SpawnOutput, ChildRegistrar
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
 │   ├── messages/          # shared message crates (ping-pong, pool, counter, bhsm-tst)
-│   ├── context/           # composable context crates (rounds, timer, task, workers, etc.)
+│   ├── context/           # composable context crates (blox-ctx-rounds, -current-timer, -pool-ref, -ticks)
 │   ├── bloxes/            # ping, pong, worker, pool, counter, bhsm-tst
 │   ├── impl/              # concrete behavior/factory crates for wiring demos
 │   └── tools/             # codegen and CLI tools
 │       ├── bloxide-codegen/ # TOML-driven code generator library
-│       └── cargo-blox/    # CLI: cargo blox generate / new / build / check / test / run
+│       └── cargo-blox/    # CLI (see QUICK_REFERENCE.md → "cargo blox Command Reference")
 ├── runtimes/          # runtime implementations
 │   ├── bloxide-embassy/   # Embassy runtime (embedded target)
-│   └── bloxide-tokio/     # Tokio runtime (std target)
+│   ├── bloxide-tokio/     # Tokio runtime (std target)
+│   └── bloxide-test-runtime/ # executor-free test runtime (TestRuntime)
 ├── apps/             # declarative wiring manifests + generated binaries
 │   ├── embassy-demo/
 │   ├── tokio-demo/
@@ -109,7 +110,7 @@ bloxide/
 │   └── bloxide-visualizer/  # browser-based state-machine visualizer
 ├── spec/              # architecture docs and per-blox specs
 │   ├── architecture/      # numbered design docs
-│   ├── bloxes/            # per-blox specs (ping, pong, pool, worker, counter)
+│   ├── bloxes/            # per-blox specs (ping, pong, pool, worker, counter, bhsm)
 │   └── templates/         # blox-spec template
 └── .github/workflows/ # CI: copyright, fmt, clippy, tests, rustdoc
 ```

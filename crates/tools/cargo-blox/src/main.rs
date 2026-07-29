@@ -13,9 +13,9 @@ mod lint;
 mod list_cmd;
 mod message_cmd;
 mod new;
-mod new_actions;
 mod new_all;
 mod new_binary;
+mod new_context;
 mod new_impl;
 mod new_messages;
 mod run;
@@ -94,12 +94,12 @@ enum BloxSubcommand {
         /// Messages crate dependency name (e.g. foo-messages)
         #[arg(long)]
         messages: Option<String>,
-        /// Actions crate dependency name (e.g. foo-actions)
+        /// Context crate dependency name (e.g. blox-ctx-foo)
         #[arg(long)]
-        actions: Option<String>,
+        context: Option<String>,
     },
-    /// Scaffold a new actions crate
-    NewActions { name: String },
+    /// Scaffold a new context crate (action functions)
+    NewContext { name: String },
     /// Scaffold a new impl crate for a blox
     NewImpl {
         name: String,
@@ -116,7 +116,7 @@ enum BloxSubcommand {
         #[arg(long, default_value = "tokio")]
         runtime: String,
     },
-    /// Scaffold all layers (messages, actions, blox, binary)
+    /// Scaffold all layers (messages, context, blox, binary)
     NewAll {
         name: String,
         /// Runtime to target (tokio or embassy)
@@ -236,9 +236,9 @@ fn main() -> anyhow::Result<()> {
             BloxSubcommand::New {
                 name,
                 messages,
-                actions,
-            } => new::new_blox(&name, messages.as_deref(), actions.as_deref()),
-            BloxSubcommand::NewActions { name } => new_actions::new_actions(&name),
+                context,
+            } => new::new_blox(&name, messages.as_deref(), context.as_deref()),
+            BloxSubcommand::NewContext { name } => new_context::new_context(&name),
             BloxSubcommand::NewImpl { name, blox } => new_impl::new_impl(&name, &blox),
             BloxSubcommand::NewMessages { name } => new_messages::new_messages(&name),
             BloxSubcommand::NewBinary { name, runtime } => new_binary::new_binary(&name, &runtime),

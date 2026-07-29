@@ -113,7 +113,7 @@ target = "stay"
 actions = ["handle_work_done"]
 
 [[topology.transitions.guards]]
-condition = "ctx.pending() == 0"
+condition = "ctx.pending == 0"
 target = "stop"
 ```
 
@@ -144,29 +144,27 @@ imports = [
 crate = "bloxide_messaging"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
 [[context.uses]]
 crate = "bloxide_messaging"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
-role = "accessor"
+role = "ctor"
 
 [[context.uses]]
 crate = "bloxide_timer"
 field = "timer_ref"
 field_type = "ActorRef<TimerCommand, R>"
-role = "accessor"
+role = "ctor"
 
 [[context.fields]]
 name = "current_timer"
-field_type = "Option<TimerId>"
-init = "None"
+type = "Option<TimerId>"
 
 [[context.fields]]
 name = "round"
-field_type = "u32"
-init = "0"
+type = "u32"
 ```
 
 `[context]` declares:
