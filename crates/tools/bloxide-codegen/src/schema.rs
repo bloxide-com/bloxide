@@ -105,7 +105,7 @@ pub struct TransitionConfig {
     pub state: String,
     /// Event pattern, e.g. "PingPongMsg::Ping(_)" or "PingPongMsg::A(_) | PingPongMsg::B(_)".
     pub event: String,
-    /// Target: a state name, or "stay", "reset", "stop", "fail".
+    /// Target: a state name, or "stay", "reset", "stop", "done", "fail".
     pub target: String,
     /// Action functions to call (function paths, e.g. "Self::forward_ping" or "send_pong").
     #[serde(default)]
@@ -126,7 +126,7 @@ pub struct GuardConfig {
     /// `ctx` is `&Ctx` — direct field access, no accessor methods.
     /// Use "_" for an explicit wildcard fallback arm.
     pub condition: String,
-    /// Target when guard passes: a state name, or "stay", "reset", "stop", "fail".
+    /// Target when guard passes: a state name, or "stay", "reset", "stop", "done", "fail".
     pub target: String,
 }
 

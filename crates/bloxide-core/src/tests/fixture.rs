@@ -83,6 +83,7 @@ pub enum TEvent {
     SelfLoop,
     Reset,
     TriggerErr,
+    Finish,
 }
 
 impl crate::event_tag::EventTag for TEvent {
@@ -97,6 +98,7 @@ impl crate::event_tag::EventTag for TEvent {
             TEvent::SelfLoop => 5,
             TEvent::Reset => 7,
             TEvent::TriggerErr => 8,
+            TEvent::Finish => 9,
         }
     }
 }
@@ -110,6 +112,7 @@ impl TEvent {
     pub const SELF_LOOP_TAG: u8 = 5;
     pub const RESET_TAG: u8 = 7;
     pub const TRIGGER_ERR_TAG: u8 = 8;
+    pub const FINISH_TAG: u8 = 9;
 }
 
 impl LifecycleEvent for TEvent {
@@ -151,7 +154,7 @@ impl MachineSpec for TSpec {
     }
 }
 
-pub static ROOT_RULES: [StateRule<TSpec>; 2] = [
+pub static ROOT_RULES: [StateRule<TSpec>; 3] = [
     StateRule {
         event_tag: TEvent::UNHANDLED_DEEP_TAG,
         matches: |ev| matches!(ev, TEvent::UnhandledDeep),
@@ -166,6 +169,12 @@ pub static ROOT_RULES: [StateRule<TSpec>; 2] = [
         matches: |ev| matches!(ev, TEvent::Reset),
         actions: &[],
         guard: |_, _, _| Guard::Reset,
+    },
+    StateRule {
+        event_tag: TEvent::FINISH_TAG,
+        matches: |ev| matches!(ev, TEvent::Finish),
+        actions: &[],
+        guard: |_, _, _| Guard::Done,
     },
 ];
 

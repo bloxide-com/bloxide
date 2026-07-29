@@ -140,6 +140,7 @@ impl<R: BloxRuntime> RunConfig<R> {
 /// - `exit_on_stop` is true and `DispatchOutcome::Stopped` is observed
 /// - `DispatchOutcome::Aborted` is observed (always exits)
 /// - `DispatchOutcome::Failed` is observed (always exits)
+/// - `DispatchOutcome::Done` is observed (always exits — clean self-termination)
 /// - Any polled stream returns `Poll::Ready(None)` (stream closed)
 ///
 /// When `exit_on_stop` is false (supervised actors), `Stopped` is NOT terminal —
@@ -192,7 +193,9 @@ pub async fn run<S, M, R>(
                             report_outcome::<S, R>(&outcome, actor_id, notify);
                         }
                         match &outcome {
-                            DispatchOutcome::Aborted | DispatchOutcome::Failed => {
+                            DispatchOutcome::Aborted
+                            | DispatchOutcome::Failed
+                            | DispatchOutcome::Done => {
                                 return Poll::Ready(LoopAction::Stop);
                             }
                             DispatchOutcome::Stopped if config.exit_on_stop => {
@@ -227,9 +230,9 @@ pub async fn run<S, M, R>(
                         report_outcome::<S, R>(&outcome, actor_id, notify);
                     }
                     match &outcome {
-                        DispatchOutcome::Aborted | DispatchOutcome::Failed => {
-                            Poll::Ready(LoopAction::Stop)
-                        }
+                        DispatchOutcome::Aborted
+                        | DispatchOutcome::Failed
+                        | DispatchOutcome::Done => Poll::Ready(LoopAction::Stop),
                         DispatchOutcome::Stopped if config.exit_on_stop => {
                             Poll::Ready(LoopAction::Stop)
                         }

@@ -43,7 +43,7 @@ kind = "entry"
 fields = ["self_id", "children:ref"]
 
 [[context.actions]]
-name = "handle_done_or_failed"
+name = "handle_stopped_or_failed"
 crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
@@ -88,6 +88,14 @@ crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["children:mut"]
+event_payload = "ev"
+
+[[context.actions]]
+name = "deregister_done"
+crate = "bloxide_child_management"
+module = "actions"
+kind = "transition"
+fields = ["children:mut", "pending:mut"]
 event_payload = "ev"
 
 [[context.actions]]
@@ -166,14 +174,14 @@ spec_imports = [
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
-actions = ["Self::handle_done_or_failed"]
+actions = ["Self::handle_stopped_or_failed"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { .. }))"
 target = "stay"
-actions = ["Self::handle_done_or_failed"]
+actions = ["Self::handle_stopped_or_failed"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 [[topology.transitions]]
@@ -199,6 +207,13 @@ state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Alive { .. }))"
 target = "stay"
 actions = ["Self::record_alive"]
+
+[[topology.transitions]]
+state = "Running"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))"
+target = "stay"
+actions = ["Self::deregister_done"]
+guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 [[topology.transitions]]
 state = "Running"
@@ -236,6 +251,13 @@ state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
 actions = ["Self::record_stopped"]
+guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+[[topology.transitions]]
+state = "ShuttingDown"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))"
+target = "stay"
+actions = ["Self::deregister_done"]
 guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
 
 [[topology.transitions]]

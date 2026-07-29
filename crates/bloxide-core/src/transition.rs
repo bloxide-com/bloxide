@@ -182,6 +182,12 @@ pub enum Guard<S: MachineSpec> {
     /// Reports `DispatchOutcome::Stopped` to the supervisor.
     /// Actor is suspended in Init and can be restarted with `Start` or `Reset`.
     Stop,
+    /// Self-terminate cleanly: fire the full exit chain + `on_init_entry`
+    /// (same cleanup ritual as `Stop`), then the task ENDS instead of
+    /// suspending. Reports `DispatchOutcome::Done` to the supervisor, which
+    /// deregisters the child — no restart policy triggered.
+    /// Use for normal completion; use `Stop` for suspend/resume.
+    Done,
     /// Error propagation. Go to user-defined `error_state()` if one exists,
     /// otherwise go to Init (firing exit chain + `on_init_entry`).
     /// Reports `DispatchOutcome::Failed` to the supervisor.

@@ -41,7 +41,7 @@ where
 ///
 /// Serves both the `Stopped` and `Failed` transition rules — the extracted
 /// payload is matched internally.
-pub fn handle_done_or_failed<R>(
+pub fn handle_stopped_or_failed<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
     child_notify: &ActorRef<ChildLifecycleEvent, R>,
@@ -121,6 +121,25 @@ where
 {
     if let ChildLifecycleEvent::Alive { child_id } = ev {
         children.handle_alive(*child_id);
+    }
+    ActionResult::Ok
+}
+
+/// Deregister a child that self-terminated cleanly (`ChildLifecycleEvent::Done`).
+///
+/// Done is normal completion: the entry is removed (no restart policy), and
+/// the group shutdown decision is recorded in `pending` so the managing blox
+/// can still progress to shutdown when the last child completes.
+pub fn deregister_done<R>(
+    children: &mut ChildGroup<R>,
+    pending: &mut ChildAction,
+    ev: &ChildLifecycleEvent,
+) -> ActionResult
+where
+    R: bloxide_core::capability::BloxRuntime,
+{
+    if let ChildLifecycleEvent::Done { child_id } = ev {
+        *pending = children.deregister(*child_id);
     }
     ActionResult::Ok
 }

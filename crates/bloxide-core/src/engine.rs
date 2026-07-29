@@ -160,6 +160,10 @@ pub enum DispatchOutcome<State> {
     /// Actor stopped to Init via LifecycleCommand::Stop.
     /// Exit chain and on_init_entry fired. Actor is suspended in Init.
     Stopped,
+    /// Actor self-terminated cleanly via Guard::Done.
+    /// Exit chain and on_init_entry fired (same cleanup as Stop), then the
+    /// run loop exits — the task ends. The supervisor deregisters the child.
+    Done,
     /// Actor aborted via AbortCommand on the abort mailbox.
     /// No callbacks fired — the run loop self-terminated cooperatively.
     /// This outcome is synthesized by the run loop, not by dispatch().
@@ -368,6 +372,13 @@ impl<S: MachineSpec> StateMachine<S> {
                 // Self-suspend: go to Init (fire exit chain + on_init_entry).
                 self.transition_to_init();
                 DispatchOutcome::Stopped
+            }
+            Guard::Done => {
+                // Clean self-termination: same cleanup ritual as Stop (exit
+                // chain + on_init_entry), but the outcome tells the run loop
+                // to end the task instead of suspending in Init.
+                self.transition_to_init();
+                DispatchOutcome::Done
             }
             Guard::Fail => {
                 // Error propagation: go to user-defined error_state() or Init.

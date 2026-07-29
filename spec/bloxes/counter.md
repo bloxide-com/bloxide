@@ -4,8 +4,8 @@
 
 The Counter actor is the simplest possible bloxide actor, designed for teaching the four-layer architecture. It:
 - Receives `Tick` messages and increments an internal counter
-- Self-suspends via `Guard::Stop` after a configurable number of ticks
-- Demonstrates: flat state topology, plain context struct, self-suspend via Guard::Stop
+- Self-terminates cleanly via `Guard::Done` after a configurable number of ticks
+- Demonstrates: flat state topology, plain context struct, clean self-termination via Guard::Done
 
 ## Crate Location
 
@@ -19,7 +19,7 @@ The Counter actor is the simplest possible bloxide actor, designed for teaching 
 ```mermaid
 stateDiagram-v2
     [*] --> Ready : dispatch(Start)
-    Ready --> [*] : CounterMsg::Tick [count >= DONE_AT_COUNT] : Guard::Stop
+    Ready --> [*] : CounterMsg::Tick [count >= DONE_AT_COUNT] : Guard::Done
 ```
 
 > `[Init]` is engine-implicit. `Ready` is a leaf state.
@@ -75,13 +75,13 @@ None — Counter is a sink actor.
 
 | Name | Value | Description |
 |------|-------|-------------|
-| `DONE_AT_COUNT` | 2 | Ticks required to trigger Guard::Stop |
+| `DONE_AT_COUNT` | 2 | Ticks required to trigger Guard::Done |
 
 ## Acceptance Criteria
 
 - [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`
 - [ ] `CounterMsg::Tick` in `Ready` with `count < DONE_AT_COUNT` stays in `Ready`
-- [ ] `CounterMsg::Tick` in `Ready` with `count >= DONE_AT_COUNT` triggers `Guard::Stop` (self-suspend to Init)
+- [ ] `CounterMsg::Tick` in `Ready` with `count >= DONE_AT_COUNT` triggers `Guard::Done` (clean self-termination: exit chain + on_init_entry, then the task ends)
 - [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Reset))` from any state exits states, enters `initial_state()` (Ready); `on_init_entry` does NOT fire; count reset to 0 via `Ready::on_entry`
 
 ## Acceptance Criteria → Test Mapping
@@ -90,7 +90,7 @@ None — Counter is a sink actor.
 |---|---|
 | `dispatch(LifecycleCommand::Start)` exits Init → Ready | `test_start_enters_ready()` |
 | Tick stays in Ready when count < threshold | `test_tick_in_ready_stays()` |
-| Tick triggers Guard::Stop at threshold | `test_tick_reaches_stopped()` |
+| Tick triggers Guard::Done at threshold | `test_tick_reaches_done()` |
 
 
 ## Context Crate Dependencies

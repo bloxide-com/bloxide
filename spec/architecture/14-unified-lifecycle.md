@@ -322,6 +322,28 @@ the actor's guard explicitly returns `Stop` to self-suspend. The supervisor
 sees `Stopped` and applies the child's `ChildPolicy` (e.g., `Reset` to restart,
 `Stop` to leave suspended).
 
+### Guard::Done
+
+When a state handler returns `Done`, the engine runs the **same cleanup
+ritual as `Stop`**:
+
+1. Runs `on_exit` for every state from the current leaf up to the root (the
+   full exit chain).
+2. Calls `on_init_entry` (for resource cleanup).
+3. Sets the current state to `Init`.
+4. Returns `DispatchOutcome::Done` from `dispatch()`.
+
+The difference is at the run loop: `Done` **always ends the task** (like
+`Failed`/`Aborted`), regardless of `exit_on_stop`. This is clean
+self-termination — the actor declares its work complete. `Done` is not a
+terminal *state* (there is still no `is_terminal`); it is a guard outcome
+that runs the Init cleanup ritual and then finishes the task.
+
+The supervisor sees `ChildLifecycleEvent::Done` and **deregisters the
+child** — no `ChildPolicy` restart is triggered, because Done is success,
+not a fault. Deregistration drops the child's refs. Use `Stop` for
+suspend/resume, `Done` for normal completion, `Fail` for faults.
+
 ### Guard::Fail
 
 When a state handler returns `Fail`, the engine:
@@ -356,8 +378,12 @@ pub enum DispatchOutcome<State> {
     Failed,
     /// Actor stopped to Init via LifecycleCommand::Stop or Guard::Stop.
     Stopped,
+    /// Actor self-terminated cleanly via Guard::Done (task ends).
+    Done,
     /// Actor aborted cooperatively via AbortCommand on abort mailbox.
     Aborted,
+    /// Actor was killed via KillCapability (external task destruction).
+    Killed,
     /// Actor responded to Ping.
     Alive,
 }
@@ -373,7 +399,9 @@ internal state-machine events that the supervisor does not need to see:
 | `Started(_)`              | `Started`             | Record child as running (covers both Start and Reset) |
 | `Failed`                  | `Failed`              | Apply `ChildPolicy` (reset, stop, abort, or kill) |
 | `Stopped`                 | `Stopped`             | Record child as suspended in Init; apply `ChildPolicy` if needed |
+| `Done`                    | `Done`                | Deregister child (clean completion — no restart policy) |
 | `Aborted`                 | `Aborted`             | `record_aborted()` — child permanently done  |
+| `Killed`                  | `Killed`              | `record_killed()` — child permanently dead   |
 | `Alive`                   | `Alive`               | Record child as responsive                   |
 | `NoRuleMatched`           | —                     | (not forwarded)                              |
 | `HandledNoTransition`     | —                     | (not forwarded)                              |
@@ -409,13 +437,21 @@ automatically by observing `DispatchOutcome` — no actor code sends them.
 pub enum ChildLifecycleEvent {
     Started { child_id: ActorId },  // child exited Init or was Reset (now operational)
     Stopped { child_id: ActorId },  // child self-stopped via Guard::Stop or LifecycleCommand::Stop (now in Init, suspended)
+    Done    { child_id: ActorId },  // child self-terminated cleanly via Guard::Done (task ended — deregister, no restart)
     Failed  { child_id: ActorId },  // child entered an error state (is_error)
     Aborted { child_id: ActorId },  // child was Aborted, task has ended (cooperative)
+    Killed  { child_id: ActorId },  // child was killed via KillCapability (external destruction)
     Alive   { child_id: ActorId },  // child responded to Ping (healthy)
 }
 ```
 
-> **Note**: The `Done` variant has been removed. In the new lifecycle model, actors no longer have terminal states. Instead, a guard returning `Guard::Stop` produces `DispatchOutcome::Stopped`, which the runtime maps to `ChildLifecycleEvent::Stopped`. The supervisor then applies the child's `ChildPolicy` (e.g., `Reset` to restart, `Stop` to suspend).
+> **Note**: `Done` was reintroduced in #138 as clean self-termination. It is
+> not a return to the old terminal-state model — there is still no
+> `is_terminal`. `Guard::Done` runs the same Init cleanup ritual as
+> `Guard::Stop` (exit chain + `on_init_entry`), but the run loop ends the task
+> instead of suspending. The supervisor deregisters the child; no
+> `ChildPolicy` restart fires. Use `Guard::Stop` for suspend/resume,
+> `Guard::Done` for normal completion.
 
 ## Related Docs
 

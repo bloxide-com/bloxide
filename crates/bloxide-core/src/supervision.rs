@@ -61,6 +61,9 @@ pub fn report_outcome<S, R>(
         DispatchOutcome::Stopped => {
             send(ChildLifecycleEvent::Stopped { child_id: actor_id });
         }
+        DispatchOutcome::Done => {
+            send(ChildLifecycleEvent::Done { child_id: actor_id });
+        }
         DispatchOutcome::Aborted => {
             send(ChildLifecycleEvent::Aborted { child_id: actor_id });
         }

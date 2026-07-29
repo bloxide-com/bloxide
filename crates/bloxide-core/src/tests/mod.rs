@@ -179,6 +179,32 @@ mod hsm_engine {
         assert!(matches!(m.current_state(), MachineState::State(TState::A)));
     }
 
+    // ── Guard::Done ─────────────────────────────────────────────────────────
+    //
+    // Guard::Done fires the same cleanup ritual as Stop (full exit chain for
+    // the current state + on_init_entry) but returns DispatchOutcome::Done,
+    // which tells the run loop to END the task instead of suspending in Init.
+
+    #[test]
+    fn done_from_deep_state_fires_exit_chain_and_init_entry() {
+        let mut m = machine_in_c();
+        let outcome = m.dispatch(TEvent::Finish);
+        // C is deep (Other/C): exit C, Other; then on_init_entry
+        assert_eq!(take_log(), vec!["C:exit", "Other:exit", "Init:entry"]);
+        assert!(matches!(outcome, DispatchOutcome::Done));
+        assert!(matches!(m.current_state(), MachineState::Init));
+    }
+
+    #[test]
+    fn done_from_shallow_state_fires_exit_and_init_entry() {
+        let mut m = machine_in_a();
+        let outcome = m.dispatch(TEvent::Finish);
+        // Full exit chain to VirtualRoot: exit A and its parent Top, then Init entry
+        assert_eq!(take_log(), vec!["A:exit", "Top:exit", "Init:entry"]);
+        assert!(matches!(outcome, DispatchOutcome::Done));
+        assert!(matches!(m.current_state(), MachineState::Init));
+    }
+
     // ── Lifecycle command dispatch from Init ─────────────────────────────────
 
     #[test]

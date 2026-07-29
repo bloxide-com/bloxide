@@ -479,6 +479,21 @@ impl<R: BloxRuntime> ChildGroup<R> {
             .all(|e| e.phase == ChildPhase::PermanentlyDone || e.stopped)
     }
 
+    /// Deregister a child that self-terminated cleanly
+    /// (`ChildLifecycleEvent::Done` — normal completion).
+    ///
+    /// The entry is removed from the group, dropping its refs so the child's
+    /// channels can close. No restart policy is applied — Done is success,
+    /// not a fault. Returns the group shutdown decision (like
+    /// `handle_done_or_failed`) so group shutdown still progresses when the
+    /// last registered child completes.
+    pub fn deregister(&mut self, child_id: ActorId) -> ChildAction {
+        if let Some(idx) = self.children.iter().position(|e| e.id == child_id) {
+            self.children.remove(idx);
+        }
+        self.check_shutdown()
+    }
+
     /// Reset all phases for a new lifecycle epoch.
     ///
     /// # Warning

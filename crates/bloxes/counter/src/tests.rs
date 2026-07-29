@@ -50,16 +50,19 @@ mod counter_tests {
     }
 
     #[test]
-    fn test_tick_reaches_stop() {
+    fn test_tick_reaches_done() {
         let mut machine = make_machine();
         machine.dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start));
 
-        // Manually set count to 1, then dispatch tick — guard sees count >= 2
-        // after stub action (which is a no-op in blox-level spec).
-        // Actually, the guard fires BEFORE actions in the current engine?
-        // Let's test with count = 2 directly.
+        // With count >= 2, the guard returns Guard::Done — the machine fires
+        // the exit chain + on_init_entry and reports DispatchOutcome::Done
+        // (clean self-termination; the run loop ends the task).
         machine.ctx_mut().count = 2;
-        machine.dispatch(CounterEvent::Msg(Envelope(0, CounterMsg::Tick(Tick {}))));
+        let outcome = machine.dispatch(CounterEvent::Msg(Envelope(0, CounterMsg::Tick(Tick {}))));
+        assert!(matches!(
+            outcome,
+            bloxide_core::engine::DispatchOutcome::Done
+        ));
         assert!(matches!(machine.current_state(), MachineState::Init));
     }
 

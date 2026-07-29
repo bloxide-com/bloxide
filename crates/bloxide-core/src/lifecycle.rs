@@ -19,7 +19,7 @@ pub enum AbortCommand {
 /// Lifecycle commands sent to actors via their lifecycle mailbox.
 /// Handled at VirtualRoot level, not in user state handlers.
 ///
-/// The four-level lifecycle model (`reset → stop → abort → kill`):
+/// The lifecycle model (`reset → stop → done → abort → kill`):
 ///
 /// | Command  | Through dispatch? | Callbacks                    | End state              |
 /// |----------|-------------------|------------------------------|------------------------|
@@ -28,6 +28,11 @@ pub enum AbortCommand {
 /// | `Stop`   | Yes               | Full exit + `on_init_entry`  | `Init` (suspended)     |
 /// | `Abort`  | No (mailbox)      | None                         | Task ends (cooperative) |
 /// | `Ping`   | Yes               | None                         | Unchanged               |
+///
+/// `Guard::Done` is the self-initiated clean exit: full exit chain +
+/// `on_init_entry` (same ritual as `Stop`), then the task ENDS. The
+/// supervisor deregisters the child — no restart policy. `Guard::Stop`
+/// suspends (restartable); `Guard::Done` terminates (completion).
 ///
 /// `Kill` is not a `LifecycleCommand` — it is a runtime capability
 /// (`KillCapability::kill(handle)`) that destroys the task externally.
@@ -68,6 +73,10 @@ pub enum ChildLifecycleEvent {
     /// The exit chain and `on_init_entry` fired. The child is in Init,
     /// suspended, and can be restarted with `Start`.
     Stopped { child_id: ActorId },
+    /// Child self-terminated cleanly via `Guard::Done` — normal completion.
+    /// The exit chain and `on_init_entry` fired, then the child's task ended.
+    /// The supervisor deregisters the child (no restart policy triggered).
+    Done { child_id: ActorId },
     /// Child was aborted via `AbortCommand` on the abort mailbox.
     /// No callbacks fired — the child's task self-terminated cooperatively.
     /// The task has ended; restarting requires respawning the task.

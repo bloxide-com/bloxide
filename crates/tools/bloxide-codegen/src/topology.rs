@@ -238,13 +238,15 @@ fn generate_matches_closure(
 }
 
 /// Resolve a target string to a Guard expression token stream.
-/// "stay" => Guard::Stay, "reset" => Guard::Reset, "fail" => Guard::Fail,
+/// "stay" => Guard::Stay, "reset" => Guard::Reset, "stop" => Guard::Stop,
+/// "done" => Guard::Done, "fail" => Guard::Fail,
 /// "StateName" => Guard::Transition(LeafState::new(StateEnum::StateName))
 fn target_to_guard(target: &str, state_enum_ident: &syn::Ident) -> proc_macro2::TokenStream {
     match target {
         "stay" => quote! { ::bloxide_core::transition::Guard::Stay },
         "reset" => quote! { ::bloxide_core::transition::Guard::Reset },
         "stop" => quote! { ::bloxide_core::transition::Guard::Stop },
+        "done" => quote! { ::bloxide_core::transition::Guard::Done },
         "fail" => quote! { ::bloxide_core::transition::Guard::Fail },
         state_name => {
             let ident = format_ident!("{}", state_name);
@@ -439,7 +441,7 @@ pub fn generate(
     }
 
     // Validate transition targets reference valid states
-    let valid_targets = ["stay", "reset", "stop", "fail"];
+    let valid_targets = ["stay", "reset", "stop", "done", "fail"];
     for trans in &config.transitions {
         if !name_to_index.contains_key(&trans.state) {
             anyhow::bail!("transition references unknown state '{}'", trans.state);

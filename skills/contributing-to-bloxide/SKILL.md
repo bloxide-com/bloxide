@@ -86,7 +86,7 @@ applies to framework code too. Framework-specific reminders:
 
 - `bloxide-core` stays `no_std` with zero OS/executor imports
 - Lifecycle commands flow through `dispatch()` at VirtualRoot level
-- `is_error` states report `Failed`; actors self-suspend via `Guard::Stop`
+- `is_error` states report `Failed`; actors self-suspend via `Guard::Stop` or self-terminate cleanly via `Guard::Done` (task ends, supervisor deregisters)
 - `KillCapability::kill` fires no callbacks — the task is dropped in-place
 
 ## Adding a Standard Library Crate

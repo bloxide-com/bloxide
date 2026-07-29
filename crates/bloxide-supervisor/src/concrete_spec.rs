@@ -48,7 +48,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 },
                 actions: &[|ctx, ev| {
                     if let Some(payload) = ev.child_payload() {
-                        bloxide_child_management::actions::handle_done_or_failed(
+                        bloxide_child_management::actions::handle_stopped_or_failed(
                             ctx.self_id,
                             &mut ctx.children,
                             &ctx.child_notify,
@@ -76,7 +76,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 },
                 actions: &[|ctx, ev| {
                     if let Some(payload) = ev.child_payload() {
-                        bloxide_child_management::actions::handle_done_or_failed(
+                        bloxide_child_management::actions::handle_stopped_or_failed(
                             ctx.self_id,
                             &mut ctx.children,
                             &ctx.child_notify,
@@ -166,6 +166,32 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     ActionResult::Ok
                 }],
                 guard: |_ctx, _results, _ev| Guard::Stay,
+            },
+            StateRule {
+                event_tag: SupervisorEvent::<R>::CHILD_TAG,
+                matches: |ev| {
+                    matches!(
+                        ev,
+                        SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))
+                    )
+                },
+                actions: &[|ctx, ev| {
+                    if let Some(payload) = ev.child_payload() {
+                        bloxide_child_management::actions::deregister_done(
+                            &mut ctx.children,
+                            &mut ctx.pending,
+                            payload,
+                        );
+                    }
+                    ActionResult::Ok
+                }],
+                guard: |ctx, _results, _ev| {
+                    if ctx.pending == ChildAction::BeginShutdown {
+                        Guard::Transition(LeafState::new(SupervisorState::ShuttingDown))
+                    } else {
+                        Guard::Stay
+                    }
+                },
             },
             StateRule {
                 event_tag: SupervisorEvent::<R>::CONTROL_TAG,
@@ -270,6 +296,32 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     if let Some(payload) = ev.child_payload() {
                         bloxide_child_management::actions::record_stopped(
                             &mut ctx.children,
+                            payload,
+                        );
+                    }
+                    ActionResult::Ok
+                }],
+                guard: |ctx, _results, _ev| {
+                    if ctx.all_children_stopped() {
+                        Guard::Stop
+                    } else {
+                        Guard::Stay
+                    }
+                },
+            },
+            StateRule {
+                event_tag: SupervisorEvent::<R>::CHILD_TAG,
+                matches: |ev| {
+                    matches!(
+                        ev,
+                        SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))
+                    )
+                },
+                actions: &[|ctx, ev| {
+                    if let Some(payload) = ev.child_payload() {
+                        bloxide_child_management::actions::deregister_done(
+                            &mut ctx.children,
+                            &mut ctx.pending,
                             payload,
                         );
                     }

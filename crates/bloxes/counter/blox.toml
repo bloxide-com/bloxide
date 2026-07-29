@@ -45,7 +45,7 @@ actions = ["Self::count_tick"]
 
 [[topology.transitions.guards]]
 condition = "ctx.count >= 2"
-target = "stop"
+target = "done"
 
 [[topology.transitions.guards]]
 condition = "_"

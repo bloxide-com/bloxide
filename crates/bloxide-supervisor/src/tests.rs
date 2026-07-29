@@ -447,3 +447,52 @@ fn register_dynamic_child_during_shutdown_still_starts_child() {
     );
     assert!(matches!(cmds[0], LifecycleCommand::Start));
 }
+
+// ──────────────────────────────────────────────────────────────
+// Done (clean self-termination) tests
+// ──────────────────────────────────────────────────────────────
+
+#[test]
+fn done_deregisters_child_without_restart() {
+    let (mut machine, mut receivers) =
+        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Reset]);
+    machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+    drain_start_commands(&mut receivers);
+
+    // Child reports Done (clean completion). WhenAnyDone → shutdown begins.
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    assert!(matches!(
+        outcome,
+        DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
+    ));
+
+    // No Reset is sent — Done deregisters, it is not a fault. The child was
+    // removed from the group, so ShuttingDown's stop_all sends nothing either.
+    let cmds = receivers[0].drain_payloads();
+    assert!(
+        cmds.is_empty(),
+        "Done must not trigger restart/stop, got {:?}",
+        cmds
+    );
+}
+
+#[test]
+fn done_last_child_completes_group_shutdown() {
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAllDone,
+        &[ChildPolicy::Stop, ChildPolicy::Stop],
+    );
+    machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+    drain_start_commands(&mut receivers);
+
+    // First Done: deregistered, but child 2 remains → still Running.
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 1 });
+    assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
+
+    // Second Done: last child deregistered → ShuttingDown.
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Done { child_id: 2 });
+    assert!(matches!(
+        outcome,
+        DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
+    ));
+}

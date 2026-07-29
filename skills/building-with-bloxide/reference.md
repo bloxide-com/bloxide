@@ -111,6 +111,7 @@ actions = ["Self::forward_ping"]
 - `target = "StateName"` — change state
 - `target = "stay"` — absorb event, keep state
 - `target = "stop"` — self-suspend (Guard::Stop)
+- `target = "done"` — clean self-termination (Guard::Done; task ends, supervisor deregisters)
 - `target = "reset"` — exit to Init
 - `[[topology.transitions.guards]]` — conditional decision (each guard has `condition` and `target`; the final guard without a `condition` is the fallback)
 

@@ -102,7 +102,7 @@ State fields are plain fields on the context struct. There is no `B` generic, no
 
 | Pattern | When to Use | Example |
 |---------|-------------|---------|
-| Flat FSM | Simple linear progression | Counter: Init → Ready → (Guard::Stop) |
+| Flat FSM | Simple linear progression | Counter: Init → Ready → (Guard::Done) |
 | Composite + Siblings | Related substates with shared logic | Ping: Operating → (Active, Paused) |
 | Hierarchical Cleanup | Parent on_exit cleans up children | Supervisor: Running → [child states] |
 
@@ -342,7 +342,7 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 - `*Msg` suffix (e.g. `PingPongMsg::Ping(_)`) → `msg_payload()` closure
 - `*Ctrl` suffix (e.g. `PeerCtrl::AddPeer(_)`) → `ctrl_payload()` closure
 
-**Target vocabulary**: `"StateName"` → `Guard::Transition(LeafState::new(...))`; `"stay"` → `Guard::Stay`; `"reset"` → `Guard::Reset`; `"stop"` → `Guard::Stop`; `"fail"` → `Guard::Fail`.
+**Target vocabulary**: `"StateName"` → `Guard::Transition(LeafState::new(...))`; `"stay"` → `Guard::Stay`; `"reset"` → `Guard::Reset`; `"stop"` → `Guard::Stop`; `"done"` → `Guard::Done`; `"fail"` → `Guard::Fail`.
 
 ---
 
