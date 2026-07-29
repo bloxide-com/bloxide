@@ -1,7 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
 mod data;
 mod model;
-mod parser;
 
 use dioxus::prelude::*;
 use dioxus_fullstack::server;
@@ -64,6 +63,76 @@ fn main() {
     dioxus::launch(App);
 }
 
+/// Server function: export blox specs from the default workspace.
+///
+/// The default workspace is found by starting at CARGO_MANIFEST_DIR (set by
+/// `cargo run`) or the current directory and walking up ancestors until a
+/// directory containing blox.toml files is found (issue #119: blox.toml is
+/// the sole data source — the markdown parser is gone).
+#[server(endpoint = "api/default_specs")]
+async fn default_specs() -> Result<Vec<BloxSpec>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        let start = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| {
+            std::env::current_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| ".".to_string())
+        });
+        let mut dir: Option<&std::path::Path> = Some(std::path::Path::new(&start));
+        let mut found = None;
+        for _ in 0..6 {
+            let Some(d) = dir else { break };
+            if bloxide_viz_export::find_blox_tomls(d)
+                .first()
+                .is_some()
+            {
+                found = Some(d.to_path_buf());
+                break;
+            }
+            dir = d.parent();
+        }
+        let Some(workspace) = found else {
+            return Err(ServerFnError::ServerError {
+                message: format!("No blox.toml files found at or above {}", start),
+                code: 404,
+                details: None,
+            });
+        };
+        match bloxide_viz_export::export_workspace(&workspace) {
+            Ok(specs) => {
+                let json = serde_json::to_string(&specs).map_err(|e| {
+                    ServerFnError::ServerError {
+                        message: format!("JSON serialization failed: {}", e),
+                        code: 500,
+                        details: None,
+                    }
+                })?;
+                let specs: Vec<BloxSpec> = serde_json::from_str(&json).map_err(|e| {
+                    ServerFnError::ServerError {
+                        message: format!("JSON deserialization failed: {}", e),
+                        code: 500,
+                        details: None,
+                    }
+                })?;
+                Ok(specs)
+            }
+            Err(e) => Err(ServerFnError::ServerError {
+                message: e,
+                code: 500,
+                details: None,
+            }),
+        }
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        Err(ServerFnError::ServerError {
+            message: "Server feature not enabled".to_string(),
+            code: 500,
+            details: None,
+        })
+    }
+}
+
 #[derive(Clone, PartialEq)]
 enum ViewMode {
     Heatmap,
@@ -91,14 +160,38 @@ enum DiagramSelection {
 
 #[component]
 fn App() -> Element {
-    let mut specs = use_signal(|| data::load_specs());
+    // Specs load asynchronously from the server (blox.toml is the sole data
+    // source — exported via bloxide-viz-export, issue #119).
+    let mut specs = use_signal(Vec::<BloxSpec>::new);
+    let default_load = use_resource(move || async move {
+        default_specs().await.ok().unwrap_or_default()
+    });
+    use_effect(move || {
+        let loaded = default_load.read().clone();
+        if let Some(loaded) = loaded {
+            if !loaded.is_empty() && specs.read().is_empty() {
+                specs.set(loaded);
+            }
+        }
+    });
     let mut selected_spec = use_signal(|| 0usize);
     let mut selected_cell = use_signal(|| None::<(String, String)>);
     let mut view_mode = use_signal(|| ViewMode::Heatmap);
     let mut selected_diagram = use_signal(|| None::<DiagramSelection>);
     let collapsed_composites = use_signal(|| HashSet::<String>::new());
 
-    let spec = &specs.read()[selected_spec.read().clone()];
+    if specs.read().is_empty() {
+        return rsx! {
+            div {
+                style: "font-family: system-ui, -apple-system, sans-serif; padding: 20px; background: #f5f5f5; min-height: 100vh;",
+                h1 { style: "margin: 0 0 20px 0; color: #333;", "Bloxide Visualizer" }
+                p { style: "color: #666;", "Loading workspace specs from blox.toml…" }
+            }
+        };
+    }
+
+    let selected_idx = (*selected_spec.read()).min(specs.read().len() - 1);
+    let spec = &specs.read()[selected_idx];
 
     let message_sets = spec.message_sets_for_events();
     let leaf_states = spec.leaf_states();
@@ -133,10 +226,10 @@ fn App() -> Element {
                 }
                 label {
                     style: "padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; display: inline-block; font-size: 14px; font-family: system-ui, sans-serif;",
-                    "Import .md / .json"
+                    "Import .json"
                     input {
                         r#type: "file",
-                        accept: ".md,.json",
+                        accept: ".json",
                         style: "display: none;",
                         onchange: move |evt| {
                             async move {
@@ -144,23 +237,17 @@ fn App() -> Element {
                                     if let Ok(content) = file.read_string().await {
                                         let name = {
                                             let n = file.name()
-                                                .trim_end_matches(".md")
-                                                .trim_end_matches(".MD")
                                                 .trim_end_matches(".json")
                                                 .trim_end_matches(".JSON")
                                                 .to_string();
                                             if n.is_empty() { "Imported".to_string() } else { n }
                                         };
-                                        let imported = if file.name().ends_with(".json") || file.name().ends_with(".JSON") {
-                                            match crate::data::parse_json_spec(&name, &content) {
-                                                Ok(spec) => spec,
-                                                Err(_e) => {
-                                                    // On JSON parse failure, fall back to markdown parser
-                                                    crate::parser::parse_spec(&name, &content)
-                                                }
-                                            }
-                                        } else {
-                                            crate::parser::parse_spec(&name, &content)
+                                        // JSON-only import (blox.toml/viz-export
+                                        // JSON model — the markdown parser is
+                                        // gone, issue #119).
+                                        let imported = match crate::data::parse_json_spec(&name, &content) {
+                                            Ok(spec) => spec,
+                                            Err(_e) => continue,
                                         };
                                         let new_idx = {
                                             let mut specs_guard = specs.write();

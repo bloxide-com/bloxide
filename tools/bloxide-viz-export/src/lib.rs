@@ -469,7 +469,7 @@ fn fill_dropped_handlers(
 // File discovery
 // ---------------------------------------------------------------------------
 
-fn find_blox_tomls(workspace_path: &Path) -> Vec<(String, PathBuf)> {
+pub fn find_blox_tomls(workspace_path: &Path) -> Vec<(String, PathBuf)> {
     let mut crates = Vec::new();
 
     for entry in walkdir_tomls(workspace_path) {
