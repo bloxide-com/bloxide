@@ -60,7 +60,10 @@ fn find_system_tomls(workspace_path: &Path) -> Vec<PathBuf> {
     walkdir_tomls(workspace_path)
         .into_iter()
         .filter(|p| p.file_name() == Some(std::ffi::OsStr::new("system.toml")))
-        .filter(|p| !p.components().any(|c| c.as_os_str() == std::ffi::OsStr::new("target")))
+        .filter(|p| {
+            !p.components()
+                .any(|c| c.as_os_str() == std::ffi::OsStr::new("target"))
+        })
         .collect()
 }
 
@@ -339,10 +342,7 @@ fn extract_transitions(spec: &mut BloxSpec, topology: &TopologyConfig) {
 }
 
 /// Render the raw guard as an if/else-if/else chain (the Rust decision text).
-fn build_guard_raw(
-    branches: &[model::GuardBranch],
-    fallback: &model::Target,
-) -> String {
+fn build_guard_raw(branches: &[model::GuardBranch], fallback: &model::Target) -> String {
     if branches.is_empty() {
         return String::new();
     }
@@ -773,7 +773,10 @@ fn walk_dir_recursive(path: &Path, depth: usize, max_depth: usize, results: &mut
 
         if entry_path.is_dir() {
             walk_dir_recursive(&entry_path, depth + 1, max_depth, results);
-        } else if matches!(entry_path.file_name().and_then(|n| n.to_str()), Some("blox.toml") | Some("system.toml")) {
+        } else if matches!(
+            entry_path.file_name().and_then(|n| n.to_str()),
+            Some("blox.toml") | Some("system.toml")
+        ) {
             results.push(entry_path);
         }
     }
