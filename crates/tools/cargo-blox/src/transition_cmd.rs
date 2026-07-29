@@ -2,11 +2,18 @@
 //! Add transitions to a blox's blox.toml.
 
 use anyhow::bail;
-use toml::Table;
+use toml_edit::{ArrayOfTables, Table};
 
 use crate::toml_helpers::{
     blox_toml_path_for_blox, load_toml, save_toml, topology_table_mut, transitions_array_mut,
 };
+
+fn state_event_of(t: &Table) -> (Option<&str>, Option<&str>) {
+    (
+        t.get("state").and_then(|v| v.as_str()),
+        t.get("event").and_then(|v| v.as_str()),
+    )
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn add_transition(
@@ -26,15 +33,9 @@ pub fn add_transition(
     let transitions = transitions_array_mut(topology)?;
 
     // Check for duplicate: state + event pair (exact string comparison).
-    let duplicate = transitions.iter().any(|t| {
-        let table = match t.as_table() {
-            Some(t) => t,
-            None => return false,
-        };
-        let existing_state = table.get("state").and_then(|v| v.as_str()) == Some(state);
-        let existing_event = table.get("event").and_then(|v| v.as_str()) == Some(event);
-        existing_state && existing_event
-    });
+    let duplicate = transitions
+        .iter()
+        .any(|t| state_event_of(t) == (Some(state), Some(event)));
 
     if duplicate {
         if if_not_exists {
@@ -49,22 +50,21 @@ pub fn add_transition(
     }
 
     // Build the new transition table.
-    let mut transition_table = toml::Value::Table(Table::new());
-    let t = transition_table.as_table_mut().unwrap();
-    t.insert("state".into(), toml::Value::String(state.to_string()));
-    t.insert("event".into(), toml::Value::String(event.to_string()));
-    t.insert("target".into(), toml::Value::String(target.to_string()));
+    let mut t = Table::new();
+    t["state"] = toml_edit::value(state);
+    t["event"] = toml_edit::value(event);
+    t["target"] = toml_edit::value(target);
 
     if !actions.is_empty() {
-        let actions_arr: Vec<toml::Value> = actions
-            .iter()
-            .map(|a| toml::Value::String(a.clone()))
-            .collect();
-        t.insert("actions".into(), toml::Value::Array(actions_arr));
+        let mut arr = toml_edit::Array::new();
+        for a in &actions {
+            arr.push(a.as_str());
+        }
+        t["actions"] = toml_edit::value(arr);
     }
 
     if !guards.is_empty() {
-        let mut guards_arr: Vec<toml::Value> = Vec::with_capacity(guards.len());
+        let mut guards_arr = ArrayOfTables::new();
         for guard_str in &guards {
             // Split on the LAST ':' to separate condition from target.
             // This handles '::' in Rust paths within the condition.
@@ -78,24 +78,18 @@ pub fn add_transition(
                 }
             };
             let mut guard_table = Table::new();
-            guard_table.insert(
-                "condition".into(),
-                toml::Value::String(condition.to_string()),
-            );
-            guard_table.insert(
-                "target".into(),
-                toml::Value::String(guard_target.to_string()),
-            );
-            guards_arr.push(toml::Value::Table(guard_table));
+            guard_table["condition"] = toml_edit::value(condition);
+            guard_table["target"] = toml_edit::value(guard_target);
+            guards_arr.push(guard_table);
         }
-        t.insert("guards".into(), toml::Value::Array(guards_arr));
+        t["guards"] = toml_edit::Item::ArrayOfTables(guards_arr);
     }
 
     if let Some(feat) = feature {
-        t.insert("feature".into(), toml::Value::String(feat.to_string()));
+        t["feature"] = toml_edit::value(feat);
     }
 
-    transitions.push(transition_table);
+    transitions.push(t);
 
     save_toml(&path, &doc)?;
     println!(
@@ -112,15 +106,9 @@ pub fn remove_transition(blox_name: &str, state: &str, event: &str) -> anyhow::R
     let topology = topology_table_mut(&mut doc)?;
     let transitions = transitions_array_mut(topology)?;
 
-    let exists = transitions.iter().any(|t| {
-        let table = match t.as_table() {
-            Some(t) => t,
-            None => return false,
-        };
-        let s = table.get("state").and_then(|v| v.as_str()) == Some(state);
-        let e = table.get("event").and_then(|v| v.as_str()) == Some(event);
-        s && e
-    });
+    let exists = transitions
+        .iter()
+        .any(|t| state_event_of(t) == (Some(state), Some(event)));
     if !exists {
         bail!(
             "transition {} + {} not found in {}",
@@ -130,15 +118,14 @@ pub fn remove_transition(blox_name: &str, state: &str, event: &str) -> anyhow::R
         );
     }
 
-    transitions.retain(|t| {
-        let table = match t.as_table() {
-            Some(t) => t,
-            None => return true,
-        };
-        let s = table.get("state").and_then(|v| v.as_str()) == Some(state);
-        let e = table.get("event").and_then(|v| v.as_str()) == Some(event);
-        !(s && e)
-    });
+    let indices: Vec<usize> = transitions
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| (state_event_of(&e) == (Some(state), Some(event))).then_some(i))
+        .collect();
+    for i in indices.into_iter().rev() {
+        transitions.remove(i);
+    }
 
     save_toml(&path, &doc)?;
     println!(

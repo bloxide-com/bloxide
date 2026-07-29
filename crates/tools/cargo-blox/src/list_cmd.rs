@@ -20,8 +20,7 @@ struct StateRow {
 }
 
 /// Extract a state row from a `[[topology.states]]` table.
-fn state_row_from_value(state: &toml::Value) -> Option<StateRow> {
-    let table = state.as_table()?;
+fn state_row_from_value(table: &toml_edit::Table) -> Option<StateRow> {
     let name = table.get("name")?.as_str()?.to_string();
     let initial = table
         .get("initial")
@@ -115,20 +114,18 @@ struct MessageVariantRow {
 }
 
 /// Extract a field row from a `[[messages.variants.fields]]` table.
-fn message_field_row_from_value(field: &toml::Value) -> Option<MessageFieldRow> {
-    let table = field.as_table()?;
+fn message_field_row_from_value(table: &toml_edit::Table) -> Option<MessageFieldRow> {
     let name = table.get("name")?.as_str()?.to_string();
     let ty = table.get("ty")?.as_str()?.to_string();
     Some(MessageFieldRow { name, ty })
 }
 
 /// Extract a variant row from a `[[messages.variants]]` table.
-fn message_variant_row_from_value(variant: &toml::Value) -> Option<MessageVariantRow> {
-    let table = variant.as_table()?;
+fn message_variant_row_from_value(table: &toml_edit::Table) -> Option<MessageVariantRow> {
     let name = table.get("name")?.as_str()?.to_string();
     let fields = table
         .get("fields")
-        .and_then(|v| v.as_array())
+        .and_then(|v| v.as_array_of_tables())
         .map(|arr| {
             arr.iter()
                 .filter_map(message_field_row_from_value)
@@ -156,13 +153,14 @@ pub fn list_messages(crate_name: &str, json: bool) -> anyhow::Result<()> {
     let doc = load_toml(&path).with_context(|| format!("failed to load {}", path.display()))?;
 
     // Collect variants from all [[messages]] entries.
-    let messages_array = doc.as_table().and_then(|t| t.get("messages")?.as_array());
-    let rows: Vec<MessageVariantRow> = messages_array
+    let rows: Vec<MessageVariantRow> = doc
+        .get("messages")
+        .and_then(|m| m.as_array_of_tables())
         .map(|arr| {
             arr.iter()
                 .filter_map(|msg| {
-                    msg.as_table()
-                        .and_then(|t| t.get("variants")?.as_array())
+                    msg.get("variants")
+                        .and_then(|v| v.as_array_of_tables())
                         .map(|variants| {
                             variants
                                 .iter()
@@ -221,16 +219,14 @@ struct TransitionRow {
 }
 
 /// Extract a guard row from a `[[topology.transitions.guards]]` table.
-fn guard_row_from_value(guard: &toml::Value) -> Option<GuardRow> {
-    let table = guard.as_table()?;
+fn guard_row_from_value(table: &toml_edit::Table) -> Option<GuardRow> {
     let condition = table.get("condition")?.as_str()?.to_string();
     let target = table.get("target")?.as_str()?.to_string();
     Some(GuardRow { condition, target })
 }
 
 /// Extract a transition row from a `[[topology.transitions]]` table.
-fn transition_row_from_value(transition: &toml::Value) -> Option<TransitionRow> {
-    let table = transition.as_table()?;
+fn transition_row_from_value(table: &toml_edit::Table) -> Option<TransitionRow> {
     let state = table.get("state")?.as_str()?.to_string();
     let event = table.get("event")?.as_str()?.to_string();
     let target = table.get("target")?.as_str()?.to_string();
@@ -245,7 +241,7 @@ fn transition_row_from_value(transition: &toml::Value) -> Option<TransitionRow> 
         .unwrap_or_default();
     let guards = table
         .get("guards")
-        .and_then(|v| v.as_array())
+        .and_then(|v| v.as_array_of_tables())
         .map(|arr| {
             arr.iter()
                 .filter_map(guard_row_from_value)
@@ -337,14 +333,14 @@ struct BloxSummaryRow {
 }
 
 /// Count the total number of message variants across all `[[messages]]` entries.
-fn count_message_variants(doc: &toml::Value) -> usize {
-    doc.as_table()
-        .and_then(|t| t.get("messages")?.as_array())
+fn count_message_variants(doc: &toml_edit::DocumentMut) -> usize {
+    doc.get("messages")
+        .and_then(|m| m.as_array_of_tables())
         .map(|arr| {
             arr.iter()
                 .filter_map(|msg| {
-                    msg.as_table()
-                        .and_then(|t| t.get("variants")?.as_array())
+                    msg.get("variants")
+                        .and_then(|v| v.as_array_of_tables())
                         .map(|variants| variants.len())
                 })
                 .sum()

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 mod build;
 mod check;
 mod ci;
+mod entry_exit_cmd;
 mod forward;
 mod generate;
 mod lint;
@@ -221,6 +222,42 @@ enum BloxSubcommand {
         #[arg(long)]
         event: String,
     },
+    /// Add an entry hook to a blox state
+    AddEntry {
+        blox_name: String,
+        #[arg(long)]
+        state: String,
+        #[arg(long)]
+        action: Vec<String>,
+        #[arg(long)]
+        feature: Option<String>,
+        #[arg(long)]
+        if_not_exists: bool,
+    },
+    /// Remove an entry hook from a blox state
+    RemoveEntry {
+        blox_name: String,
+        #[arg(long)]
+        state: String,
+    },
+    /// Add an exit hook to a blox state
+    AddExit {
+        blox_name: String,
+        #[arg(long)]
+        state: String,
+        #[arg(long)]
+        action: Vec<String>,
+        #[arg(long)]
+        feature: Option<String>,
+        #[arg(long)]
+        if_not_exists: bool,
+    },
+    /// Remove an exit hook from a blox state
+    RemoveExit {
+        blox_name: String,
+        #[arg(long)]
+        state: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -322,6 +359,38 @@ fn main() -> anyhow::Result<()> {
                 state,
                 event,
             } => transition_cmd::remove_transition(&blox_name, &state, &event),
+            BloxSubcommand::AddEntry {
+                blox_name,
+                state,
+                action,
+                feature,
+                if_not_exists,
+            } => entry_exit_cmd::add_entry(
+                &blox_name,
+                &state,
+                action,
+                feature.as_deref(),
+                if_not_exists,
+            ),
+            BloxSubcommand::RemoveEntry { blox_name, state } => {
+                entry_exit_cmd::remove_entry(&blox_name, &state)
+            }
+            BloxSubcommand::AddExit {
+                blox_name,
+                state,
+                action,
+                feature,
+                if_not_exists,
+            } => entry_exit_cmd::add_exit(
+                &blox_name,
+                &state,
+                action,
+                feature.as_deref(),
+                if_not_exists,
+            ),
+            BloxSubcommand::RemoveExit { blox_name, state } => {
+                entry_exit_cmd::remove_exit(&blox_name, &state)
+            }
         },
     }
 }

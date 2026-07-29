@@ -2,11 +2,15 @@
 //! Add or remove states from a blox's blox.toml.
 
 use anyhow::bail;
-use toml::Table;
+use toml_edit::Table;
 
 use crate::toml_helpers::{
     blox_toml_path_for_blox, load_toml, save_toml, states_array_mut, topology_table_mut,
 };
+
+fn name_of(s: &Table) -> Option<&str> {
+    s.get("name").and_then(|v| v.as_str())
+}
 
 pub fn add_state(
     blox_name: &str,
@@ -21,28 +25,22 @@ pub fn add_state(
     let topology = topology_table_mut(&mut doc)?;
     let states = states_array_mut(topology)?;
 
-    if states.iter().any(|s| {
-        s.as_table()
-            .and_then(|t| t.get("name"))
-            .and_then(|v| v.as_str())
-            == Some(state_name)
-    }) {
+    if states.iter().any(|s| name_of(s) == Some(state_name)) {
         bail!("state '{}' already exists in {}", state_name, blox_name);
     }
 
-    let mut state_table = toml::Value::Table(Table::new());
-    let t = state_table.as_table_mut().unwrap();
-    t.insert("name".into(), toml::Value::String(state_name.into()));
+    let mut t = Table::new();
+    t["name"] = toml_edit::value(state_name);
     if composite {
-        t.insert("composite".into(), toml::Value::Boolean(true));
+        t["composite"] = toml_edit::value(true);
     }
     if let Some(p) = parent {
-        t.insert("parent".into(), toml::Value::String(p.into()));
+        t["parent"] = toml_edit::value(p);
     }
     if error {
-        t.insert("error".into(), toml::Value::Boolean(true));
+        t["error"] = toml_edit::value(true);
     }
-    states.push(state_table);
+    states.push(t);
 
     save_toml(&path, &doc)?;
     println!("Added state '{}' to {}", state_name, blox_name);
@@ -56,12 +54,7 @@ pub fn remove_state(blox_name: &str, state_name: &str) -> anyhow::Result<()> {
     let topology = topology_table_mut(&mut doc)?;
     let states = states_array_mut(topology)?;
 
-    let exists = states.iter().any(|s| {
-        s.as_table()
-            .and_then(|t| t.get("name"))
-            .and_then(|v| v.as_str())
-            == Some(state_name)
-    });
+    let exists = states.iter().any(|s| name_of(s) == Some(state_name));
     if !exists {
         bail!("state '{}' not found in {}", state_name, blox_name);
     }
@@ -69,10 +62,9 @@ pub fn remove_state(blox_name: &str, state_name: &str) -> anyhow::Result<()> {
     let children: Vec<String> = states
         .iter()
         .filter_map(|s| {
-            let t = s.as_table()?;
-            let p = t.get("parent")?.as_str()?;
+            let p = s.get("parent")?.as_str()?;
             if p == state_name {
-                t.get("name")?.as_str().map(String::from)
+                name_of(s).map(String::from)
             } else {
                 None
             }
@@ -86,12 +78,14 @@ pub fn remove_state(blox_name: &str, state_name: &str) -> anyhow::Result<()> {
         );
     }
 
-    states.retain(|s| {
-        s.as_table()
-            .and_then(|t| t.get("name"))
-            .and_then(|v| v.as_str())
-            != Some(state_name)
-    });
+    let indices: Vec<usize> = states
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| (name_of(&e) == Some(state_name)).then_some(i))
+        .collect();
+    for i in indices.into_iter().rev() {
+        states.remove(i);
+    }
 
     save_toml(&path, &doc)?;
     println!("Removed state '{}' from {}", state_name, blox_name);
