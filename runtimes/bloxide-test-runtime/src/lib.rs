@@ -8,6 +8,26 @@
 //! Timer simulation is intentionally not part of `TestRuntime` itself.
 //! Tests that use timers should pair `TestRuntime` with `bloxide_timer::test_utils`
 //! instead.
+//!
+//! # Fidelity model (issue #135)
+//!
+//! Channels model the semantics the runtimes provide in production:
+//!
+//! - **Capacity** — `channel(id, capacity)` bounds `try_send`: it fails with
+//!   `TestTrySendError` once `capacity` envelopes are queued. `capacity = 0`
+//!   means every `try_send` fails (always-full channel).
+//! - **Close semantics** — the channel tracks its sender count. When the last
+//!   `TestSender` (including every `ActorRef` clone) is dropped, the receiver
+//!   drains any queued envelopes and then returns `Poll::Ready(None)` — the
+//!   all-streams-close behavior of issue #134. Dropping the last sender also
+//!   wakes a pending receiver so it observes the close.
+//!
+//! # Intentional gaps
+//!
+//! - `send_via` is **unbounded** (no backpressure) — action functions all use
+//!   `try_send`, so `try_send` is the backpressure path under test.
+//! - `SpawnCap::kill` / `kill_handle` are **no-ops** — TestRuntime does not
+//!   run real tasks; supervisor kill paths cannot be exercised here.
 
 extern crate alloc;
 
@@ -18,58 +38,72 @@ use bloxide_spawn::{Kill, SpawnCap};
 use futures_core::Stream;
 use std::collections::VecDeque;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::vec::Vec;
 
 // ── Unique actor ID generator ────────────────────────────────────────────
 
-static NEXT_ID: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
 fn alloc_test_id() -> ActorId {
-    NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
-// ── Shared in-memory queue ───────────────────────────────────────────────
+// ── Shared channel state ─────────────────────────────────────────────────
 
-type Queue<M> = Arc<Mutex<VecDeque<Envelope<M>>>>;
+struct Shared<M: Send + 'static> {
+    queue: Mutex<VecDeque<Envelope<M>>>,
+    waker: Mutex<Option<Waker>>,
+    /// Live sender count (initial sender + every clone). Close happens at 0.
+    sender_count: AtomicUsize,
+    /// Maximum queued envelopes before `try_send` fails.
+    capacity: usize,
+}
+
+impl<M: Send + 'static> Shared<M> {
+    fn wake(&self) {
+        if let Some(waker) = self.waker.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            waker.wake();
+        }
+    }
+}
 
 pub struct TestSender<M: Send + 'static> {
-    queue: Queue<M>,
-    full: Arc<std::sync::atomic::AtomicBool>,
-    waker: Arc<Mutex<Option<Waker>>>,
-}
-
-impl<M: Send + 'static> TestSender<M> {
-    /// When set to `true`, subsequent `try_send` calls will return an error.
-    pub fn set_full(&self, full: bool) {
-        self.full.store(full, std::sync::atomic::Ordering::Relaxed);
-    }
+    shared: Arc<Shared<M>>,
 }
 
 impl<M: Send + 'static> Clone for TestSender<M> {
     fn clone(&self) -> Self {
+        self.shared.sender_count.fetch_add(1, Ordering::SeqCst);
         Self {
-            queue: Arc::clone(&self.queue),
-            full: Arc::clone(&self.full),
-            waker: Arc::clone(&self.waker),
+            shared: Arc::clone(&self.shared),
+        }
+    }
+}
+
+impl<M: Send + 'static> Drop for TestSender<M> {
+    fn drop(&mut self) {
+        if self.shared.sender_count.fetch_sub(1, Ordering::SeqCst) == 1 {
+            // Last sender dropped — wake the receiver so it observes the close.
+            self.shared.wake();
         }
     }
 }
 
 pub struct TestReceiver<M: Send + 'static> {
-    queue: Queue<M>,
-    waker: Arc<Mutex<Option<Waker>>>,
+    shared: Arc<Shared<M>>,
 }
 
 impl<M: Send + 'static> TestReceiver<M> {
     pub fn drain_payloads(&mut self) -> Vec<M> {
-        let mut lock = self.queue.lock().unwrap_or_else(|e| e.into_inner());
+        let mut lock = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
         lock.drain(..).map(|e| e.1).collect()
     }
 
     pub fn drain_envelopes(&mut self) -> Vec<Envelope<M>> {
-        let mut lock = self.queue.lock().unwrap_or_else(|e| e.into_inner());
+        let mut lock = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
         lock.drain(..).collect()
     }
 }
@@ -78,14 +112,18 @@ impl<M: Send + 'static> Stream for TestReceiver<M> {
     type Item = Envelope<M>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let mut lock = self.queue.lock().unwrap_or_else(|e| e.into_inner());
-        match lock.pop_front() {
-            Some(env) => Poll::Ready(Some(env)),
-            None => {
-                *self.waker.lock().unwrap_or_else(|e| e.into_inner()) = Some(cx.waker().clone());
-                Poll::Pending
-            }
+        let mut lock = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(env) = lock.pop_front() {
+            return Poll::Ready(Some(env));
         }
+        if self.shared.sender_count.load(Ordering::SeqCst) == 0 {
+            // All senders dropped and queue drained — channel closed (fused:
+            // this keeps returning Ready(None) on re-poll).
+            return Poll::Ready(None);
+        }
+        drop(lock);
+        *self.shared.waker.lock().unwrap_or_else(|e| e.into_inner()) = Some(cx.waker().clone());
+        Poll::Pending
     }
 }
 
@@ -146,19 +184,14 @@ impl BloxRuntime for TestRuntime {
         sender: &Self::Sender<M>,
         envelope: Envelope<M>,
     ) -> Result<(), Self::SendError> {
+        // Intentional gap: unbounded (no backpressure on the async path).
         sender
+            .shared
             .queue
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push_back(envelope);
-        if let Some(waker) = sender
-            .waker
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
-            waker.wake();
-        }
+        sender.shared.wake();
         Ok(())
     }
 
@@ -166,22 +199,17 @@ impl BloxRuntime for TestRuntime {
         sender: &Self::Sender<M>,
         envelope: Envelope<M>,
     ) -> Result<(), Self::TrySendError> {
-        if sender.full.load(std::sync::atomic::Ordering::Relaxed) {
-            return Err(TestTrySendError);
-        }
-        sender
+        let mut lock = sender
+            .shared
             .queue
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push_back(envelope);
-        if let Some(waker) = sender
-            .waker
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take()
-        {
-            waker.wake();
+            .unwrap_or_else(|e| e.into_inner());
+        if lock.len() >= sender.shared.capacity {
+            return Err(TestTrySendError);
         }
+        lock.push_back(envelope);
+        drop(lock);
+        sender.shared.wake();
         Ok(())
     }
 }
@@ -193,16 +221,18 @@ impl DynamicChannelCap for TestRuntime {
 
     fn channel<M: Send + 'static>(
         id: ActorId,
-        _capacity: usize,
+        capacity: usize,
     ) -> (ActorRef<M, Self>, Self::Receiver<M>) {
-        let queue: Queue<M> = Arc::new(Mutex::new(VecDeque::new()));
-        let waker: Arc<Mutex<Option<Waker>>> = Arc::new(Mutex::new(None));
+        let shared = Arc::new(Shared {
+            queue: Mutex::new(VecDeque::new()),
+            waker: Mutex::new(None),
+            sender_count: AtomicUsize::new(1),
+            capacity,
+        });
         let sender = TestSender {
-            queue: Arc::clone(&queue),
-            full: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            waker: Arc::clone(&waker),
+            shared: Arc::clone(&shared),
         };
-        let receiver = TestReceiver { queue, waker };
+        let receiver = TestReceiver { shared };
         (ActorRef::new(id, sender), receiver)
     }
 }
@@ -774,5 +804,133 @@ mod lifecycle_dispatch {
         ));
         assert_eq!(machine.ctx().running_entry_count.load(Ordering::SeqCst), 2);
         assert_eq!(machine.ctx().running_exit_count.load(Ordering::SeqCst), 1);
+    }
+}
+
+// ── Fidelity tests (issue #135) ────────────────────────────────────────────
+
+#[cfg(test)]
+mod fidelity_tests {
+    use crate::TestRuntime;
+    use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
+    use bloxide_core::messaging::Envelope;
+    use futures_core::Stream;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+
+    fn tracking_waker() -> (Waker, Arc<AtomicBool>) {
+        let flag = Arc::new(AtomicBool::new(false));
+        fn make(flag: *const ()) -> RawWaker {
+            unsafe fn clone(flag: *const ()) -> RawWaker {
+                make(flag)
+            }
+            unsafe fn wake(flag: *const ()) {
+                (*(flag as *const AtomicBool)).store(true, Ordering::SeqCst);
+            }
+            unsafe fn wake_by_ref(flag: *const ()) {
+                (*(flag as *const AtomicBool)).store(true, Ordering::SeqCst);
+            }
+            unsafe fn drop_waker(_: *const ()) {}
+            static VTABLE: RawWakerVTable =
+                RawWakerVTable::new(clone, wake, wake_by_ref, drop_waker);
+            RawWaker::new(flag, &VTABLE)
+        }
+        let raw = make(Arc::as_ptr(&flag) as *const ());
+        (unsafe { Waker::from_raw(raw) }, flag)
+    }
+
+    #[test]
+    fn capacity_enforced_on_try_send() {
+        let (sender, mut rx) = TestRuntime::channel::<u32>(1, 2);
+        sender.try_send(0, 1u32).unwrap();
+        sender.try_send(0, 2u32).unwrap();
+        assert!(
+            sender.try_send(0, 3u32).is_err(),
+            "third send beyond capacity 2 must fail"
+        );
+        let drained = rx.drain_payloads();
+        assert_eq!(drained.len(), 2);
+        sender
+            .try_send(0, 4u32)
+            .unwrap_or_else(|_| panic!("send after drain must succeed"));
+    }
+
+    #[test]
+    fn zero_capacity_is_always_full() {
+        let (sender, _rx) = TestRuntime::channel::<u32>(1, 0);
+        assert!(
+            sender.try_send(0, 1u32).is_err(),
+            "capacity 0 must reject every try_send"
+        );
+    }
+
+    #[test]
+    fn close_after_last_sender_dropped_drains_then_none() {
+        let (sender, mut rx) = TestRuntime::channel::<u32>(1, 4);
+        sender.try_send(0, 7u32).unwrap();
+        drop(sender);
+
+        let (waker, _) = tracking_waker();
+        let mut cx = Context::from_waker(&waker);
+        // Queued envelope is delivered first…
+        match Pin::new(&mut rx).poll_next(&mut cx) {
+            Poll::Ready(Some(Envelope(_, 7))) => {}
+            other => panic!("expected queued envelope, got {:?}", other),
+        }
+        // …then the closed channel reports Ready(None).
+        match Pin::new(&mut rx).poll_next(&mut cx) {
+            Poll::Ready(None) => {}
+            other => panic!("expected Ready(None) after close, got {:?}", other),
+        }
+        // Fused: stays Ready(None) on re-poll.
+        match Pin::new(&mut rx).poll_next(&mut cx) {
+            Poll::Ready(None) => {}
+            other => panic!("fused close must repeat Ready(None), got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn sender_clones_keep_channel_open() {
+        let (sender, mut rx) = TestRuntime::channel::<u32>(1, 4);
+        let clone = sender.clone();
+        drop(sender);
+
+        let (waker, _) = tracking_waker();
+        let mut cx = Context::from_waker(&waker);
+        assert!(
+            matches!(Pin::new(&mut rx).poll_next(&mut cx), Poll::Pending),
+            "one live clone must keep the channel open"
+        );
+
+        drop(clone);
+        assert!(
+            matches!(Pin::new(&mut rx).poll_next(&mut cx), Poll::Ready(None)),
+            "dropping the last clone must close the channel"
+        );
+    }
+
+    #[test]
+    fn dropping_last_sender_wakes_pending_receiver() {
+        let (sender, mut rx) = TestRuntime::channel::<u32>(1, 4);
+        let (waker, woken) = tracking_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        assert!(matches!(
+            Pin::new(&mut rx).poll_next(&mut cx),
+            Poll::Pending
+        ));
+        assert!(!woken.load(Ordering::SeqCst));
+
+        drop(sender);
+        assert!(
+            woken.load(Ordering::SeqCst),
+            "last-sender drop must wake the pending receiver"
+        );
+        assert!(matches!(
+            Pin::new(&mut rx).poll_next(&mut cx),
+            Poll::Ready(None)
+        ));
     }
 }

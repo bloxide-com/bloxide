@@ -347,12 +347,13 @@ mod pool_tests {
         )));
 
         let worker_id = 1usize;
+        // Capacity 0 = always-full channel: every try_send fails, so the
+        // DoWork send to this worker fails (models a saturated worker).
         let (domain_ref, _domain_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 0);
         let (ctrl_ref, _ctrl_rx) = <TestRuntime as DynamicChannelCap>::channel::<
             PeerCtrl<WorkerMsg, TestRuntime>,
         >(worker_id, 16);
-        domain_ref.sender().set_full(true);
 
         machine.dispatch(PoolEvent::SpawnReply(Envelope(
             0,
