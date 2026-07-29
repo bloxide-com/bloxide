@@ -42,12 +42,55 @@ pub struct WiringSupervisorChild {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BloxSpec {
     pub name: String,
+    #[serde(default)]
+    pub crate_path: String,
     pub states: Vec<State>,
     pub events: Vec<Event>,
     pub handlers: Vec<Handler>,
     pub entry_exit: HashMap<String, EntryExit>,
     pub message_sets: Vec<MessageSet>,
+    #[serde(default)]
+    pub messages: Vec<MessageDef>,
+    #[serde(default)]
+    pub actions: Vec<ActionDef>,
+    #[serde(default)]
+    pub context: Option<ContextDef>,
+    #[serde(default)]
     pub wiring: Option<WiringGraph>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MessageDef {
+    pub crate_name: String,
+    pub enum_name: String,
+    pub variants: Vec<MessageVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MessageVariant {
+    pub name: String,
+    pub fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActionDef {
+    pub crate_name: String,
+    pub function_name: String,
+    pub signature: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContextDef {
+    pub struct_name: String,
+    pub fields: Vec<ContextField>,
+    pub uses: Vec<ContextField>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContextField {
+    pub name: String,
+    pub ty: String,
+    pub annotations: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

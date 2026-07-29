@@ -105,6 +105,11 @@ fn config_to_spec(name: &str, crate_path: &str, config: &BloxConfig) -> BloxSpec
 
     // --- Message definitions ---
     if let Some(messages) = &config.messages {
+        let crate_name = crate_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(crate_path)
+            .to_string();
         for msg_enum in messages {
             let variants: Vec<model::MessageVariant> = msg_enum
                 .variants
@@ -122,7 +127,7 @@ fn config_to_spec(name: &str, crate_path: &str, config: &BloxConfig) -> BloxSpec
                 })
                 .collect();
             spec.messages.push(model::MessageDef {
-                crate_name: "unknown".to_string(),
+                crate_name: crate_name.clone(),
                 enum_name: msg_enum.name.clone(),
                 variants,
             });
@@ -132,6 +137,7 @@ fn config_to_spec(name: &str, crate_path: &str, config: &BloxConfig) -> BloxSpec
     // --- Context ---
     if let Some(context) = &config.context {
         extract_context(&mut spec, context);
+        extract_actions(&mut spec, context);
     }
 
     // --- Post-processing: compute hierarchy, inherited/dropped handlers ---
@@ -396,6 +402,66 @@ fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
     });
 }
 
+/// Export action declarations as renderable definitions (#124): crate,
+/// function name, and a reconstructed signature from kind + fields +
+/// event payload.
+fn extract_actions(spec: &mut BloxSpec, context: &ContextConfig) {
+    // Field name → type map from the context definition.
+    let mut field_types: HashMap<String, String> = HashMap::new();
+    field_types.insert("self_id".to_string(), "ActorId".to_string());
+    for u in &context.uses {
+        if let (Some(name), Some(ty)) = (&u.field, &u.field_type) {
+            field_types.insert(name.clone(), ty.clone());
+        }
+        for f in &u.fields {
+            field_types.insert(f.name.clone(), f.ty.clone());
+        }
+    }
+    for f in &context.fields {
+        field_types.insert(f.name.clone(), f.r#type.clone());
+    }
+
+    for a in &context.actions {
+        let fn_name = a.fn_name.clone().unwrap_or_else(|| a.name.clone());
+        let crate_name = a.crate_name.clone().unwrap_or_else(|| "crate".to_string());
+        let mut params: Vec<String> = a
+            .fields
+            .iter()
+            .map(|f| {
+                let (name, mode) = match f.rsplit_once(':') {
+                    Some((n, m)) => (n, m),
+                    None => (f.as_str(), ""),
+                };
+                let ty = field_types
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| "_".to_string());
+                match mode {
+                    "ref" => format!("{}: &{}", name, ty),
+                    "mut" => format!("{}: &mut {}", name, ty),
+                    _ => format!("{}: {}", name, ty),
+                }
+            })
+            .collect();
+        if let Some(payload) = &a.event_payload {
+            params.push(format!("{}: &_", payload));
+        } else if a.event_arg {
+            params.push("ev: &Event".to_string());
+        }
+        let ret = if a.kind == "transition" {
+            " -> ActionResult"
+        } else {
+            ""
+        };
+        let signature = format!("fn {}({}){}", fn_name, params.join(", "), ret);
+        spec.actions.push(model::ActionDef {
+            crate_name,
+            function_name: fn_name,
+            signature,
+        });
+    }
+}
+
 fn parse_event_pattern(pattern: &str) -> (String, String) {
     let pattern = pattern.trim();
     // Remove trailing parenthetical content like (_)
@@ -529,7 +595,12 @@ pub fn find_blox_tomls(workspace_path: &Path) -> Vec<(String, PathBuf)> {
 
         if let Some(crate_path) = crate_path {
             if let Ok(content) = fs::read_to_string(&path) {
-                if content.contains("[actor]") || content.contains("[topology]") {
+                // Actor/topology crates and message-definition crates both
+                // produce specs (#124 — message definitions are renderable).
+                if content.contains("[actor]")
+                    || content.contains("[topology]")
+                    || content.contains("[[messages]]")
+                {
                     let dir_name = crate_path
                         .file_name()
                         .and_then(|n| n.to_str())

@@ -84,10 +84,7 @@ async fn default_specs() -> Result<Vec<BloxSpec>, ServerFnError> {
         let mut found = None;
         for _ in 0..6 {
             let Some(d) = dir else { break };
-            if bloxide_viz_export::find_blox_tomls(d)
-                .first()
-                .is_some()
-            {
+            if bloxide_viz_export::find_blox_tomls(d).first().is_some() {
                 found = Some(d.to_path_buf());
                 break;
             }
@@ -102,20 +99,18 @@ async fn default_specs() -> Result<Vec<BloxSpec>, ServerFnError> {
         };
         match bloxide_viz_export::export_workspace(&workspace) {
             Ok(specs) => {
-                let json = serde_json::to_string(&specs).map_err(|e| {
-                    ServerFnError::ServerError {
+                let json =
+                    serde_json::to_string(&specs).map_err(|e| ServerFnError::ServerError {
                         message: format!("JSON serialization failed: {}", e),
                         code: 500,
                         details: None,
-                    }
-                })?;
-                let specs: Vec<BloxSpec> = serde_json::from_str(&json).map_err(|e| {
-                    ServerFnError::ServerError {
+                    })?;
+                let specs: Vec<BloxSpec> =
+                    serde_json::from_str(&json).map_err(|e| ServerFnError::ServerError {
                         message: format!("JSON deserialization failed: {}", e),
                         code: 500,
                         details: None,
-                    }
-                })?;
+                    })?;
                 Ok(specs)
             }
             Err(e) => Err(ServerFnError::ServerError {
@@ -140,6 +135,7 @@ enum ViewMode {
     Heatmap,
     Diagram,
     System,
+    Context,
     RawToml,
 }
 
@@ -149,6 +145,7 @@ impl ViewMode {
             ViewMode::Heatmap => "Heatmap",
             ViewMode::Diagram => "State Diagram",
             ViewMode::System => "System View",
+            ViewMode::Context => "Context",
             ViewMode::RawToml => "Raw TOML",
         }
     }
@@ -165,9 +162,8 @@ fn App() -> Element {
     // Specs load asynchronously from the server (blox.toml is the sole data
     // source — exported via bloxide-viz-export, issue #119).
     let mut specs = use_signal(Vec::<BloxSpec>::new);
-    let default_load = use_resource(move || async move {
-        default_specs().await.ok().unwrap_or_default()
-    });
+    let default_load =
+        use_resource(move || async move { default_specs().await.ok().unwrap_or_default() });
     use_effect(move || {
         let loaded = default_load.read().clone();
         if let Some(loaded) = loaded {
@@ -269,7 +265,7 @@ fn App() -> Element {
             // View mode toggle
             div {
                 style: "display: flex; gap: 0; margin-bottom: 20px;",
-                for mode in [ViewMode::Heatmap, ViewMode::Diagram, ViewMode::System, ViewMode::RawToml] {
+                for mode in [ViewMode::Heatmap, ViewMode::Diagram, ViewMode::System, ViewMode::Context, ViewMode::RawToml] {
                     button {
                         style: if view_mode.read().clone() == mode {
                             "padding: 8px 16px; background: #2563eb; color: white; border: 1px solid #2563eb; cursor: pointer;"
@@ -317,6 +313,9 @@ fn App() -> Element {
                                     selected_cell: selected_cell,
                                     selected_diagram: selected_diagram,
                                 }
+                            },
+                            ViewMode::Context => rsx! {
+                                ContextView { spec: spec.clone() }
                             },
                             ViewMode::RawToml => rsx! {
                                 RawTomlView { spec: spec.clone() }
@@ -553,7 +552,10 @@ fn SidePanel(
     event: Option<String>,
     on_close: EventHandler<()>,
 ) -> Element {
-    let handler = event.as_ref().and_then(|e| spec.handler_for(&state, e)).cloned();
+    let handler = event
+        .as_ref()
+        .and_then(|e| spec.handler_for(&state, e))
+        .cloned();
     let state_info = spec.state_by_name(&state);
     let entry_exit = spec.entry_exit.get(&state).cloned();
 
@@ -968,7 +970,10 @@ fn StateDiagram(
 
     // Compute diagram bounds
     let (svg_width, svg_height) = layouts.values().fold((0.0_f64, 0.0_f64), |(w, h), node| {
-        (w.max(node.x + node.width + 40.0), h.max(node.y + node.height + 40.0))
+        (
+            w.max(node.x + node.width + 40.0),
+            h.max(node.y + node.height + 40.0),
+        )
     });
 
     // Sort states by depth so composite containers render behind children.
@@ -989,7 +994,11 @@ fn StateDiagram(
             }
             Target::Stay => {
                 if layouts.contains_key(&handler.state) {
-                    transitions.push((handler.clone(), handler.state.clone(), handler.state.clone()));
+                    transitions.push((
+                        handler.clone(),
+                        handler.state.clone(),
+                        handler.state.clone(),
+                    ));
                 }
             }
             Target::Reset | Target::Stop | Target::Done | Target::Fail => {
@@ -1159,7 +1168,11 @@ fn StateNode(
         .map(|sel| matches!(sel, DiagramSelection::State(name) if *name == node.state.name))
         .unwrap_or(false);
     let stroke = if is_selected { "#2563eb" } else { color };
-    let stroke_w = if is_selected { stroke_width + 1.5 } else { stroke_width };
+    let stroke_w = if is_selected {
+        stroke_width + 1.5
+    } else {
+        stroke_width
+    };
 
     let name = node.state.name.clone();
     let is_composite = node.state.kind == StateKind::Composite;
@@ -1339,7 +1352,10 @@ fn layout_supervisors(
 }
 
 /// Compute the SVG dimensions needed to fit all actors and supervisors.
-fn compute_svg_bounds(actor_positions: &[ActorPosition], supervisor_positions: &[SupervisorPosition]) -> (f64, f64) {
+fn compute_svg_bounds(
+    actor_positions: &[ActorPosition],
+    supervisor_positions: &[SupervisorPosition],
+) -> (f64, f64) {
     let max_actor_x = actor_positions
         .iter()
         .map(|a| a.x + ACTOR_BLOCK_WIDTH + 40.0)
@@ -1364,10 +1380,7 @@ fn SystemView(
     selected_diagram: Signal<Option<DiagramSelection>>,
 ) -> Element {
     // Find the first spec with wiring data.
-    let wiring_opt: Option<WiringGraph> = specs
-        .read()
-        .iter()
-        .find_map(|s| s.wiring.clone());
+    let wiring_opt: Option<WiringGraph> = specs.read().iter().find_map(|s| s.wiring.clone());
 
     let mut selected_connection = use_signal(|| None::<ConnectionDetail>);
 
@@ -1398,7 +1411,10 @@ fn SystemView(
                     let &(from_x, from_y) = pos_map.get(&conn.from)?;
                     let &(to_x, to_y) = pos_map.get(&conn.to)?;
                     // Arrow from right-center of source to left-center of target.
-                    let (sx, sy) = (from_x + ACTOR_BLOCK_WIDTH, from_y + ACTOR_BLOCK_HEIGHT / 2.0);
+                    let (sx, sy) = (
+                        from_x + ACTOR_BLOCK_WIDTH,
+                        from_y + ACTOR_BLOCK_HEIGHT / 2.0,
+                    );
                     let (tx, ty) = (to_x, to_y + ACTOR_BLOCK_HEIGHT / 2.0);
                     Some((conn.clone(), sx, sy, tx, ty))
                 })
@@ -1411,7 +1427,10 @@ fn SystemView(
                     let pm = &pos_map;
                     sup.child_names.iter().filter_map(move |child_name| {
                         let &(child_x, child_y) = pm.get(child_name)?;
-                        let (sx, sy) = (sup.x + SUPERVISOR_BLOCK_WIDTH / 2.0, sup.y + SUPERVISOR_BLOCK_HEIGHT);
+                        let (sx, sy) = (
+                            sup.x + SUPERVISOR_BLOCK_WIDTH / 2.0,
+                            sup.y + SUPERVISOR_BLOCK_HEIGHT,
+                        );
                         let (tx, ty) = (child_x + ACTOR_BLOCK_WIDTH / 2.0, child_y);
                         Some((sx, sy, tx, ty, sup.name.clone(), child_name.clone()))
                     })
@@ -1731,10 +1750,7 @@ fn ConnectionArrow(
 }
 
 #[component]
-fn ConnectionDetailPanel(
-    detail: ConnectionDetail,
-    on_close: EventHandler<()>,
-) -> Element {
+fn ConnectionDetailPanel(detail: ConnectionDetail, on_close: EventHandler<()>) -> Element {
     let capacity_text = match detail.channel_capacity {
         Some(cap) => format!("{}", cap),
         None => "unbounded".to_string(),
@@ -1775,6 +1791,89 @@ fn ConnectionDetailPanel(
                 style: "padding: 12px; background: #f9fafb; border-radius: 6px;",
                 div { style: "font-size: 12px; color: #6b7280; margin-bottom: 4px;", "Channel Capacity" }
                 div { style: "font-weight: 600; color: #1f2937;", "{capacity_text}" }
+            }
+        }
+    }
+}
+
+// ── Context view (#124): context struct, actions, and message definitions ──
+
+#[component]
+fn ContextView(spec: BloxSpec) -> Element {
+    rsx! {
+        div {
+            style: "display: flex; gap: 20px; align-items: flex-start; max-width: 1100px;",
+
+            // Context struct
+            div {
+                style: "min-width: 320px; background: #f9fafb; border-radius: 8px; padding: 16px;",
+                h3 { style: "margin: 0 0 12px 0; color: #1f2937; font-size: 15px;", "Context" }
+                if let Some(ctx) = &spec.context {
+                    div {
+                        style: "margin-bottom: 12px; font-family: monospace; font-weight: 600; color: #1e40af;",
+                        "pub struct {ctx.struct_name}"
+                    }
+                    for field in &ctx.fields {
+                        div {
+                            style: "display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; background: white; border-radius: 4px; margin-bottom: 4px; font-size: 13px;",
+                            span { style: "font-family: monospace; color: #1f2937;", "pub {field.name}" }
+                            span { style: "font-family: monospace; color: #6b7280;", "{field.ty}" }
+                        }
+                    }
+                    if !ctx.uses.is_empty() {
+                        div { style: "margin-top: 12px; font-size: 12px; color: #6b7280; margin-bottom: 6px;", "From [[context.uses]]" }
+                        for u in &ctx.uses {
+                            div {
+                                style: "display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; background: #eff6ff; border-radius: 4px; margin-bottom: 4px; font-size: 13px;",
+                                span { style: "font-family: monospace; color: #1e40af;", "pub {u.name}" }
+                                span { style: "font-family: monospace; color: #6b7280;", "{u.ty}" }
+                            }
+                        }
+                    }
+                } else {
+                    div { style: "color: #9ca3af; font-size: 13px;", "No context definition (message crate)" }
+                }
+            }
+
+            // Actions
+            div {
+                style: "min-width: 380px; background: #f9fafb; border-radius: 8px; padding: 16px;",
+                h3 { style: "margin: 0 0 12px 0; color: #1f2937; font-size: 15px;", "Actions" }
+                if spec.actions.is_empty() {
+                    div { style: "color: #9ca3af; font-size: 13px;", "No action declarations" }
+                }
+                for action in &spec.actions {
+                    div {
+                        style: "margin-bottom: 8px; padding: 8px 10px; background: white; border-radius: 4px;",
+                        div { style: "font-size: 11px; color: #6b7280;", "{action.crate_name}" }
+                        div { style: "font-family: monospace; font-size: 12px; color: #374151; white-space: pre-wrap; word-break: break-all;", "{action.signature}" }
+                    }
+                }
+            }
+
+            // Messages
+            div {
+                style: "min-width: 280px; background: #f9fafb; border-radius: 8px; padding: 16px;",
+                h3 { style: "margin: 0 0 12px 0; color: #1f2937; font-size: 15px;", "Messages" }
+                if spec.messages.is_empty() {
+                    div { style: "color: #9ca3af; font-size: 13px;", "No message definitions here — see the *-messages spec tabs" }
+                }
+                for msg in &spec.messages {
+                    div {
+                        style: "margin-bottom: 10px; padding: 10px; background: white; border-radius: 4px;",
+                        div { style: "font-size: 11px; color: #6b7280;", "{msg.crate_name}" }
+                        div { style: "font-family: monospace; font-weight: 600; color: #1f2937; margin-bottom: 6px;", "pub enum {msg.enum_name}" }
+                        for v in &msg.variants {
+                            div {
+                                style: "font-family: monospace; font-size: 12px; color: #374151; padding: 2px 0;",
+                                "{v.name}"
+                                if !v.fields.is_empty() {
+                                    span { style: "color: #6b7280;", "({v.fields.join(\", \")})" }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
