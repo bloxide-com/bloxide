@@ -93,7 +93,8 @@ std = ["bloxide-core/std"]
     fs::write(crate_dir.join("Cargo.toml"), cargo_toml)?;
 
     let mut blox_toml = format!(
-        r#"[actor]
+        r#"# Copyright 2025 Bloxide, all rights reserved
+[actor]
 name = "{name_camel}"
 
 [event]
@@ -117,14 +118,32 @@ message_path = "{msg_module}::{msg_type}"
 
     // Minimal [context] section — self_id is auto-emitted by the codegen,
     // state fields go in [[context.fields]], refs in [[context.uses]].
+    // One initial leaf state so the scaffold builds end-to-end.
     blox_toml.push_str(&format!(
         r#"
 [context]
 name = "{name_camel}Ctx"
 
 [topology]
+[[topology.states]]
+name = "Ready"
+initial = true
 "#
     ));
+
+    // With a messages crate, add a Tick → done transition so the scaffold
+    // runs and exits cleanly on the bootstrap Tick.
+    if let Some(msg_crate) = messages {
+        let msg_type = to_camel_case(msg_crate.trim_end_matches("-messages")) + "Msg";
+        blox_toml.push_str(&format!(
+            r#"
+[[topology.transitions]]
+state = "Ready"
+event = "{msg_type}::Tick(_)"
+target = "done"
+"#
+        ));
+    }
 
     fs::write(crate_dir.join("blox.toml"), blox_toml)?;
 

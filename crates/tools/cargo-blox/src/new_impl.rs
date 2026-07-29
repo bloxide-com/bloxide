@@ -59,8 +59,10 @@ pub fn new_impl(name: &str, blox_name: &str) -> Result<()> {
         context.actions.iter().filter(|a| a.impl_required).collect();
 
     if impl_actions.is_empty() {
-        bail!(
-            "blox '{}' has no [[context.actions]] with impl_required = true",
+        // No impl_required actions yet — still scaffold the crate so future
+        // actions have a home (new-all always creates this layer).
+        println!(
+            "note: blox '{}' has no impl_required actions yet — scaffolding empty impl crate",
             blox_snake
         );
     }

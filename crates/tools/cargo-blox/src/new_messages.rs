@@ -51,9 +51,13 @@ pub use generated::*;
     fs::write(gen_dir.join("mod.rs"), gen_mod_rs)?;
 
     let blox_toml = format!(
-        r#"[[messages]]
+        r#"# Copyright 2025 Bloxide, all rights reserved
+[[messages]]
 name = "{name_camel}Msg"
 visibility = "pub"
+
+  [[messages.variants]]
+  name = "Tick"
 "#
     );
     fs::write(crate_dir.join("blox.toml"), blox_toml)?;
