@@ -141,7 +141,11 @@ impl<R: BloxRuntime> RunConfig<R> {
 /// - `DispatchOutcome::Aborted` is observed (always exits)
 /// - `DispatchOutcome::Failed` is observed (always exits)
 /// - `DispatchOutcome::Done` is observed (always exits — clean self-termination)
-/// - Any polled stream returns `Poll::Ready(None)` (stream closed)
+/// - The lifecycle or abort stream returns `Poll::Ready(None)` (stream
+///   closed — always fatal; shutdown flows through these streams)
+/// - The domain mailboxes return `Poll::Ready(None)` — ALL domain streams
+///   closed (all-streams-close, issue #134): no domain sender remains
+///   anywhere, so the actor cannot be reached at all
 ///
 /// When `exit_on_stop` is false (supervised actors), `Stopped` is NOT terminal —
 /// the actor self-suspends to Init and the task stays alive, waiting for a

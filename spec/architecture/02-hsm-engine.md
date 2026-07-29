@@ -573,7 +573,6 @@ Entry/exit actions are infallible (`fn(&mut Ctx)` — no `ActionResult`).
 | `#[blox_event]` | attribute | `From<Envelope<M>>` impls, `EventTag`, `*_TAG` constants, payload accessors for an existing enum |
 | `event!(Name { Variant: Msg })` | fn-like | Generate a complete event enum from a mailbox spec |
 | `blox_messages!(pub enum M { ... })` | fn-like | Generate message structs/enum (`copy,` prefix adds `Copy`) |
-| `mailboxes_impls!(N)` | fn-like | `Mailboxes` impls for tuples of arity 1..=N |
 | `channels!(Runtime; Msg(CAP), ...)` | fn-like | Static-capacity channel creation via `StaticChannelCap` |
 | `dyn_channels!(Runtime; Msg(CAP), ...)` | fn-like | Runtime-capacity channel creation via `DynamicChannelCap` |
 | `next_actor_id!()` | fn-like | Compile-time actor ID allocation |

@@ -131,16 +131,32 @@ To send the same event to multiple actors, store `Arc<Payload>` inside the event
 
 Use `try_send` from `on_entry` and `actions` functions (which run synchronously inside dispatch). Reserve `send` for async contexts outside the machine (e.g., the actor run loop or wiring).
 
-## Channel Lifetime Invariant
+## Channel Close Semantics (all-streams-close, issue #134)
 
-Every actor **must retain a clone of its own `ActorRef`** for each mailbox it owns. This clone is stored in `Ctx` and lives as long as the actor task.
+A channel closes when every sender (`ActorRef`) for it has been dropped.
+Domain mailbox closes are a **garbage-collection backstop, not a lifecycle
+signal**: actor fate is owned exclusively by supervision — dispatch-driven
+lifecycle commands (`Start`/`Reset`/`Stop`), `Guard::Stop`/`Guard::Done`,
+and the kill capability.
 
-**Why this matters:** The underlying channel stays open as long as at least one sender (`ActorRef`) exists. With the self-sender invariant in place, the channel can never close during normal operation, because the actor task itself holds a sender.
+**`Mailboxes` behavior:** The blanket tuple impls in `mailboxes.rs` return
+`Poll::Ready(None)` only when **every** stream in the tuple has closed —
+i.e. no domain sender remains anywhere, so the actor cannot be reached at
+all. A single closed stream does **not** shut down the actor: a peer
+dropping its `ActorRef` merely removes one input. The run loop polls the
+lifecycle/abort streams separately, and a close on **those** streams is
+immediately fatal (shutdown flows through them).
 
-**Consequence for `Mailboxes` impls:** The blanket tuple impls in `mailboxes.rs` silently treat `Poll::Ready(None)` (stream closed) as `Poll::Pending`. In debug builds a `debug_assert!` fires if a stream closes — this indicates the self-sender invariant was violated.
+**Streams must be fused:** once a stream returns `Poll::Ready(None)` it must
+keep returning `Poll::Ready(None)` on re-poll. All bloxide runtime channel
+receivers satisfy this.
 
-**Failure example:** If an actor drops its last self-held `ActorRef`, its mailbox stream may close and the debug assertion will trigger on the next poll.
+**Consequence for self-refs:** an actor holding its own `self_ref` keeps its
+domain stream open forever — harmless, because shutdown flows through the
+lifecycle stream, not domain close. Actors that finish their work should
+use `Guard::Done` (clean self-termination, task ends) rather than relying
+on close semantics.
 
-**For future runtimes with dynamic actor creation (e.g., Tokio):** Runtime implementors must either:
-- Uphold the self-sender invariant (store a clone of each `ActorRef` in `Ctx`), OR
-- Provide a custom `Mailboxes` impl that maps `Ready(None)` to a sentinel `ChannelClosed` event variant so the `MachineSpec` can handle actor teardown explicitly.
+**For runtimes:** no special handling is required beyond fused receivers.
+Dynamic teardown (stopped workers, removed peers) goes through the explicit
+supervision path — Stop/Kill and deregistration — never implicit ref-drop.

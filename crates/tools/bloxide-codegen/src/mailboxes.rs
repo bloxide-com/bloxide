@@ -42,13 +42,15 @@ pub fn generate(config: &MailboxesConfig) -> anyhow::Result<String> {
                             return ::core::task::Poll::Ready(::core::option::Option::Some(E::from(item)));
                         }
                         ::core::task::Poll::Ready(::core::option::Option::None) => {
-                            return ::core::task::Poll::Ready(::core::option::Option::None);
+                            closed += 1;
                         }
                         ::core::task::Poll::Pending => {}
                     }
                 }
             })
             .collect();
+
+        let arity_lit = syn::LitInt::new(&arity.to_string(), proc_macro2::Span::call_site());
 
         tokens.extend(quote! {
             impl<E, #(#type_params),*> Mailboxes<E> for (#(#type_params,)*)
@@ -61,7 +63,18 @@ pub fn generate(config: &MailboxesConfig) -> anyhow::Result<String> {
                     &mut self,
                     cx: &mut ::core::task::Context<'_>,
                 ) -> ::core::task::Poll<::core::option::Option<E>> {
+                    // All-streams-close semantics (issue #134): a closed stream
+                    // does NOT shut down the actor by itself. Streams are polled
+                    // in priority order; the first ready item wins. `Ready(None)`
+                    // is returned only when EVERY stream has closed — meaning no
+                    // domain sender remains anywhere, so the actor cannot be
+                    // reached at all. Streams must be fused: once closed, a
+                    // stream must keep returning `Ready(None)` on re-poll.
+                    let mut closed = 0usize;
                     #(#match_arms)*
+                    if closed == #arity_lit {
+                        return ::core::task::Poll::Ready(::core::option::Option::None);
+                    }
                     ::core::task::Poll::Pending
                 }
             }

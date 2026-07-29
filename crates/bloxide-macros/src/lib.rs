@@ -19,7 +19,6 @@
 //! - `#[derive(EventTag)]` — assign sequential `u8` variant tags and `*_TAG`
 //!   constants to any event enum.
 //! - `blox_messages!(pub enum M { ... })` — generate message structs/enums.
-//! - `mailboxes_impls!(N)` — generate `Mailboxes` tuple impls up to arity N.
 //! - `channels!(RuntimeType; MsgType1(CAP1), ...)` — generate
 //!   channel creation code via `StaticChannelCap`.
 //! - `dyn_channels!(RuntimeType; MsgType1(CAP1), ...)` —
@@ -33,7 +32,6 @@ mod blox_event;
 mod channels;
 mod dyn_channels;
 mod event_tag;
-mod mailboxes_impls;
 
 mod blox_event_new;
 mod blox_mailboxes;
@@ -102,26 +100,6 @@ pub fn blox_event(_attr: TokenStream, item: TokenStream) -> TokenStream {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }
-}
-
-// ── mailboxes_impls!(N) ───────────────────────────────────────────────────────
-
-/// Generate `impl Mailboxes<E> for (S1, ..., SK)` for every arity `k` from 1 to N.
-///
-/// Call this once in `mailboxes.rs` to replace the hard-coded 4-tuple limit:
-///
-/// ```ignore
-/// // Doc test ignored: imports not resolvable in rustdoc compilation context
-/// bloxide_macros::mailboxes_impls!(16);
-/// ```
-///
-/// The generated impls mirror the hand-written ones exactly: each stream is
-/// polled in index order (priority order), `Poll::Ready(None)` triggers a
-/// `debug_assert!` (self-sender invariant violation), and `Poll::Pending` falls
-/// through to the next stream.
-#[proc_macro]
-pub fn mailboxes_impls(input: TokenStream) -> TokenStream {
-    mailboxes_impls::mailboxes_impls_inner(input)
 }
 
 // ── channels!(RuntimeType; MsgType1(CAP1), ...) ───────────────────────────────
