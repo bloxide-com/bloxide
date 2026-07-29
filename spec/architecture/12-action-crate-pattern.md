@@ -87,7 +87,7 @@ pub fn increment_round(round: &mut u32) {
 ```
 
 ```rust
-// crates/bloxide-messaging/src/lib.rs
+// crates/blox-ctx-ping-pong/src/lib.rs
 pub fn send_ping<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
@@ -165,7 +165,7 @@ real function calls. Guards are unchanged from blox-level (already real).
 ```rust
 // generated/spec_skeleton.rs — concrete, impl inlined
 |ctx, _ev| {
-    bloxide_messaging::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round);
+    blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round);
     ActionResult::Ok
 }
 ```

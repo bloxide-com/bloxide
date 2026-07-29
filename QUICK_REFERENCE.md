@@ -124,7 +124,7 @@ State fields are plain fields on the context struct. There is no `B` generic, no
 ### Emit a Message
 
 ```rust
-// In context crate (e.g., bloxide-messaging):
+// In context crate (e.g., blox-ctx-ping-pong):
 pub fn send_ping<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
@@ -136,7 +136,7 @@ pub fn send_ping<R: BloxRuntime>(
 
 ### Timer Pattern
 
-Use `bloxide-timer` and `blox-ctx-current-timer` action functions instead of manual message construction.
+Use `bloxide-timer` and `blox-ctx-ping-pong` action functions instead of manual message construction.
 
 #### Setup
 
@@ -144,7 +144,7 @@ Use `bloxide-timer` and `blox-ctx-current-timer` action functions instead of man
    ```toml
    [dependencies]
    bloxide-timer = { version = "0.0.3", features = ["std"] }
-   blox-ctx-current-timer = { path = "..." }
+   blox-ctx-ping-pong = { path = "..." }
    ```
 
 2. Add timer fields to context in `blox.toml`:
@@ -165,7 +165,7 @@ Use `bloxide-timer` and `blox-ctx-current-timer` action functions instead of man
    [[context.actions]]
    name = "schedule_pause_timer"
    fn_name = "schedule_resume"
-   crate = "blox_ctx_current_timer"
+   crate = "blox_ctx_ping_pong"
    kind = "transition"
    fields = ["self_id", "self_ref:ref", "timer_ref:ref", "round", "current_timer:mut"]
    impl_required = false
@@ -173,7 +173,8 @@ Use `bloxide-timer` and `blox-ctx-current-timer` action functions instead of man
    [[context.actions]]
    name = "cancel_pause_timer"
    fn_name = "cancel_timer_by_id"
-   crate = "blox_ctx_current_timer"
+   crate = "bloxide_timer"
+   module = "actions"
    kind = "transition"
    fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
    impl_required = false

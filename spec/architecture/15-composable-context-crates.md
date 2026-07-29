@@ -11,10 +11,10 @@ Today, every blox defines its context struct from scratch in `blox.toml`. When t
 
 The root issues this design solves:
 1. **Action functions belong with the data** — a context crate defines *what data a context has* and *what you do with that data*. The contract and the action belong together.
-2. **No duplication** — `send_ping` lives in `bloxide-messaging`, not duplicated across blox crates.
+2. **No duplication** — `send_ping` lives in `blox-ctx-ping-pong`, not duplicated across blox crates.
 3. **No manual impls** — the codegen generates the context struct and constructor from `blox.toml` declarations, not hand-written `impl` blocks.
 4. **Declarative imports** — the codegen knows imports from `[[context.uses]]` entries, not string-matching.
-5. **Reusability** — a new blox that needs `peer_ref` depends on `bloxide-messaging` for the action functions.
+5. **Reusability** — a new blox that needs `peer_ref` depends on `blox-ctx-ping-pong` for the action functions.
 
 ## Design
 
@@ -32,13 +32,13 @@ bloxide-core          ← engine (required by all bloxes)
   ActorId, ActorRef, BloxRuntime, MachineSpec, StateFns, StateRule
 
 service crates        ← infrastructure capabilities (optional)
-  bloxide-messaging   ← send_ping, send_pong, send_initial_ping (action functions)
+  blox-ctx-ping-pong   ← send_ping, send_pong, send_initial_ping (action functions)
   bloxide-timer       ← set_timer, cancel_timer (action functions)
 
 domain context crates ← domain-specific data composition (optional)
   blox-ctx-pool-ref   ← notify_pool_done action function
   blox-ctx-rounds     ← increment_round action function
-  blox-ctx-current-timer ← schedule_resume, cancel_timer_by_id action functions
+  blox-ctx-ping-pong ← schedule_resume, cancel_timer_by_id action functions
   blox-ctx-ticks        ← increment_count action function
 
 blox crates           ← TOML → codegen (depend on context crates)
@@ -57,12 +57,12 @@ Only what *every* blox needs, no exceptions:
 
 Service crates follow the `bloxide-timer` model: action functions live in the crate. A blox pulls in the crate if it needs that service.
 
-#### `bloxide-messaging`
+#### `blox-ctx-ping-pong`
 
 Provides messaging primitives — action functions that send messages via `ActorRef`s. Both `self_ref` and `peer_ref` are `ActorRef<M, R>` where `M` varies per blox. One crate, action functions for both:
 
 ```rust
-// crates/bloxide-messaging/src/lib.rs
+// crates/blox-ctx-ping-pong/src/lib.rs
 use bloxide_core::{BloxRuntime, messaging::ActorRef, ActorId};
 use ping_pong_messages::PingPongMsg;
 
@@ -140,13 +140,13 @@ on_init = "ctx.round = 0; ctx.current_timer = None;"
 
 # Reference fields — codegen emits plain fields + constructor params
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
@@ -170,7 +170,7 @@ impl_required = false
 
 [[context.actions]]
 name = "send_initial_ping"
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 kind = "transition"
 fields = ["self_id", "peer_ref:ref", "round"]
 impl_required = false

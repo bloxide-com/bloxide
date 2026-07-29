@@ -32,25 +32,24 @@ bloxide/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits, messaging data types (ActorRef, Envelope, ActorId) (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
     bloxide-macros/            ← proc macros: #[blox_event], etc.
-    bloxide-messaging/         ← service crate: action functions (send_ping, send_pong, etc.) for peer/self messaging
-    bloxide-timer/             ← timer library: TimerCommand, TimerId, TimerQueue, TimerService trait
-    bloxide-child-management/  ← reusable child tracking: ChildGroup, ChildEntry, ChildPhase (platform primitive)
-    bloxide-supervisor/        ← supervisor blox: SupervisorSpec, SupervisorControl, RegisterChild, action functions; re-exports ChildGroup/ChildPolicy/etc. from bloxide-child-management
+    bloxide-timer/             ← timer feature crate: TimerCommand, TimerId, TimerQueue, TimerService trait, set_timer/cancel_timer/cancel_timer_by_id action functions
+    bloxide-child-management/  ← child-management feature crate: ChildGroup, ChildPolicy, ChildCtrl/RegisterChild/RegisterDynamicChild control plane, supervision action functions
+    bloxide-supervisor/        ← supervisor blox (reference consumer): blox.toml + generated spec + tests only (spec 20)
     bloxide-peers/             ← peer introduction: PeerCtrl<M,R>, AddPeer, RemovePeer, introduce_peers, broadcast_to_peers
-    bloxide-spawn/             ← spawn capability: SpawnFn, SpawnOutput, SpawnCap (platform primitive)
+    bloxide-spawn/             ← spawn capability: SpawnFn, SpawnOutput, SpawnCap, ChildCtrlRegistrar (platform primitive)
     messages/
       ping-pong-messages/      ← PingPongMsg shared by both ping and pong bloxes
       pool-messages/           ← PoolMsg, WorkerMsg, DoWork, WorkDone, etc. shared by pool and worker
       counter-messages/        ← CounterMsg shared by counter blox and minimal wiring demo
       bhsm-tst-messages/       ← BhsmTstMsg shared by the bhsm-tst HSM topology demo
     context/
+      blox-ctx-ping-pong/      ← ping/pong demo context crate: send_ping/send_pong/send_initial_ping/schedule_resume action functions
       blox-ctx-pool-ref/       ← domain context crate + notify_pool_done action function
       blox-ctx-rounds/         ← increment_round action function
-      blox-ctx-current-timer/  ← schedule_resume/cancel_timer_by_id action functions
       blox-ctx-ticks/          ← increment_count action function
     bloxes/
-      ping/                    ← declarative Ping actor; depends on context crates (blox-ctx-rounds, blox-ctx-current-timer, bloxide-messaging)
-      pong/                    ← declarative Pong actor; depends on context crates (bloxide-messaging)
+      ping/                    ← declarative Ping actor; depends on context crates (blox-ctx-rounds, blox-ctx-ping-pong) and bloxide-timer
+      pong/                    ← declarative Pong actor; depends on context crates (blox-ctx-ping-pong)
       worker/                  ← declarative Worker actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
       pool/                    ← declarative Pool actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
       counter/                 ← declarative Counter actor; depends on context crates (blox-ctx-ticks)
@@ -170,6 +169,7 @@ Then dive deeper as needed:
 | Spec for the Worker actor | `spec/bloxes/worker.md` |
 | Spec for the BHSM test actor | `spec/bloxes/bhsm.md` |
 | How does the reusable supervisor spec work? | `spec/architecture/08-supervision.md` |
+| How are platform features packaged and consumed? | `spec/architecture/20-platform-feature-pattern.md` |
 | Template for a new blox | `spec/templates/blox-spec.md` |
 | **How do I test a blox in isolation?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
 | **What is TestRuntime for?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
@@ -244,7 +244,7 @@ of restating the list — this is the single canonical copy.
 7. **Actions before guards** — event handlers use `TransitionRule { matches, actions, guard }`. All side effects go in `actions: fn(&mut Ctx, &Event)`. Guards are pure: `guard: fn(&Ctx, &ActionResults, &Event) -> Guard`. The borrow checker enforces this — `guard` receives `&Ctx` and `&ActionResults`, not `&mut Ctx`.
 8. **Bubbling is implicit** — states with no matching rule automatically bubble to the parent. Empty `transitions: &[]` means all events bubble. Never add a catch-all rule that manually returns a parent; bubbling happens automatically when no rule matches.
 9. **Blox crates never import impl crates** — concrete types are only referenced by the binary. Blox crates depend on context crates (free action functions) only.
-10. **Context crates are portable interface layers** — context crates (`blox-ctx-*`, `bloxide-messaging`, `bloxide-peers`, etc.) define free action functions taking concrete params. They may contain portable generic action logic, but no runtime-specific imports, file I/O, or Embassy/Tokio code.
+10. **Context crates are portable interface layers** — context crates (`blox-ctx-*`, `bloxide-peers`, `bloxide-timer`, etc.) define free action functions taking concrete params. They may contain portable generic action logic, but no runtime-specific imports, file I/O, or Embassy/Tokio code.
 11. **Use named struct variants in message enums** — `PingPongMsg::Ping(Ping { round })` not `PingPongMsg::Ping(u32)`. Named fields are accessible by name across module boundaries without positional fragility.
 12. **Lifecycle commands flow through dispatch() at VirtualRoot level** — actors handle them as domain events via `root_transitions()`. The VirtualRoot intercepts `LifecycleCommand` variants (Start, Reset, Stop, Ping) before they reach user-declared states. `Start` exits Init and enters `initial_state()`; `Reset` goes to user-defined `initial_state()` (actor immediately operational); `Stop` goes to Init (suspended, can be restarted with `Start`). Actors never implement `is_start()` or call `machine.start()`/`machine.reset()` explicitly — lifecycle is driven entirely by dispatch. `root_transitions()` returns `&[]` for supervised actors (lifecycle handled by VirtualRoot, not user code). Actors can also self-stop via `Guard::Stop` (goes to Init, reports `Stopped` to supervisor) or self-restart via `Guard::Reset`.
 13. **`is_error` takes precedence** — if a state returns `true` for `is_error()`, the runtime reports `ChildLifecycleEvent::Failed`. There is no `is_terminal()` — actors self-suspend via `Guard::Stop` (returns `DispatchOutcome::Stopped`) instead of reaching terminal states. Use `is_error` for fault states that should trigger supervisor intervention; use `Guard::Stop` for normal completion (the actor self-suspends to Init and the supervisor decides next steps via `ChildPolicy`).
@@ -255,6 +255,7 @@ of restating the list — this is the single canonical copy.
 16. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (declared as `[[context.uses]]` entries with `role = "ctor"`, e.g. `spawn_fn: SpawnFn<R, Req>`). The binary (or impl crate) provides the concrete factory function at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
 17. **KillCapability is a runtime capability, not a message** — `KillCapability::kill(handle)` immediately aborts the child's task without any callbacks firing. No `on_exit` handlers run; the task is dropped in-place. KillCapability is for (1) unresponsive actors that cannot process Stop, or (2) cleanup of stopped actors whose resources should be freed immediately. Kill works for both static and dynamic actors; killed actors are permanently dead and cannot be restarted — normal lifecycle uses Reset/Stop through dispatch(). KillCapability lives in `bloxide-core` as a trait; runtimes implement it (`NoKill` for Embassy, `Kill` for Tokio via `R::abort`). Supervisors store the concrete `TaskHandle` per child; actors never see it.
 18. **System.toml is the single source of truth for concrete action wiring** — Blox-crate-level codegen ALWAYS produces stub `spec_skeletons`. The system-level codegen (from `system.toml`) ALWAYS produces concrete action closures, for every actor including dynamically spawned ones. There is no `crate = "crate"` path at the blox-crate level. Dynamic actors are declared in `system.toml` with `kind = "dynamic"` — they get a concrete spec generated but no channels/tasks/bootstrap in main.rs. The impl crate's spawn function is generic over the spec type; the generated main.rs monomorphizes it with the system-level concrete spec.
+19. **Platform features are consumed uniformly** (spec 20) — a platform feature crate owns its message set, context field declarations, and consumer-side action functions (concrete params or extracted payloads, never the consumer's event enum). Blox crates compose features via `[[context.uses]]` / `[[context.actions]]` and never own feature logic or feature message sets. The supervisor is the reference consumer: topology only, everything else from `bloxide-child-management` + `bloxide-spawn`. Factory/capability features (spawn) are the documented exception to message-set ownership.
 
 ## Development Workflow
 

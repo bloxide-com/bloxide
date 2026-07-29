@@ -91,7 +91,7 @@ never sees the application's concrete spawn request type.
    supervisor's `blox.toml` uses only standard codegen features.
 
 8. **The supervisor is a reference implementation, not a hardcoded singleton.** The
-   supervision traits (`ChildGroup`, `ChildPolicy`, `SupervisorControl`) and the runtime
+   supervision traits (`ChildGroup`, `ChildPolicy`, `ChildCtrl`) and the runtime
    capabilities (`SpawnCap`, `run` with `RunConfig::supervised`) are the reusable layer. Any blox can
    include `ChildGroup<R>` in its context and implement supervision. The
    `bloxide-supervisor` blox is the standard reference; other bloxes can compose the same
@@ -129,7 +129,7 @@ bloxide-supervisor/       ← the supervisor blox (codegen-ed from blox.toml)
   Cargo.toml               ← NO dynamic feature. Supervisor is feature-free.
   src/generated/           ← codegen output (ctx.rs, topology.rs, spec_skeleton.rs, events.rs)
   src/lib.rs               ← re-exports
-  src/control.rs           ← SupervisorControl, RegisterChild, RegisterDynamicChild, SupervisorRegistrar
+  src/control.rs           ← ChildCtrl, RegisterChild, RegisterDynamicChild, ChildCtrlRegistrar
   src/spawn.rs             ← child-event mailbox accessor
 
 bloxide-supervisor/src/actions.rs  ← in-crate action functions (concrete &SupervisorEvent<R>)
@@ -378,7 +378,7 @@ registration protocol:
 /// The associated `RegisterMsg` is the message type the spawn helper sends
 /// on the managing blox's control mailbox after a child is spawned.
 ///
-/// The standard supervisor implements this with `RegisterMsg = SupervisorControl<R>`.
+/// The standard supervisor implements this with `RegisterMsg = ChildCtrl<R>`.
 /// A user's custom blox implements it with their own message type.
 pub trait ChildRegistrar<R: BloxRuntime> {
     type RegisterMsg: Send + 'static;
@@ -393,11 +393,11 @@ The standard supervisor's implementation (in `bloxide-supervisor`):
 ```rust
 // In bloxide-supervisor
 
-impl<R: BloxRuntime> ChildRegistrar<R> for SupervisorRegistrar {
-    type RegisterMsg = SupervisorControl<R>;
+impl<R: BloxRuntime> ChildRegistrar<R> for ChildCtrlRegistrar {
+    type RegisterMsg = ChildCtrl<R>;
 
-    fn register(output: SpawnOutput<R>) -> SupervisorControl<R> {
-        SupervisorControl::RegisterDynamicChild(RegisterDynamicChild {
+    fn register(output: SpawnOutput<R>) -> ChildCtrl<R> {
+        ChildCtrl::RegisterDynamicChild(RegisterDynamicChild {
             id: output.child_id,
             lifecycle_ref: output.lifecycle_ref,
             abort_ref: output.abort_ref,
@@ -408,7 +408,7 @@ impl<R: BloxRuntime> ChildRegistrar<R> for SupervisorRegistrar {
 }
 
 /// Marker type for the standard supervisor's registrar implementation.
-pub struct SupervisorRegistrar;
+pub struct ChildCtrlRegistrar;
 ```
 
 The spawn helper is generic over `C: ChildRegistrar<R>`. The wiring codegen injects the
@@ -446,7 +446,7 @@ domain channels. The send side (`abort_ref`) goes into `SpawnOutput` → the man
 registration message → the managing blox's child list. The receive side (`abort_rx`) goes
 to `run` with `RunConfig::supervised_with_abort` which listens on it in the child's task.
 
-### 3.7 SupervisorControl Enum
+### 3.7 ChildCtrl Enum
 
 The supervisor's control-plane enum. No `Spawn` variant — spawning is decoupled from the
 supervisor. This enum is specific to the standard supervisor; a user's custom
@@ -460,7 +460,7 @@ child-managing blox defines its own control enum (see §3.5 `ChildRegistrar`).
 /// There is no `Spawn` variant — spawning is decoupled from the supervisor.
 /// The spawn helper calls `spawn_child()` (in `bloxide-core`) which sends
 /// `RegisterDynamicChild` on the control mailbox after the child is created.
-pub enum SupervisorControl<R: BloxRuntime> {
+pub enum ChildCtrl<R: BloxRuntime> {
     /// Register a static child (wired at startup, no kill capability).
     /// The child's channels already exist (created by the wiring layer).
     /// The supervisor just tracks it for lifecycle management.
@@ -485,7 +485,7 @@ the kill capability fields.
 
 `RegisterChild` is for static children (wired at startup, no kill capability).
 `RegisterDynamicChild` is for dynamically spawned children (has `abort_ref` +
-`abort_handle`). Both are variants of `SupervisorControl<R>`.
+`abort_handle`). Both are variants of `ChildCtrl<R>`.
 
 Two separate structs avoid `Option` on the kill fields — the type system encodes the
 capability (static children don't have `abort_ref`):
@@ -536,13 +536,13 @@ action handles both variants: adds the child to the list, stores the `abort_ref`
 #[derive(Debug, Clone)]
 pub enum SupervisorEvent<R: BloxRuntime> {
     Child(Envelope<ChildLifecycleEvent>),
-    Control(Envelope<SupervisorControl<R>>),
+    Control(Envelope<ChildCtrl<R>>),
     Lifecycle(LifecycleCommand),
 }
 
 // From impls — standard, no coherence problem
 impl<R: BloxRuntime> From<Envelope<ChildLifecycleEvent>> for SupervisorEvent<R> { ... }
-impl<R: BloxRuntime> From<Envelope<SupervisorControl<R>>> for SupervisorEvent<R> { ... }
+impl<R: BloxRuntime> From<Envelope<ChildCtrl<R>>> for SupervisorEvent<R> { ... }
 impl<R: BloxRuntime> From<LifecycleCommand> for SupervisorEvent<R> { ... }
 ```
 
@@ -553,7 +553,7 @@ crate. The codegen auto-generates the `Lifecycle` variant (with `From<LifecycleC
 event enum — the supervisor gets it for free, same as every other blox.
 
 Action functions take `&SupervisorEvent<R>` concretely and pattern-match through
-`Envelope<ChildLifecycleEvent>` / `Envelope<SupervisorControl<R>>` directly. This is the
+`Envelope<ChildLifecycleEvent>` / `Envelope<ChildCtrl<R>>` directly. This is the
 same pattern every other blox uses.
 
 ### 3.10 The Supervisor Context
@@ -699,7 +699,7 @@ blox's control mailbox.
 /// - `Req` — the application's concrete spawn request type
 /// - `C` — the `ChildRegistrar` implementation. Determines how `SpawnOutput`
 ///   is wrapped into the managing blox's control-plane message.
-///   For the standard supervisor, `C = SupervisorRegistrar`.
+///   For the standard supervisor, `C = ChildCtrlRegistrar`.
 pub fn spawn_child<R, Req, C>(
     spawn_fn: SpawnFn<R, Req>,
     req: Req,
@@ -724,16 +724,16 @@ where
 ```
 
 The requesting blox (e.g., the Pool) calls `spawn_child` directly, specifying
-`C = SupervisorRegistrar` as the type parameter to wire the `SpawnOutput` into
-the supervisor's `SupervisorControl::RegisterDynamicChild` message:
+`C = ChildCtrlRegistrar` as the type parameter to wire the `SpawnOutput` into
+the supervisor's `ChildCtrl::RegisterDynamicChild` message:
 
 ```rust
 // In pool-blox — the Pool calls spawn_child directly
 
 use bloxide_spawn::{spawn_child, ChildRegistrar};
-use bloxide_supervisor::SupervisorRegistrar;
+use bloxide_supervisor::ChildCtrlRegistrar;
 
-let result = spawn_child::<_, _, SupervisorRegistrar>(
+let result = spawn_child::<_, _, ChildCtrlRegistrar>(
     ctx.spawn_fn,
     req,
     &ctx.spawn_ref,   // supervisor control mailbox
@@ -743,9 +743,9 @@ let result = spawn_child::<_, _, SupervisorRegistrar>(
 ```
 
 `SpawnFn` and `ChildRegistrar` are both defined in `bloxide-spawn` so any blox can name
-them without a runtime or supervisor dependency. The `SupervisorRegistrar` is the only
+them without a runtime or supervisor dependency. The `ChildCtrlRegistrar` is the only
 type the pool needs from `bloxide-supervisor` — it implements `ChildRegistrar` to wrap
-`SpawnOutput` into `SupervisorControl::RegisterDynamicChild`.
+`SpawnOutput` into `ChildCtrl::RegisterDynamicChild`.
 
 ### 3.13 `run()` with `RunConfig::supervised_with_abort`
 
@@ -821,7 +821,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
 
         // Call spawn_child directly — the Pool owns the spawn_fn
         // and the managing blox's control_ref (wired as spawn_ref).
-        let result = spawn_child::<_, _, SupervisorRegistrar>(
+        let result = spawn_child::<_, _, ChildCtrlRegistrar>(
             ctx.spawn_fn,           // fn pointer from wiring
             req,
             &ctx.spawn_ref,         // managing blox's control mailbox
@@ -853,8 +853,8 @@ The Pool's context has these spawn-related fields:
 pub spawn_fn: SpawnFn<R, SpawnRequest<R>>,
 
 /// Ref to the managing blox's control mailbox — used to send the registration
-/// message. For the standard supervisor, it's ActorRef<SupervisorControl<R>, R>.
-pub spawn_ref: ActorRef<SupervisorControl<R>, R>,
+/// message. For the standard supervisor, it's ActorRef<ChildCtrl<R>, R>.
+pub spawn_ref: ActorRef<ChildCtrl<R>, R>,
 
 /// Ref to the managing blox's child-notify mailbox — passed to the spawn
 /// function so the child can report lifecycle events.
@@ -996,7 +996,7 @@ sequenceDiagram
     participant NewWorker as Worker N
     participant OldWorker as Workers 1..N-1
 
-    Pool->>Factory: spawn_child::<_, _, SupervisorRegistrar>(spawn_fn, req, ...)
+    Pool->>Factory: spawn_child::<_, _, ChildCtrlRegistrar>(spawn_fn, req, ...)
     Factory->>NewWorker: channels!, WorkerCtx::new, R::spawn
     Factory-->>Pool: SpawnOutput { child_id, lifecycle_ref, abort_ref, kill_handle }
     Factory->>Pool: SpawnedWorker reply via reply_to
@@ -1242,7 +1242,7 @@ Pool                      Spawn Helper            Managing Blox            Child
   |                            |                       |                       |
   | 2. Pool calls              |                       |                       |
   |    spawn_child::<_,_,      |                       |                       |
-  |    SupervisorRegistrar>    |                       |                       |
+  |    ChildCtrlRegistrar>    |                       |                       |
   |    (spawn_fn, req,         |                       |                       |
   |     spawn_ref, notify_ref, |                       |                       |
   |     self_id)               |                       |                       |
@@ -1338,7 +1338,7 @@ lifecycle event types are needed.
 
 - **Birth**: The spawn helper creates the child (channels, context, task) and sends the
   registration message (via `C::register(output)`) to the managing blox's control mailbox.
-  For the standard supervisor: `SupervisorControl::RegisterDynamicChild(RegisterDynamicChild
+  For the standard supervisor: `ChildCtrl::RegisterDynamicChild(RegisterDynamicChild
   { id, lifecycle_ref, abort_ref, abort_handle, policy })`. The managing blox registers it
   in its child list.
 
@@ -1412,7 +1412,7 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
 
 - `bloxide-supervisor` — no `dynamic` feature (there is no `dynamic` feature)
 - No `spawn_fn` field in supervisor context
-- No `Spawn` variant in `SupervisorControl`
+- No `Spawn` variant in `ChildCtrl`
 - Children registered via `RegisterChild` (no abort_ref) — channels created at wiring time
   by `ChildGroupBuilder::add_child`
 - Supervisor manages lifecycle only — sends Start/Stop/Reset
@@ -1429,7 +1429,7 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
 - `spawn_fn: SpawnFn<R, SpawnRequest<R>>` field in **the Pool's** context (not the
   supervisor's)
 - `spawn_ref` points to supervisor's control mailbox (for `RegisterDynamicChild`)
-- The Pool calls `spawn_child::<_, _, SupervisorRegistrar>` (from `bloxide-spawn`) directly
+- The Pool calls `spawn_child::<_, _, ChildCtrlRegistrar>` (from `bloxide-spawn`) directly
 - `R: BloxRuntime + SpawnCap` — runtime supports task spawning
 - Application provides `spawn_fn` at wiring time
 - The spawn helper creates children (including abort mailbox) and sends

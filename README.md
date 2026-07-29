@@ -80,10 +80,10 @@ bloxide/
 │   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, KillCapability, run/RunConfig
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
 │   ├── bloxide-macros/    # proc macros: #[blox_event], event!, blox_messages!, EventTag, channels!
-│   ├── bloxide-messaging/ # messaging helpers: send_ping, broadcast_to_peers
+│   ├── blox-ctx-ping-pong/ # messaging helpers: send_ping, broadcast_to_peers
 │   ├── bloxide-peers/     # peer introduction: PeerCtrl, introduce_peers
 │   ├── bloxide-child-management/ # reusable child tracking: ChildGroup, ChildEntry, ChildPhase
-│   ├── bloxide-supervisor/ # supervisor blox: SupervisorSpec, SupervisorControl, RegisterChild
+│   ├── bloxide-supervisor/ # supervisor blox: SupervisorSpec, ChildCtrl, RegisterChild
 │   ├── bloxide-spawn/     # spawn capability: SpawnCap, SpawnFn, SpawnOutput, ChildRegistrar
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
 │   ├── messages/          # shared message crates (ping-pong, pool, counter, bhsm-tst)
@@ -161,10 +161,10 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `VirtualClock` |
 | `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase` |
-| `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `SupervisorControl`, `RegisterChild`, `SupervisorRegistrar`, action functions |
+| `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `ChildCtrl`, `RegisterChild`, `ChildCtrlRegistrar`, action functions |
 | `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `spawn_child` |
 | `bloxide-peers` | `crates/bloxide-peers` | ✅ | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` |
-| `bloxide-messaging` | `crates/bloxide-messaging` | ✅ | `send_ping`, `broadcast_to_peers` messaging helpers |
+| `blox-ctx-ping-pong` | `crates/blox-ctx-ping-pong` | ✅ | `send_ping`, `broadcast_to_peers` messaging helpers |
 | `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
 | `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, `SpawnCap`, `KillCapability`, task macros |
 

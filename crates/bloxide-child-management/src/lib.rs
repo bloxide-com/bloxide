@@ -5,11 +5,18 @@
 //! It is not supervisor-specific — any blox that tracks child actors can use
 //! `ChildGroup` directly. The supervisor is one such consumer; a custom
 //! managing blox could use it without depending on `bloxide-supervisor`.
+//!
+//! Following the Platform Feature Pattern (spec 20), this crate also owns the
+//! child-management control plane (`control`: `ChildCtrl`, `RegisterChild`,
+//! `RegisterDynamicChild`) and the consumer-side action functions (`actions`)
+//! that a managing blox wires into its topology.
 
 #![no_std]
 extern crate alloc;
 
+pub mod actions;
 pub mod builder;
+pub mod control;
 
 use alloc::vec::Vec;
 use bloxide_core::{
@@ -60,6 +67,9 @@ pub enum GroupShutdown {
 
 // Re-export the generic builder
 pub use builder::ChildGroupBuilder;
+
+// Re-export the control-plane message types
+pub use control::{ChildCtrl, RegisterChild, RegisterDynamicChild};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum ChildAction {

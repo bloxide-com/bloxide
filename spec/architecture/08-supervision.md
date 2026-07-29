@@ -311,19 +311,19 @@ actions = ["Self::record_killed"]
 
 [[topology.transitions]]
 state = "Running"
-event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterChild(_)))"
+event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterChild(_)))"
 target = "stay"
 actions = ["Self::register_child"]
 
 [[topology.transitions]]
 state = "Running"
-event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterDynamicChild(_)))"
+event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterDynamicChild(_)))"
 target = "stay"
 actions = ["Self::handle_register_dynamic_child"]
 
 [[topology.transitions]]
 state = "Running"
-event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::HealthCheckTick))"
+event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::HealthCheckTick))"
 target = "stay"
 actions = ["Self::handle_health_check"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
@@ -367,7 +367,7 @@ impl<R: BloxRuntime + 'static> MachineSpec for SupervisorSpec<R> {
     type Ctx = SupervisorCtx<R>;
     type Mailboxes<Rt: BloxRuntime> = (
         Rt::Stream<ChildLifecycleEvent>,
-        Rt::Stream<SupervisorControl<R>>,
+        Rt::Stream<ChildCtrl<R>>,
     );
 
     fn initial_state() -> SupervisorState { SupervisorState::Running }
@@ -443,7 +443,7 @@ sequenceDiagram
 
 Health checks are delivered through the supervisor control-plane stream:
 
-1. A health driver (for example, a runtime timer task) sends `SupervisorControl::HealthCheckTick`.
+1. A health driver (for example, a runtime timer task) sends `ChildCtrl::HealthCheckTick`.
 2. The supervisor calls `health_check_tick()` on `ChildGroup`.
 3. `ChildGroup` marks children that missed the previous `Alive` as rogue and applies normal child policy (`handle_done_or_failed`).
 4. `ChildGroup` sends `LifecycleCommand::Ping` to currently monitored children.
@@ -505,17 +505,17 @@ The run loop polls streams in priority order:
 
 After every dispatch, the run loop inspects `DispatchOutcome` and sends the corresponding `ChildLifecycleEvent` to the supervisor automatically. The `Aborted` outcome is synthesized by the run loop itself (not by `dispatch()`), since `Abort` bypasses the dispatch pipeline.
 
-## `SupervisorEvent` and `SupervisorControl`
+## `SupervisorEvent` and `ChildCtrl`
 
 The unified event type for supervisor state machines:
 
 ```rust
 pub enum SupervisorEvent<R: BloxRuntime> {
     Child(ChildLifecycleEvent),
-    Control(SupervisorControl<R>),
+    Control(ChildCtrl<R>),
 }
 
-pub enum SupervisorControl<R: BloxRuntime> {
+pub enum ChildCtrl<R: BloxRuntime> {
     RegisterChild(RegisterChild<R>),
     RegisterDynamicChild(RegisterDynamicChild<R>),
     HealthCheckTick,
@@ -606,7 +606,7 @@ Supervision-specific invariants:
 - Per-child `ChildPolicy` (four variants: `Reset`, `Stop`, `Abort`, `Kill`) gives each child its own lifecycle policy.
 - `GroupShutdown` controls when the supervisor enters shutdown, not which children are affected.
 - `ChildPhase` tracks each child's state: `Init`, `Running`, `ResetPending` (Reset sent, awaiting `Started`), `PermanentlyDone`, `Stopped`. Health checks (`is_health_monitored`) skip `ResetPending` and `PermanentlyDone` children.
-- `LifecycleCommand` and `ChildLifecycleEvent` are defined in `bloxide-core` (and re-exported by `bloxide-supervisor`). `ChildPolicy`, `AbortCommand`, and `GroupShutdown` are defined in `bloxide-core/src/child_management.rs`. `ChildGroup`, `ChildEntry`, and `ChildPhase` are defined in `bloxide-child-management`. `SupervisorControl`, `RegisterChild`, and `SupervisorRegistrar` are defined in `bloxide-supervisor/src/control.rs`.
+- `LifecycleCommand` and `ChildLifecycleEvent` are defined in `bloxide-core` (and re-exported by `bloxide-supervisor`). `ChildPolicy`, `AbortCommand`, and `GroupShutdown` are defined in `bloxide-core/src/child_management.rs`. `ChildGroup`, `ChildEntry`, and `ChildPhase` are defined in `bloxide-child-management`. `ChildCtrl`, `RegisterChild`, and `ChildCtrlRegistrar` are defined in `bloxide-supervisor/src/control.rs`.
 - No custom supervisor implementation is needed — `SupervisorSpec<R>` is a generic, reusable `MachineSpec`.
 
 ## Related Docs

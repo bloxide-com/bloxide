@@ -460,7 +460,7 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
                 // Add context action crates — these are the crates that
                 // provide the concrete action functions referenced in the
                 // generated spec_skeleton.rs (e.g. blox_ctx_rounds,
-                // bloxide_messaging, blox_ctx_current_timer).
+                // blox_ctx_ping_pong, bloxide_timer).
                 for action in &ctx.actions {
                     if let Some(ref crate_name) = action.crate_name {
                         let cargo_name = crate_name.replace('_', "-");

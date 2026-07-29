@@ -67,3 +67,20 @@ where
         );
     }
 }
+
+/// Cancel the stored timer (if any) and clear the slot.
+///
+/// The `Option<TimerId>` bookkeeping pattern: a context keeps at most one
+/// current timer in a plain field; this cancels it and clears the field in
+/// one call.
+pub fn cancel_timer_by_id<R>(
+    self_id: ActorId,
+    timer_ref: &ActorRef<TimerCommand, R>,
+    current_timer: &mut Option<TimerId>,
+) where
+    R: BloxRuntime,
+{
+    if let Some(id) = current_timer.take() {
+        cancel_timer(self_id, timer_ref, id);
+    }
+}

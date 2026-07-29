@@ -51,7 +51,10 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
         R,
         pool_messages::SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
     >,
-    spawn_ref: &bloxide_core::messaging::ActorRef<bloxide_supervisor::SupervisorControl<R>, R>,
+    spawn_ref: &bloxide_core::messaging::ActorRef<
+        bloxide_child_management::control::ChildCtrl<R>,
+        R,
+    >,
     notify_ref: &bloxide_core::messaging::ActorRef<ChildLifecycleEvent, R>,
     spawn_reply_ref: &bloxide_core::messaging::ActorRef<
         pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
@@ -72,7 +75,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
         reply_to: spawn_reply_ref.clone(),
         pool_ref: self_ref.clone(),
     };
-    let _ = bloxide_spawn::spawn_child::<_, _, bloxide_supervisor::SupervisorRegistrar>(
+    let _ = bloxide_spawn::spawn_child::<_, _, bloxide_spawn::ChildCtrlRegistrar>(
         *spawn_fn, req, spawn_ref, notify_ref, self_id,
     );
 }
@@ -99,7 +102,10 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
         R,
         pool_messages::SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
     >,
-    spawn_ref: &bloxide_core::messaging::ActorRef<bloxide_supervisor::SupervisorControl<R>, R>,
+    spawn_ref: &bloxide_core::messaging::ActorRef<
+        bloxide_child_management::control::ChildCtrl<R>,
+        R,
+    >,
     notify_ref: &bloxide_core::messaging::ActorRef<ChildLifecycleEvent, R>,
     spawn_reply_ref: &bloxide_core::messaging::ActorRef<
         pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>,
@@ -156,7 +162,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
             reply_to: spawn_reply_ref.clone(),
             pool_ref: self_ref.clone(),
         };
-        let _ = bloxide_spawn::spawn_child::<_, _, bloxide_supervisor::SupervisorRegistrar>(
+        let _ = bloxide_spawn::spawn_child::<_, _, bloxide_spawn::ChildCtrlRegistrar>(
             *spawn_fn, req, spawn_ref, notify_ref, self_id,
         );
     }

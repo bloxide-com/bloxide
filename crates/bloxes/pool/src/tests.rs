@@ -9,6 +9,7 @@
 
 #[cfg(all(test, feature = "std", feature = "dynamic"))]
 mod pool_tests {
+    use bloxide_child_management::ChildCtrl;
     use bloxide_child_management::ChildPolicy;
     use bloxide_core::lifecycle::ChildLifecycleEvent;
     use bloxide_core::{
@@ -19,7 +20,6 @@ mod pool_tests {
     };
     use bloxide_peers::PeerCtrl;
     use bloxide_spawn::{SpawnFn, SpawnOutput};
-    use bloxide_supervisor::SupervisorControl;
     use bloxide_test_runtime::TestRuntime;
     use pool_messages::{PoolMsg, SpawnRequest, SpawnWorker, SpawnedWorker, WorkDone, WorkerMsg};
 
@@ -29,7 +29,7 @@ mod pool_tests {
 
     struct PoolHarness {
         machine: StateMachine<PoolSpec<TestRuntime>>,
-        _control_rx: <TestRuntime as BloxRuntime>::Receiver<SupervisorControl<TestRuntime>>,
+        _control_rx: <TestRuntime as BloxRuntime>::Receiver<ChildCtrl<TestRuntime>>,
         _spawn_reply_ref:
             ActorRef<SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>, TestRuntime>,
     }
@@ -90,7 +90,7 @@ mod pool_tests {
 
             let control_id = TestRuntime::alloc_actor_id();
             let (control_ref, control_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-                SupervisorControl<TestRuntime>,
+                ChildCtrl<TestRuntime>,
             >(control_id, 16);
 
             let notify_id = TestRuntime::alloc_actor_id();
@@ -314,9 +314,8 @@ mod pool_tests {
             <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
 
         let control_id = TestRuntime::alloc_actor_id();
-        let (control_ref, _control_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-            SupervisorControl<TestRuntime>,
-        >(control_id, 16);
+        let (control_ref, _control_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<ChildCtrl<TestRuntime>>(control_id, 16);
 
         let notify_id = TestRuntime::alloc_actor_id();
         let (notify_ref, _notify_rx) =

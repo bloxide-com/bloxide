@@ -188,7 +188,7 @@ Validation: the codegen checks that every `ctor` field in blox.toml has a corres
 The supervisor already handles child registration and lifecycle. The wiring manifest extends this:
 
 1. **Static children** — declared in `[[supervision]]` with policies. The supervisor starts them on `Start`.
-2. **Dynamic children** — spawned at runtime via the spawn factory. The supervisor registers them dynamically (already supported via `SupervisorControl::RegisterChild`).
+2. **Dynamic children** — spawned at runtime via the spawn factory. The supervisor registers them dynamically (already supported via `ChildCtrl::RegisterChild`).
 3. **Health checks** — optional `health_check_interval_ms` in the wiring manifest.
 
 ### Visual Editor Integration

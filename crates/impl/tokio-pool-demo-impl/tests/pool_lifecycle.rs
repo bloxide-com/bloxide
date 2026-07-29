@@ -20,11 +20,12 @@
 use core::future::poll_fn;
 use core::pin::Pin;
 
+use bloxide_child_management::control::ChildCtrl;
 use bloxide_child_management::{ChildPolicy, GroupShutdown};
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
 use bloxide_core::{capability::DynamicChannelCap, StateMachine};
-use bloxide_supervisor::{SupervisorControl, SupervisorCtx, SupervisorEvent, SupervisorSpec};
+use bloxide_supervisor::{SupervisorCtx, SupervisorEvent, SupervisorSpec};
 use bloxide_tokio::{run, ChildGroupBuilder, RunConfig, TokioRuntime, TokioStream};
 use futures_core::Stream;
 use pool_blox::{PoolCtx, PoolSpec};
@@ -60,7 +61,7 @@ async fn pool_lifecycle_spawn_and_done() {
     //
     // The builder allocates the notify channel (children → supervisor) and
     // the control channel (pool → supervisor for RegisterDynamicChild).
-    let mut group_builder: ChildGroupBuilder<TokioRuntime, SupervisorControl<TokioRuntime>> =
+    let mut group_builder: ChildGroupBuilder<TokioRuntime, ChildCtrl<TokioRuntime>> =
         ChildGroupBuilder::new(GroupShutdown::WhenAllDone);
     let sup_control_ref = group_builder.control_ref();
     let sup_notify_ref = group_builder.notify_ref();
@@ -116,7 +117,7 @@ async fn pool_lifecycle_spawn_and_done() {
     //
     // The supervisor has two input channels:
     //   - sup_notify_rx: ChildLifecycleEvent from children
-    //   - sup_control_rx: SupervisorControl (RegisterDynamicChild from spawn)
+    //   - sup_control_rx: ChildCtrl (RegisterDynamicChild from spawn)
     //
     // We poll both and dispatch events to the supervisor machine, collecting
     // ChildLifecycleEvents for assertions.

@@ -1,26 +1,22 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Lifecycle action functions for the supervisor state machine.
+//! Lifecycle action functions for a managing blox (e.g. the standard supervisor).
 //!
 //! These take concrete params (extracted from the context by the generated
-//! wrapper closures) rather than `&mut SupervisorCtx<R>` + accessor traits.
-//! The event type is `&SupervisorEvent<R>` — the codegen passes it via the
-//! `event_arg` mechanism.
+//! wrapper closures) plus an extracted event payload — `&ChildLifecycleEvent`
+//! or `&ChildCtrl<R>` — never the consumer's event enum type (spec 20:
+//! Platform Feature Pattern).
 
-use crate::SupervisorControl;
-use bloxide_child_management::{ChildAction, ChildGroup};
-use bloxide_core::{
-    lifecycle::ChildLifecycleEvent, messaging::ActorRef, messaging::Envelope,
-    transition::ActionResult,
-};
-
-use crate::SupervisorEvent;
+use crate::control::ChildCtrl;
+use crate::{ChildAction, ChildGroup};
+use bloxide_core::{lifecycle::ChildLifecycleEvent, messaging::ActorRef, transition::ActionResult};
 
 /// Start all children in the group and clear lifecycle counters.
 ///
-/// This is the `on_entry` for the Running state. In the four-level lifecycle
-/// model, `Guard::Reset` goes directly to `initial_state()` (Running) — it
-/// does NOT fire `on_init_entry`. So counters must be cleared here, in the
-/// Running on_entry, which fires both on initial Start and on Reset.
+/// This is the `on_entry` for the managing blox's Running state. In the
+/// four-level lifecycle model, `Guard::Reset` goes directly to
+/// `initial_state()` (Running) — it does NOT fire `on_init_entry`. So
+/// counters must be cleared here, in the Running on_entry, which fires both
+/// on initial Start and on Reset.
 pub fn start_children<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
@@ -42,18 +38,20 @@ where
 }
 
 /// Handle a Stopped or Failed child lifecycle event.
+///
+/// Serves both the `Stopped` and `Failed` transition rules — the extracted
+/// payload is matched internally.
 pub fn handle_done_or_failed<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
     child_notify: &ActorRef<ChildLifecycleEvent, R>,
     pending: &mut ChildAction,
-    ev: &SupervisorEvent<R>,
+    ev: &ChildLifecycleEvent,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { child_id }))
-    | SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { child_id })) = ev
+    if let ChildLifecycleEvent::Stopped { child_id } | ChildLifecycleEvent::Failed { child_id } = ev
     {
         let action = children.handle_done_or_failed(*child_id, self_id, child_notify);
         *pending = action;
@@ -64,24 +62,24 @@ where
 /// Record a started child.
 ///
 /// In the four-level lifecycle model, `Started` covers both initial `Start`
-/// and `Reset` (both go directly to `initial_state()`). The supervisor does
-/// not need to send `Start` after `Reset`.
-pub fn record_started<R>(children: &mut ChildGroup<R>, ev: &SupervisorEvent<R>) -> ActionResult
+/// and `Reset` (both go directly to `initial_state()`). The managing blox
+/// does not need to send `Start` after `Reset`.
+pub fn record_started<R>(children: &mut ChildGroup<R>, ev: &ChildLifecycleEvent) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Started { child_id })) = ev {
+    if let ChildLifecycleEvent::Started { child_id } = ev {
         children.handle_started(*child_id);
     }
     ActionResult::Ok
 }
 
 /// Record a stopped child.
-pub fn record_stopped<R>(children: &mut ChildGroup<R>, ev: &SupervisorEvent<R>) -> ActionResult
+pub fn record_stopped<R>(children: &mut ChildGroup<R>, ev: &ChildLifecycleEvent) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { child_id })) = ev {
+    if let ChildLifecycleEvent::Stopped { child_id } = ev {
         children.record_stopped(*child_id);
     }
     ActionResult::Ok
@@ -91,11 +89,11 @@ where
 ///
 /// Aborted means the child's task self-terminated cooperatively via
 /// `AbortCommand`. The task is gone — restarting requires respawning.
-pub fn record_aborted<R>(children: &mut ChildGroup<R>, ev: &SupervisorEvent<R>) -> ActionResult
+pub fn record_aborted<R>(children: &mut ChildGroup<R>, ev: &ChildLifecycleEvent) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { child_id })) = ev {
+    if let ChildLifecycleEvent::Aborted { child_id } = ev {
         children.record_aborted(*child_id);
     }
     ActionResult::Ok
@@ -106,22 +104,22 @@ where
 /// Killed means the child's task was destroyed externally via
 /// `KillCapability::kill(handle)`. Permanently dead — cannot be restarted
 /// without respawning the task.
-pub fn record_killed<R>(children: &mut ChildGroup<R>, ev: &SupervisorEvent<R>) -> ActionResult
+pub fn record_killed<R>(children: &mut ChildGroup<R>, ev: &ChildLifecycleEvent) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { child_id })) = ev {
+    if let ChildLifecycleEvent::Killed { child_id } = ev {
         children.record_killed(*child_id);
     }
     ActionResult::Ok
 }
 
 /// Record an alive child.
-pub fn record_alive<R>(children: &mut ChildGroup<R>, ev: &SupervisorEvent<R>) -> ActionResult
+pub fn record_alive<R>(children: &mut ChildGroup<R>, ev: &ChildLifecycleEvent) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Alive { child_id })) = ev {
+    if let ChildLifecycleEvent::Alive { child_id } = ev {
         children.handle_alive(*child_id);
     }
     ActionResult::Ok
@@ -131,12 +129,12 @@ where
 pub fn register_child<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
-    ev: &SupervisorEvent<R>,
+    ctrl: &ChildCtrl<R>,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterChild(child))) = ev {
+    if let ChildCtrl::RegisterChild(child) = ctrl {
         let (id, lifecycle_ref, policy) = (child.id, child.lifecycle_ref.clone(), child.policy);
         children.add(id, lifecycle_ref, policy);
         children.start_child(id, self_id);
@@ -146,20 +144,19 @@ where
 
 /// Handle a `RegisterDynamicChild` control message.
 ///
-/// Called when the supervisor receives a `SupervisorControl::RegisterDynamicChild`
+/// Called when the managing blox receives a `ChildCtrl::RegisterDynamicChild`
 /// from the `spawn_child` helper. Registers the child in the child group
 /// (storing the `abort_ref` for the cooperative abort mailbox and the
 /// `kill_handle` for the external kill ripcord) and sends a Start command.
 pub fn handle_register_dynamic_child<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
-    ev: &SupervisorEvent<R>,
+    ctrl: &ChildCtrl<R>,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterDynamicChild(reg))) = ev
-    {
+    if let ChildCtrl::RegisterDynamicChild(reg) = ctrl {
         let child_id = reg.id;
         children.add_dynamic(
             child_id,
@@ -179,12 +176,12 @@ pub fn handle_health_check<R>(
     children: &mut ChildGroup<R>,
     child_notify: &ActorRef<ChildLifecycleEvent, R>,
     pending: &mut ChildAction,
-    ev: &SupervisorEvent<R>,
+    ctrl: &ChildCtrl<R>,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let SupervisorEvent::Control(Envelope(_, SupervisorControl::HealthCheckTick)) = ev {
+    if let ChildCtrl::HealthCheckTick = ctrl {
         let action = children.health_check_tick(self_id, child_notify);
         *pending = action;
     }

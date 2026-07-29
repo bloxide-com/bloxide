@@ -41,12 +41,12 @@ feature_imports = [
     "pool_messages::{SpawnRequest, SpawnedWorker}",
     "bloxide_spawn::SpawnFn",
     "bloxide_core::lifecycle::ChildLifecycleEvent",
-    "bloxide_supervisor::SupervisorControl",
+    "bloxide_child_management::control::ChildCtrl",
 ]
 
 # Accessor traits removed — fields are now plain struct fields.
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "crate"
 field = "self_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "ctor"
@@ -72,7 +72,7 @@ crate = "pool_messages"
 feature = "dynamic"
 fields = [
     { name = "spawn_fn", ty = "SpawnFn<R, SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>>", role = "ctor" },
-    { name = "spawn_ref", ty = "ActorRef<SupervisorControl<R>, R>", role = "ctor" },
+    { name = "spawn_ref", ty = "ActorRef<ChildCtrl<R>, R>", role = "ctor" },
     { name = "notify_ref", ty = "ActorRef<ChildLifecycleEvent, R>", role = "ctor" },
     { name = "spawn_reply_ref", ty = "ActorRef<SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>, R>", role = "ctor" },
     { name = "pending_task_id", ty = "u32", role = "state" },

@@ -1,7 +1,13 @@
 // Copyright 2025 Bloxide, all rights reserved
+//! Child-management control-plane messages.
+//!
+//! The managing blox (the standard supervisor, or a custom one) receives
+//! registration and health-check messages on a dedicated control mailbox.
+//! The standard supervisor blox is the reference consumer — these types are
+//! owned by the platform, not by any blox (spec 20: Platform Feature Pattern).
 use core::fmt;
 
-use bloxide_child_management::ChildPolicy;
+use crate::ChildPolicy;
 use bloxide_core::lifecycle::AbortCommand;
 use bloxide_core::{
     capability::{BloxRuntime, KillCapability},
@@ -45,7 +51,7 @@ impl<R: BloxRuntime> fmt::Debug for RegisterChild<R> {
 ///
 /// This type implements `Clone` because `kill_handle` is `Clone`
 /// (it's `R::KillHandle`, which requires `Clone` on the `SpawnCap` trait).
-/// This allows the supervisor's action function to clone the `kill_handle`
+/// This allows the managing blox's action function to clone the `kill_handle`
 /// from `&Event` (the HSM engine passes `&Event`, not `&mut Event`).
 //
 // NOTE: Manual `Clone` impl (not `#[derive(Clone)]`) because the derive
@@ -56,7 +62,7 @@ impl<R: BloxRuntime> fmt::Debug for RegisterChild<R> {
 pub struct RegisterDynamicChild<R: BloxRuntime> {
     pub id: ActorId,
     pub lifecycle_ref: ActorRef<LifecycleCommand, R>,
-    /// Abort capability mailbox (send side). The supervisor sends
+    /// Abort capability mailbox (send side). The managing blox sends
     /// `AbortCommand` here; the child's task receives it and self-terminates
     /// cooperatively (no callbacks, no dispatch).
     pub abort_ref: ActorRef<AbortCommand, R>,
@@ -88,16 +94,17 @@ impl<R: BloxRuntime> fmt::Debug for RegisterDynamicChild<R> {
     }
 }
 
-/// Supervisor control-plane events delivered through a dedicated mailbox.
+/// Child-management control-plane messages delivered through a dedicated
+/// control mailbox.
 ///
-/// There is no `Spawn` variant — spawning is decoupled from the supervisor.
+/// There is no `Spawn` variant — spawning is decoupled from the managing blox.
 /// The spawn helper calls `spawn_child()` (in `bloxide-spawn`) which sends
 /// `RegisterDynamicChild` on the control mailbox after the child is created.
 ///
 /// Implements `Clone` because all variants are `Clone` (`RegisterDynamicChild`
 /// uses `kill_handle` which is `Clone`). Manual impl (not `#[derive]`) to
 /// avoid the derive macro generating `R: Clone` bounds.
-pub enum SupervisorControl<R: BloxRuntime> {
+pub enum ChildCtrl<R: BloxRuntime> {
     /// Register a static child (wired at startup, no abort capability).
     RegisterChild(RegisterChild<R>),
     /// Register a dynamically spawned child (has abort capability + kill handle).
@@ -106,7 +113,7 @@ pub enum SupervisorControl<R: BloxRuntime> {
     HealthCheckTick,
 }
 
-impl<R: BloxRuntime> Clone for SupervisorControl<R> {
+impl<R: BloxRuntime> Clone for ChildCtrl<R> {
     fn clone(&self) -> Self {
         match self {
             Self::RegisterChild(r) => Self::RegisterChild(r.clone()),
@@ -116,7 +123,7 @@ impl<R: BloxRuntime> Clone for SupervisorControl<R> {
     }
 }
 
-impl<R: BloxRuntime> fmt::Debug for SupervisorControl<R> {
+impl<R: BloxRuntime> fmt::Debug for ChildCtrl<R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::RegisterChild(r) => f.debug_tuple("RegisterChild").field(r).finish(),
@@ -125,26 +132,5 @@ impl<R: BloxRuntime> fmt::Debug for SupervisorControl<R> {
             }
             Self::HealthCheckTick => write!(f, "HealthCheckTick"),
         }
-    }
-}
-
-/// Marker type for the standard supervisor's `ChildRegistrar` implementation.
-///
-/// The spawn helper (`spawn_child`) is generic over `C: ChildRegistrar<R>`.
-/// For the standard supervisor, `C = SupervisorRegistrar`. The wiring layer
-/// injects this type when the supervisor is the managing blox.
-pub struct SupervisorRegistrar;
-
-impl<R: BloxRuntime> bloxide_spawn::ChildRegistrar<R> for SupervisorRegistrar {
-    type RegisterMsg = SupervisorControl<R>;
-
-    fn register(output: bloxide_spawn::SpawnOutput<R>) -> SupervisorControl<R> {
-        SupervisorControl::RegisterDynamicChild(RegisterDynamicChild {
-            id: output.child_id,
-            lifecycle_ref: output.lifecycle_ref,
-            abort_ref: output.abort_ref,
-            kill_handle: output.kill_handle,
-            policy: output.policy,
-        })
     }
 }

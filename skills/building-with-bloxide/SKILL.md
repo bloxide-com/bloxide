@@ -88,7 +88,7 @@ pub fn increment_round(round: &mut u32) {
     *round += 1;
 }
 
-// crates/bloxide-messaging/src/lib.rs
+// crates/blox-ctx-ping-pong/src/lib.rs
 pub fn send_ping<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
@@ -270,7 +270,7 @@ Reads `system.toml`, resolves impl crates, generates concrete action closures wi
 ```rust
 // generated/spec_skeleton.rs — concrete, impl inlined
 |ctx, _ev| {
-    bloxide_messaging::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round);
+    blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round);
     ActionResult::Ok
 }
 ```

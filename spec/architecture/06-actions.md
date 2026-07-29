@@ -26,10 +26,10 @@ flowchart LR
     subgraph ctx_crates [Context Crates — action functions]
         Rounds["blox-ctx-rounds
         increment_round(&mut u32)"]
-        Timer["blox-ctx-current-timer
+        Timer["blox-ctx-ping-pong
         schedule_resume(...)
         cancel_timer_by_id(...)"]
-        Msg["bloxide-messaging
+        Msg["blox-ctx-ping-pong
         send_ping(...)
         send_pong(...)"]
     end
@@ -80,7 +80,7 @@ pub fn increment_round(round: &mut u32) {
 ```
 
 ```rust
-// crates/bloxide-messaging/src/lib.rs
+// crates/blox-ctx-ping-pong/src/lib.rs
 pub fn send_ping<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
@@ -112,7 +112,7 @@ impl_required = false
 
 [[context.actions]]
 name = "send_initial_ping"
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 kind = "transition"
 fields = ["self_id", "peer_ref:ref", "round"]
 impl_required = false
@@ -187,7 +187,7 @@ Reads `system.toml`, resolves impl crates, generates **concrete action closures*
 ```rust
 // generated/spec_skeleton.rs — concrete, impl inlined
 use blox_ctx_rounds::increment_round;
-use bloxide_messaging::send_ping;
+use blox_ctx_ping_pong::send_ping;
 
 impl<R: BloxRuntime> PingSpec<R> {
     const ACTIVE_FNS: StateFns<Self> = StateFns {

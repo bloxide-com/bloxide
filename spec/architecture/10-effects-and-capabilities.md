@@ -127,7 +127,7 @@ pub struct PingCtx<R: BloxRuntime> {
 Timer state (the current `TimerId`) is held as a plain field. The blox spec wires action functions from context crates into `on_entry`/`on_exit` slices:
 
 ```rust
-// In blox-ctx-current-timer — takes concrete params
+// In blox-ctx-ping-pong — takes concrete params
 pub fn schedule_resume<R: BloxRuntime>(
     self_id: ActorId,
     self_ref: &ActorRef<PingPongMsg, R>,

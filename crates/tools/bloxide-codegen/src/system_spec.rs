@@ -681,10 +681,10 @@ mod tests {
         );
 
         // send_initial_ping: transition, fields = ["self_id", "peer_ref:ref", "round"],
-        // crate = bloxide_messaging
+        // crate = blox_ctx_ping_pong
         assert!(
-            generated.contains("bloxide_messaging"),
-            "should reference bloxide_messaging crate"
+            generated.contains("blox_ctx_ping_pong"),
+            "should reference blox_ctx_ping_pong crate"
         );
         assert!(
             generated.contains("send_initial_ping"),
@@ -708,15 +708,19 @@ mod tests {
 
         // schedule_pause_timer: action name is "schedule_pause_timer" but fn_name = "schedule_resume"
         assert!(
-            generated.contains("blox_ctx_current_timer"),
-            "should reference blox_ctx_current_timer crate"
+            generated.contains("blox_ctx_ping_pong"),
+            "should reference blox_ctx_ping_pong crate"
         );
         assert!(
             generated.contains("schedule_resume"),
             "should call schedule_resume function (fn_name override for schedule_pause_timer)"
         );
 
-        // cancel_pause_timer: fn_name = "cancel_timer_by_id"
+        // cancel_pause_timer: fn_name = "cancel_timer_by_id" from bloxide_timer::actions
+        assert!(
+            generated.contains("::bloxide_timer::actions::cancel_timer_by_id"),
+            "should reference bloxide_timer::actions::cancel_timer_by_id"
+        );
         assert!(
             generated.contains("cancel_timer_by_id"),
             "should call cancel_timer_by_id function (fn_name override for cancel_pause_timer)"

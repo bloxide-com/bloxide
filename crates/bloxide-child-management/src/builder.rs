@@ -3,9 +3,9 @@
 //!
 //! This builder is generic over the runtime `R` and the control message type `Ctrl`.
 //! The runtime provides channel primitives via `DynamicChannelCap`; the app specifies
-//! the control message type (e.g. `SupervisorControl<R>` if using the supervisor).
+//! the control message type (e.g. `ChildCtrl<R>` if using the supervisor).
 //!
-//! Runtimes do NOT need to know about `SupervisorControl` — the app chooses `Ctrl`.
+//! Runtimes do NOT need to know about `ChildCtrl` — the app chooses `Ctrl`.
 
 use crate::{ChildGroup, ChildPolicy, GroupShutdown};
 use bloxide_core::{
@@ -17,7 +17,7 @@ use bloxide_core::{
 /// Builder for assembling a `ChildGroup` with dynamic channels.
 ///
 /// Generic over runtime `R` (must support `DynamicChannelCap`) and control message
-/// type `Ctrl` (chosen by the app — e.g. `SupervisorControl<R>`).
+/// type `Ctrl` (chosen by the app — e.g. `ChildCtrl<R>`).
 ///
 /// Created with `::new(shutdown)`, children are added via `add_child()`, and the
 /// group is consumed via `finish()`.

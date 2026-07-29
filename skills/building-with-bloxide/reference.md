@@ -174,7 +174,7 @@ const ACTIVE_FNS: StateFns<Self> = StateFns {
 const ACTIVE_FNS: StateFns<Self> = StateFns {
     on_entry: &[
         |ctx| { blox_ctx_rounds::increment_round(&mut ctx.round); },
-        |ctx| { bloxide_messaging::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round); },
+        |ctx| { blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round); },
     ],
     transitions: &[StateRule { ... }],
 };
@@ -213,7 +213,7 @@ impl<R: BloxRuntime> MachineSpec for MySpec<R> {
 ### Timer Setup
 
 ```rust
-// In context crate (blox-ctx-current-timer)
+// In context crate (blox-ctx-ping-pong)
 pub fn schedule_resume<R: BloxRuntime>(
     self_id: ActorId,
     self_ref: &ActorRef<M, R>,

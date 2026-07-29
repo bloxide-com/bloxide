@@ -3,7 +3,7 @@
 name = "blox-ctx-ticks"
 version.workspace = true
 edition.workspace = true
-description = "Domain context crate: CountsTicks delegatable behavior trait"
+description = "Domain context crate: increment_count action function for tick-counting"
 repository.workspace = true
 license.workspace = true
 

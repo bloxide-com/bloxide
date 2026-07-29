@@ -39,7 +39,7 @@ Layer 2: Standard Library (patterns)
   Message types, action functions, shared data structures,
   and runtime-facing service traits.
   Only depend on BloxRuntime. Crates: bloxide-timer, bloxide-child-management,
-  bloxide-supervisor, bloxide-spawn, bloxide-peers, bloxide-messaging.
+  bloxide-supervisor, bloxide-spawn, bloxide-peers, blox-ctx-ping-pong.
 
 Layer 1: Runtime (primitives + bridges)
   Primitives: channels (BloxRuntime), native timers, spawning, I/O.
@@ -106,7 +106,7 @@ bloxide-timer (depends on bloxide-core)
   Runtime-facing: trait TimerService
 
 bloxide-supervisor (depends on bloxide-core, bloxide-child-management, bloxide-spawn)
-  Blox-facing: SupervisorSpec, SupervisorControl, RegisterChild, action functions
+  Blox-facing: SupervisorSpec, ChildCtrl, RegisterChild, action functions
   Runtime-facing: none — the supervised run loop is the unified `run()` function
   with `RunConfig` in bloxide-core, re-exported by each runtime
 
@@ -119,7 +119,7 @@ bloxide-spawn (depends on bloxide-core)
 bloxide-peers (depends on bloxide-core)
   Peer introduction: PeerCtrl, AddPeer, RemovePeer, HasPeers, introduce_peers
 
-bloxide-messaging (depends on bloxide-core)
+blox-ctx-ping-pong (depends on bloxide-core)
   Action functions for peer/self messaging
 
 bloxide-embassy (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-supervisor, bloxide-child-management)
@@ -187,11 +187,11 @@ Runtime internals never appear in blox code.
 | Layer | What it contains | What it must NOT contain |
 |-------|-----------------|--------------------------|
 | Messages crates | Plain data enums/structs | Runtime types, `ActorRef` |
-| Context crates (`blox-ctx-*`, `bloxide-messaging`) | Free action functions taking concrete params | Runtime imports, file I/O |
+| Context crates (`blox-ctx-*`, `blox-ctx-ping-pong`) | Free action functions taking concrete params | Runtime imports, file I/O |
 | Blox crates | `blox.toml` + generated `MachineSpec` impl, `Ctx`, `Event` enum | Runtime imports, executor types, Rust logic |
 | `bloxide-core` | `MachineSpec`, `StateMachine`, `ActorRef`, `BloxRuntime`, `StaticChannelCap`, `DynamicChannelCap`, `Mailboxes`, `run`/`RunConfig` | Tokio, Embassy, OS imports |
 | `bloxide-timer` | `TimerCommand`, `TimerId`, `TimerQueue`, `set_timer`, `cancel_timer`, `TimerService` trait | Runtime imports, executor types |
-| `bloxide-supervisor` | `SupervisorSpec`, `SupervisorCtx`, `SupervisorControl`, `RegisterChild`, `SupervisorRegistrar`, action functions | Runtime imports, executor types |
+| `bloxide-supervisor` | `SupervisorSpec`, `SupervisorCtx`, `ChildCtrl`, `RegisterChild`, `ChildCtrlRegistrar`, action functions | Runtime imports, executor types |
 | `bloxide-child-management` | `ChildGroup`, `ChildEntry`, `ChildPhase`, `ChildGroupBuilder` | Runtime imports, executor types |
 | `bloxide-spawn` | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `spawn_child` helper | Runtime imports, executor types |
 | `bloxide-peers` | `PeerCtrl`, `AddPeer`, `RemovePeer`, `introduce_peers`, `broadcast_to_peers` | Runtime imports, executor types |

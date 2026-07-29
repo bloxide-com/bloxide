@@ -3,7 +3,7 @@
 name = "blox-ctx-rounds"
 version.workspace = true
 edition.workspace = true
-description = "Domain context crate: CountsRounds delegatable behavior trait"
+description = "Domain context crate: increment_round action function for round-counting"
 repository.workspace = true
 license.workspace = true
 

@@ -222,7 +222,7 @@ pub struct ContextConfig {
     // When the event enum is hand-written, the Mailboxes associated type
     // must be specified as a raw type expression.
     /// Mailboxes type for the non-feature variant, as a raw string.
-    /// e.g. `"(Rt::Stream<ChildLifecycleEvent>, Rt::Stream<SupervisorControl<R>>)"`.
+    /// e.g. `"(Rt::Stream<ChildLifecycleEvent>, Rt::Stream<ChildCtrl<R>>)"`.
     #[serde(default)]
     pub mailboxes_type: Option<String>,
     /// Mailboxes type for the feature-gated variant, as a raw string.
@@ -309,7 +309,7 @@ pub struct ContextActionConfig {
 /// **Single-field** (from a service crate like `bloxide-messaging`):
 /// ```toml
 /// [[context.uses]]
-/// crate = "bloxide_messaging"
+/// crate = "blox_ctx_ping_pong"
 /// field = "peer_ref"
 /// field_type = "ActorRef<PingPongMsg, R>"
 /// role = "ctor"
@@ -327,7 +327,7 @@ pub struct ContextActionConfig {
 /// ```
 #[derive(Debug, Deserialize, Clone)]
 pub struct ContextUse {
-    /// Crate name (underscores, e.g. `bloxide_messaging`).
+    /// Crate name (underscores, e.g. `blox_ctx_ping_pong`).
     /// Renamed from `crate_name` because `crate` is a Rust keyword.
     #[serde(rename = "crate")]
     pub crate_name: String,

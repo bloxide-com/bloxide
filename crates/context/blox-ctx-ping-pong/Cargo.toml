@@ -1,9 +1,9 @@
 # Copyright 2025 Bloxide, all rights reserved
 [package]
-name = "blox-ctx-current-timer"
+name = "blox-ctx-ping-pong"
 version.workspace = true
 edition.workspace = true
-description = "Domain context crate: HasCurrentTimer delegatable behavior trait"
+description = "Domain context crate for the ping/pong demo: peer/self messaging and resume-timer action functions"
 repository.workspace = true
 license.workspace = true
 

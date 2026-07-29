@@ -67,7 +67,7 @@ generics = "<R: BloxRuntime>"
 # self_id is auto-emitted by the codegen — do NOT declare it.
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<DomainMsg, R>"
 

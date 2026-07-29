@@ -14,7 +14,7 @@ use crate::{EmbassyRuntime, EmbassySender, EmbassyStream};
 // ── ChildGroupBuilder ─────────────────────────────────────────────────────────
 //
 // Static-channel builder for Embassy. Generic over the control message type `Ctrl`
-// — the runtime does NOT know about `SupervisorControl`. The app chooses `Ctrl`.
+// — the runtime does NOT know about `ChildCtrl`. The app chooses `Ctrl`.
 
 pub struct ChildGroupBuilder<Ctrl: Send + 'static> {
     group: bloxide_child_management::ChildGroup<EmbassyRuntime>,

@@ -30,89 +30,89 @@ extra_impls = [
 
 [[context.actions]]
 name = "start_children"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "entry"
 fields = ["self_id", "children:mut", "pending:mut"]
 
 [[context.actions]]
 name = "stop_all_children"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "entry"
 fields = ["self_id", "children:ref"]
 
 [[context.actions]]
 name = "handle_done_or_failed"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["self_id", "children:mut", "child_notify:ref", "pending:mut"]
-event_arg = true
+event_payload = "ev"
 
 [[context.actions]]
 name = "record_started"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["children:mut"]
-event_arg = true
+event_payload = "ev"
 
 [[context.actions]]
 name = "record_stopped"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["children:mut"]
-event_arg = true
+event_payload = "ev"
 
 [[context.actions]]
 name = "record_aborted"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["children:mut"]
-event_arg = true
+event_payload = "ev"
 
 [[context.actions]]
 name = "record_killed"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["children:mut"]
-event_arg = true
+event_payload = "ev"
 
 [[context.actions]]
 name = "record_alive"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["children:mut"]
-event_arg = true
+event_payload = "ev"
 
 [[context.actions]]
 name = "register_child"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["self_id", "children:mut"]
-event_arg = true
+event_payload = "ctrl"
 
 [[context.actions]]
 name = "handle_register_dynamic_child"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["self_id", "children:mut"]
-event_arg = true
+event_payload = "ctrl"
 
 [[context.actions]]
 name = "handle_health_check"
-crate = "crate"
+crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
 fields = ["self_id", "children:mut", "child_notify:ref", "pending:mut"]
-event_arg = true
+event_payload = "ctrl"
 
 # ── Event type (standard codegen-generated event enum) ──────────────────────
 
@@ -127,8 +127,8 @@ message_path = "bloxide_core::lifecycle::ChildLifecycleEvent"
 
 [[event.mailboxes]]
 variant = "Control"
-message = "SupervisorControl"
-message_path = "crate::control::SupervisorControl<R>"
+message = "ChildCtrl"
+message_path = "bloxide_child_management::control::ChildCtrl<R>"
 
 # ── Context fields (via composable context crates) ──────────────────────────
 
@@ -139,9 +139,9 @@ field = "children"
 field_type = "ChildGroup<R>"
 role = "ctor"
 
-# child_notify: ActorRef<ChildLifecycleEvent, R> from bloxide-supervisor
+# child_notify: ActorRef<ChildLifecycleEvent, R> from bloxide-child-management
 [[context.uses]]
-crate = "crate"
+crate = "bloxide_child_management"
 field = "child_notify"
 field_type = "ActorRef<ChildLifecycleEvent, R>"
 role = "ctor"
@@ -202,19 +202,19 @@ actions = ["Self::record_alive"]
 
 [[topology.transitions]]
 state = "Running"
-event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterChild(_)))"
+event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterChild(_)))"
 target = "stay"
 actions = ["Self::register_child"]
 
 [[topology.transitions]]
 state = "Running"
-event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::RegisterDynamicChild(_)))"
+event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterDynamicChild(_)))"
 target = "stay"
 actions = ["Self::handle_register_dynamic_child"]
 
 [[topology.transitions]]
 state = "Running"
-event = "SupervisorEvent::Control(Envelope(_, SupervisorControl::HealthCheckTick))"
+event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::HealthCheckTick))"
 target = "stay"
 actions = ["Self::handle_health_check"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]

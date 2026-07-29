@@ -8,7 +8,7 @@ The Pong actor responds to every `PingPongMsg::Ping` it receives by sending `Pin
 
 - Blox crate: `crates/bloxes/pong/`
 - Messages crate: `crates/messages/ping-pong-messages/`
-- Context crate: `crates/bloxide-messaging/` (provides `send_pong` action function)
+- Context crate: `crates/blox-ctx-ping-pong/` (provides `send_pong` action function)
 
 ## State Hierarchy
 
@@ -77,7 +77,7 @@ The runtime notifies the supervisor of lifecycle events (`Started`, `Reset`) aut
 | `Ready` | — | — |
 
 The response message is sent inside the transition action `reply_pong_action`
-(fn `send_pong` from `bloxide-messaging`), declared in `[[context.actions]]` in
+(fn `send_pong` from `blox-ctx-ping-pong`), declared in `[[context.actions]]` in
 `blox.toml` with `event_payload = "ping"` — it extracts the `Ping` payload and
 echoes the round back to `peer_ref`. There are no logging actions (invariant #15).
 
@@ -100,7 +100,7 @@ they verify topology and lifecycle semantics, not action side effects.
 - The round echo (`Pong { round: n }` echoes the same `n`) is intentional: Pong is a mirror.
 - `try_send` is used (not `send`) because `on_event` runs synchronously inside dispatch.
 - Pong does not know when the exchange ends — it will keep responding to pings indefinitely. When Ping's guard returns `Guard::Stop`, it self-suspends to `Init` and simply stops sending, and Pong's mailbox goes quiet.
-- The blox crate only imports `bloxide-messaging` for the `send_pong` action function. It does NOT depend on `bloxide-log` (invariant #15).
+- The blox crate only imports `blox-ctx-ping-pong` for the `send_pong` action function. It does NOT depend on `bloxide-log` (invariant #15).
 - See `spec/architecture/08-supervision.md` for how the runtime manages lifecycle.
 - See `spec/architecture/12-action-crate-pattern.md` for the full four-layer architecture.
 

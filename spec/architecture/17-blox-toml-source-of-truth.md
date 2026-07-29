@@ -141,13 +141,13 @@ imports = [
 # Fields come from [[context.uses]] and [[context.fields]] entries:
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"

@@ -23,8 +23,6 @@ bloxide-child-management = { workspace = true }
 bloxide-spawn   = { workspace = true, features = ["alloc"] }
 bloxide-peers   = { workspace = true }
 pool-messages   = { workspace = true }
-bloxide-messaging  = { workspace = true }
-bloxide-supervisor = { workspace = true, features = ["alloc"] }
 
 [dev-dependencies]
 bloxide-core    = { workspace = true, features = ["std"] }

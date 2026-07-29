@@ -88,14 +88,6 @@ impl<M: Send + 'static, R: BloxRuntime> fmt::Debug for PeerCtrl<M, R> {
     }
 }
 
-/// Accessor trait for contexts that track a collection of peer refs.
-pub trait HasPeers<M: Send + 'static, R: BloxRuntime> {
-    /// Returns the current peer refs.
-    fn peers(&self) -> &[ActorRef<M, R>];
-    /// Returns the mutable peer collection.
-    fn peers_mut(&mut self) -> &mut Vec<ActorRef<M, R>>;
-}
-
 /// Introduce two actors to each other by sending `AddPeer` on both control channels.
 pub fn introduce_peers<M, R>(
     from: ActorId,

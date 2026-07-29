@@ -9,12 +9,10 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use crate::concrete_spec::ConcreteSupervisorSpec;
-use crate::RegisterDynamicChild;
-use crate::{
-    control::{RegisterChild, SupervisorControl},
-    SupervisorCtx, SupervisorEvent, SupervisorState,
+use crate::{SupervisorCtx, SupervisorEvent, SupervisorState};
+use bloxide_child_management::{
+    ChildCtrl, ChildGroup, ChildPolicy, GroupShutdown, RegisterChild, RegisterDynamicChild,
 };
-use bloxide_child_management::{ChildGroup, ChildPolicy, GroupShutdown};
 use bloxide_core::lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::Envelope;
 use bloxide_core::{
@@ -51,7 +49,7 @@ fn dispatch_child_event(
 
 fn dispatch_control_event(
     machine: &mut StateMachine<Spec>,
-    event: SupervisorControl<TestRuntime>,
+    event: ChildCtrl<TestRuntime>,
 ) -> DispatchOutcome<SupervisorState> {
     let ev = SupervisorEvent::<TestRuntime>::Control(Envelope(0, event));
     machine.dispatch(ev)
@@ -277,7 +275,7 @@ fn register_child_event_adds_child_and_sends_start() {
         policy: ChildPolicy::Stop,
     };
 
-    let outcome = dispatch_control_event(&mut machine, SupervisorControl::RegisterChild(register));
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::RegisterChild(register));
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
     let cmds = lifecycle_rx.drain_payloads();
@@ -293,7 +291,7 @@ fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
     drain_start_commands(&mut receivers);
 
     // Tick #1: ping all monitored children.
-    let outcome = dispatch_control_event(&mut machine, SupervisorControl::HealthCheckTick);
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::HealthCheckTick);
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
     let first = receivers[0].drain_payloads();
     assert_eq!(first.len(), 1);
@@ -301,7 +299,7 @@ fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
 
     // Tick #2 with no Alive from child:
     // stale child is handled as failure (Reset), then re-pinged.
-    let outcome = dispatch_control_event(&mut machine, SupervisorControl::HealthCheckTick);
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::HealthCheckTick);
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
     let second = receivers[0].drain_payloads();
     assert_eq!(second.len(), 1);
@@ -387,8 +385,7 @@ fn register_dynamic_child_adds_and_starts() {
         policy: ChildPolicy::Reset,
     };
 
-    let outcome =
-        dispatch_control_event(&mut machine, SupervisorControl::RegisterDynamicChild(reg));
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::RegisterDynamicChild(reg));
 
     // Dynamic registration is handled in Running state (no state transition)
     assert!(
@@ -434,8 +431,7 @@ fn register_dynamic_child_during_shutdown_still_starts_child() {
         policy: ChildPolicy::Reset,
     };
 
-    let outcome =
-        dispatch_control_event(&mut machine, SupervisorControl::RegisterDynamicChild(reg));
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::RegisterDynamicChild(reg));
 
     assert!(
         matches!(outcome, DispatchOutcome::HandledNoTransition),

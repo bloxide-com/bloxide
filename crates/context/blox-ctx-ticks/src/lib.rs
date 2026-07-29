@@ -1,16 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Domain context crate for tick-counting behavior.
 //!
-//! Provides the `CountsTicks` behavior trait.
-//! definition lives here (with the data contract), not in the actions crate.
+//! Provides the `increment_count` action function (concrete params,
+//! no accessor traits — invariant #14).
 #![no_std]
-
-/// Behavior trait for contexts that track a count.
-pub trait CountsTicks {
-    type Count: Copy + PartialOrd + core::ops::Add<Output = Self::Count> + From<u8>;
-    fn count(&self) -> Self::Count;
-    fn set_count(&mut self, count: Self::Count);
-}
 
 /// Increment a count by one.
 pub fn increment_count<Count: Copy + core::ops::Add<Output = Count> + From<u8>>(count: &mut Count) {

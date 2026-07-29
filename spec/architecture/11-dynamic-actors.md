@@ -920,7 +920,7 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
 - **Supervised dynamic actors — implemented via explicit registration** — dynamic
   children can be supervised by using the supervisor control-plane protocol:
   1. Spawn the child with `run()` + `RunConfig::supervised(...)` and a per-child lifecycle channel.
-  2. Send `SupervisorControl::RegisterChild(RegisterChild { ... })` to the supervisor.
+  2. Send `ChildCtrl::RegisterChild(RegisterChild { ... })` to the supervisor.
   3. Supervisor adds the child to `ChildGroup` and sends `Start`.
   On Tokio, prefer the `spawn_child()` helper from `bloxide-spawn` (with factory
   injection) to avoid wiring boilerplate — see the pool demo.

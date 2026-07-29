@@ -83,10 +83,12 @@ Nothing else.
 ## Moves (from pre-pattern state)
 
 - `SupervisorControl` → renamed **`ChildCtrl<R>`**, moved to
-  `bloxide-child-management::control` with `RegisterChild`,
-  `RegisterDynamicChild`, and the `ChildRegistrar` impl
-  (`SupervisorRegistrar`). `bloxide-child-management` depends on
-  `bloxide-spawn` (acyclic: core ← spawn ← child-management ← supervisor).
+  `bloxide-child-management::control` with `RegisterChild` and
+  `RegisterDynamicChild`. The `ChildRegistrar` impl
+  (`SupervisorRegistrar` → renamed **`ChildCtrlRegistrar`**) lives in
+  `bloxide-spawn`: it bridges `SpawnOutput` and `ChildCtrl`, and
+  `bloxide-spawn` is the only crate that can name both (dependency direction
+  is core ← child-management ← spawn ← supervisor, unchanged).
 - Supervisor action functions → `bloxide-child-management::actions`,
   converted from `event_arg` (whole `SupervisorEvent`) to `event_payload`
   extraction (`ChildLifecycleEvent` / `ChildCtrl` payloads).
@@ -99,10 +101,10 @@ Nothing else.
 
 ## Acceptance Criteria (issue #139)
 
-- [ ] `bloxide-supervisor` contains no message definitions, no action
+- [x] `bloxide-supervisor` contains no message definitions, no action
       functions, no hand-written context
-- [ ] `SupervisorControl` gone; `ChildCtrl` lives in `bloxide-child-management`
-- [ ] `bloxide-messaging` and `blox-ctx-current-timer` crates deleted
-- [ ] `HasPeers` gone from `bloxide-peers`
-- [ ] Full workspace builds; all tests pass; all four demos regenerate and run
-- [ ] This spec written; AGENTS.md invariant added
+- [x] `SupervisorControl` gone; `ChildCtrl` lives in `bloxide-child-management`
+- [x] `bloxide-messaging` and `blox-ctx-current-timer` crates deleted
+- [x] `HasPeers` gone from `bloxide-peers`
+- [x] Full workspace builds; all tests pass; all four demos regenerate and run
+- [x] This spec written; AGENTS.md invariant added

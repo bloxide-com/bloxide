@@ -279,7 +279,7 @@ message_path = "counter_messages::CounterMsg"
 
 [context]
 name = "CounterCtx"
-generics = "<B: CountsTicks>"
+generics = "<R: BloxRuntime>"
 
 [topology]
 
@@ -505,13 +505,13 @@ name = "PingCtx"
 generics = "<R: BloxRuntime>"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
@@ -592,13 +592,13 @@ name = "PingCtx"
 generics = "<R: BloxRuntime>"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
@@ -701,7 +701,7 @@ name = "PingCtx"
 generics = "<R: BloxRuntime>"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
@@ -868,7 +868,7 @@ message_path = "counter_messages::CounterMsg"
 
 [context]
 name = "CounterCtx"
-generics = "<B: CountsTicks>"
+generics = "<R: BloxRuntime>"
 
 [topology]
 
@@ -1151,13 +1151,13 @@ name = "PingCtx"
 generics = "<R: BloxRuntime>"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
@@ -1168,7 +1168,7 @@ role = "ctor"
     assert_eq!(ctx.uses.len(), 2);
 
     let u0 = &ctx.uses[0];
-    assert_eq!(u0.crate_name, "bloxide_messaging");
+    assert_eq!(u0.crate_name, "blox_ctx_ping_pong");
     assert_eq!(u0.field.as_deref(), Some("peer_ref"));
     assert_eq!(u0.field_type.as_deref(), Some("ActorRef<PingPongMsg, R>"));
     assert_eq!(u0.role.as_deref(), Some("ctor"));

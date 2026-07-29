@@ -16,13 +16,12 @@ members = [
     "crates/bloxide-supervisor",
     "crates/bloxide-peers",
     "crates/bloxide-timer",
-    "crates/bloxide-messaging",
     "runtimes/bloxide-embassy",
     "runtimes/bloxide-tokio",
     "runtimes/bloxide-test-runtime",
+    "crates/context/blox-ctx-ping-pong",
     "crates/context/blox-ctx-pool-ref",
     "crates/context/blox-ctx-rounds",
-    "crates/context/blox-ctx-current-timer",
     "crates/context/blox-ctx-ticks",
     "crates/messages/ping-pong-messages",
     "crates/messages/pool-messages",
@@ -64,13 +63,12 @@ bloxide-spawn = { path = "crates/bloxide-spawn" }
 bloxide-supervisor = { path = "crates/bloxide-supervisor" }
 bloxide-peers = { path = "crates/bloxide-peers" }
 bloxide-timer = { path = "crates/bloxide-timer" }
-bloxide-messaging = { path = "crates/bloxide-messaging" }
 bloxide-embassy = { path = "runtimes/bloxide-embassy" }
 bloxide-tokio = { path = "runtimes/bloxide-tokio" }
 bloxide-test-runtime = { path = "runtimes/bloxide-test-runtime" }
+blox-ctx-ping-pong = { path = "crates/context/blox-ctx-ping-pong" }
 blox-ctx-pool-ref = { path = "crates/context/blox-ctx-pool-ref" }
 blox-ctx-rounds = { path = "crates/context/blox-ctx-rounds" }
-blox-ctx-current-timer = { path = "crates/context/blox-ctx-current-timer" }
 blox-ctx-ticks = { path = "crates/context/blox-ctx-ticks" }
 ping-pong-messages = { path = "crates/messages/ping-pong-messages" }
 pool-messages = { path = "crates/messages/pool-messages" }

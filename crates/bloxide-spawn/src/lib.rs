@@ -163,8 +163,9 @@ pub type SpawnFn<R, Req> = fn(req: Req, notify: ActorRef<ChildLifecycleEvent, R>
 /// The associated `RegisterMsg` is the message type the spawn helper sends
 /// on the managing blox's control mailbox after a child is spawned.
 ///
-/// Our standard supervisor implements this with `RegisterMsg = SupervisorControl<R>`.
-/// A user's custom blox implements it with their own message type.
+/// The standard child-management control plane implements this via
+/// [`ChildCtrlRegistrar`] with `RegisterMsg = ChildCtrl<R>`. A user's custom
+/// blox implements it with their own message type.
 pub trait ChildRegistrar<R: BloxRuntime> {
     /// The control-plane message type that carries a `SpawnOutput` to the
     /// managing blox. Sent on the managing blox's control mailbox.
@@ -213,4 +214,29 @@ where
     control_ref.try_send(from, msg)?;
 
     Ok(())
+}
+
+/// Registrar for the standard child-management control plane
+/// (`ChildCtrl<R>`, from `bloxide-child-management`).
+///
+/// The wiring layer injects this type when the managing blox consumes the
+/// standard control mailbox. It lives here (not in `bloxide-child-management`)
+/// because it bridges `SpawnOutput` and `ChildCtrl` — this is the only crate
+/// that can name both without a dependency cycle.
+pub struct ChildCtrlRegistrar;
+
+impl<R: BloxRuntime> ChildRegistrar<R> for ChildCtrlRegistrar {
+    type RegisterMsg = bloxide_child_management::control::ChildCtrl<R>;
+
+    fn register(output: SpawnOutput<R>) -> bloxide_child_management::control::ChildCtrl<R> {
+        bloxide_child_management::control::ChildCtrl::RegisterDynamicChild(
+            bloxide_child_management::control::RegisterDynamicChild {
+                id: output.child_id,
+                lifecycle_ref: output.lifecycle_ref,
+                abort_ref: output.abort_ref,
+                kill_handle: output.kill_handle,
+                policy: output.policy,
+            },
+        )
+    }
 }

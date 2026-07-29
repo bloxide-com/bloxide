@@ -27,9 +27,9 @@ bloxide-log         Feature-gated logging macros                              (n
 bloxide-timer       Timer service: commands, queue, timer action functions     (no_std)
 bloxide-spawn       Spawn capability: SpawnCap, ChildRegistrar, spawn_child   (no_std)
 bloxide-child-management  Child tracking: ChildGroup, ChildEntry, ChildPhase  (no_std)
-bloxide-supervisor  Supervisor blox: SupervisorSpec, SupervisorControl, actions  (no_std)
+bloxide-supervisor  Supervisor blox: SupervisorSpec, ChildCtrl, actions  (no_std)
 bloxide-peers       Peer introduction: PeerCtrl, AddPeer, RemovePeer, introduce_peers  (no_std)
-bloxide-messaging   Messaging helpers: send_ping, broadcast_to_peers         (no_std)
+blox-ctx-ping-pong   Messaging helpers: send_ping, broadcast_to_peers         (no_std)
 bloxide-embassy     Embassy runtime: channels, tasks, timer bridge            (no_std)
 bloxide-tokio       Tokio runtime: channels, tasks, SpawnCap, KillCapability  (std)
 ```

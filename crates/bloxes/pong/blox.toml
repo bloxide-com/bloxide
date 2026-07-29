@@ -11,7 +11,7 @@ imports = [
 
 # Accessor traits removed — fields are now plain struct fields.
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
@@ -21,7 +21,7 @@ role = "ctor"
 [[context.actions]]
 name = "reply_pong_action"
 fn_name = "send_pong"
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 kind = "transition"
 fields = ["self_id", "peer_ref:ref"]
 event_payload = "ping"

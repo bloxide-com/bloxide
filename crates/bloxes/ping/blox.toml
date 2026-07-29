@@ -13,13 +13,13 @@ imports = [
 
 # Accessor traits removed — fields are now plain struct fields.
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
@@ -51,7 +51,7 @@ impl_required = false
 
 [[context.actions]]
 name = "send_initial_ping"
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 kind = "transition"
 fields = ["self_id", "peer_ref:ref", "round"]
 impl_required = false
@@ -59,7 +59,7 @@ impl_required = false
 [[context.actions]]
 name = "forward_ping"
 fn_name = "send_ping"
-crate = "bloxide_messaging"
+crate = "blox_ctx_ping_pong"
 kind = "transition"
 fields = ["self_id", "peer_ref:ref", "round"]
 impl_required = false
@@ -67,7 +67,7 @@ impl_required = false
 [[context.actions]]
 name = "schedule_pause_timer"
 fn_name = "schedule_resume"
-crate = "blox_ctx_current_timer"
+crate = "blox_ctx_ping_pong"
 kind = "transition"
 fields = ["self_id", "self_ref:ref", "timer_ref:ref", "round", "current_timer:mut"]
 impl_required = false
@@ -75,7 +75,8 @@ impl_required = false
 [[context.actions]]
 name = "cancel_pause_timer"
 fn_name = "cancel_timer_by_id"
-crate = "blox_ctx_current_timer"
+crate = "bloxide_timer"
+module = "actions"
 kind = "transition"
 fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
 impl_required = false
