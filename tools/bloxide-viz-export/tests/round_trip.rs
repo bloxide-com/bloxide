@@ -601,7 +601,9 @@ fn parse_target(s: &str) -> bloxide_viz_export::model::Target {
     match s {
         "stay" => bloxide_viz_export::model::Target::Stay,
         "reset" | "Reset" => bloxide_viz_export::model::Target::Reset,
-        "fail" => bloxide_viz_export::model::Target::Transition("__fail__".to_string()),
+        "stop" => bloxide_viz_export::model::Target::Stop,
+        "done" => bloxide_viz_export::model::Target::Done,
+        "fail" => bloxide_viz_export::model::Target::Fail,
         _ => bloxide_viz_export::model::Target::Transition(s.to_string()),
     }
 }

@@ -576,11 +576,23 @@ fn SidePanel(
         .map(|h| h.actions.clone())
         .unwrap_or_default();
 
+    // Transition detail panel (#118): full match pattern, feature gate,
+    // raw guard expression — all from the exported model.
+    let pattern = handler
+        .as_ref()
+        .map(|h| h.pattern.clone())
+        .unwrap_or_default();
+    let feature_gate = handler.as_ref().and_then(|h| h.feature.clone());
+
     let has_guard = handler
         .as_ref()
         .map(|h| h.source != HandlerSource::Dropped)
         .unwrap_or(false);
     let guard_desc = handler.as_ref().map(|h| h.guard.description.clone());
+    let guard_raw = handler
+        .as_ref()
+        .map(|h| h.guard.raw.clone())
+        .unwrap_or_default();
     let guard_branch_data: Vec<(String, String)> = handler
         .as_ref()
         .map(|h| {
@@ -624,6 +636,28 @@ fn SidePanel(
                 }
             }
 
+            if !pattern.is_empty() {
+                div {
+                    style: "margin-bottom: 16px;",
+                    div { style: "font-size: 12px; color: #6b7280; margin-bottom: 4px;", "Event Pattern" }
+                    div {
+                        style: "padding: 10px 12px; background: #f3f4f6; border-radius: 4px; font-size: 12px; color: #374151; font-family: monospace; white-space: pre-wrap; word-break: break-all;",
+                        "{pattern}"
+                    }
+                }
+            }
+
+            if let Some(feat) = feature_gate {
+                div {
+                    style: "margin-bottom: 16px;",
+                    div { style: "font-size: 12px; color: #6b7280; margin-bottom: 4px;", "Feature Gate" }
+                    span {
+                        style: "padding: 4px 10px; background: #ede9fe; color: #5b21b6; border-radius: 9999px; font-size: 12px; font-family: monospace;",
+                        "#[cfg(feature = \"{feat}\")]"
+                    }
+                }
+            }
+
             if let Some(source) = source_text {
                 div {
                     style: "margin-bottom: 16px;",
@@ -653,6 +687,12 @@ fn SidePanel(
                     div {
                         style: "margin-bottom: 16px;",
                         div { style: "font-size: 12px; color: #6b7280; margin-bottom: 8px;", "Guard (read-only, after actions)" }
+                        if !guard_raw.is_empty() {
+                            div {
+                                style: "margin-bottom: 8px; padding: 10px 12px; background: #fef3c7; border-radius: 4px; font-size: 12px; color: #92400e; font-family: monospace; white-space: pre-wrap; word-break: break-all;",
+                                "{guard_raw}"
+                            }
+                        }
                         div {
                             style: "padding: 12px; background: #fefce8; border-radius: 4px; font-size: 13px; color: #713f12; font-family: monospace; white-space: pre-wrap;",
                             "{guard_desc}"
@@ -952,8 +992,9 @@ fn StateDiagram(
                     transitions.push((handler.clone(), handler.state.clone(), handler.state.clone()));
                 }
             }
-            Target::Reset => {
-                // Reset transitions are not rendered as arrows per issue #69.
+            Target::Reset | Target::Stop | Target::Done | Target::Fail => {
+                // Lifecycle outcomes (reset/stop/done/fail) are not rendered
+                // as arrows — they are engine-level results, not state targets.
             }
         }
     }

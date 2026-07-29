@@ -64,6 +64,13 @@ pub struct Handler {
     pub state: String,
     pub event: String,
     pub label: String,
+    /// Full match pattern from blox.toml (e.g.
+    /// `SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))`).
+    #[serde(default)]
+    pub pattern: String,
+    /// Feature gate (`#[cfg(feature = "...")]`) when set.
+    #[serde(default)]
+    pub feature: Option<String>,
     pub actions: Vec<String>,
     pub guard: Guard,
     pub target: Target,
@@ -84,6 +91,9 @@ pub enum Target {
     Stay,
     Transition(String),
     Reset,
+    Stop,
+    Done,
+    Fail,
 }
 
 impl Target {
@@ -92,6 +102,9 @@ impl Target {
             Target::Stay => "stay".to_string(),
             Target::Transition(s) => s.clone(),
             Target::Reset => "reset".to_string(),
+            Target::Stop => "stop".to_string(),
+            Target::Done => "done".to_string(),
+            Target::Fail => "fail".to_string(),
         }
     }
 }

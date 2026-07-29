@@ -201,7 +201,7 @@ fn extract_transitions(spec: &mut BloxSpec, topology: &TopologyConfig) {
 
         let guard = model::Guard {
             description: build_guard_description(trans, &guard_branches),
-            raw: String::new(),
+            raw: build_guard_raw(trans, &guard_branches, &target),
             branches: guard_branches,
         };
 
@@ -211,6 +211,8 @@ fn extract_transitions(spec: &mut BloxSpec, topology: &TopologyConfig) {
             state: trans.state.clone(),
             event: full_event,
             label,
+            pattern: trans.event.clone(),
+            feature: trans.feature.clone(),
             actions: trans.actions.clone(),
             guard,
             target,
@@ -219,6 +221,37 @@ fn extract_transitions(spec: &mut BloxSpec, topology: &TopologyConfig) {
             on_exit: Vec::new(),
         });
     }
+}
+
+/// Render the raw guard as an if/else-if/else chain (the Rust decision text).
+fn build_guard_raw(
+    trans: &TransitionConfig,
+    branches: &[model::GuardBranch],
+    fallback: &model::Target,
+) -> String {
+    if branches.is_empty() {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut has_wildcard = false;
+    for (i, b) in branches.iter().enumerate() {
+        if b.condition == "_" {
+            has_wildcard = true;
+            out.push_str(&format!(" else {{ {} }}", b.target.display()));
+        } else if i == 0 {
+            out.push_str(&format!("if {} {{ {} }}", b.condition, b.target.display()));
+        } else {
+            out.push_str(&format!(
+                " else if {} {{ {} }}",
+                b.condition,
+                b.target.display()
+            ));
+        }
+    }
+    if !has_wildcard {
+        out.push_str(&format!(" else {{ {} }}", fallback.display()));
+    }
+    out
 }
 
 fn build_target_and_guards(trans: &TransitionConfig) -> (model::Target, Vec<model::GuardBranch>) {
@@ -246,7 +279,9 @@ fn parse_target(s: &str) -> model::Target {
     match s {
         "stay" => model::Target::Stay,
         "reset" | "Reset" => model::Target::Reset,
-        "fail" => model::Target::Transition("__fail__".to_string()),
+        "stop" => model::Target::Stop,
+        "done" => model::Target::Done,
+        "fail" => model::Target::Fail,
         _ => model::Target::Transition(s.to_string()),
     }
 }
@@ -419,6 +454,8 @@ fn fill_inherited_handlers(handlers: &mut Vec<model::Handler>, states: &[model::
                         state: child.name.clone(),
                         event: ch.event.clone(),
                         label: format!("⬇️ {} ({})", ch.label, composite.name),
+                        pattern: ch.pattern.clone(),
+                        feature: ch.feature.clone(),
                         actions: ch.actions.clone(),
                         guard: ch.guard.clone(),
                         target: ch.target.clone(),
@@ -449,6 +486,8 @@ fn fill_dropped_handlers(
                     state: state.name.clone(),
                     event: event.full_name.clone(),
                     label: "∅".to_string(),
+                    pattern: String::new(),
+                    feature: None,
                     actions: Vec::new(),
                     guard: model::Guard {
                         description: "No handler — dropped".to_string(),
