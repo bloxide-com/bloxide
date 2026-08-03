@@ -23,15 +23,14 @@ flowchart LR
         PongMsg
     end
 
-    subgraph ctx_crates [Context Crates — action functions]
+    subgraph ctx_crates [Context / feature crates — action functions]
         Rounds["blox-ctx-rounds
         increment_round(&mut u32)"]
-        Timer["blox-ctx-ping-pong
-        schedule_resume(...)
+        PingPong["blox-ctx-ping-pong
+        send_ping(...) / send_pong(...)
+        schedule_resume(...)"]
+        Timer["bloxide-timer (feature crate)
         cancel_timer_by_id(...)"]
-        Msg["blox-ctx-ping-pong
-        send_ping(...)
-        send_pong(...)"]
     end
 
     subgraph blox [Blox crate — pure declaration]
@@ -70,23 +69,32 @@ Each action is declared in `blox.toml` with a `kind` field that determines the c
 | `"exit"` | `fn(&mut Ctx) -> ()` | State exit (infallible) |
 | `"transition"` | `fn(&mut Ctx, &Event) -> ActionResult` | Transition rule action |
 
+**Uniform contract.** Every transition action function returns `ActionResult`
+(Ok/Err — send failures become `ActionResult::from(result)`). The generated
+transition wrapper returns the function's result **verbatim** — no
+`ActionResult::Ok` is appended. When the rule declares `event_payload` and the
+incoming event's payload does not match, the wrapper is a no-op returning
+`ActionResult::Ok`. Entry/exit functions are infallible (`fn(&mut Ctx)`); the
+generated wrapper is `|ctx| { the_fn(args); }`.
+
 ### Example: context crate action function
 
 ```rust
-// crates/blox-ctx-rounds/src/lib.rs
-pub fn increment_round(round: &mut u32) {
+// crates/context/blox-ctx-rounds/src/lib.rs
+pub fn increment_round(round: &mut u32) -> ActionResult {
     *round += 1;
+    ActionResult::Ok
 }
 ```
 
 ```rust
-// crates/blox-ctx-ping-pong/src/lib.rs
+// crates/context/blox-ctx-ping-pong/src/lib.rs
 pub fn send_ping<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
     round: u32,
-) {
-    let _ = peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round }));
+) -> ActionResult {
+    ActionResult::from(peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round })))
 }
 ```
 
@@ -94,9 +102,10 @@ pub fn send_ping<R: BloxRuntime>(
 
 ```rust
 // crates/impl/tokio-pool-demo-impl/src/lib.rs
-pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) {
+pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) -> ActionResult {
     *task_id = do_work.task_id;
     *result = do_work.task_id * 2;
+    ActionResult::Ok
 }
 ```
 
@@ -113,8 +122,8 @@ impl_required = false
 [[context.actions]]
 name = "send_initial_ping"
 crate = "blox_ctx_ping_pong"
-kind = "transition"
-fields = ["self_id", "peer_ref:ref", "round"]
+kind = "entry"
+fields = ["self_id", "peer_ref:ref", "round:mut"]
 impl_required = false
 
 [[context.actions]]
@@ -125,6 +134,14 @@ event_payload = "do_work"
 impl_required = true
 ```
 
+`kind` is **required** and validated against the use site — declaring
+`kind = "entry"` and then listing the action in a `[[topology.transitions]]`
+`actions` list (or vice versa) is a hard codegen error. The logical `name` can
+differ from the called function via `fn_name` (e.g. ping's `forward_ping` calls
+`blox_ctx_ping_pong::send_ping`), and `module` inserts a module segment
+(e.g. `module = "actions"` → `bloxide_timer::actions::cancel_timer_by_id`).
+Unknown TOML keys are hard errors (`deny_unknown_fields`).
+
 ### Field access modes
 
 Each field in the `fields` list has an access mode suffix:
@@ -133,19 +150,20 @@ Each field in the `fields` list has an access mode suffix:
 |--------|---------|---------------|
 | `:mut` | Mutable borrow | `&mut ctx.field` |
 | `:ref` | Immutable borrow | `&ctx.field` |
-| (none) | Copy/move | `ctx.field` (or `ctx.self_id` for `ActorId`) |
+| (none) | Copy/owned | `ctx.field` (e.g. `ctx.self_id` for `ActorId`) |
 
 ### `event_payload` extraction
 
-When `event_payload` is set, the codegen wraps the action call in an event destructuring:
+When `event_payload` is set, the codegen wraps the action call in an event destructuring. The matched arm returns the function's `ActionResult` verbatim; a non-matching payload is a no-op `Ok`:
 
 ```rust
 // Generated closure for "process_work" with event_payload = "do_work"
 |ctx, ev| {
     if let Some(WorkerMsg::DoWork(do_work)) = ev.msg_payload() {
-        tokio_pool_demo_impl::process_work(&mut ctx.task_id, &mut ctx.result, do_work);
+        ::tokio_pool_demo_impl::process_work(&mut ctx.task_id, &mut ctx.result, do_work)
+    } else {
+        ::bloxide_core::transition::ActionResult::Ok
     }
-    ActionResult::Ok
 }
 ```
 
@@ -153,61 +171,70 @@ When `event_payload` is set, the codegen wraps the action call in an event destr
 
 ### Stage 1 — Blox-level (`cargo blox generate`)
 
-Generates **stub action closures** (no-op) with **real guards**. The blox compiles standalone without any impl dependency.
+Generates **stub action closures** (no-op) with **real guards**. The stub body
+carries the action name in a `let _stub = "...";` marker; transition stubs
+additionally return `ActionResult::Ok`. The blox compiles standalone without
+any impl dependency.
 
 ```rust
 // generated/spec_skeleton.rs — stub actions, REAL guards
 impl<R: BloxRuntime> PingSpec<R> {
     const ACTIVE_FNS: StateFns<Self> = StateFns {
         on_entry: &[
-            |_ctx| { /* stub: increment_round */ },
-            |_ctx| { /* stub: send_initial_ping */ },
+            |_ctx| { let _stub = "send_initial_ping"; },
         ],
         transitions: &[StateRule {
             matches: |ev| ev.msg_payload()
                 .is_some_and(|m| matches!(m, PingPongMsg::Pong(_))),
             actions: &[
-                |_ctx, _ev| { /* stub: forward_ping */ ActionResult::Ok },
+                |_ctx, _ev| { let _stub = "increment_round"; ActionResult::Ok },
+                |_ctx, _ev| { let _stub = "forward_ping"; ActionResult::Ok },
             ],
             // REAL guard — direct field access, no B, no trait methods
-            guard: |_ctx, _results, _ev| {
-                if _ctx.round >= MAX_ROUNDS as u32 { Guard::Stop }
-                else if _ctx.round == PAUSE_AT_ROUND as u32 { Guard::Transition(LeafState::new(PingState::Paused)) }
-                else { Guard::Transition(LeafState::new(PingState::Active)) }
+            guard: |ctx, results, _ev| {
+                if results.any_failed() { Decision::Transition(LeafState::new(PingState::Error)) }
+                else if ctx.round >= MAX_ROUNDS as u32 { Decision::Stop }
+                else if ctx.round == PAUSE_AT_ROUND as u32 { Decision::Transition(LeafState::new(PingState::Paused)) }
+                else { Decision::Stay }
             },
         }],
     };
 }
 ```
 
-### Stage 2 — System-level (`cargo blox build`)
+### Stage 2 — System-level (system.toml pass of `cargo blox generate`)
 
-Reads `system.toml`, resolves impl crates, generates **concrete action closures** with real function calls. Guards are unchanged from blox-level (already real).
+The same `cargo blox generate` run (also triggered by `cargo blox build` /
+`check` / `test` / `run`) then processes every `system.toml`: it resolves
+context/impl crates and generates **concrete action closures** with real,
+fully-qualified function calls into the app's `src/generated/`. Guards are
+unchanged from blox-level (already real). Before emitting anything,
+`validate_concrete_actions` hard-fails on any `Self::` action that is not
+declared in `[[context.actions]]`, has no resolvable crate (or no `impl_crate`
+for `impl_required = true`), or whose `kind` does not match its use site —
+there are no placeholder fallbacks.
 
 ```rust
-// generated/spec_skeleton.rs — concrete, impl inlined
-use blox_ctx_rounds::increment_round;
-use blox_ctx_ping_pong::send_ping;
-
+// apps/<app>/src/generated/ping_spec_skeleton.rs — concrete, context fns inlined
 impl<R: BloxRuntime> PingSpec<R> {
     const ACTIVE_FNS: StateFns<Self> = StateFns {
         on_entry: &[
-            |ctx| { increment_round(&mut ctx.round); },
-            |ctx| { send_ping(ctx.self_id, &ctx.peer_ref, ctx.round); },
+            |ctx| { ::blox_ctx_ping_pong::send_initial_ping(ctx.self_id, &ctx.peer_ref, &mut ctx.round); },
         ],
         transitions: &[StateRule {
             matches: |ev| ev.msg_payload()
                 .is_some_and(|m| matches!(m, PingPongMsg::Pong(_))),
             actions: &[
-                |ctx, _ev| {
-                    send_ping(ctx.self_id, &ctx.peer_ref, ctx.round);
-                    ActionResult::Ok
-                },
+                // fn result returned verbatim — no appended ActionResult::Ok
+                |ctx, _ev| { ::blox_ctx_rounds::increment_round(&mut ctx.round) },
+                // forward_ping → send_ping via fn_name
+                |ctx, _ev| { ::blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round) },
             ],
-            guard: |_ctx, _results, _ev| {  // same as blox-level
-                if _ctx.round >= MAX_ROUNDS as u32 { Guard::Stop }
-                else if _ctx.round == PAUSE_AT_ROUND as u32 { Guard::Transition(LeafState::new(PingState::Paused)) }
-                else { Guard::Transition(LeafState::new(PingState::Active)) }
+            guard: |ctx, results, _ev| {  // same as blox-level
+                if results.any_failed() { Decision::Transition(LeafState::new(PingState::Error)) }
+                else if ctx.round >= MAX_ROUNDS as u32 { Decision::Stop }
+                else if ctx.round == PAUSE_AT_ROUND as u32 { Decision::Transition(LeafState::new(PingState::Paused)) }
+                else { Decision::Stay }
             },
         }],
     };
@@ -216,9 +243,9 @@ impl<R: BloxRuntime> PingSpec<R> {
 
 ## Guards
 
-Guards are the `guard` function in a `TransitionRule` — a pure `fn(&Ctx, &ActionResults, &Event) -> Guard<S>`. The engine calls `guard(ctx, results, event)` after running all actions. Guards receive the collected action results and the event, plus read-only access to context (the borrow checker prevents mutation). Guards can inspect `ActionResults` to react to action failures (e.g. send errors).
+Guards are the `guard` function in a `TransitionRule` — a pure `fn(&Ctx, &ActionResults, &Event) -> Decision<S>`. The engine calls `guard(ctx, results, event)` after running all actions. Guards receive the collected action results and the event, plus read-only access to context (the borrow checker prevents mutation). The returned `Decision<S>` is one of `Transition(LeafState)` / `Stay` / `Reset` / `Stop` / `Done` / `Fail`; guards can inspect `ActionResults` to react to action failures (e.g. send errors).
 
-**`ActionResult` vs `ActionResults`**: Each action returns `ActionResult` (Ok/Err). The engine collects all results into `ActionResults` before calling the guard. Guards receive `&ActionResults` to inspect `any_failed()`, `all_ok()`, etc.
+**`ActionResult` vs `ActionResults`**: Each action returns `ActionResult` (Ok/Err). The engine collects all results into `ActionResults` before calling the guard. Guards receive `&ActionResults` to inspect `any_failed()`, `all_ok()`, and `failure_count()`.
 
 ### Guard expression translation
 
@@ -238,15 +265,15 @@ The codegen parser:
 
 ### Declarative form (`[[topology.transitions]]` in `blox.toml`)
 
-Transition rules are declared as `[[topology.transitions]]` entries in `blox.toml`. The codegen builds `StateRule` struct literals from these entries. Actions are specified as a list of action names — `actions = ["increment_round", "send_initial_ping"]`. The action function bodies are resolved from context/impl crates by the system codegen.
+Transition rules are declared as `[[topology.transitions]]` entries in `blox.toml`. The codegen builds `StateRule` struct literals from these entries. Actions are specified as a list of action names — `actions = ["Self::increment_round", "Self::forward_ping"]`. The action function bodies are resolved from context/impl crates by the system codegen.
 
 ```toml
-# Actions + conditional guard
+# Actions + conditional guards (fall-through: target = "stay")
 [[topology.transitions]]
 state = "Active"
 event = "PingPongMsg::Pong(_)"
-target = "Active"
-actions = ["Self::forward_ping"]
+target = "stay"
+actions = ["Self::increment_round", "Self::forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "results.any_failed()"
@@ -260,40 +287,56 @@ actions = ["Self::forward_ping"]
   condition = "ctx.round == PAUSE_AT_ROUND as u32"
   target = "Paused"
 
-# Guard only (no side-effects)
+# Counter: actions then guard — done at DONE_AT_COUNT, else stay
 [[topology.transitions]]
-state = "Waiting"
+state = "Ready"
 event = "CounterMsg::Tick(_)"
+target = "stay"
 actions = ["Self::count_tick"]
 
   [[topology.transitions.guards]]
-  condition = "ctx.count >= MAX"
-  target = "Done"
+  condition = "ctx.count >= DONE_AT_COUNT"
+  target = "done"
 
   [[topology.transitions.guards]]
   condition = "_"
   target = "stay"
 ```
 
+Guard targets are evaluated in declaration order; the first matching
+`condition` wins, and when none match the rule's own `target` is the
+fall-through. Target vocabulary: `"stay"` / `"reset"` / `"stop"` / `"done"` /
+`"fail"` map to the corresponding `Decision` variants; any other value is a
+state name and becomes `Decision::Transition(LeafState::new(State))`.
+
 The execution order is engine-defined: actions always run before the guard, regardless of how the arm is visually arranged.
 
 **Event pattern shorthand:**
 - **`*Msg`** — patterns on types ending in `Msg` (e.g. `PingPongMsg::Ping(ping)`) use `msg_payload()` for matching.
-- **`*Ctrl`** — patterns on types ending in `Ctrl` (e.g. `PeerCtrl::AddPeer(p)`) use `ctrl_payload()` for matching.
+- **`*Ctrl`** — patterns on types ending in `Ctrl` (e.g. `PeerCtrl::AddPeer(p)`) use `ctrl_payload()` for matching; the action receives the whole `PeerCtrl` value.
+- **Event-variant** — patterns starting with the event enum's own name (e.g. `PoolEvent::SpawnReply(_)`) use the per-mailbox payload accessor (e.g. `ev.spawn_reply_payload()`).
 
 ## Logging
 
 Logging has been **ripped out of blox crates**. All `bloxide-log` usage has been removed from blox crates. The `bloxide-log` crate stays in place for runtime/context crate usage. Domain-level logging re-design is a deferred decision.
 
+The crate surface is five macros — `blox_log_trace!`, `blox_log_debug!`,
+`blox_log_info!`, `blox_log_warn!`, `blox_log_error!` — each taking the actor
+id as first argument. Backend gating: `defmt` wins over `log`; with neither
+feature the macros expand to no-ops (use a string literal as the format
+argument — `defmt` requires it).
+
 Never add `blox_log_*!` calls to blox crates or add `bloxide-log` as a dependency of a blox crate.
 
 ## Rules
 
-- Action functions live in **context crates** (traits + free functions) or **impl crates** (impl-specific behavior).
+- Action functions live in **context crates** (free functions) or **impl crates** (impl-specific behavior).
 - Action functions take **concrete params** extracted from context fields, not trait-bounded `&mut C` references.
+- Transition action functions return `ActionResult`; the generated wrapper returns it verbatim. Entry/exit functions are infallible.
 - Context crates must not import Embassy, Tokio, file I/O, or executor-specific code.
 - Blox crates contain zero logic — no `actions.rs`, no `Self::` methods, no logging, no computation.
-- The `kind` field (`"entry"`, `"exit"`, `"transition"`) determines the closure signature the codegen generates.
+- The `kind` field (`"entry"`, `"exit"`, `"transition"`) is required, determines the closure signature the codegen generates, and is validated against the use site (mismatch = hard codegen error).
+- `role` in `[[context.uses]]` is validated — only `"ctor"` (constructor parameter) or `"state"` (zero-initialized field). Unknown TOML keys anywhere are hard errors.
 - Guards are pure field comparisons generated at the blox level — they don't depend on impl crates.
 
 ## Related Docs

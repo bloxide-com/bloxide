@@ -69,26 +69,32 @@ sequenceDiagram
     participant Ping
     participant Pong
 
-    W->>Ping: machine.start()
-    W->>Pong: machine.start()
+    W->>Ping: dispatch(LifecycleCommand::Start)
+    W->>Pong: dispatch(LifecycleCommand::Start)
 
-    Note over Ping: Init → Operating → Active<br/>(on_entry sends Ping(1))
+    Note over Ping: Init → Operating → Active<br/>(on_entry: send_initial_ping, round 0→1)
     Note over Pong: Init → Ready
 
     Ping->>Pong: PingPongMsg::Ping(1)
-    Note over Pong: Ready — Guard::Stay<br/>sends Pong(1)
+    Note over Pong: Ready — Decision::Stay<br/>sends Pong(1)
     Pong->>Ping: PingPongMsg::Pong(1)
-    Note over Ping: Active → Active<br/>(self-transition, round=2)
+    Note over Ping: Active — stay, no self-transition<br/>(round=2, forwards Ping(2));<br/>round == PAUSE_AT_ROUND → Paused
 
     Ping->>Pong: PingPongMsg::Ping(2)
-    Pong->>Ping: PingPongMsg::Pong(2)
-    Note over Ping: Active → Active (round=3)
+    Note over Ping: Paused — on_entry schedules resume timer<br/>(2000 + round × 500 ms)
+    Ping->>Ping: PingPongMsg::Resume (timer fires)
+    Note over Ping: Paused → Active<br/>(round=3, forwards Ping(3))
 
-    Note over Ping,Pong: ... rounds 3 and 4 ...
+    Ping->>Pong: PingPongMsg::Ping(3)
+    Pong->>Ping: PingPongMsg::Pong(3)
+    Note over Ping: Active — stay (round=4, forwards Ping(4))
+
+    Note over Ping,Pong: ... round 4 ...
 
     Ping->>Pong: PingPongMsg::Ping(5)
+    Note over Ping: Decision::Stop<br/>(round >= MAX_ROUNDS, self-suspend to Init)
     Pong->>Ping: PingPongMsg::Pong(5)
-    Note over Ping: Active → Guard::Stop<br/>(round >= MAX_ROUNDS, self-suspend to Init)
+    Note over Ping: suspended in Init — Pong(5) not consumed
 ```
 
 ## Rules
@@ -136,11 +142,12 @@ Use `try_send` from `on_entry` and `actions` functions (which run synchronously 
 A channel closes when every sender (`ActorRef`) for it has been dropped.
 Domain mailbox closes are a **garbage-collection backstop, not a lifecycle
 signal**: actor fate is owned exclusively by supervision — dispatch-driven
-lifecycle commands (`Start`/`Reset`/`Stop`), `Guard::Stop`/`Guard::Done`,
+lifecycle commands (`Start`/`Reset`/`Stop`), `Decision::Stop`/`Decision::Done`,
 and the kill capability.
 
-**`Mailboxes` behavior:** The blanket tuple impls in `mailboxes.rs` return
-`Poll::Ready(None)` only when **every** stream in the tuple has closed —
+**`Mailboxes` behavior:** The blanket tuple impls in `mailboxes.rs`
+(`poll_next` returns `Poll<Option<E>>`) return `Poll::Ready(None)` only when
+**every** stream in the tuple has closed —
 i.e. no domain sender remains anywhere, so the actor cannot be reached at
 all. A single closed stream does **not** shut down the actor: a peer
 dropping its `ActorRef` merely removes one input. The run loop polls the
@@ -154,7 +161,7 @@ receivers satisfy this.
 **Consequence for self-refs:** an actor holding its own `self_ref` keeps its
 domain stream open forever — harmless, because shutdown flows through the
 lifecycle stream, not domain close. Actors that finish their work should
-use `Guard::Done` (clean self-termination, task ends) rather than relying
+use `Decision::Done` (clean self-termination, task ends) rather than relying
 on close semantics.
 
 **For runtimes:** no special handling is required beyond fused receivers.

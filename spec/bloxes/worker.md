@@ -6,7 +6,7 @@ The Worker actor demonstrates:
 - **Priority mailbox handling**: Ctrl stream polled before domain stream
 - **Peer accumulation**: Receives `AddPeer` commands before `DoWork`
 - **Result broadcast**: Sends result to all peers before notifying pool
-- **Self-suspend via Guard::Stop**: When work is done, the guard returns `Guard::Stop` — the actor self-suspends to `Init` and the runtime reports `ChildLifecycleEvent::Stopped` to the pool
+- **Self-suspend via Decision::Stop**: When work is done, the guard returns `Decision::Stop` — the actor self-suspends to `Init` and the runtime reports `ChildLifecycleEvent::Stopped` to the pool
 
 Workers are spawned dynamically by the Pool actor.
 
@@ -22,7 +22,7 @@ Workers are spawned dynamically by the Pool actor.
 ```mermaid
 stateDiagram-v2
     [*] --> Waiting : dispatch(Start)
-    Waiting --> [*] : WorkerMsg::DoWork : Guard::Stop
+    Waiting --> [*] : WorkerMsg::DoWork : Decision::Stop
 ```
 
 > `[Init]` is engine-implicit. `Waiting` is a leaf state.
@@ -38,9 +38,10 @@ stateDiagram-v2
 
 | Event | Handled by | Rule pattern | Guard outcome | Side effects |
 |-------|-----------|--------------|--------------|--------------|
-| `PeerCtrl::AddPeer(_)` | `Waiting` | Action-Then-Stay | `Stay` | `apply_worker_ctrl` |
-| `WorkerMsg::DoWork(_)` | `Waiting` | Action-Then-Guard | `Stop` | `process_work` |
-| `WorkerMsg::PeerResult(_)` | `Waiting` | Sink | `Stay` | none (absorbed) |
+| `PeerCtrl::AddPeer(_)` | `Waiting` | Action-Then-Stay | `Decision::Stay` | `handle_ctrl` (fn `apply_peer_control`) appends the peer (idempotent by peer id) |
+| `PeerCtrl::RemovePeer(_)` | `Waiting` | Action-Then-Stay | `Decision::Stay` | `handle_ctrl` (fn `apply_peer_control`) removes the peer by id |
+| `WorkerMsg::DoWork(_)` | `Waiting` | Action-Then-Guard | `Decision::Stop` | `process_work`, `do_broadcast`, `do_notify_pool` |
+| `WorkerMsg::PeerResult(_)` | `Waiting` | Sink | `Decision::Stay` | none (absorbed) |
 | any unhandled | root (no rules) | — | dropped | none |
 
 ## Priority Mailbox Ordering
@@ -90,8 +91,8 @@ pub struct WorkerCtx<R: BloxRuntime> {
 
 | Target | Message | When |
 |--------|---------|------|
-| All peers | `WorkerMsg::PeerResult(...)` | transition actions (before `Guard::Stop`) via `broadcast_to_peers` |
-| `pool_ref` | `PoolMsg::WorkDone(...)` | transition actions (before `Guard::Stop`) via `notify_pool_done` |
+| All peers | `WorkerMsg::PeerResult(...)` | transition actions (before `Decision::Stop`) via `do_broadcast` (fn `broadcast_result` from `blox-ctx-pool-ref`) |
+| `pool_ref` | `PoolMsg::WorkDone(...)` | transition actions (before `Decision::Stop`) via `do_notify_pool` (fn `notify_pool_done` from `blox-ctx-pool-ref`) |
 
 ## Entry / Exit Actions
 
@@ -99,7 +100,7 @@ pub struct WorkerCtx<R: BloxRuntime> {
 |-------|----------|---------|
 | `[Init]` (engine) | `on_init`: task_id=0, result=0, peers cleared | — |
 | `Waiting` | — (empty) | — |
-| `Waiting` → `Guard::Stop` | `process_work`, `do_broadcast` (fn `broadcast_to_peers`), `do_notify_pool` (fn `notify_pool_done`) (in transition actions) | — |
+| `Waiting` → `Decision::Stop` | `process_work`, `do_broadcast` (fn `broadcast_result`), `do_notify_pool` (fn `notify_pool_done`) (in transition actions) | — |
 
 There are no logging actions (invariant #15).
 
@@ -109,12 +110,12 @@ Blox-crate unit tests run against the blox-level **stub** spec (per invariant #1
 they verify topology and guard outcomes, not action side effects.
 
 - [x] `dispatch(WorkerEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Waiting`
-- [x] `WorkerMsg::DoWork` in `Waiting` runs transition actions then `Guard::Stop` self-suspends to Init
+- [x] `WorkerMsg::DoWork` in `Waiting` runs transition actions then `Decision::Stop` self-suspends to Init
 - [x] `WorkerMsg::PeerResult` in `Waiting` is ignored (`Stay`)
 - [x] With stub actions, `PeerCtrl::AddPeer` does not modify `peers` (stub verification)
 - [x] With stub actions, `process_work` does not set `task_id` (stub verification)
 - [x] With stub actions, no `WorkDone` / `PeerResult` messages are sent (stub verification)
-- [x] Ctrl stream is mailbox index 0 — polled with higher priority than the domain stream
+- [x] Ctrl stream is mailbox index 0 — polled with higher priority than the domain stream (also visible in the generated `Mailboxes` tuple in `spec_skeleton.rs`)
 
 ## Acceptance Criteria → Test Mapping
 
@@ -123,22 +124,53 @@ All tests live in `crates/bloxes/worker/src/tests.rs` and use `TestRuntime`:
 | Acceptance Criterion | Test Function |
 |---|---|
 | `dispatch(LifecycleCommand::Start)` enters Waiting | `worker_starts_in_waiting` |
-| DoWork → Guard::Stop | `do_work_transitions_to_stop` |
+| DoWork → Decision::Stop | `do_work_transitions_to_stop` |
 | PeerResult ignored | `peer_result_in_waiting_is_ignored` |
 | Stub handle_ctrl does not add peer | `handle_ctrl_stub_does_not_add_peer` |
 | Stub process_work does not set task_id | `process_work_stub_does_not_set_task_id` |
 | Stub do_notify_pool sends nothing | `do_notify_pool_stub_does_not_send_work_done` |
 | Stub do_broadcast sends nothing | `do_broadcast_stub_does_not_send_peer_result` |
+| Ctrl mailbox polled before domain mailbox | `ctrl_mailbox_is_polled_before_domain_mailbox` |
 
 ## Context Crate Dependencies
 
 | Action function | From crate | Description |
 |-------|-----------|----------------|
-| `notify_pool_done` | `blox-ctx-pool-ref` | Worker sends WorkDone to pool |
-| `broadcast_to_peers` | `bloxide-peers` | Worker broadcasts result to peers |
+| `apply_peer_control` | `bloxide-peers` | Applies `PeerCtrl::AddPeer`/`RemovePeer` to the `peers` field (dedups by peer id); wired as `handle_ctrl` |
+| `broadcast_result` | `blox-ctx-pool-ref` | Builds `WorkerMsg::PeerResult` and broadcasts to all peers — a thin domain wrapper over the generic `bloxide_peers::broadcast_to_peers` (which is `M: Clone`-generic and domain-agnostic); wired as `do_broadcast` |
+| `notify_pool_done` | `blox-ctx-pool-ref` | Worker sends WorkDone to pool; wired as `do_notify_pool` |
 
 ## Related Docs
 
 - See `spec/bloxes/pool.md` for the pool perspective
 - See `spec/architecture/07-typed-mailboxes.md` for priority ordering
 - See `spec/architecture/11-dynamic-actors.md` for peer introduction
+
+## blox.toml
+
+The full declarative source is `crates/bloxes/worker/blox.toml`:
+
+```toml
+[[topology.transitions]]
+state = "Waiting"
+event = "PeerCtrl::AddPeer(_) | PeerCtrl::RemovePeer(_)"
+target = "stay"
+actions = ["Self::handle_ctrl"]
+
+[[topology.transitions]]
+state = "Waiting"
+event = "WorkerMsg::DoWork(_)"
+target = "stop"
+actions = ["Self::process_work", "Self::do_broadcast", "Self::do_notify_pool"]
+
+[[topology.transitions]]
+state = "Waiting"
+event = "WorkerMsg::PeerResult(_)"
+target = "stay"
+```
+
+The `Ctrl` mailbox (`PeerCtrl<WorkerMsg, R>`) is declared before the `Msg` mailbox (`WorkerMsg`), which puts the Ctrl stream at mailbox index 0.
+
+## Open Questions
+
+None currently.

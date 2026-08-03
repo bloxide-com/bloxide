@@ -16,8 +16,10 @@ are authorized to send.
 ```rust
 pub trait Mailboxes<E: Send + 'static>: Send + 'static + Unpin {
     /// Poll all mailboxes in priority order (index 0 = highest priority).
-    /// Returns the next event converted into the unified `E` type.
-    fn poll_next(&mut self, cx: &mut core::task::Context<'_>) -> core::task::Poll<E>;
+    /// Returns the next event converted into the unified `E` type, or
+    /// `Poll::Ready(None)` once **every** stream in the tuple has closed
+    /// (all-streams-close semantics, issue #134).
+    fn poll_next(&mut self, cx: &mut core::task::Context<'_>) -> core::task::Poll<Option<E>>;
 }
 ```
 
@@ -146,6 +148,13 @@ Typed-mailbox-specific invariants:
   authorized to send — they cannot send arbitrary `Event` variants.
 - `NoMailboxes` is used as the `Mailboxes` type for spec impls driven directly via
   `machine.dispatch(event)` (e.g., in unit tests).
-- The run loop never exits. Actors are permanent.
-- Each actor **must retain a clone of its own `ActorRef`** for each mailbox it owns
-  to prevent the channel from closing (channel lifetime invariant).
+- The run loop exits on five conditions: `DispatchOutcome::Aborted`,
+  `DispatchOutcome::Done`, all domain streams closed (all-streams-close),
+  `DispatchOutcome::Stopped` when `exit_on_stop` is set, and
+  `DispatchOutcome::Failed` when `exit_on_fail` is set. Supervised actors clear
+  both flags, so their tasks stay alive through `Stopped` and `Failed` until
+  the supervisor acts.
+- An actor holding its own `self_ref` keeps its domain stream open — a
+  convenience (e.g. for self-delivered timer messages), not a lifetime
+  requirement. Shutdown flows through the lifecycle/abort streams and
+  `Decision` outcomes, never through domain channel close.

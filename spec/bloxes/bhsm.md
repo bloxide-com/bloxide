@@ -36,10 +36,10 @@ stateDiagram-v2
     S21 --> S11 : G [LCA=S]
     S --> S11 : H [reset]
     S --> Error : K [error]
-    S --> [*] : X : Guard::Stop
+    S --> [*] : X : Decision::Stop
 ```
 
-> `[Init]` is engine-implicit (not in the `BhsmTstState` enum). The actor enters Init at construction and waits. `dispatch(BhsmTstEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `S→S1→S11`. `dispatch(BhsmTstEvent::Lifecycle(LifecycleCommand::Reset))` exits all states and re-enters Init.
+> `[Init]` is engine-implicit (not in the `BhsmTstState` enum). The actor enters Init at construction and waits. `dispatch(BhsmTstEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `S→S1→S11`. `dispatch(BhsmTstEvent::Lifecycle(LifecycleCommand::Reset))` goes **directly** to `initial_state()` (S11 via the S→S1→S11 entry chain) — it skips Init entirely and `on_init_entry` does NOT fire.
 > `S`, `S1`, `S2`, `S21` are composite states (never active). `S11`, `S211`, `Error` are leaf states.
 
 ## States
@@ -48,28 +48,29 @@ stateDiagram-v2
 |-------|------|-------------|
 | `[Init]` | engine-implicit | Waiting for `dispatch(Start)` |
 | `S` | composite, top-level | Catch-all for H, I, K, X events |
-| `S1` | composite | Parent of S11 |
+| `S1` | composite | Parent of S11. Handles C (bubbled from S11) |
 | `S11` | leaf, initial | Initial state. Handles A, B, D. |
 | `S2` | composite | Parent of S21 |
-| `S21` | composite | Parent of S211. Handles C (bubbled), E, G. |
+| `S21` | composite | Parent of S211. Handles E, G (both bubbled from S211) |
 | `S211` | leaf | Handles F (deep cross back) |
 | `Error` | leaf, error | `is_error()` returns true. Supervisor restarts. |
 
 ## Events
 
-| Event | Handled by | Transition | LCA | Demonstrates |
-|-------|-----------|------------|-----|-------------|
-| `A` | `S11` | `S11→S11` | `S1` | Self-transition at leaf |
-| `B` | `S11` | `S11→S11` | `S1` | Same mechanics, different chain |
-| `C` | `S1` (bubbled) | `S11→S211` | `S` | Cross-sibling via parent |
-| `D` | `S11` | `S11→S211` | `S` | Deep cross-subtree |
-| `E` | `S21` | `S211→S211` | `S21` | Parent→child (single ancestor) |
-| `F` | `S211` | `S211→S11` | `S` | Deep cross back |
-| `G` | `S21` | `S211→S11` | `S` | Mid-level cross |
-| `H` | `S` | `any→S11` | `S` | Top-level reset |
-| `I` | `S` | stay | — | Top-level absorb |
-| `K` | `S` | `any→Error` | None | Error state (supervisor restart) |
-| `X` | `S` | `any→Stop` | None | Self-suspend via Guard::Stop (supervisor notified via Stopped) |
+| Event | Handled by | Rule pattern | Guard outcome | Side effects |
+|-------|-----------|--------------|--------------|--------------|
+| `A` | `S11` | Pure Transition | `Decision::Transition(S11)` | self-transition at leaf (LCA=`S1`) |
+| `B` | `S11` | Pure Transition | `Decision::Transition(S11)` | same mechanics, different chain (LCA=`S1`) |
+| `C` | `S1` (bubbled from `S11`) | Bubble | `Decision::Transition(S211)` | cross-sibling via parent (LCA=`S`) |
+| `D` | `S11` | Pure Transition | `Decision::Transition(S211)` | deep cross-subtree (LCA=`S`) |
+| `E` | `S21` (bubbled from `S211`) | Bubble | `Decision::Transition(S211)` | parent→child, single ancestor (LCA=`S21`) |
+| `F` | `S211` | Pure Transition | `Decision::Transition(S11)` | deep cross back (LCA=`S`) |
+| `G` | `S21` (bubbled from `S211`) | Bubble | `Decision::Transition(S11)` | mid-level cross (LCA=`S`) |
+| `H` | `S` | Pure Transition | `Decision::Transition(S11)` | top-level reset (LCA=`S`) |
+| `I` | `S` | Sink | `Decision::Stay` | top-level absorb |
+| `K` | `S` | Pure Transition | `Decision::Transition(Error)` | error state (LCA=None — full exit chain); runtime reports `Failed` |
+| `X` | `S` | Pure Guard | `Decision::Stop` | self-suspend to Init; supervisor notified via `Stopped` |
+| any unhandled | root (no rules) | — | dropped | none |
 
 Lifecycle control (`Start`, `Reset`, `Stop`) is handled by the runtime — these do not appear as domain events.
 
@@ -166,15 +167,15 @@ Exit:   (full chain from current leaf up through S)
 Entry:  Error.on_entry← error-ENTRY;  (is_error() → supervisor reports Failed)
 ```
 
-### `any → Guard::Stop` via event X
+### `any → Decision::Stop` via event X
 ```
 source_path: [S, ...]  (from any substate)
-target_path: [Init]  # Guard::Stop goes to Init
+target_path: [Init]  # Decision::Stop goes to Init
 LCA = None
 
 Exit:   (full chain from current leaf up through S)
         S.on_exit    ← s-EXIT;
-Guard::Stop: fires exit chain from current state to root, enters Init. Supervisor reports Stopped.
+Decision::Stop: fires exit chain from current state to root, enters Init. Supervisor reports Stopped.
 ```
 
 ## Acceptance Criteria
@@ -195,7 +196,46 @@ Guard::Stop: fires exit chain from current state to root, enters Init. Superviso
 - [x] `H` from any state resets to `S11`: exit up to (not incl.) `S`, entry `S1,S11`
 - [x] `I` at top level (`S`) is absorbed — stay, no transition
 - [x] `K` from any state transitions to `Error`: `is_error()` returns true, runtime reports `Failed` (LCA=None — full exit chain)
-- [x] `X` from any state triggers `Guard::Stop`: actor self-suspends to Init, supervisor notified via `Stopped`
+- [x] `X` from any state triggers `Decision::Stop`: actor self-suspends to Init, supervisor notified via `Stopped`
 - [x] `R` (LifecycleCommand::Reset) goes directly to `initial_state()` (S11 via S→S1→S11), skipping Init
 - [x] `Q` (LifecycleCommand::Stop) sends actor to Init (suspended)
 - [x] Unknown events bubble to root and are silently dropped
+
+## blox.toml
+
+The full declarative source is `crates/bloxes/bhsm-tst/blox.toml`; representative excerpts:
+
+```toml
+# S: top-level catch-all — H→S11, I stays, K→Error, X→stop
+[[topology.transitions]]
+state = "S"
+event = "BhsmTstMsg::H(_)"
+target = "S11"
+
+[[topology.transitions]]
+state = "S"
+event = "BhsmTstMsg::I(_)"
+target = "stay"
+
+[[topology.transitions]]
+state = "S"
+event = "BhsmTstMsg::K(_)"
+target = "Error"
+
+[[topology.transitions]]
+state = "S"
+event = "BhsmTstMsg::X(_)"
+target = "stop"
+
+# S1: C is handled HERE (bubbled up from S11), not in S21
+[[topology.transitions]]
+state = "S1"
+event = "BhsmTstMsg::C(_)"
+target = "S211"
+```
+
+Every state also declares `[[topology.entry]]` / `[[topology.exit]]` tracing actions (`s1_entry`, `s1_exit`, …) so the recording test spec can assert exact chain order.
+
+## Open Questions
+
+None currently.

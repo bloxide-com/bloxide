@@ -34,8 +34,9 @@ Blox crates are generic over a single Tier 1 trait: `R: BloxRuntime`. All additi
 ┌─────────────────────────────────────────────────────────────┐
 │               Standard Library Crates (Layer 2)             │
 │  bloxide-timer: TimerCommand, TimerQueue,                  │
-│                 set_timer(), cancel_timer()                 │
-│  bloxide-supervisor: LifecycleCommand, ChildGroup, ...      │
+│                 set_timer(), cancel_timer(),                │
+│                 cancel_timer_by_id()                        │
+│  bloxide-child-management: ChildGroup, ChildPolicy, ...     │
 └─────────────────────────────────────────────────────────────┘
                             │
           Tier 2: TimerService (run loop: run() + RunConfig, in bloxide-core)
@@ -74,14 +75,15 @@ Action functions for blox code take concrete params:
 
 ```rust
 /// Schedule `event` to be delivered to `target` after `after_ms` milliseconds.
-/// Returns a `TimerId` for cancellation.
+/// Returns `Some(TimerId)` for cancellation, or `None` when the timer
+/// channel is full (the command could not be queued).
 pub fn set_timer<R, M>(
     self_id: ActorId,
     timer_ref: &ActorRef<TimerCommand, R>,
     after_ms: u64,
     target: &ActorRef<M, R>,
     event: M,
-) -> TimerId
+) -> Option<TimerId>
 where
     R: BloxRuntime,
     M: Send + 'static;
@@ -91,7 +93,7 @@ pub fn cancel_timer<R>(
     self_id: ActorId,
     timer_ref: &ActorRef<TimerCommand, R>,
     id: TimerId,
-)
+) -> ActionResult
 where
     R: BloxRuntime;
 ```
@@ -127,20 +129,23 @@ pub struct PingCtx<R: BloxRuntime> {
 Timer state (the current `TimerId`) is held as a plain field. The blox spec wires action functions from context crates into `on_entry`/`on_exit` slices:
 
 ```rust
-// In blox-ctx-ping-pong — takes concrete params
+// In blox-ctx-ping-pong — takes concrete params; the pause duration is
+// derived from the round (2000 + round × 500 ms). Returns ActionResult.
 pub fn schedule_resume<R: BloxRuntime>(
     self_id: ActorId,
     self_ref: &ActorRef<PingPongMsg, R>,
     timer_ref: &ActorRef<TimerCommand, R>,
+    round: u32,
     current_timer: &mut Option<TimerId>,
-    duration_ms: u64,
-) { ... }
+) -> ActionResult { ... }
 
+// In bloxide-timer (module `actions`, also re-exported at the crate root
+// and in the prelude). Takes the current-timer field by &mut and clears it.
 pub fn cancel_timer_by_id<R: BloxRuntime>(
     self_id: ActorId,
     timer_ref: &ActorRef<TimerCommand, R>,
-    timer_id: Option<TimerId>,
-) { ... }
+    current_timer: &mut Option<TimerId>,
+) -> ActionResult { ... }
 ```
 
 ### Timer Pool in Embassy
@@ -198,7 +203,9 @@ let sup_id = bloxide_embassy::next_actor_id!();
 
 `TestRuntime` uses a runtime `AtomicUsize` counter since test channels are created
 dynamically. `DynamicChannelCap::alloc_actor_id()` increments this counter and
-returns the next ID.
+returns the next ID. The counter starts at `DYNAMIC_ACTOR_ID_BASE` (1_000_000,
+in `bloxide-core::capability`) so runtime-allocated IDs can never collide with
+the compile-time IDs handed out by `channels!` / `next_actor_id!`.
 
 ## Relationship to HSM
 
@@ -220,7 +227,7 @@ StateMachine::process_event
              └─▶ cancel_timer(...)           ← action function call in user code
 ```
 
-**Guards are pure.** `guard: fn(&Ctx, &ActionResults, &Event) -> Guard<S>` receives
+**Guards are pure.** `guard: fn(&Ctx, &ActionResults, &Event) -> Decision<S>` receives
 `&Ctx` (shared reference) and `&ActionResults`, not `&mut Ctx`. This borrow-checks
 the intent: a guard may inspect state and action results to decide which target
 to transition to, but it must not fire side effects. Side effects belong in `actions`.
@@ -233,10 +240,19 @@ other trait.
 
 Every Tier 2 trait **must** be implementable by `TestRuntime` so that blox
 logic can be unit-tested without an executor. `TestRuntime` lives in
-`bloxide-core` behind the `std` feature and provides:
+`runtimes/bloxide-test-runtime` (its own crate — not behind a `bloxide-core`
+feature) and provides:
 
-- `BloxRuntime` — unbounded in-memory queues; `try_send` never returns an error.
-- `DynamicChannelCap` — creates `(ActorRef, TestReceiver)` pairs on demand.
+- `BloxRuntime` — in-memory queues. Capacity **is** enforced for `try_send`
+  (the backpressure path action functions use); `send_via` is unbounded and
+  never fails. Receivers model all-streams-close semantics (issue #134):
+  dropping the last sender wakes the receiver, which drains queued envelopes
+  and then returns `Poll::Ready(None)`.
+- `DynamicChannelCap` — creates `(ActorRef, TestReceiver)` pairs on demand;
+  `alloc_actor_id()` hands out IDs starting at `DYNAMIC_ACTOR_ID_BASE`
+  (1_000_000) so they can never collide with compile-time IDs.
+- `SpawnCap` — dynamic spawning in tests; `kill` / `kill_handle` are
+  documented no-ops (`KillHandle = ()`) since TestRuntime runs no real tasks.
 
 Timer testing is not built into `TestRuntime` itself, but `bloxide-timer`
 provides a reusable std-only helper: `bloxide_timer::test_utils::VirtualClock`.
@@ -248,7 +264,8 @@ dependency from `bloxide-core` back to `bloxide-timer`.
 ### Typical test pattern
 
 ```rust
-use bloxide_core::{DynamicChannelCap, TestRuntime};
+use bloxide_core::DynamicChannelCap;
+use bloxide_test_runtime::TestRuntime;
 use bloxide_timer::{test_utils::VirtualClock, TimerCommand};
 
 #[test]
@@ -269,9 +286,10 @@ fn paused_state_resumes_after_timeout() {
     machine.dispatch(PingEvent::Lifecycle(LifecycleCommand::Start));
     // ... drive rounds until Paused ...
 
-    // Manually advance the virtual clock; ready callbacks enqueue Resume.
+    // Manually advance the virtual clock past the scheduled resume
+    // (schedule_resume computes 2000 + round × 500 ms from the round).
     let mut clock = VirtualClock::new(timer_rx);
-    clock.advance(PAUSE_DURATION_MS);
+    clock.advance(2000 + PAUSE_AT_ROUND as u64 * 500);
 
     // Resume should now be in the mailbox
     let msgs = to_ping_rx.drain_payloads();
@@ -290,9 +308,9 @@ with `no_std`:
 | Concern | Solution |
 |---|---|
 | Actor ID generation (production) | Proc-macro counter assigns literal IDs at compile time via `channels!` and `next_actor_id!`; no runtime counter |
-| Actor ID generation (test) | `TestRuntime` uses a runtime `AtomicUsize` via `DynamicChannelCap::alloc_actor_id()` |
+| Actor ID generation (test) | `TestRuntime` uses a runtime `AtomicUsize` via `DynamicChannelCap::alloc_actor_id()`, starting at `DYNAMIC_ACTOR_ID_BASE` |
 | Timer ID generation | `TimerId` assigned by `set_timer()` in `bloxide-timer`; uses core atomics on pointer-atomic targets and a `critical-section`-protected counter otherwise |
-| `TestRuntime` | Uses `std` (enabled by the `std` feature); only used in host tests |
+| `TestRuntime` | Own crate (`runtimes/bloxide-test-runtime`), uses `std`; only used in host tests |
 | Action crates | `#![no_std]`; call only concrete params; no OS imports |
 | Core traits | Defined in `bloxide-core` which is `#![no_std]` |
 | `critical-section` | Used by `bloxide-timer` as the fallback for targets without pointer-sized atomics; embedded apps must provide an implementation via their HAL/runtime stack |

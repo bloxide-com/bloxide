@@ -34,8 +34,8 @@ Decision trees and lookup tables for common tasks. Keep this open while you work
     ┌─────────────┐ ┌─────────┐ ┌─────────────┐ ┌─────────────────┐
     │ New stdlib  │ │ Context │ │ Standard    │ │ Context field   │
     │ crate       │ │ field   │ │ run loop    │ │ (sync hardware) │
-    │ (timer,     │ │ + direct│ │ (run_root)  │ │                 │
-    │ supervisor) │ │ access  │ │             │ │                 │
+    │ (timer,     │ │ + direct│ │ (run() +    │ │                 │
+    │ supervisor) │ │ access  │ │ RunConfig)  │ │                 │
     └─────────────┘ └─────────┘ └─────────────┘ └─────────────────┘
 ```
 
@@ -102,7 +102,7 @@ State fields are plain fields on the context struct. There is no `B` generic, no
 
 | Pattern | When to Use | Example |
 |---------|-------------|---------|
-| Flat FSM | Simple linear progression | Counter: Init → Ready → (Guard::Done) |
+| Flat FSM | Simple linear progression | Counter: Init → Ready → (Decision::Done) |
 | Composite + Siblings | Related substates with shared logic | Ping: Operating → (Active, Paused) |
 | Hierarchical Cleanup | Parent on_exit cleans up children | Supervisor: Running → [child states] |
 
@@ -115,7 +115,7 @@ State fields are plain fields on the context struct. There is no `B` generic, no
 | Blox unit tests (TestRuntime) | `crates/bloxes/*/src/tests.rs` |
 | Context crate tests | `crates/context/*/src/tests.rs` |
 | Impl crate tests | `crates/impl/*/src/tests.rs` |
-| Integration tests (full runtime) | `apps/*-demo/` (system.toml + generated main.rs) or `tests/` |
+| Integration tests (full runtime) | `apps/*-demo/` (system.toml + generated main.rs); app integration tests live in `apps/<app>/tests/` |
 
 ---
 
@@ -129,8 +129,8 @@ pub fn send_ping<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
     round: u32,
-) {
-    let _ = peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round }));
+) -> ActionResult {
+    ActionResult::from(peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round })))
 }
 ```
 
@@ -162,20 +162,24 @@ Use `bloxide-timer` and `blox-ctx-ping-pong` action functions instead of manual 
 
 3. Declare timer action functions in `[[context.actions]]`:
    ```toml
+   # schedule_resume(self_id, self_ref, timer_ref, round, current_timer) -> ActionResult
+   # (duration computed from the round: 2000 + round × 500 ms)
    [[context.actions]]
    name = "schedule_pause_timer"
    fn_name = "schedule_resume"
    crate = "blox_ctx_ping_pong"
-   kind = "transition"
+   kind = "entry"
    fields = ["self_id", "self_ref:ref", "timer_ref:ref", "round", "current_timer:mut"]
    impl_required = false
 
+   # cancel_timer_by_id lives in bloxide_timer (module `actions`, also
+   # re-exported at the crate root and in the prelude)
    [[context.actions]]
    name = "cancel_pause_timer"
    fn_name = "cancel_timer_by_id"
    crate = "bloxide_timer"
    module = "actions"
-   kind = "transition"
+   kind = "exit"
    fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
    impl_required = false
    ```
@@ -190,12 +194,19 @@ let pool_ctx = PoolCtx::new(
     spawn_worker_tokio,  // factory closure
 );
 
-// In impl crate — free function, no struct, no trait impl:
-pub fn spawn_worker(
+// In impl crate — free function, no struct, no trait impl.
+// SpawnRequest/SpawnedWorker live in `blox_ctx_pool_ref` (pool-messages is plain data);
+// SpawnOutput/SpawnFn/SpawnCap live in `bloxide_spawn`.
+pub fn spawn_worker<S>(
     req: SpawnRequest<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
     notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
-) -> SpawnOutput<TokioRuntime> {
-    // ... spawn logic ...
+) -> SpawnOutput<TokioRuntime>
+where
+    S: MachineSpec<Ctx = WorkerCtx<TokioRuntime>>,
+    // ... event bounds ...
+{
+    // ... spawn logic; the generated main.rs monomorphizes S with the
+    // system-level concrete spec via a wrapper ...
 }
 ```
 
@@ -212,15 +223,15 @@ pub fn spawn_worker(
             Restartable reset        Self-suspend (Stop)
                     │                   │
                     ▼                   ▼
-         ┌──────────────────┐    ┌──────────────────┐
-         │ LifecycleCommand │    │ Guard::Stop or   │
-         │ ::Reset          │    │ LifecycleCommand │
-         │ (via dispatch)   │    │ ::Stop (dispatch)│
-         └──────────────────┘    └──────────────────┘
+         ┌──────────────────┐    ┌────────────────────┐
+         │ LifecycleCommand │    │ Decision::Stop or  │
+         │ ::Reset          │    │ LifecycleCommand   │
+         │ (via dispatch)   │    │ ::Stop (dispatch)  │
+         └──────────────────┘    └────────────────────┘
                     │                   │
                     ▼                   ▼
          ┌──────────────────┐    ┌──────────────────┐
-         │ on_exit chain    │    │ on_exit chain    │
+         │ LCA change_state │    │ on_exit chain    │
          │ → enters         │    │ → on_init_entry  │
          │   initial_state  │    │ → task stays     │
          │   immediately    │    │   alive in Init  │
@@ -237,12 +248,47 @@ pub fn spawn_worker(
          └──────────────────┘    └──────────────────┘
 ```
 
-### Emergency Kill (Non-cooperative)
+### The Five Lifecycle Levels
 
-If the actor is non-responsive (stuck in infinite loop, blocking call), use `KillCapability::kill(handle)`:
-- **No callbacks fire** — immediate task abort
-- Only available in Tokio (Embassy lacks abort support)
-- Supervisor tracks killed children separately (no `ChildLifecycleEvent`)
+In increasing severity: **reset → stop → done → abort → kill**.
+
+| Level | Triggered by | Callbacks | Task fate |
+|-------|--------------|-----------|-----------|
+| Reset | `LifecycleCommand::Reset` / `Decision::Reset` | LCA-based `change_state` to `initial_state()` (skips Init; no `on_init_entry`) | Stays alive, immediately operational |
+| Stop | `LifecycleCommand::Stop` / `Decision::Stop` | Full exit chain + `on_init_entry` | Stays alive, suspended in Init (restartable via `Start`) |
+| Done | `Decision::Done` | Full exit chain + `on_init_entry` (same ritual as Stop) | Task ends — clean completion; supervisor deregisters (no restart policy) |
+| Abort | `AbortCommand` on the abort mailbox (`ChildPolicy::Abort`) | None | Task self-terminates cooperatively |
+| Kill | `KillCapability::kill(handle)` (`ChildPolicy::Kill`) | None | Task destroyed externally — permanently dead |
+
+### Failure Is Not a Level — Supervised Tasks Stay Alive
+
+`Decision::Fail` (or entering an `is_error()` state) reports `Failed`. What
+happens next depends on `RunConfig.exit_on_fail`:
+
+- **Supervised** (`exit_on_fail = false`): the task **stays alive**, parked in
+  its absorbing error state; the supervisor's `ChildPolicy` applies (`Reset`
+  revives the actor).
+- **Root / unsupervised / bare** (`exit_on_fail = true`): the run loop exits
+  and the task ends.
+
+`error_state() -> Option<State>` declares the absorbing error state; the
+default (`None`) sends `Decision::Fail` to Init (firing `on_init_entry`)
+before reporting `Failed`.
+
+### Emergency Teardown: Abort and Kill (Non-cooperative / Cooperative)
+
+If the actor is non-responsive (stuck in infinite loop, blocking call):
+- `ChildPolicy::Abort` sends `AbortCommand` on the child's abort mailbox — the
+  task self-terminates cooperatively on receipt. No callbacks fire.
+- `ChildPolicy::Kill` calls `KillCapability::kill(handle)` — the external
+  ripcord. No callbacks fire; the task is destroyed in place.
+- Kill requires a runtime with external task abort (Tokio; Embassy is `NoKill`).
+- Kill/Abort policies require abort/kill handles: `ChildGroup::add` panics if
+  either is requested for a **static** child — register via `add_dynamic` or
+  choose `ChildPolicy::Reset`/`Stop`.
+- The supervisor synthesizes `ChildLifecycleEvent::Killed` when it applies
+  `ChildPolicy::Kill` (`DispatchOutcome` has no `Killed` variant — the run
+  loop never observes one).
 
 ### Double Start is Idempotent
 
@@ -261,7 +307,8 @@ Transition rules are declared in `blox.toml` under `[[topology.transitions]]`. T
 # One [[topology.transitions]] entry per transition rule.
 # `state`     — which state's handler table owns this rule.
 # `event`     — event pattern, e.g. "PingPongMsg::Ping(_)" or "MyMsg::A(_) | MyMsg::B(_)".
-# `target`    — fallback target when no guard matches: a state name, "stay", "reset", or "stop".
+# `target`    — fallback target when no guard matches: a state name, "stay",
+#               "reset", "stop", "done", or "fail".
 # `actions`   — ordered list of action fn paths (called in order, results collected into ActionResults).
 # `guards`    — optional list of { condition, target } pairs; evaluated in order; first match wins.
 #               `target` is the same vocabulary as the top-level `target` field.
@@ -342,7 +389,7 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 - `*Msg` suffix (e.g. `PingPongMsg::Ping(_)`) → `msg_payload()` closure
 - `*Ctrl` suffix (e.g. `PeerCtrl::AddPeer(_)`) → `ctrl_payload()` closure
 
-**Target vocabulary**: `"StateName"` → `Guard::Transition(LeafState::new(...))`; `"stay"` → `Guard::Stay`; `"reset"` → `Guard::Reset`; `"stop"` → `Guard::Stop`; `"done"` → `Guard::Done`; `"fail"` → `Guard::Fail`.
+**Target vocabulary**: `"StateName"` → `Decision::Transition(LeafState::new(...))`; `"stay"` → `Decision::Stay`; `"reset"` → `Decision::Reset`; `"stop"` → `Decision::Stop`; `"done"` → `Decision::Done`; `"fail"` → `Decision::Fail`. (The TOML keys `guards`/`condition` keep their names — only the Rust enum is `Decision`.)
 
 ---
 
@@ -384,18 +431,26 @@ that, not a copy. Quick sanity checks for the most commonly violated ones:
 
 ## cargo blox Command Reference
 
-The canonical list of `cargo blox` subcommands (from `crates/tools/cargo-blox/src/main.rs`):
+The canonical list of `cargo blox` subcommands (from `crates/tools/cargo-blox/src/main.rs`;
+see `spec/architecture/19-cli-design.md` for the full design). All commands resolve the
+workspace root, so they work from any subdirectory. Semantic exit codes: `0` success,
+`1` other error, `2` usage error (clap), `3` not found, `5` conflict (already exists).
+`generate` runs the spec-to-code lint first and is idempotent. When working from a source
+checkout of this repo, run the CLI as `cargo run -p cargo-blox -- blox ...` — the
+`cargo blox` on PATH is an installed binary and may be stale.
 
 | Command | Purpose |
 |---|---|
-| `generate` | Generate code from all blox.toml + system.toml files in the workspace |
+| `generate [--workspace <path>]` | Lint, then generate code from all blox.toml + system.toml files in the workspace |
 | `build` / `check` / `test` / `run` | `generate`, then the corresponding cargo command |
 | `watch` | Watch and regenerate on changes |
 | `wire --system <path>` | Generate a binary `main.rs` from a system.toml wiring manifest (`--run` to execute after) |
 | `verify` | Round-trip check: blox.toml → codegen → viz-export → JSON → compare |
 | `lint` | Spec-to-code lint checks |
 | `ci` | Full CI feature matrix |
-| `new <name>` | Scaffold a new blox crate (+ `spec/bloxes/<name>.md`) |
+| `init <dir> [--runtime tokio\|embassy]` | Bootstrap a new bloxide workspace |
+| `viz [--export <dir>] [--port N] [--open]` | Launch the visualizer (or export specs as JSON) |
+| `new <name> [--messages M] [--context C]` | Scaffold a new blox crate (+ `spec/bloxes/<name>.md`) |
 | `new-messages <name>` | Scaffold a new messages crate |
 | `new-context <name>` | Scaffold a new context (action-functions) crate |
 | `new-impl <name> --blox <blox>` | Scaffold a new impl crate for a blox |
@@ -409,8 +464,28 @@ The canonical list of `cargo blox` subcommands (from `crates/tools/cargo-blox/sr
 | `remove-state <blox> <state>` | Remove a state |
 | `add-transition <blox> --state S --event E --target T [--action ...] [--guard ...]` | Add a transition |
 | `remove-transition <blox> --state S --event E` | Remove a transition |
+| `add-entry <blox> --state S [--action ...]` | Add an entry hook to a state |
+| `remove-entry <blox> --state S` | Remove an entry hook |
+| `add-exit <blox> --state S [--action ...]` | Add an exit hook to a state |
+| `remove-exit <blox> --state S` | Remove an exit hook |
 | `add-message <crate> <Variant> [field:ty ...]` | Add a message variant |
 | `remove-message <crate> <Variant>` | Remove a message variant |
+| `add-use <blox> --crate-name C --field F --field-type T --role ctor\|state` | Add a `[[context.uses]]` entry |
+| `remove-use <blox> --field F` | Remove a `[[context.uses]]` entry |
+| `add-field <blox> --name N --ty T [--default D]` | Add a `[[context.fields]]` state field |
+| `remove-field <blox> --name N` | Remove a context field (fields, uses, or uses sub-fields) |
+| `add-action <blox> --name N --kind entry\|exit\|transition [--field ...] [--crate-name C] [--fn-name F] ...` | Add a `[[context.actions]]` entry |
+| `remove-action <blox> --name N` | Remove a `[[context.actions]]` entry |
+| `add-actor <app> --name N --blox B [--impl-crate C] [--kind dynamic\|timer] [--feature F ...]` | Add an actor to a system.toml (no `kind` = static) |
+| `remove-actor <app> --name N` | Remove an actor (also cleans supervision refs) |
+| `add-supervision <app> --supervisor S --strategy when_any_done\|when_all_done [--child C ...]` | Add a supervision section to a system.toml |
+| `remove-supervision <app> --supervisor S` | Remove a supervision section |
+| `set-policy <app> --actor A [--stop \| --restart-max N]` | Set a child policy in a supervision section |
+| `add-injection <app> --actor A --field F --from X` | Add a constructor injection to an actor |
+
+All `add-*` commands accept `--if-not-exists` (tolerate conflicts, exit 0). All `list-*`
+commands accept `--json`. Strategy vocabulary is exactly `when_any_done` / `when_all_done`
+(maps to `GroupShutdown` variants — unknown values are hard errors).
 
 ---
 

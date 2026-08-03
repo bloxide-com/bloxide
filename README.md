@@ -16,7 +16,7 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 - **Runtime-agnostic actors** — blox code depends only on `bloxide-core`; never imports a runtime
 - **Built-in supervision** — reusable OTP-inspired `SupervisorSpec<R>` and `bloxide-supervisor` primitives manage child actor lifecycle out of the box
 - **Tokio + Embassy runtimes** — `bloxide-tokio` and `bloxide-embassy` (`no_std`) ship ready to use; each provides async channels, supervision, and timer services wired to its executor
-- **Dynamic actors** — spawn new actors at runtime with factory injection and automatic peer introduction (via `bloxide-supervisor` with the `dynamic` Cargo feature gate)
+- **Dynamic actors** — spawn new actors at runtime with factory injection and automatic peer introduction (gated by the `dynamic` Cargo feature on `pool-blox` and `tokio-pool-demo-impl`)
 
 ---
 
@@ -53,12 +53,14 @@ bloxide_tokio::root_task!(supervisor_task, SupervisorSpec<TokioRuntime>);
 
 // Supervise both actors
 let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-bloxide_tokio::spawn_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Reset);
+let sup_notify_ref = group.notify_ref();
+bloxide_tokio::spawn_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
 bloxide_tokio::spawn_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
 
 // Build and start the supervisor
 let (children, sup_notify_rx, sup_control_rx) = group.finish();
-let sup_ctx = SupervisorCtx::new(bloxide_tokio::next_actor_id!(), children);
+let sup_id = bloxide_tokio::next_actor_id!();
+let sup_ctx = SupervisorCtx::new(sup_id, children, sup_notify_ref);
 let mut sup_machine = StateMachine::<SupervisorSpec<TokioRuntime>>::new(sup_ctx);
 sup_machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
 
@@ -80,16 +82,16 @@ bloxide/
 │   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, KillCapability, run/RunConfig
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
 │   ├── bloxide-macros/    # proc macros: #[blox_event], event!, blox_messages!, EventTag, channels!
-│   ├── blox-ctx-ping-pong/ # messaging helpers: send_ping, broadcast_to_peers
-│   ├── bloxide-peers/     # peer introduction: PeerCtrl, introduce_peers
-│   ├── bloxide-child-management/ # reusable child tracking: ChildGroup, ChildEntry, ChildPhase
-│   ├── bloxide-supervisor/ # supervisor blox: SupervisorSpec, ChildCtrl, RegisterChild
-│   ├── bloxide-spawn/     # spawn capability: SpawnCap, SpawnFn, SpawnOutput, ChildRegistrar
-│   ├── bloxide-timer/     # timer service: set_timer / cancel_timer
+│   ├── bloxide-peers/     # peer introduction: PeerCtrl, introduce_peers, broadcast_to_peers, apply_peer_control
+│   ├── bloxide-child-management/ # reusable child tracking: ChildGroup, ChildEntry, ChildPhase,
+│   │                         #   ChildCtrl/RegisterChild/RegisterDynamicChild, ChildPolicy, GroupShutdown, action functions
+│   ├── bloxide-supervisor/ # supervisor blox (reference consumer): blox.toml + generated + concrete_spec.rs + tests
+│   ├── bloxide-spawn/     # spawn capability: SpawnCap, SpawnFn, SpawnOutput, ChildCtrlRegistrar, spawn_child
+│   ├── bloxide-timer/     # timer service: set_timer / cancel_timer / cancel_timer_by_id
 │   ├── messages/          # shared message crates (ping-pong, pool, counter, bhsm-tst)
-│   ├── context/           # composable context crates (blox-ctx-rounds, -current-timer, -pool-ref, -ticks)
+│   ├── context/           # composable context crates (blox-ctx-ping-pong, -pool-ref, -rounds, -ticks)
 │   ├── bloxes/            # ping, pong, worker, pool, counter, bhsm-tst
-│   ├── impl/              # concrete behavior/factory crates for wiring demos
+│   ├── impl/              # concrete behavior/factory crates for wiring demos (tokio-pool-demo-impl)
 │   └── tools/             # codegen and CLI tools
 │       ├── bloxide-codegen/ # TOML-driven code generator library
 │       └── cargo-blox/    # CLI (see QUICK_REFERENCE.md → "cargo blox Command Reference")
@@ -108,6 +110,7 @@ bloxide/
 ├── tools/               # visualization utilities
 │   ├── bloxide-viz-export/  # source-to-JSON exporter for visualizer
 │   └── bloxide-visualizer/  # browser-based state-machine visualizer
+├── scripts/           # CI helper scripts (ci.sh)
 ├── spec/              # architecture docs and per-blox specs
 │   ├── architecture/      # numbered design docs
 │   ├── bloxes/            # per-blox specs (ping, pong, pool, worker, counter, bhsm)
@@ -119,7 +122,16 @@ bloxide/
 
 ## Running the apps
 
-Each app has a `system.toml` wiring manifest and a generated `main.rs`. Regenerate with `cargo blox wire --system apps/<name>/system.toml` if needed.
+> **Getting started — generate first.** Generated artifacts (`src/generated/`,
+> `apps/*/main.rs`, `apps/*/Cargo.toml`) are **gitignored** — a fresh checkout
+> contains only the `blox.toml` / `system.toml` sources. Run
+> `cargo blox generate` (or `cargo run -p cargo-blox -- blox generate` when
+> working from a source checkout of this repo — the `cargo blox` on PATH is an
+> installed binary and may be stale) before the first build. `generate` runs
+> the spec-to-code lint first and is idempotent, and all `cargo blox` commands
+> resolve the workspace root, so they work from any subdirectory.
+
+Each app has a `system.toml` wiring manifest and a generated `main.rs`.
 
 ```bash
 # Minimal single-actor Tokio example (4-layer architecture)
@@ -156,17 +168,21 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 
 | Crate | Path | `no_std` | Purpose |
 |---|---|:---:|---|
-| `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, `KillCapability`, std-gated `TestRuntime` |
+| `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, `KillCapability`, `run`/`RunConfig` |
 | `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[blox_event]` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
-| `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `VirtualClock` |
-| `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase` |
-| `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | `SupervisorSpec`, `ChildCtrl`, `RegisterChild`, `ChildCtrlRegistrar`, action functions |
-| `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `spawn_child` |
-| `bloxide-peers` | `crates/bloxide-peers` | ✅ | `PeerCtrl`, `AddPeer`, `RemovePeer`, `HasPeers`, `introduce_peers` |
-| `blox-ctx-ping-pong` | `crates/blox-ctx-ping-pong` | ✅ | `send_ping`, `broadcast_to_peers` messaging helpers |
+| `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `cancel_timer_by_id`, `VirtualClock` |
+| `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase`, `ChildGroupBuilder`, `ChildPolicy`, `GroupShutdown`, `ChildCtrl`/`RegisterChild`/`RegisterDynamicChild`, action functions |
+| `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | Supervisor blox (reference consumer): `SupervisorSpec`, `SupervisorCtx`; `blox.toml` + generated + `concrete_spec.rs` test fixture + tests only |
+| `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildCtrlRegistrar`, `spawn_child` |
+| `bloxide-peers` | `crates/bloxide-peers` | ✅ | `PeerCtrl`, `AddPeer`, `RemovePeer`, `introduce_peers`, `broadcast_to_peers`, `apply_peer_control` |
+| `blox-ctx-ping-pong` | `crates/context/blox-ctx-ping-pong` | ✅ | `send_ping`, `send_pong`, `send_initial_ping`, `schedule_resume` action functions |
+| `blox-ctx-pool-ref` | `crates/context/blox-ctx-pool-ref` | ✅ | `SpawnRequest`/`SpawnedWorker`, `notify_pool_done`, `broadcast_result` action functions |
+| `blox-ctx-rounds` | `crates/context/blox-ctx-rounds` | ✅ | `increment_round` action function |
+| `blox-ctx-ticks` | `crates/context/blox-ctx-ticks` | ✅ | `increment_count` action function |
 | `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
 | `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, `SpawnCap`, `KillCapability`, task macros |
+| `bloxide-test-runtime` | `runtimes/bloxide-test-runtime` | — | `TestRuntime`: executor-free unit testing; implements `DynamicChannelCap` + `SpawnCap` (kill is a documented no-op) |
 
 ¹ Proc-macro crates compile for the host; they have no `no_std` impact on the target binary.
 

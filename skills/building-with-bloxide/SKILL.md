@@ -83,20 +83,23 @@ Defines free action functions taking concrete params. Zero concrete implementati
 **Action functions** take concrete params, not trait-bounded `&mut C`:
 
 ```rust
-// crates/blox-ctx-rounds/src/lib.rs
-pub fn increment_round(round: &mut u32) {
+// crates/context/blox-ctx-rounds/src/lib.rs
+pub fn increment_round(round: &mut u32) -> ActionResult {
     *round += 1;
+    ActionResult::Ok
 }
 
-// crates/blox-ctx-ping-pong/src/lib.rs
+// crates/context/blox-ctx-ping-pong/src/lib.rs
 pub fn send_ping<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
     round: u32,
-) {
-    let _ = peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round }));
+) -> ActionResult {
+    ActionResult::from(peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round })))
 }
 ```
+
+Every action function returns `ActionResult` (uniform contract) so guards can react to failures via `results.any_failed()`. Entry/exit functions are infallible — their result is discarded by the generated wrapper.
 
 **Important:** There is no `B` generic, no `#[delegatable]`, no `#[delegates]`, no accessor traits. State is stored as plain fields on the context struct; action functions take the fields they need as concrete parameters.
 
@@ -156,12 +159,14 @@ impl_required = true
 
 Each action specifies:
 - `name` — action identifier used in transition/entry/exit declarations
-- `kind` — `"entry"`, `"exit"`, or `"transition"` (determines closure signature)
+- `kind` — **required**: `"entry"`, `"exit"`, or `"transition"` (determines closure signature); validated against the use site — the kind must match where the action is wired
 - `fields` — list of ctx fields the action needs, with access mode (`"round:mut"`, `"self_id"`, `"peer_ref:ref"`)
 - `event_payload` — optional, name of the extracted payload variable (e.g., `"do_work"`)
 - `impl_required` — `true` if the function comes from an impl crate, `false` if from a context crate
-- `crate` — the crate providing the function (for context crate actions)
+- `crate` — optional and informational; the crate providing the function
 - `fn_name` — optional, the actual function name if different from `name`
+
+Unknown TOML keys are hard errors (`deny_unknown_fields`). On `[[context.uses]]`, `role` may only be `ctor` (constructor parameter) or `state` (zero-initialized field).
 
 ### Event Enum
 
@@ -229,8 +234,8 @@ Declare transition rules in `blox.toml` via `[[topology.transitions]]` entries (
 [[topology.transitions]]
 state = "Active"
 event = "PingPongMsg::Pong(_)"
-target = "Active"
-actions = ["Self::forward_ping"]
+target = "stay"
+actions = ["Self::increment_round", "Self::forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "results.any_failed()"
@@ -248,8 +253,9 @@ actions = ["Self::forward_ping"]
 **Guard context:**
 - `ctx` is `&Ctx` (read-only) — direct field access, no trait methods
 - `results` is `&ActionResults` — use `results.any_failed()` for send errors
-- `stay` keeps current state
-- State names trigger transitions
+- `stay` keeps current state (no exit/entry); a state name triggers a transition
+- `stop` self-suspends to Init (`Decision::Stop`); `done` cleanly ends the task (`Decision::Done`); `reset` goes to `initial_state()`; `fail` goes to the error state (or Init if none is declared)
+- Guards are evaluated in order; if none match, the outcome is `Decision::Stay`
 - Guard expressions use direct field access (e.g., `ctx.round >= MAX_ROUNDS as u32`)
 
 ### Two-Stage Codegen
@@ -260,18 +266,20 @@ Generates stub action closures (no-op) with real guards. The blox compiles stand
 
 ```rust
 // generated/spec_skeleton.rs — stub actions, REAL guards
-|_ctx, _ev| { /* stub: forward_ping */ ActionResult::Ok }
+|_ctx, _ev| {
+    let _stub = "forward_ping";
+    ::bloxide_core::transition::ActionResult::Ok
+}
 ```
 
 **Stage 2 — System-level (`cargo blox build`):**
 
-Reads `system.toml`, resolves impl crates, generates concrete action closures with real function calls. Guards are unchanged from blox-level (already real).
+Reads `system.toml`, resolves impl crates, generates concrete action closures with real function calls. Each closure returns the action function's `ActionResult` verbatim, so a failed send makes `results.any_failed()` true. Guards are unchanged from blox-level (already real).
 
 ```rust
-// generated/spec_skeleton.rs — concrete, impl inlined
+// generated/ping_spec_skeleton.rs — concrete, impl inlined
 |ctx, _ev| {
-    blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round);
-    ActionResult::Ok
+    ::blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round)
 }
 ```
 
@@ -377,6 +385,10 @@ After editing `blox.toml` in any crate, run:
 cargo blox generate
 ```
 
+Generation runs the linter first and is idempotent — regenerating an unchanged `blox.toml` produces identical output.
+
+**Generate first.** Generated artifacts (`src/generated/`) are gitignored, so a fresh checkout has none — `cargo build`/`cargo test` fail until you run `cargo blox generate`. In a source checkout of the bloxide repo, prefer `cargo run -p cargo-blox -- blox ...` over the installed `cargo blox` binary, which may be stale relative to the checked-out codegen.
+
 This regenerates:
 - Message structs and enums from `messages` tables
 - Event types from `event` tables
@@ -413,11 +425,12 @@ Use `TestRuntime` for unit tests without an executor. Tests use the blox-level s
 ```rust
 #[cfg(all(test, feature = "std"))]
 mod tests {
-    use bloxide_test_runtime::TestRuntime;
     use bloxide_core::{spec::MachineSpec, MachineState, StateMachine};
     use counter_messages::{CounterMsg, Tick};
 
-    fn make_machine() -> StateMachine<CounterSpec<TestRuntime>> {
+    // CounterSpec is non-generic — the ctx holds no ActorRef fields.
+    // Specs with refs are generic: MySpec<TestRuntime>.
+    fn make_machine() -> StateMachine<CounterSpec> {
         let ctx = CounterCtx::new(bloxide_core::next_actor_id!());
         StateMachine::new(ctx)
     }

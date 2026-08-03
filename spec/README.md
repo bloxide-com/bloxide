@@ -39,7 +39,7 @@ spec/
   README.md                          ← you are here
   architecture/
     00-layered-architecture.md       ← three-layer principle, two-tier trait system, system overview
-    02-hsm-engine.md                 ← MachineSpec, dispatch algorithm, LCA transitions
+    02-hsm-engine.md                 ← HSM engine & lifecycle: MachineSpec, dispatch algorithm, LCA transitions, five-level lifecycle
     03-actor-messaging.md            ← ActorRef, Envelope, message flow, rules
     04-static-wiring.md              ← initialization order, channels!/actor_task! macros
     05-handler-patterns.md           ← TransitionRule patterns and topology patterns
@@ -51,7 +51,6 @@ spec/
     11-dynamic-actors.md             ← dynamic actor creation, peer control, factory injection
     12-action-crate-pattern.md       ← context crate pattern, four-layer architecture
     13-factory-injection-and-supervision.md ← factory injection, two-stream lifecycle, constructor fields
-    14-unified-lifecycle.md          ← unified lifecycle model, VirtualRoot interception
     15-composable-context-crates.md  ← composable context crates, trait-with-data pattern
     16-declarative-wiring.md         ← declarative wiring, handle injection, system.toml
     17-blox-toml-source-of-truth.md  ← blox.toml as single source of truth for codegen
@@ -76,7 +75,7 @@ spec/
 |---|---|
 | Understand the layered architecture and two-tier trait system | [architecture/00-layered-architecture.md](architecture/00-layered-architecture.md) |
 | Understand the overall system | [architecture/00-layered-architecture.md](architecture/00-layered-architecture.md) (System Overview) |
-| Understand how state machines work | [architecture/02-hsm-engine.md](architecture/02-hsm-engine.md) |
+| Understand how state machines work (dispatch, unified lifecycle, LCA transitions) | [architecture/02-hsm-engine.md](architecture/02-hsm-engine.md) |
 | Understand how actors communicate | [architecture/03-actor-messaging.md](architecture/03-actor-messaging.md) |
 | Understand how actors are wired together | [architecture/04-static-wiring.md](architecture/04-static-wiring.md) |
 | Understand handler patterns and topology patterns | [architecture/05-handler-patterns.md](architecture/05-handler-patterns.md) |
@@ -88,7 +87,6 @@ spec/
 | Understand dynamic actors and factory injection | [architecture/11-dynamic-actors.md](architecture/11-dynamic-actors.md) |
 | Understand the context crate pattern (four-layer architecture) | [architecture/12-action-crate-pattern.md](architecture/12-action-crate-pattern.md) |
 | How does factory injection interact with supervision? | [architecture/13-factory-injection-and-supervision.md](architecture/13-factory-injection-and-supervision.md) |
-| How does the unified lifecycle model work? | [architecture/14-unified-lifecycle.md](architecture/14-unified-lifecycle.md) |
 | How do composable context crates work? | [architecture/15-composable-context-crates.md](architecture/15-composable-context-crates.md) |
 | How does declarative wiring and handle injection work? | [architecture/16-declarative-wiring.md](architecture/16-declarative-wiring.md) |
 | How does blox.toml serve as the source of truth? | [architecture/17-blox-toml-source-of-truth.md](architecture/17-blox-toml-source-of-truth.md) |

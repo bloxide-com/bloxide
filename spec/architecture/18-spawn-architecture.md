@@ -1,6 +1,6 @@
 # Spawn Architecture
 
-> Related: 08 (supervision), 11 (dynamic-actors), 14 (unified-lifecycle), 15 (composable-context-crates), 16 (declarative-wiring)
+> Related: 02 (hsm-engine), 08 (supervision), 11 (dynamic-actors), 15 (composable-context-crates), 16 (declarative-wiring), 17 (blox-toml-source-of-truth)
 
 ## 1. Overview
 
@@ -33,8 +33,8 @@ never sees the application's concrete spawn request type.
    control channel.
 
 4. **KillCapability as the ripcord mechanism.** Kill is a type-level property of the runtime,
-   encoded via the `KillCapability<R>` trait. Tokio uses `Kill` (external abort via
-   `KillHandle::abort()`); Embassy uses `NoKill` (no-op, `Handle = ()`). No trait
+   encoded via the `KillCapability<R>` trait. Tokio uses `Kill` (external kill via
+   `tokio::task::AbortHandle::abort()`); Embassy uses `NoKill` (no-op, `Handle = ()`). No trait
    objects, no dynamic dispatch, no heap allocation in the kill path. Kill is the
    ripcord — used only for unresponsive actors that can't cooperate. For cooperative
    self-termination, use `ChildPolicy::Abort` (sends `AbortCommand` on the abort mailbox).
@@ -42,8 +42,8 @@ never sees the application's concrete spawn request type.
 5. **Per-child abort mailboxes.** Each dynamically spawned child has a dedicated abort
    mailbox (`ActorRef<AbortCommand, R>`). The supervisor sends `AbortCommand::Abort` on this
    mailbox (cooperative self-termination — the child exits cleanly via its select loop).
-   For unresponsive actors, `ChildPolicy::Abort` calls `R::Kill::kill(kill_handle)` (ripcord —
-   external abort that bypasses the task entirely).
+   For unresponsive actors, `ChildPolicy::Kill` calls `R::Kill::kill(kill_handle)` (ripcord —
+   external kill that bypasses the task entirely).
 
 6. **Spawn lifecycle: create → wire peers → start.** The spawn helper creates the child,
    sends a registration message to the managing blox, and the managing blox sends
@@ -69,8 +69,9 @@ never sees the application's concrete spawn request type.
    compile time. Required for Embassy/microcontroller (no heap).
 
 4. **The supervisor is just another blox.** Standard codegen from `blox.toml`. No
-   `event_name`, no `mailboxes_type`, no `extra_impls` escape hatches, no
-   `feature_generics`. The supervisor's `blox.toml` is identical for static and dynamic
+   `event_name`, no `mailboxes_type`, no `feature_generics` escape hatches — the event
+   enum and context struct come from the standard `[event]` / `[context]` sections.
+   The supervisor's `blox.toml` is identical for static and dynamic
    apps — the `dynamic` feature is on the *requesting* blox and the *runtime*, not the
    supervisor.
 
@@ -112,53 +113,67 @@ never sees the application's concrete spawn request type.
 ```
 bloxide-core              ← engine + runtime capabilities
   BloxRuntime, MachineSpec, lifecycle types
-  DynamicChannelCap, StaticChannelCap
-  KillCapability<R> trait + NoKill / Kill type-level enum
-  AbortCommand, ChildPolicy, GroupShutdown (child_management module)
+  lifecycle module: LifecycleCommand, ChildLifecycleEvent, AbortCommand
+  capability module: DynamicChannelCap, StaticChannelCap,
+    KillCapability<R> trait + NoKill, DYNAMIC_ACTOR_ID_BASE
+  runloop module: run() + RunConfig (re-exported by the runtimes)
 
 bloxide-spawn/            ← spawn capability (separate crate)
   SpawnCap (TaskHandle, KillHandle, spawn, kill_handle, kill)
-  SpawnOutput<R>, SpawnFn<R, Req>, ChildRegistrar<R>, spawn_child<R, Req, C>
+  Kill (KillCapability impl requiring SpawnCap)
+  SpawnOutput<R>, SpawnFn<R, Req>, ChildRegistrar<R>, ChildCtrlRegistrar
+  spawn_child<R, Req, C>
 
 bloxide-child-management/ ← reusable child tracking (separate crate)
-  ChildGroup<R>             ← per-child tracking, restart strategy, phase management
-  ChildEntry<R>, ChildPhase
+  ChildGroup<R>             ← per-child tracking, policy application, phase management
+  ChildEntry<R>, ChildPhase, ChildAction
+  ChildPolicy, GroupShutdown
+  ChildGroupBuilder (dynamic-channel variant)
+  control module: ChildCtrl, RegisterChild, RegisterDynamicChild
+  actions module: start_children, stop_all_children, handle_done_or_failed,
+    record_started, record_stopped, record_aborted, record_killed, record_alive,
+    deregister_done, register_child, handle_register_dynamic_child, handle_health_check
 
 bloxide-supervisor/       ← the supervisor blox (codegen-ed from blox.toml)
   blox.toml                ← source of truth: states, context, transitions, events
   Cargo.toml               ← NO dynamic feature. Supervisor is feature-free.
   src/generated/           ← codegen output (ctx.rs, topology.rs, spec_skeleton.rs, events.rs)
-  src/lib.rs               ← re-exports
-  src/control.rs           ← ChildCtrl, RegisterChild, RegisterDynamicChild, ChildCtrlRegistrar
-  src/spawn.rs             ← child-event mailbox accessor
-
-bloxide-supervisor/src/actions.rs  ← in-crate action functions (concrete &SupervisorEvent<R>)
-  start_children, stop_all_children
-  handle_stopped_or_failed, record_stopped, record_started, record_alive, record_aborted
-  register_child, handle_register_dynamic_child, handle_health_check
-  (NO handle_spawn — spawning is not a supervisor action)
-  (abort_child sends an AbortCommand message; kill_child calls R::Kill::kill, not a trait method call)
+  src/lib.rs               ← re-exports (SupervisorCtx, SupervisorEvent, SupervisorSpec, SupervisorState)
+  src/concrete_spec.rs     ← concrete spec for in-crate tests
+  src/tests.rs             ← tests
+  (NO control.rs, NO spawn.rs, NO actions.rs — those live in
+   bloxide-child-management and bloxide-spawn)
 
 bloxide-tokio/            ← Tokio runtime
-  run() + RunConfig::supervised (static children)
-  run() + RunConfig::supervised_with_abort (abort mailbox for dynamic children)
-  ChildGroupBuilder (control_ref + notify_ref extraction)
-  SpawnCap impl: TaskHandle = JoinHandle<()>, KillHandle = KillHandle
+  run() + RunConfig re-exports (from bloxide-core)
+  channels!, dyn_channels!, next_actor_id!, spawn_timer!, spawn_child!,
+    actor_task_supervised!, root_task! macros
+  ChildGroupBuilder re-export (from bloxide-child-management)
+  SpawnCap impl: TaskHandle = JoinHandle<()>, KillHandle = tokio::task::AbortHandle
   KillCapability impl: type Kill = Kill
 
 bloxide-embassy/          ← Embassy runtime (no dynamic spawning)
-  run() + RunConfig::supervised (static children only)
-  ChildGroupBuilder (existing)
+  run() + RunConfig re-exports (static children only)
+  ChildGroupBuilder (static-channel variant, in supervision module)
   KillCapability impl: type Kill = NoKill
+
+bloxide-test-runtime/     ← in-memory test runtime
+  TestRuntime: BloxRuntime + DynamicChannelCap + SpawnCap
+  KillCapability impl: type Kill = Kill (kill is a documented no-op —
+    TestRuntime runs no real tasks)
+  Channel capacity IS enforced on try_send
 
 bloxide-peers/            ← peer introduction (PeerCtrl, AddPeer, RemovePeer, introduce_peers)
 
-pool-messages/            ← Pool's message types (owns concrete spawn types)
-  PoolMsg, WorkerMsg, SpawnedWorker
-  SpawnRequest<R>          ← concrete request enum
+pool-messages/            ← Pool's message types (plain data only)
+  PoolMsg, WorkerMsg, SpawnWorker, DoWork, WorkDone, PeerResult
+
+blox-ctx-pool-ref/        ← Pool's domain context crate (carries ActorRefs)
+  SpawnRequest<Ctrl, R>    ← concrete spawn request enum
+  SpawnedWorker<Ctrl, R>   ← spawn reply with the child's refs
 
 tokio-pool-demo-impl/     ← Pool's impl crate (owns the spawn function)
-  spawn_worker (fn pointer)
+  spawn_worker (fn), handle_spawn_worker, handle_spawned_worker, ...
 ```
 
 ### 3.2 The Spawn Function
@@ -169,76 +184,95 @@ crate. It is a `fn` pointer — concrete, monomorphized, no captured state.
 ```rust
 // In the application's impl crate (e.g., tokio-pool-demo-impl)
 
+use bloxide_child_management::ChildPolicy;
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap},
-    lifecycle::{ChildLifecycleEvent, LifecycleCommand},
-    messaging::{ActorId, ActorRef},
-    child_management::{AbortCommand, ChildPolicy},
+    capability::DynamicChannelCap,
+    lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand},
+    messaging::{Envelope, ActorRef},
+    spec::MachineSpec,
+    StateMachine,
 };
-use bloxide_spawn::{SpawnCap, SpawnOutput};
 use bloxide_peers::PeerCtrl;
-use pool_messages::{SpawnRequest, SpawnedWorker, WorkerMsg};
+use bloxide_spawn::{SpawnCap, SpawnOutput};
+use bloxide_tokio::{run, RunConfig, TokioRuntime};
+use blox_ctx_pool_ref::{SpawnRequest, SpawnedWorker};
+use pool_messages::WorkerMsg;
+use worker_blox::WorkerCtx;
 
-/// The concrete spawn function. A stateless `fn` pointer — no captured state.
+/// The concrete spawn function. A stateless fn — no captured state.
 /// All per-request state comes through SpawnRequest.
 ///
 /// The function:
-///   1. Creates channels (R::channel) for the child — lifecycle, domain, control,
-///      and an abort mailbox
+///   1. Allocates an actor ID and creates channels for the child —
+///      lifecycle, domain, control, and an abort mailbox
 ///   2. Constructs the child's context (app-specific)
-///   3. Spawns the child task (R::spawn) with abort mailbox support,
-///      running run() with RunConfig::supervised_with_abort
+///   3. Spawns the child task, running run() with
+///      RunConfig::supervised_with_abort (abort mailbox support)
 ///   4. Sends the app-specific reply via the request's reply_to field
 ///   5. Returns SpawnOutput for supervisor registration (includes abort_ref
 ///      and kill_handle)
 ///
-/// The function is fast (run-to-completion): channel creation and R::spawn()
-/// are non-blocking. The child's own initialization (which may be slow) runs
-/// in the child's task and reports back via lifecycle events.
+/// The function is fast: channel creation and spawn() are non-blocking. The
+/// child's own initialization (which may be slow) runs in the child's task
+/// and reports back via lifecycle events.
 ///
 /// The function is generic over the worker spec type `S`: the system-level
 /// codegen monomorphizes it with the concrete `WorkerSpec` (real action
 /// closures) instead of the blox-crate-level stub spec (invariant #18).
-/// Context construction uses plain fields — there is no behavior generic
-/// (invariant #14).
-pub fn spawn_worker<R>(req: SpawnRequest<R>, notify: ActorRef<ChildLifecycleEvent, R>) -> SpawnOutput<R>
+pub fn spawn_worker<S>(
+    req: SpawnRequest<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
+    notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
+) -> SpawnOutput<TokioRuntime>
 where
-    R: BloxRuntime + SpawnCap + DynamicChannelCap,
+    S: MachineSpec<Ctx = WorkerCtx<TokioRuntime>>,
+    S::Event: From<Envelope<PeerCtrl<WorkerMsg, TokioRuntime>>> + From<Envelope<WorkerMsg>>,
 {
     match req {
-        SpawnRequest::Worker { task_id: _, pool_ref, reply_to } => {
-            let worker_id = R::alloc_actor_id();
+        SpawnRequest::Worker { task_id: _, reply_to, pool_ref } => {
+            let worker_id = TokioRuntime::alloc_actor_id();
 
             // Create channels for the child
-            let (ctrl_ref, ctrl_rx) = R::channel::<PeerCtrl<WorkerMsg, R>>(worker_id, 16);
-            let (domain_ref, domain_rx) = R::channel::<WorkerMsg>(worker_id, 16);
-            let (lifecycle_ref, lifecycle_rx) = R::channel::<LifecycleCommand>(worker_id, 4);
-            let (abort_ref, abort_rx) = R::channel::<AbortCommand>(worker_id, 4);
+            let (ctrl_ref, ctrl_rx) =
+                TokioRuntime::channel::<PeerCtrl<WorkerMsg, TokioRuntime>>(worker_id, 16);
+            let (domain_ref, domain_rx) = TokioRuntime::channel::<WorkerMsg>(worker_id, 16);
+            let (lifecycle_ref, lifecycle_rx) =
+                TokioRuntime::channel::<LifecycleCommand>(worker_id, 4);
+            let (abort_ref, abort_rx) = TokioRuntime::channel::<AbortCommand>(worker_id, 4);
 
             // Construct the child's context — plain fields, no behavior generic
             let worker_ctx = WorkerCtx::new(worker_id, pool_ref);
-            let machine = StateMachine::<WorkerSpec<R>>::new(worker_ctx);
+            let machine = StateMachine::<S>::new(worker_ctx);
 
             // Spawn the child task with abort mailbox support (non-blocking).
             let notify_sender = notify.sender();
-            let task_handle = R::spawn(async move {
+            let task_handle = TokioRuntime::spawn(async move {
                 run(
                     machine,
                     (ctrl_rx, domain_rx),
-                    RunConfig::supervised_with_abort(lifecycle_rx, abort_rx, notify_sender),
+                    RunConfig::<TokioRuntime>::supervised_with_abort(
+                        lifecycle_rx,
+                        abort_rx,
+                        notify_sender,
+                    ),
                     worker_id,
-                ).await;
+                )
+                .await
             });
 
-            // Convert the TaskHandle to a cloneable KillHandle for the ripcord.
-            let kill_handle = R::kill_handle(task_handle);
+            // Convert the JoinHandle (not Clone) into a kill handle (Clone)
+            // so it can be stored in RegisterDynamicChild and cloned from
+            // &Event by the supervisor's action function.
+            let kill_handle = TokioRuntime::kill_handle(task_handle);
 
             // Send app-specific handles back to the requester
-            let _ = reply_to.try_send(worker_id, SpawnedWorker {
-                child_id: worker_id,
-                domain_ref: domain_ref.clone(),
-                ctrl_ref: ctrl_ref.clone(),
-            });
+            let _ = reply_to.try_send(
+                worker_id,
+                SpawnedWorker {
+                    child_id: worker_id,
+                    domain_ref: domain_ref.clone(),
+                    ctrl_ref: ctrl_ref.clone(),
+                },
+            );
 
             // Return what the supervisor needs for lifecycle management + kill.
             // The kill_handle flows to the managing blox via
@@ -248,7 +282,7 @@ where
             SpawnOutput {
                 child_id: worker_id,
                 lifecycle_ref,
-                abort_ref,      // abort capability mailbox (send side)
+                abort_ref,     // abort capability mailbox (send side)
                 kill_handle,   // cloneable ripcord for external kill
                 policy: ChildPolicy::Stop,
             }
@@ -257,12 +291,15 @@ where
 }
 ```
 
-The function is a `fn` pointer — `spawn_worker as SpawnFn<R, SpawnRequest<R>>` is
-monomorphized at the wiring site. The wiring layer provides this to the runtime spawn
-helper (§3.12).
+The wiring layer provides this function to the runtime spawn helper (§3.12) as a
+`SpawnFn<R, SpawnRequest<Ctrl, R>>` `fn` pointer — monomorphized at the wiring site. For
+a spawn function generic over the spec type (like `spawn_worker<S>` above), the codegen
+emits a closure wrapper that fills in the system-level concrete spec
+(`(|req, notify| spawn_worker::<WorkerSpec<TokioRuntime>>(req, notify)) as _`); for a
+plain function it emits a path expression with a cast (`spawn_worker as _`).
 
-The `SpawnFn` type alias is defined in `bloxide-core` so any blox can name the type
-without depending on a specific runtime:
+The `SpawnFn` type alias is defined in `bloxide-spawn` (alongside `SpawnCap`) so any blox
+can name the type without depending on a specific runtime:
 
 ```rust
 // In bloxide-spawn (alongside SpawnCap)
@@ -279,40 +316,51 @@ pub type SpawnFn<R, Req> = fn(
 ) -> SpawnOutput<R>;
 ```
 
+#### Actor ID allocation
+
+The child's actor ID comes from `R::alloc_actor_id()` (`DynamicChannelCap`), whose
+counter starts at `DYNAMIC_ACTOR_ID_BASE = 1_000_000` (bloxide-core `capability.rs`).
+Compile-time wiring — the proc-macro counter behind `channels!`, `dyn_channels!`,
+`next_actor_id!`, and `spawn_timer!` — hands out small sequential IDs starting at 1, so
+dynamically spawned actors can never collide with statically wired ones.
+
 ### 3.3 The Spawn Request
 
-The spawn request lives in the **application's messages crate** (e.g.,
-`pool-messages`). It is a concrete enum — no associated types, no generics beyond `R`.
-The application defines this enum with variants for each kind of actor it wants to spawn.
+The spawn request lives in the **application's domain context crate** (e.g.,
+`blox-ctx-pool-ref`) — not in the messages crate. Messages crates hold plain data only;
+`SpawnRequest` and `SpawnedWorker` carry `ActorRef`s, so they live in the context crate
+(AGENTS.md invariant #3). The types are generic over the child's control message type
+`Ctrl` (instantiated with `PeerCtrl<WorkerMsg, R>`) and the runtime `R`.
 
 ```rust
-// In the application's messages crate (e.g., pool-messages)
+// In the application's domain context crate (e.g., blox-ctx-pool-ref)
 
-use bloxide_core::{capability::BloxRuntime, messaging::ActorRef};
+use bloxide_core::{capability::BloxRuntime, messaging::ActorRef, ActorId};
+use pool_messages::{PoolMsg, WorkerMsg};
 
-/// A spawn request. Concrete enum — no associated types, no generics beyond R.
+/// A spawn request. Concrete enum — no associated types.
 /// All state needed to construct the child is carried in the request,
 /// not captured in a factory struct. This makes the spawn function stateless.
 #[derive(Debug, Clone)]
-pub enum SpawnRequest<R: BloxRuntime> {
+pub enum SpawnRequest<Ctrl: Send + 'static, R: BloxRuntime> {
     Worker {
         task_id: u32,
-        pool_ref: ActorRef<PoolMsg, R>,       // so the worker can talk to the pool
-        reply_to: ActorRef<SpawnedWorker<R>, R>, // where to send the handles back
+        reply_to: ActorRef<SpawnedWorker<Ctrl, R>, R>, // where to send the handles back
+        pool_ref: ActorRef<PoolMsg, R>,                // so the worker can talk to the pool
     },
     // Future variants: JobRunner { ... }, Scheduler { ... }, etc.
 }
 
 /// The reply sent back to the requester with the child's handles.
 #[derive(Debug, Clone)]
-pub struct SpawnedWorker<R: BloxRuntime> {
+pub struct SpawnedWorker<Ctrl: Send + 'static, R: BloxRuntime> {
     pub child_id: ActorId,
     pub domain_ref: ActorRef<WorkerMsg, R>,
-    pub ctrl_ref: ActorRef<PeerCtrl<WorkerMsg, R>, R>,
+    pub ctrl_ref: ActorRef<Ctrl, R>,
 }
 ```
 
-`SpawnRequest<R>` lives in `pool-messages`, not in `bloxide-supervisor`. The
+`SpawnRequest` lives in `blox-ctx-pool-ref`, not in `bloxide-supervisor`. The
 supervisor never imports it, never names it, never matches on it. The Pool calls the
 runtime spawn helper directly, passing the request by value (§3.12). The supervisor's
 control channel only carries `RegisterDynamicChild`, which the spawn helper sends after
@@ -329,9 +377,9 @@ operation.
 // In bloxide-spawn
 
 use bloxide_core::capability::{BloxRuntime, KillCapability};
-use bloxide_core::lifecycle::LifecycleCommand;
+use bloxide_core::lifecycle::{AbortCommand, LifecycleCommand};
 use bloxide_core::messaging::{ActorId, ActorRef};
-use bloxide_core::child_management::{AbortCommand, ChildPolicy};
+use bloxide_child_management::ChildPolicy;
 
 /// What a spawn function returns — the lifecycle and capability refs needed
 /// to register the child with whatever blox manages it.
@@ -341,7 +389,7 @@ use bloxide_core::child_management::{AbortCommand, ChildPolicy};
 /// via the spawn request's reply-to channel, not through here.
 ///
 /// The `kill_handle` is the cloneable ripcord: the spawn function gets a
-/// `TaskHandle` from `R::spawn()`, converts it to an `KillHandle` via
+/// `TaskHandle` from `R::spawn()`, converts it to a `KillHandle` via
 /// `R::kill_handle()`, and passes it here so the managing blox can call
 /// `R::Kill::kill(handle)` for unresponsive children. For `NoKill` runtimes
 /// this is `()`.
@@ -353,7 +401,7 @@ pub struct SpawnOutput<R: BloxRuntime> {
     /// Abort mailbox (send side). The managing blox sends AbortCommand
     /// here; the child's task receives it and self-terminates (cooperative).
     pub abort_ref: ActorRef<AbortCommand, R>,
-    /// Cloneable abort handle for external task abort (the ripcord). The
+    /// Cloneable kill handle for external task kill (the ripcord). The
     /// managing blox calls `R::Kill::kill(handle)` when the child is
     /// unresponsive. `()` for `NoKill` runtimes, `R::KillHandle` for `Kill`
     /// runtimes. Must be `Clone` so action functions can extract it from
@@ -393,10 +441,17 @@ pub trait ChildRegistrar<R: BloxRuntime> {
 }
 ```
 
-The standard supervisor's implementation (in `bloxide-supervisor`):
+The standard registrar implementation, `ChildCtrlRegistrar`, also lives in
+`bloxide-spawn` — it bridges `SpawnOutput` and `ChildCtrl` (from
+`bloxide-child-management::control`), and `bloxide-spawn` is the only crate that can
+name both without a dependency cycle:
 
 ```rust
-// In bloxide-supervisor
+// In bloxide-spawn
+
+/// Registrar for the standard child-management control plane
+/// (`ChildCtrl<R>`, from `bloxide-child-management`).
+pub struct ChildCtrlRegistrar;
 
 impl<R: BloxRuntime> ChildRegistrar<R> for ChildCtrlRegistrar {
     type RegisterMsg = ChildCtrl<R>;
@@ -411,9 +466,6 @@ impl<R: BloxRuntime> ChildRegistrar<R> for ChildCtrlRegistrar {
         })
     }
 }
-
-/// Marker type for the standard supervisor's registrar implementation.
-pub struct ChildCtrlRegistrar;
 ```
 
 The spawn helper is generic over `C: ChildRegistrar<R>`. The wiring codegen injects the
@@ -427,7 +479,7 @@ Abort is a **message**, not a function call on a trait object. The managing blox
 `run` with `RunConfig::supervised_with_abort`) receives it and self-terminates cooperatively.
 
 ```rust
-// In bloxide-core (child_management module)
+// In bloxide-core (lifecycle module)
 
 /// Command enum for the abort mailbox.
 ///
@@ -453,27 +505,30 @@ to `run` with `RunConfig::supervised_with_abort` which listens on it in the chil
 
 ### 3.7 ChildCtrl Enum
 
-The supervisor's control-plane enum. No `Spawn` variant — spawning is decoupled from the
-supervisor. This enum is specific to the standard supervisor; a user's custom
-child-managing blox defines its own control enum (see §3.5 `ChildRegistrar`).
+The supervisor's control-plane enum, owned by the platform
+(`bloxide-child-management::control`, spec 20: Platform Feature Pattern) — the standard
+supervisor is just the reference consumer. No `Spawn` variant — spawning is decoupled
+from the supervisor. A user's custom child-managing blox can define its own control enum
+(see §3.5 `ChildRegistrar`).
 
 ```rust
-// In bloxide-supervisor
+// In bloxide-child-management (control module)
 
-/// Supervisor control-plane events delivered through the control mailbox.
+/// Child-management control-plane messages delivered through a dedicated
+/// control mailbox.
 ///
-/// There is no `Spawn` variant — spawning is decoupled from the supervisor.
-/// The spawn helper calls `spawn_child()` (in `bloxide-core`) which sends
+/// There is no `Spawn` variant — spawning is decoupled from the managing blox.
+/// The spawn helper calls `spawn_child()` (in `bloxide-spawn`) which sends
 /// `RegisterDynamicChild` on the control mailbox after the child is created.
 pub enum ChildCtrl<R: BloxRuntime> {
-    /// Register a static child (wired at startup, no kill capability).
+    /// Register a static child (wired at startup, no abort capability).
     /// The child's channels already exist (created by the wiring layer).
     /// The supervisor just tracks it for lifecycle management.
     RegisterChild(RegisterChild<R>),
 
-    /// Register a dynamically spawned child (has kill capability).
+    /// Register a dynamically spawned child (has abort capability + kill handle).
     /// Sent by the spawn helper after creating the child. Carries the
-    /// abort_ref and kill_handle for external abort (see §3.8).
+    /// abort_ref and kill_handle for external kill (see §3.8).
     RegisterDynamicChild(RegisterDynamicChild<R>),
 
     /// Trigger one health-check round.
@@ -496,9 +551,9 @@ Two separate structs avoid `Option` on the kill fields — the type system encod
 capability (static children don't have `abort_ref`):
 
 ```rust
-// In bloxide-supervisor
+// In bloxide-child-management (control module)
 
-/// Register a static child (wired at startup). No kill capability.
+/// Register a static child (wired at startup). No abort capability.
 /// Used by the wiring layer for Embassy and static Tokio children.
 pub struct RegisterChild<R: BloxRuntime> {
     pub id: ActorId,
@@ -506,7 +561,8 @@ pub struct RegisterChild<R: BloxRuntime> {
     pub policy: ChildPolicy,
 }
 
-/// Register a dynamically spawned child. Has a kill capability mailbox.
+/// Register a dynamically spawned child. Has an abort capability mailbox
+/// and a kill handle (ripcord).
 /// Used by the spawn helper when SpawnCap is available.
 ///
 /// The `kill_handle` is `Clone` (it's `R::KillHandle`, which requires
@@ -516,9 +572,9 @@ pub struct RegisterChild<R: BloxRuntime> {
 pub struct RegisterDynamicChild<R: BloxRuntime> {
     pub id: ActorId,
     pub lifecycle_ref: ActorRef<LifecycleCommand, R>,
-    /// Kill capability mailbox (send side).
+    /// Abort capability mailbox (send side).
     pub abort_ref: ActorRef<AbortCommand, R>,
-    /// Cloneable abort handle for external task abort (the ripcord).
+    /// Cloneable kill handle for external task kill (the ripcord).
     /// `()` for NoKill runtimes, `R::KillHandle` for Kill runtimes.
     pub kill_handle: <R::Kill as KillCapability<R>>::Handle,
     pub policy: ChildPolicy,
@@ -526,10 +582,12 @@ pub struct RegisterDynamicChild<R: BloxRuntime> {
 ```
 
 Both variants are available regardless of runtime — `RegisterDynamicChild` is just a struct
-with a `abort_ref` field; it doesn't require `R: SpawnCap` to name the type (the
-`ActorRef<AbortCommand, R>` only needs `R: BloxRuntime`). The supervisor's `register_child`
-action handles both variants: adds the child to the list, stores the `abort_ref` and
-`kill_handle` if present, sends `Start`.
+with an `abort_ref` field; it doesn't require `R: SpawnCap` to name the type (the
+`ActorRef<AbortCommand, R>` only needs `R: BloxRuntime`). Two action functions (in
+`bloxide-child-management::actions`) handle them: `register_child` adds a static child
+via `ChildGroup::add` and sends `Start`; `handle_register_dynamic_child` adds a dynamic
+child via `ChildGroup::add_dynamic` (storing the `abort_ref` and `kill_handle`) and sends
+`Start`.
 
 ### 3.9 The Supervisor Event Enum
 
@@ -538,17 +596,18 @@ action handles both variants: adds the child to the list, stores the `abort_ref`
 
 /// The event type for supervisor state machines.
 /// One enum, no spawn-request generic, no Spawn variant.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum SupervisorEvent<R: BloxRuntime> {
+    /// Lifecycle command (Start/Reset/Stop/Ping).
+    Lifecycle(LifecycleCommand),
     Child(Envelope<ChildLifecycleEvent>),
     Control(Envelope<ChildCtrl<R>>),
-    Lifecycle(LifecycleCommand),
 }
 
 // From impls — standard, no coherence problem
+impl<R: BloxRuntime> From<LifecycleCommand> for SupervisorEvent<R> { ... }
 impl<R: BloxRuntime> From<Envelope<ChildLifecycleEvent>> for SupervisorEvent<R> { ... }
 impl<R: BloxRuntime> From<Envelope<ChildCtrl<R>>> for SupervisorEvent<R> { ... }
-impl<R: BloxRuntime> From<LifecycleCommand> for SupervisorEvent<R> { ... }
 ```
 
 `SupervisorEvent<R>` has no spawn-request parameter and no `Spawn` variant. The event enum
@@ -557,9 +616,9 @@ crate. The codegen auto-generates the `Lifecycle` variant (with `From<LifecycleC
 `LIFECYCLE_TAG`, `LifecycleEvent` impl, and helper methods) as the first variant in every
 event enum — the supervisor gets it for free, same as every other blox.
 
-Action functions take `&SupervisorEvent<R>` concretely and pattern-match through
-`Envelope<ChildLifecycleEvent>` / `Envelope<ChildCtrl<R>>` directly. This is the
-same pattern every other blox uses.
+The generated wrapper closures match on `&SupervisorEvent<R>` and extract the payload;
+the action functions themselves take `&ChildLifecycleEvent` or `&ChildCtrl<R>` directly
+(never the consumer's event enum — spec 20: Platform Feature Pattern).
 
 ### 3.10 The Supervisor Context
 
@@ -567,12 +626,16 @@ same pattern every other blox uses.
 // GENERATED by codegen — NOT hand-written
 
 pub struct SupervisorCtx<R: BloxRuntime> {
-    pub children: ChildGroup<R>,
     pub self_id: ActorId,
+    pub children: ChildGroup<R>,
     pub child_notify: ActorRef<ChildLifecycleEvent, R>,
     pub pending: ChildAction,
 }
 ```
+
+`self_id` is the auto-emitted first field; `children` and `child_notify` are constructor
+params; `pending` is a zero-initialized state field (`SupervisorCtx::new(self_id,
+children, child_notify)`).
 
 No `spawn_fn` field. No factory field. No spawn-request generic. No
 `#[cfg(feature = "dynamic")]` on any field. The supervisor context is the same for static
@@ -580,11 +643,11 @@ and dynamic apps. The supervisor doesn't spawn — it only registers and manages
 
 ### 3.11 ChildGroup and ChildEntry
 
-`ChildGroup<R>` is the supervisor's child list. Each `ChildEntry` carries an `abort_ref`
-(an `ActorRef<AbortCommand, R>`) for the cooperative abort message, and an `kill_handle`
-(`<R::Kill as KillCapability<R>>::Handle`) for the external-abort ripcord. Both are
-`Option` — `None` for static children registered via `RegisterChild`, `Some` for dynamic
-children registered via `RegisterDynamicChild`.
+`ChildGroup<R>` (in `bloxide-child-management`) is the managing blox's child list. Each
+`ChildEntry` carries an `abort_ref` (an `ActorRef<AbortCommand, R>`) for the cooperative
+abort message, and a `kill_handle` (`<R::Kill as KillCapability<R>>::Handle`) for the
+external-kill ripcord. Both are `Option` — `None` for static children registered via
+`RegisterChild`, `Some` for dynamic children registered via `RegisterDynamicChild`.
 
 ```rust
 // In bloxide-child-management
@@ -593,15 +656,16 @@ struct ChildEntry<R: BloxRuntime> {
     id: ActorId,
     lifecycle_ref: ActorRef<LifecycleCommand, R>,
     policy: ChildPolicy,
-    restarts: usize,
-    permanently_done: bool,
     stopped: bool,
     phase: ChildPhase,
+    /// The child's task is gone (killed or aborted) — its mailboxes are dead,
+    /// so lifecycle commands (e.g. `stop_all`) must not be sent to it.
+    task_gone: bool,
     awaiting_alive: bool,
-    /// Abort mailbox (send side). None for static children
+    /// Abort capability mailbox (send side). None for static children
     /// registered via RegisterChild (no abort capability).
     abort_ref: Option<ActorRef<AbortCommand, R>>,
-    /// Cloneable abort handle for external task abort (ripcord). None for static
+    /// Cloneable kill handle for external task kill (ripcord). None for static
     /// children. Consumed by R::Kill::kill(handle) when ChildPolicy::Kill fires.
     /// This is R::KillHandle (Clone), not R::TaskHandle (not Clone).
     kill_handle: Option<<R::Kill as KillCapability<R>>::Handle>,
@@ -610,7 +674,6 @@ struct ChildEntry<R: BloxRuntime> {
 pub struct ChildGroup<R: BloxRuntime> {
     children: Vec<ChildEntry<R>>,
     shutdown: GroupShutdown,
-    stopped_count: usize,
 }
 ```
 
@@ -620,56 +683,76 @@ level (`()` for Embassy, `R::KillHandle` for Tokio). Neither is a trait object. 
 `Option` exists because `ChildGroup` is a single type that handles both static and dynamic
 children — the `Option` encodes "this child has an abort mailbox" vs "this child doesn't."
 
-`handle_stopped_or_failed` evaluates the child's `ChildPolicy` — four variants:
+Children are registered via two methods:
+
+- **`ChildGroup::add(id, lifecycle_ref, policy)`** — static children. **Panics** if the
+  policy is `ChildPolicy::Kill` or `ChildPolicy::Abort`: those policies need the
+  kill/abort handles that only dynamic spawn provides.
+- **`ChildGroup::add_dynamic(id, lifecycle_ref, abort_ref, kill_handle, policy)`** —
+  dynamically spawned children; stores the abort/kill capability.
+
+`ChildGroup::handle_done_or_failed` evaluates the child's `ChildPolicy` when a `Stopped`
+or `Failed` lifecycle event arrives — four variants:
 
 - **`ChildPolicy::Kill`** (ripcord): Takes the `kill_handle`, calls `R::Kill::kill(handle)`.
-  External abort — works even if the child is stuck. No callbacks fire. Marks permanently done.
+  External kill — works even if the child is stuck. No callbacks fire. Emits
+  `ChildLifecycleEvent::Killed` on the notify channel, sets phase to
+  `PermanentlyDone` and `task_gone = true`, then checks group shutdown.
 - **`ChildPolicy::Abort`** (cooperative): Sends `AbortCommand::Abort` on the child's
-  `abort_ref`. The child self-terminates via its select loop and reports `Aborted`.
-  Marks permanently done.
+  `abort_ref`. The child self-terminates via its run loop and later reports `Aborted`.
+  The entry is marked `PermanentlyDone` + `task_gone = true` immediately (the abort is
+  fire-and-forget; the late `Aborted` event is informational only).
 - **`ChildPolicy::Reset`**: Sends `Reset` to the child. Reset goes directly
   to `initial_state()` — the child reports `Started`, no separate `Start` needed. Sets
   phase to `ResetPending`.
-- **`ChildPolicy::Stop`**: Sends `Stop` to the child. The child goes to `Init` (suspended).
-  Marks permanently done.
+- **`ChildPolicy::Stop`**: Sends **no command** — the child already self-stopped
+  (suspended in Init) or failed (parked in its error state). Marks the entry
+  `PermanentlyDone` and checks group shutdown.
 
 ```rust
-// In ChildGroup::handle_stopped_or_failed (simplified)
+// In ChildGroup::handle_done_or_failed (simplified)
 
-match policy {
-    ChildPolicy::Kill => {
-        // Ripcord: external abort. Works even if the child is stuck and
-        // never polls the abort mailbox. For NoKill runtimes this is a no-op
-        // (kill(()) does nothing). For Kill runtimes this calls KillHandle::abort().
-        let kill_handle = self.children[idx].kill_handle.take();
-        if let Some(handle) = kill_handle {
-            R::Kill::kill(handle);
-        }
-        self.children[idx].permanently_done = true;
-        self.children[idx].phase = ChildPhase::PermanentlyDone;
-        self.children[idx].awaiting_alive = false;
-        return self.check_shutdown();
+if policy == ChildPolicy::Kill {
+    // Ripcord: external kill. Works even if the child is stuck and
+    // never polls the abort mailbox. For NoKill runtimes this is a no-op
+    // (kill(()) does nothing). For Kill runtimes this calls AbortHandle::abort().
+    let kill_handle = self.children[idx].kill_handle.take();
+    if let Some(handle) = kill_handle {
+        R::Kill::kill(handle);
     }
-    ChildPolicy::Abort => {
-        // Cooperative: send abort message. The child self-terminates
-        // via the poll cycle in run() with RunConfig::supervised_with_abort.
-        if let Some(abort_ref) = &self.children[idx].abort_ref {
-            let _ = abort_ref.try_send(from, AbortCommand::Abort { child_id });
-        }
-        // Child will report Aborted; record_aborted marks permanently done.
-    }
-    ChildPolicy::Reset => {
-        // Reset goes directly to initial_state() — no separate Start needed.
-        let _ = lifecycle_ref.try_send(from, LifecycleCommand::Reset);
-        self.children[idx].phase = ChildPhase::ResetPending;
-    }
-    ChildPolicy::Stop => {
-        self.children[idx].permanently_done = true;
-        self.children[idx].phase = ChildPhase::PermanentlyDone;
-        return self.check_shutdown();
-    }
+    // Kill is synchronous — emit the Killed event directly.
+    let _ = notify.try_send(from, ChildLifecycleEvent::Killed { child_id });
+    self.children[idx].phase = ChildPhase::PermanentlyDone;
+    self.children[idx].task_gone = true;
+    return self.check_shutdown();
 }
+if policy == ChildPolicy::Abort {
+    // Cooperative: send abort message. The child self-terminates
+    // via the poll cycle in run() with RunConfig::supervised_with_abort.
+    if let Some(abort_ref) = &self.children[idx].abort_ref {
+        let _ = abort_ref.try_send(from, AbortCommand::Abort { child_id });
+    }
+    // Marked PermanentlyDone immediately; the later Aborted event is a no-op
+    // here (record_aborted finalizes the same fields).
+    self.children[idx].phase = ChildPhase::PermanentlyDone;
+    self.children[idx].task_gone = true;
+    return self.check_shutdown();
+}
+if policy == ChildPolicy::Reset {
+    // Reset goes directly to initial_state() — no separate Start needed.
+    let _ = lifecycle_ref.try_send(from, LifecycleCommand::Reset);
+    self.children[idx].phase = ChildPhase::ResetPending;
+    return ChildAction::Continue;
+}
+// Stop: the child is already stopping or has failed — mark done for this epoch.
+self.children[idx].phase = ChildPhase::PermanentlyDone;
+self.check_shutdown()
 ```
+
+A child that reports `Done` (clean self-termination via `Decision::Done`) bypasses the
+policy entirely: `ChildGroup::deregister` removes the entry — `Done` is success, not a
+fault — and returns the group shutdown decision so shutdown still progresses when the
+last child completes.
 
 All other `ChildGroup` methods (shutdown logic, phase tracking, health
 check) are standard lifecycle management. The `ChildGroup` sends a message instead of
@@ -733,10 +816,9 @@ The requesting blox (e.g., the Pool) calls `spawn_child` directly, specifying
 the supervisor's `ChildCtrl::RegisterDynamicChild` message:
 
 ```rust
-// In pool-blox — the Pool calls spawn_child directly
+// In the pool's impl crate — the Pool calls spawn_child directly
 
-use bloxide_spawn::{spawn_child, ChildRegistrar};
-use bloxide_supervisor::ChildCtrlRegistrar;
+use bloxide_spawn::{spawn_child, ChildCtrlRegistrar};
 
 let result = spawn_child::<_, _, ChildCtrlRegistrar>(
     ctx.spawn_fn,
@@ -747,10 +829,9 @@ let result = spawn_child::<_, _, ChildCtrlRegistrar>(
 );
 ```
 
-`SpawnFn` and `ChildRegistrar` are both defined in `bloxide-spawn` so any blox can name
-them without a runtime or supervisor dependency. The `ChildCtrlRegistrar` is the only
-type the pool needs from `bloxide-supervisor` — it implements `ChildRegistrar` to wrap
-`SpawnOutput` into `ChildCtrl::RegisterDynamicChild`.
+`SpawnFn`, `ChildRegistrar`, and `ChildCtrlRegistrar` are all defined in `bloxide-spawn`
+so any blox can name them without a runtime or supervisor dependency. The `ChildCtrl`
+message type itself comes from `bloxide-child-management::control`.
 
 ### 3.13 `run()` with `RunConfig::supervised_with_abort`
 
@@ -793,10 +874,12 @@ is sufficient and the external kill is never invoked. The external
 For static children (wired at startup, no abort mailbox), the existing
 `run` with `RunConfig::supervised` (without abort support) is used unchanged.
 
-> **Runtime-specific note:** `run` with `RunConfig::supervised_with_abort` uses concrete `TokioRuntime`
-> types because it lives in `bloxide-tokio`. The abort mailbox mechanism itself is
-> runtime-generic — only the `select` loop wrapper is runtime-specific. Embassy uses
-> `run` with `RunConfig::supervised` without abort support (static children only, `NoKill`).
+> **Note:** `run()` and all `RunConfig` constructors — including
+> `RunConfig::supervised_with_abort` — are **runtime-generic**: they live in
+> `bloxide-core` (`crates/bloxide-core/src/runloop.rs`) and are simply re-exported by
+> the runtime crates (`bloxide_tokio::run`, `bloxide_embassy::run`). There is no
+> Tokio-specific variant of the loop. Embassy wires static children with
+> `RunConfig::supervised` (no abort stream, `NoKill`).
 
 ### 3.14 The Pool's Spawn Action
 
@@ -805,57 +888,56 @@ message, it calls the runtime spawn helper directly. The Pool owns the `spawn_fn
 pointer stored in its context) and the `spawn_ref` (the managing blox's control mailbox
 ref).
 
+Action functions take **concrete parameters** — the generated concrete spec extracts
+individual context fields and passes them in (accessor traits were eliminated; see spec
+06). From `crates/impl/tokio-pool-demo-impl/src/lib.rs` (simplified):
+
 ```rust
-// In the Pool's context crate
+// In the pool's impl crate (tokio-pool-demo-impl)
 
-/// Handle a SpawnWorker request: call the spawn helper to create a child,
-/// then transition to the Spawning state to wait for the reply.
+/// Spawn a new worker via the supervisor, then set in-flight flag.
 pub fn handle_spawn_worker<R: BloxRuntime>(
-    ctx: &mut PoolCtx<R>,
-    ev: &PoolEvent<R>,
+    self_id: ActorId,
+    self_ref: &ActorRef<PoolMsg, R>,
+    spawn_fn: &SpawnFn<R, SpawnRequest<PeerCtrl<WorkerMsg, R>, R>>,
+    spawn_ref: &ActorRef<ChildCtrl<R>, R>,
+    notify_ref: &ActorRef<ChildLifecycleEvent, R>,
+    spawn_reply_ref: &ActorRef<SpawnedWorker<PeerCtrl<WorkerMsg, R>, R>, R>,
+    pending_task_id: &mut u32,
+    spawn_in_flight: &mut bool,
+    pending: &mut u32,
+    spawn_worker: &SpawnWorker,   // event payload, extracted by the wrapper
 ) -> ActionResult {
-    if let Some(PoolMsg::SpawnWorker(SpawnWorker { task_id })) = ev.msg_payload() {
-        ctx.pending_task_id = *task_id;
-        ctx.spawn_in_flight = true;
+    let task_id = spawn_worker.task_id;
+    *pending_task_id = task_id;
+    *spawn_in_flight = true;
+    *pending += 1;
 
-        let req = SpawnRequest::Worker {
-            task_id: *task_id,
-            pool_ref: ctx.self_ref.clone(),
-            reply_to: ctx.spawn_reply_ref.clone(),
-        };
-
-        // Call spawn_child directly — the Pool owns the spawn_fn
-        // and the managing blox's control_ref (wired as spawn_ref).
-        let result = spawn_child::<_, _, ChildCtrlRegistrar>(
-            ctx.spawn_fn,           // fn pointer from wiring
-            req,
-            &ctx.spawn_ref,         // managing blox's control mailbox
-            &ctx.notify_ref,        // managing blox's child-notify mailbox
-            ctx.self_id,
-        );
-
-        if result.is_err() {
-            bloxide_log::blox_log_warn!(
-                ctx.self_id,
-                "spawn failed (supervisor control mailbox full), dropping task_id={}",
-                task_id
-            );
-            ctx.spawn_in_flight = false;
-        }
-    }
-    ActionResult::Ok
+    let req = SpawnRequest::Worker {
+        task_id,
+        reply_to: spawn_reply_ref.clone(),
+        pool_ref: self_ref.clone(),
+    };
+    // Call spawn_child directly — the Pool owns the spawn_fn
+    // and the managing blox's control_ref (wired as spawn_ref).
+    ActionResult::from(spawn_child::<_, _, ChildCtrlRegistrar>(
+        *spawn_fn, req, spawn_ref, notify_ref, self_id,
+    ))
 }
 ```
 
-The Pool's context has these spawn-related fields:
+If the control mailbox is full, `spawn_child` returns `Err` and the resulting
+`ActionResult` carries the failure — the transition's guard can route it (e.g. to an
+error state).
+
+The Pool's spawn-related context fields (from `crates/bloxes/pool/blox.toml`, gated by
+the Pool's `dynamic` feature):
 
 ```rust
-// In PoolCtx (from pool/blox.toml)
+// In PoolCtx — present only with the Pool's `dynamic` feature
 
 /// The spawn function (fn pointer, provided at wiring time).
-/// Only present on runtimes that support dynamic spawning (Tokio).
-/// Gated by the Pool's `dynamic` feature.
-pub spawn_fn: SpawnFn<R, SpawnRequest<R>>,
+pub spawn_fn: SpawnFn<R, SpawnRequest<PeerCtrl<WorkerMsg, R>, R>>,
 
 /// Ref to the managing blox's control mailbox — used to send the registration
 /// message. For the standard supervisor, it's ActorRef<ChildCtrl<R>, R>.
@@ -864,6 +946,9 @@ pub spawn_ref: ActorRef<ChildCtrl<R>, R>,
 /// Ref to the managing blox's child-notify mailbox — passed to the spawn
 /// function so the child can report lifecycle events.
 pub notify_ref: ActorRef<ChildLifecycleEvent, R>,
+
+/// The Pool's own secondary mailbox for SpawnedWorker replies.
+pub spawn_reply_ref: ActorRef<SpawnedWorker<PeerCtrl<WorkerMsg, R>, R>, R>,
 ```
 
 ---
@@ -888,19 +973,20 @@ The wiring layer provides `spawn_fn` via `source = "factory"` in `system.toml`:
 spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "spawn_worker" }
 ```
 
-The codegen emits a **path expression** (`spawn_worker as SpawnFn<R, Req>`) rather than
-struct construction. The handler detects whether the target is a `fn` pointer type (from
-the field's `ty` in `blox.toml`) and emits the appropriate code: path expression + cast
-for `fn` pointers, struct construction for factory structs. One source type, two output
-shapes, selected by field type.
+The codegen emits a **path expression with a cast** (`::tokio_pool_demo_impl::spawn_worker
+as _`) for a plain function, or a **monomorphizing closure** (`(|req, notify|
+::tokio_pool_demo_impl::spawn_worker::<WorkerSpec<TokioRuntime>>(req, notify)) as _`)
+when the factory crate is a dynamic actor's `impl_crate` and the function is generic
+over the spec type. One source declaration, two output shapes, selected automatically.
 
-An accessor field exposes the factory to action functions, keeping them generic over any
-context that has the field:
+The factory is a plain field on the context struct; the generated concrete spec passes
+it (and the other fields the action declares) to the action function as individual
+parameters:
 
 ```rust
-// In pool-context/src/lib.rs — plain field on the context struct
+// In the generated PoolCtx — plain field on the context struct
 pub struct PoolCtx<R: BloxRuntime> {
-    pub worker_factory: WorkerSpawnFn<R>,
+    pub spawn_fn: SpawnFn<R, SpawnRequest<PeerCtrl<WorkerMsg, R>, R>>,
     // ...
 }
 ```
@@ -928,18 +1014,13 @@ pub fn introduce_peers<M, R>(
     b_id: ActorId,
     b_ref: ActorRef<M, R>,
     b_ctrl: ActorRef<PeerCtrl<M, R>, R>,
-) where
+) -> ActionResult
+where
     M: Send + 'static,
     R: BloxRuntime,
 {
-    let _ = a_ctrl.try_send(from, PeerCtrl::AddPeer(AddPeer {
-        peer_id: b_id,
-        peer_ref: b_ref.clone(),
-    }));
-    let _ = b_ctrl.try_send(from, PeerCtrl::AddPeer(AddPeer {
-        peer_id: a_id,
-        peer_ref: a_ref.clone(),
-    }));
+    // try_send AddPeer { peer_id: b_id, peer_ref: b_ref } on a_ctrl,
+    // then AddPeer { peer_id: a_id, peer_ref: a_ref } on b_ctrl
 }
 ```
 
@@ -998,13 +1079,15 @@ The sequence for adding worker N (with N-1 workers already running):
 sequenceDiagram
     participant Pool
     participant Factory as spawn_worker
+    participant Sup as Supervisor
     participant NewWorker as Worker N
     participant OldWorker as Workers 1..N-1
 
     Pool->>Factory: spawn_child::<_, _, ChildCtrlRegistrar>(spawn_fn, req, ...)
     Factory->>NewWorker: channels!, WorkerCtx::new, R::spawn
-    Factory-->>Pool: SpawnOutput { child_id, lifecycle_ref, abort_ref, kill_handle }
     Factory->>Pool: SpawnedWorker reply via reply_to
+    Factory->>Sup: RegisterDynamicChild(SpawnOutput) via control mailbox
+    Sup->>NewWorker: LifecycleCommand::Start
 
     Pool->>Pool: worker_refs.push(domain_ref_N)
     Pool->>Pool: worker_ctrls.push(ctrl_ref_N)
@@ -1025,25 +1108,22 @@ bidirectional `AddPeer` messages so the new worker knows about all existing
 workers and vice versa:
 
 ```rust
-// In pool-blox handle_spawned_worker — inline peer introduction
-let n = ctx.worker_refs.len();
-if n >= 2 {
-    let new_idx = n - 1;
-    let from = ctx.self_id;
-    let new_id = ctx.worker_refs[new_idx].id();
-    let new_ref = ctx.worker_refs[new_idx].clone();
-    let new_ctrl = ctx.worker_ctrls[new_idx].clone();
-    for i in 0..new_idx {
-        let old_id = ctx.worker_refs[i].id();
-        let old_ref = ctx.worker_refs[i].clone();
-        let old_ctrl = ctx.worker_ctrls[i].clone();
-        introduce_peers(
-            from,
-            new_id, new_ref.clone(), new_ctrl.clone(),
-            old_id, old_ref.clone(), old_ctrl.clone(),
-        );
-    }
+// In tokio-pool-demo-impl handle_spawned_worker — inline peer introduction
+// (individual ctx fields are passed in as concrete params)
+for i in 0..worker_refs.len() {
+    bloxide_peers::introduce_peers(
+        self_id,
+        worker_refs[i].id(),
+        worker_refs[i].clone(),
+        worker_ctrls[i].clone(),
+        new_worker_id,
+        new_domain_ref.clone(),
+        new_ctrl_ref.clone(),
+    );
 }
+// then DoWork is sent to the new worker, and its refs are stored:
+worker_refs.push(new_domain_ref);
+worker_ctrls.push(new_ctrl_ref);
 ```
 
 ### Batch Spawn (Known Topology)
@@ -1054,12 +1134,28 @@ time, wire them directly at construction without a control channel:
 ```rust
 // Both actors are constructed before either is spawned.
 // Cross-refs are injected directly into each Ctx.
-let ((ctrl_a, domain_a), mbox_a) = channels! { PeerCtrl<WorkerMsg, R>(16), WorkerMsg(16) };
-let ((ctrl_b, domain_b), mbox_b) = channels! { PeerCtrl<WorkerMsg, R>(16), WorkerMsg(16) };
+let ((ctrl_a, domain_a), mbox_a) =
+    channels! { PeerCtrl<WorkerMsg, TokioRuntime>(16), WorkerMsg(16) };
+let ((ctrl_b, domain_b), mbox_b) =
+    channels! { PeerCtrl<WorkerMsg, TokioRuntime>(16), WorkerMsg(16) };
 
-R::spawn(run_actor_to_completion(StateMachine::new(ctx_a), mbox_a));
-R::spawn(run_actor_to_completion(StateMachine::new(ctx_b), mbox_b));
-introduce_peers(&pool_ctx, &ctrl_a, &domain_a, &ctrl_b, &domain_b);
+let ctx_a = WorkerCtx::new(domain_a.id(), domain_b.clone());
+let ctx_b = WorkerCtx::new(domain_b.id(), domain_a.clone());
+
+// run() is the unified run loop (bloxide-core, re-exported by the runtime);
+// RunConfig::unsupervised() auto-starts and exits on stop.
+tokio::spawn(run(
+    StateMachine::<WorkerSpec<_>>::new(ctx_a),
+    mbox_a,
+    RunConfig::<TokioRuntime>::unsupervised(),
+    domain_a.id(),
+));
+tokio::spawn(run(
+    StateMachine::<WorkerSpec<_>>::new(ctx_b),
+    mbox_b,
+    RunConfig::<TokioRuntime>::unsupervised(),
+    domain_b.id(),
+));
 ```
 
 Use batch spawn when all peers are known before any task starts. Use domain control types
@@ -1078,12 +1174,14 @@ trait object. The runtime picks the variant; the supervisor is monomorphized for
 it is.
 
 ```rust
-// In bloxide-core
+// In bloxide-core (capability module)
 
 /// Type-level kill capability for a runtime.
 ///
-/// `NoKill` — no external task abort (Embassy, static-only). `Handle = ()` (ZST).
-/// `Kill`   — external abort via `SpawnCap::kill(handle)` (Tokio, dynamic).
+/// `NoKill` — no external task kill (Embassy, static-only). `Handle = ()` (ZST).
+/// `Kill`   — external kill via `SpawnCap::kill(handle)` (Tokio, dynamic).
+///            `Kill` lives in `bloxide-spawn`, not here, because it requires
+///            the `SpawnCap` bound.
 ///
 /// This is a type-level enum, not a trait object. The runtime picks the
 /// variant; the supervisor is monomorphized for whichever it is.
@@ -1105,6 +1203,11 @@ impl<R: BloxRuntime> KillCapability<R> for NoKill {
     type Handle = ();
     fn kill(_: ()) {}
 }
+```
+
+```rust
+// In bloxide-spawn (Kill requires the SpawnCap bound, so it cannot
+// live in bloxide-core)
 
 /// Kill capability via `SpawnCap::kill`. Used by dynamic runtimes (Tokio).
 pub struct Kill;
@@ -1134,8 +1237,12 @@ pub trait BloxRuntime: Clone + Send + 'static {
 
 Runtime implementations:
 - **Embassy**: `type Kill = NoKill`. No `SpawnCap` impl. `Handle = ()` (ZST, zero space).
-- **Tokio**: `type Kill = Kill`. Requires `TokioRuntime: SpawnCap`. `Handle = KillHandle`.
-- **TestRuntime**: default `NoKill` unless a test specifically exercises kill.
+- **Tokio**: `type Kill = Kill`. Requires `TokioRuntime: SpawnCap`.
+  `Handle = tokio::task::AbortHandle`.
+- **TestRuntime** (`runtimes/bloxide-test-runtime`): `type Kill = Kill` with a
+  documented no-op kill — TestRuntime runs no real tasks, so `SpawnCap::kill` /
+  `kill_handle` do nothing. It implements `DynamicChannelCap` + `SpawnCap`, and channel
+  capacity **is** enforced on `try_send`.
 
 **Key properties:**
 - `ChildGroup<R>` is bounded by `R: BloxRuntime` only — no `SpawnCap` bound leaks.
@@ -1156,30 +1263,30 @@ that `KillCapability` builds upon.
 /// Tier 2 capability for runtimes that support spawning actor tasks at runtime.
 ///
 /// The associated `TaskHandle` type is returned by `spawn` and is used to
-/// produce an `KillHandle` (the cloneable ripcord). For Tokio,
-/// `TaskHandle = JoinHandle<()>` and `KillHandle = tokio::task::KillHandle`.
+/// produce a `KillHandle` (the cloneable ripcord). For Tokio,
+/// `TaskHandle = JoinHandle<()>` and `KillHandle = tokio::task::AbortHandle`.
 ///
 /// All types are concrete, by-value — no Arc<dyn>, no dynamic dispatch.
 pub trait SpawnCap: DynamicChannelCap {
-    /// Handle to a spawned task. Used to derive an KillHandle.
+    /// Handle to a spawned task. Used to derive a KillHandle.
     /// Consumed by kill_handle. NOT Clone.
     type TaskHandle: Send + 'static;
 
-    /// Cloneable handle for external task abort. Must be Clone so it can
+    /// Cloneable handle for external task kill. Must be Clone so it can
     /// be extracted from &Event in action functions. () for runtimes
-    /// without external abort.
+    /// without external kill.
     type KillHandle: Clone + Send + 'static;
 
     /// Spawn a future as an independent task and return a handle.
     fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle;
 
-    /// Derive a cloneable abort handle from a task handle.
-    /// The task handle is consumed; the task continues running (drop does not abort).
+    /// Derive a cloneable kill handle from a task handle.
+    /// The task handle is consumed; the task continues running (drop does not kill).
     fn kill_handle(handle: Self::TaskHandle) -> Self::KillHandle;
 
-    /// Abort a spawned task immediately via its abort handle. No callbacks fire —
+    /// Kill a spawned task immediately via its kill handle. No callbacks fire —
     /// the task is dropped in-place. The handle is consumed and cannot be reused.
-    fn abort(handle: Self::KillHandle);
+    fn kill(handle: Self::KillHandle);
 }
 ```
 
@@ -1190,17 +1297,17 @@ Tokio's implementation:
 
 impl SpawnCap for TokioRuntime {
     type TaskHandle = tokio::task::JoinHandle<()>;
-    type KillHandle = tokio::task::KillHandle;
+    type KillHandle = tokio::task::AbortHandle;
 
     fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle {
         tokio::spawn(future)
     }
 
     fn kill_handle(handle: Self::TaskHandle) -> Self::KillHandle {
-        handle.kill_handle()
+        handle.abort_handle()
     }
 
-    fn abort(handle: Self::KillHandle) {
+    fn kill(handle: Self::KillHandle) {
         handle.abort();
     }
 }
@@ -1210,7 +1317,7 @@ The kill path in full:
 1. `SpawnCap::spawn()` returns `TaskHandle` (not `Clone`)
 2. `SpawnCap::kill_handle(task_handle)` converts to `KillHandle` (`Clone`)
 3. `KillHandle` stored in `SpawnOutput::kill_handle` → `RegisterDynamicChild::kill_handle` → `ChildEntry::kill_handle`
-4. When `ChildPolicy::Kill` fires: `R::Kill::kill(kill_handle)` → `R::kill(kill_handle)` → `KillHandle::abort()`
+4. When `ChildPolicy::Kill` fires: `R::Kill::kill(kill_handle)` → `R::kill(kill_handle)` → `AbortHandle::abort()`
 
 ### 6.3 Abort vs Kill — Two Termination Paths
 
@@ -1222,16 +1329,19 @@ Termination uses two distinct mechanisms — cooperative abort and ripcord kill:
    `Aborted`, and exits cleanly. No `on_exit` callbacks fire, but the task shuts down
    cooperatively. This is the common case for terminating responsive dynamic actors.
 
-2. **External abort / ripcord (`ChildPolicy::Kill`):** If the task is stuck (not yielding
-   to the select loop), `R::Kill::kill(handle)` is called with the `KillHandle` stored in
+2. **External kill / ripcord (`ChildPolicy::Kill`):** If the task is stuck (not yielding
+   to the run loop), `R::Kill::kill(handle)` is called with the `KillHandle` stored in
    `ChildEntry::kill_handle`. This bypasses the task entirely — no cooperation, no
    callbacks. For `NoKill` runtimes (Embassy), the ripcord is a no-op — `kill(())` does
-   nothing. For `Kill` runtimes (Tokio), this calls `KillHandle::abort()`.
+   nothing. For `Kill` runtimes (Tokio), this calls `AbortHandle::abort()`.
 
-Both `Abort` and `Kill` result in permanent termination — no restart, no reset. The
-`handle_stopped_or_failed` method marks the child `permanently_done` and sets the phase to
-`ChildPhase::PermanentlyDone`. The difference is cooperation: `Abort` lets the child exit
-cleanly, `Kill` forces it.
+Both `Abort` and `Kill` result in permanent termination — no restart, no reset.
+`ChildGroup::handle_done_or_failed` sets the phase to `ChildPhase::PermanentlyDone` and
+`task_gone = true` for both (so `stop_all` skips their dead mailboxes). The difference
+is cooperation: `Abort` lets the child exit cleanly, `Kill` forces it — and because the
+kill is synchronous, the Kill path also emits `ChildLifecycleEvent::Killed` on the
+notify channel, mirroring the `Aborted` event the run loop emits on the cooperative
+path.
 
 ---
 
@@ -1279,11 +1389,13 @@ Pool                      Spawn Helper            Managing Blox            Child
   |                            |    C::register(output)|                       |
   |                            |    on control mailbox |                       |
   |                            |---------------------->|                       |
-  |                            |                       | 7. register_child:    |
-  |                            |                       |    add to ChildGroup  |
-  |                            |                       |    store abort_ref +   |
-  |                            |                       |     kill_handle      |
-  |                            |                       |    send Start          |
+  |                            |                       | 7. handle_register_  |
+  |                            |                       |    dynamic_child:    |
+  |                            |                       |    add_dynamic to    |
+  |                            |                       |    ChildGroup,       |
+  |                            |                       |    store abort_ref + |
+  |                            |                       |     kill_handle,     |
+  |                            |                       |    send Start        |
   |                            |                       |---------------------->|
   |                            |                       |                       |
   |                            |                       |    8. Child reports  |
@@ -1297,22 +1409,37 @@ Pool                      Spawn Helper            Managing Blox            Child
   |--------------------------------------------------------------------->|
   |                            |                       |                       |
   |                            |                       | 11. Child reports   |
-  |                            |                       |    Done via notify    |
+  |                            |                       | Stopped/Failed via   |
+  |                            |                       |     notify            |
   |                            |                       |<----------------------|
-  |                            |                       | 12. handle_done:     |
-  |                            |                       |     restart/stop     |
-  |                            |                       |     per policy        |
+  |                            |                       | 12. handle_done_or_  |
+  |                            |                       |     failed: apply    |
+  |                            |                       |     child policy     |
+  |                            |                       |     (a Done report   |
+  |                            |                       |  deregisters instead)|
   |                            |                       |                       |
   |                            |                       | [if ChildPolicy::Abort]|
-  |                            |                       | 13. R::Kill::kill     |
-  |                            |                       |     (kill_handle)    |
-  |                            |                       |     + send AbortCommand|
-  |                            |                       |     on abort_ref       |
+  |                            |                       | 13a. Send ONLY       |
+  |                            |                       |  AbortCommand::Abort |
+  |                            |                       |  on the abort mailbox|
   |                            |                       |---------------------->|
-  |                            |                       |                       | 14. Child task
-  |                            |                       |                       |     receives Kill,
-  |                            |                       |                       |     drops future,
-  |                            |                       |                       |     task aborts
+  |                            |                       |                       | 14a. Child's run loop
+  |                            |                       |                       |      polls the abort
+  |                            |                       |                       |      mailbox, reports
+  |                            |                       |                       |      Aborted, exits
+  |                            |                       |                       |      cooperatively
+  |                            |                       |                       |
+  |                            |                       | [if ChildPolicy::Kill]|
+  |                            |                       | 13b. Call ONLY       |
+  |                            |                       |  R::Kill::kill(      |
+  |                            |                       |  kill_handle) — no   |
+  |                            |                       |  message is sent;    |
+  |                            |                       |  emit Killed on      |
+  |                            |                       |  notify              |
+  |                            |                       |                       | 14b. Task destroyed
+  |                            |                       |                       |      externally (future
+  |                            |                       |                       |      dropped in-place,
+  |                            |                       |                       |      no cooperation)
 ```
 
 > **Function boundary note:** Steps 3–5 all execute inside the `spawn_fn` call body (the
@@ -1348,7 +1475,8 @@ lifecycle event types are needed.
   in its child list.
 
 - **Start**: The managing blox sends `LifecycleCommand::Start` to the child (in the
-  `register_child` action, immediately after adding to the child list). The child reports
+  registration action — `register_child` / `handle_register_dynamic_child` — immediately
+  after adding to the child list). The child reports
   `Started` via the notify channel.
 
 - **Running**: The child reports `ChildLifecycleEvent::Started` → `Alive`.
@@ -1366,15 +1494,16 @@ lifecycle event types are needed.
   done — no restart.
 
 - **Kill** (`ChildPolicy::Kill`): The supervisor calls `R::Kill::kill(kill_handle)` (ripcord —
-  external abort for stuck tasks). No cooperation, no callbacks. For `NoKill` runtimes the
+  external kill for stuck tasks). No cooperation, no callbacks. For `NoKill` runtimes the
   ripcord is a no-op. Permanently dead — no restart.
 
 ### Registration: the entry point
 
 The `RegisterChild` message is the entry point for static children. The
 `RegisterDynamicChild` message is the entry point for dynamic children. Both go to the
-supervisor's control mailbox, and the supervisor's `register_child` action handles both:
-add to `ChildGroup`, send `Start`. The only difference is `RegisterDynamicChild` carries
+supervisor's control mailbox, handled by the `register_child` /
+`handle_register_dynamic_child` actions (in `bloxide-child-management::actions`): add to
+`ChildGroup`, send `Start`. The only difference is `RegisterDynamicChild` carries
 an `abort_ref` and `kill_handle` that the supervisor stores for `ChildPolicy::Abort` and
 `ChildPolicy::Kill`.
 
@@ -1393,17 +1522,37 @@ stateDiagram-v2
     Init --> Running : "Start enters initial_state (if initial_state is also Running)"
     Init --> Error : "Start enters error state"
     Running --> Running : "domain events (stay / self-transition)"
-    Running --> Init : "Guard::Stop → machine returns to Init"
+    Running --> Init : "Decision::Stop → machine returns to Init"
+    Running --> [*] : "Decision::Done → clean self-termination, task ends"
     Running --> Error : "transition to error state (is_error)"
-    Running --> Running : "Reset → initial_state (Guard::Reset or LifecycleCommand::Reset)"
+    Running --> Running : "Reset → initial_state (Decision::Reset or LifecycleCommand::Reset)"
     Running --> Aborted : "ChildPolicy::Abort (AbortCommand)"
     Running --> Killed : "ChildPolicy::Kill (ripcord)"
-    Error --> [*] : "task exits (supervised: stays alive for Restart/Reset)"
+    Error --> [*] : "task exits only if exit_on_fail (supervised: stays alive for Reset)"
     Aborted --> [*] : "task exits cooperatively (permanently done)"
-    Killed --> [*] : "task aborted externally (permanently dead)"
+    Killed --> [*] : "task killed externally (permanently dead)"
 ```
 
-> **Note**: In the new lifecycle model, `Guard::Stop` replaces terminal `Done` states. When a guard returns `Stop`, the machine goes to `Init` and produces `DispatchOutcome::Stopped`. The transition's actions run BEFORE `Guard::Stop`. `on_init_entry` fires when `Guard::Stop` triggers (clearing state). Supervised actor run loops do NOT exit on `DispatchOutcome::Stopped` — the actor stays alive in `Init`, waiting for `Start` or `Reset` from the supervisor. Only `Aborted` or stream-closed exits the loop.
+> **Note**: The lifecycle model has **five levels**: `reset → stop → done → abort → kill`
+> (see [02-hsm-engine.md](02-hsm-engine.md) for the full model). `Decision::Stop` suspends
+> the machine in `Init` (producing `DispatchOutcome::Stopped`); `Decision::Done` is the
+> clean self-termination — the same exit-chain + `on_init_entry` ritual as `Stop`, then
+> the task **ends** and the supervisor deregisters the child. The transition's actions
+> run BEFORE the decision is evaluated.
+>
+> The run loop (`run()` in `bloxide-core/src/runloop.rs`) exits when:
+> - `DispatchOutcome::Aborted` is observed (always)
+> - `DispatchOutcome::Done` is observed (always — clean self-termination)
+> - any polled stream (lifecycle, abort, or all domain mailboxes) returns
+>   `Poll::Ready(None)` — stream closed
+> - `DispatchOutcome::Stopped` is observed **and** `exit_on_stop` is set
+> - `DispatchOutcome::Failed` is observed **and** `exit_on_fail` is set
+>
+> Supervised configs (`RunConfig::supervised`, `RunConfig::supervised_with_abort`) set
+> both flags **false**: a supervised task stays alive on `Stopped` (suspended in `Init`,
+> waiting for `Start`/`Reset`) **and** on `Failed` (parked in its absorbing error state,
+> so the supervisor's `ChildPolicy` can `Reset` it). `RunConfig::root`,
+> `RunConfig::unsupervised`, and `RunConfig::bare` set both **true**.
 
 The child's `run` with `RunConfig::supervised` loop (or `run` with `RunConfig::supervised_with_abort` for dynamic
 children) handles lifecycle reporting automatically — it converts `DispatchOutcome` to
@@ -1422,7 +1571,8 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
   by `ChildGroupBuilder::add_child`
 - Supervisor manages lifecycle only — sends Start/Stop/Reset
 - `ChildPolicy::Abort` and `ChildPolicy::Kill` are not available (no abort mailbox, no
-  `SpawnCap`). Use `Stop` or `Restart`.
+  `SpawnCap` — `ChildGroup::add` panics if either is registered for a static child).
+  Use `Reset` or `Stop`.
 - `R: BloxRuntime` only — no `SpawnCap` needed
 - The Pool blox doesn't have `spawn_fn` — it's not wired
 - `run` with `RunConfig::supervised` (without abort support) is used
@@ -1431,7 +1581,7 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
 ### Dynamic spawning (Tokio / std)
 
 - `bloxide-supervisor` — same as static (no `dynamic` feature on supervisor)
-- `spawn_fn: SpawnFn<R, SpawnRequest<R>>` field in **the Pool's** context (not the
+- `spawn_fn: SpawnFn<R, SpawnRequest<PeerCtrl<WorkerMsg, R>, R>>` field in **the Pool's** context (not the
   supervisor's)
 - `spawn_ref` points to supervisor's control mailbox (for `RegisterDynamicChild`)
 - The Pool calls `spawn_child::<_, _, ChildCtrlRegistrar>` (from `bloxide-spawn`) directly
@@ -1442,9 +1592,9 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
 - Supervisor registers and manages lifecycle — same code path as static, plus stores
   `abort_ref` and `kill_handle` for `ChildPolicy::Abort` and `ChildPolicy::Kill`
 - `ChildPolicy::Abort` sends `AbortCommand::Abort` on `abort_ref` (cooperative self-termination)
-- `ChildPolicy::Kill` calls `R::Kill::kill(kill_handle)` (ripcord — external abort)
+- `ChildPolicy::Kill` calls `R::Kill::kill(kill_handle)` (ripcord — external kill)
 - `run` with `RunConfig::supervised_with_abort` (with abort mailbox support) is used
-- `type Kill = Kill` — `Handle = KillHandle`
+- `type Kill = Kill` — `Handle = tokio::task::AbortHandle`
 
 The `dynamic` feature is on the **Pool's** crate, not the supervisor's. The Pool gates its
 `spawn_fn` field, `spawn_ref` field, and spawn-related transitions behind
@@ -1455,8 +1605,10 @@ The `dynamic` feature is on the **Pool's** crate, not the supervisor's. The Pool
 `collect_ctor_fields` in `system_wiring.rs` is feature-aware. It reads the `feature`
 attribute on context fields (already present in `blox.toml`) and skips fields whose
 feature is not enabled in the current build configuration. The `system.toml` lists all
-inject entries unconditionally — the codegen silently skips injections whose target fields
-don't exist when the feature is off.
+inject entries unconditionally — the codegen tolerates an inject entry whose target
+field exists but is feature-gated off (the injection is cfg'd out together with the
+field), while an inject entry naming a field that does not exist at all is a hard
+error.
 
 This keeps `system.toml` feature-agnostic (it describes the full system topology; Cargo
 features determine which parts are active). The feature knowledge lives in `blox.toml`.
@@ -1465,129 +1617,14 @@ features determine which parts are active). The feature knowledge lives in `blox
 
 ## 10. The Wiring
 
-### system.toml
-
-```toml
-# In system.toml (tokio-pool-demo)
-
-[system]
-runtime = "tokio"
-name = "tokio-pool-demo"
-
-[[actors]]
-name = "pool"
-blox = "pool-blox"
-
-  [actors.inject]
-  self_ref = { source = "self" }
-  spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "spawn_worker" }
-  spawn_ref = { source = "actor", actor = "supervisor", field = "control" }
-  notify_ref = { source = "actor", actor = "supervisor", field = "notify" }
-  spawn_reply_ref = { source = "self_secondary", index = 1 }
-
-  # Bootstrap: send 3 SpawnWorker messages to trigger Idle→Active→AllDone
-  [[actors.bootstrap]]
-  message = "PoolMsg::SpawnWorker"
-  payload = { task_id = 0 }
-
-  [[actors.bootstrap]]
-  message = "PoolMsg::SpawnWorker"
-  payload = { task_id = 1 }
-
-  [[actors.bootstrap]]
-  message = "PoolMsg::SpawnWorker"
-  payload = { task_id = 2 }
-
-[[supervision]]
-supervisor = "bloxide-supervisor"
-strategy = "all_for_one"
-children = ["pool"]
-
-  [supervision.policies]
-  pool = { stop = true }
-```
-
-The wiring layer provides:
-
-1. **`spawn_fn`** — the `fn` pointer (`spawn_worker` from `tokio_pool_demo_impl`). Uses
-   `source = "factory"`, but the codegen emits a path expression
-   (`spawn_worker as SpawnFn<R, Req>`) rather than struct construction.
-
-2. **`spawn_ref`** — the managing blox's control mailbox ref. Uses `source = "actor"` with
-   `field = "control"` — the general injection mechanism for any actor's named refs.
-
-3. **`notify_ref`** — the managing blox's child-notify mailbox ref. Uses `source = "actor"`
-   with `field = "notify"`.
-
-4. **`spawn_reply_ref`** — the Pool's own secondary mailbox for `SpawnedWorker` replies.
-
-### General Injection Mechanism: `source = "actor"` with `field` selector
-
-The `source = "actor"` injects another actor's named ref. The `field` parameter
-generalizes this to inject any named ref an actor exposes — not just the primary channel,
-and not just channels at all. The `field` defaults to the primary ref (backward
-compatible).
-
-The codegen maintains a **symbol table** — a registry mapping `(actor_name, field_name)`
-to Rust variable idents. Each section registers the symbols it creates:
-
-- Channel section: registers `(actor, "primary")` → `{actor}_ref` for each actor
-- Supervisor setup section: registers `(supervisor, "control")` → extracted `control_ref`
-  from `ChildGroupBuilder`, `(supervisor, "notify")` → extracted `notify_ref`
-
-The injection handler looks up `(actor, field)` in the symbol table:
-
-```rust
-// In system_wiring.rs context construction
-} else if source.source == "actor" {
-    let src_actor = source.actor.as_deref()...;
-    let field = source.field.as_deref().unwrap_or("primary");
-    let sym = symbol_table.get(src_actor, field)
-        .ok_or_else(|| anyhow!("actor '{}' has no ref '{}'", src_actor, field))?;
-    let ref_ident = sym.var_ident;
-    ctor_args.push(quote! { #ref_ident.clone() });
-}
-```
-
-This is general because:
-- **Any blox can inject any other blox's named refs** — not just channel refs, not just
-  supervisor refs. A user's custom job dispatcher blox exposes its own `control` and
-  `notify` mailboxes; any spawning blox injects them the same way.
-- **Adding a new named ref to any blox** just means registering it in the symbol table —
-  no new source type, no codegen change.
-- **The `field` parameter is the only schema change** — defaults to `"primary"` if
-  omitted.
-- **Multiple managing bloxs** are handled by the actor name (each has a unique name in
-  `system.toml`).
-
-### Supervisor Wiring Ordering: Two-Phase Split
-
-The `ChildGroupBuilder` is used in two phases:
-
-**Phase 1** (before context construction): Create builder, extract `control_ref()` and
-`notify_ref()`, register them in the symbol table.
-
-**Phase 2** (after machine construction): Add children via `spawn_child!`, call
-`finish()`, construct `SupervisorCtx`.
-
-```rust
-// Generated main (simplified):
-#(#channel_stmts)*              // 1. Create channels for all actors
-#(#factory_stmts)*              // 2. Factory injections (spawn_fn, etc.)
-// ── Supervisor phase 1: create builder, extract refs ──
-#(#supervisor_setup_stmts)*     // 3. Builder + control_ref + notify_ref (symbol table)
-// ── Context construction ──
-#(#ctx_stmts)*                  // 4. PoolCtx injects supervisor refs from symbol table
-// ── Machine construction ──
-#(#machine_stmts)*              // 5. Machines constructed
-// ── Supervisor phase 2: add children, finish, construct supervisor ──
-#(#supervisor_finish_stmts)*    // 6. spawn_child! + finish() + SupervisorCtx
-#(#bootstrap_send_stmts)*       // 7. Bootstrap messages
-#(#supervisor_run_stmts)*       // 8. Spawn supervisor + actor tasks
-```
-
-The `ChildGroupBuilder` is a single `let mut group` that spans both phases. Phase 1
-extracts refs; phase 2 adds children and consumes the builder.
+Wiring is fully specified elsewhere: [16-declarative-wiring.md](16-declarative-wiring.md)
+describes the `system.toml` manifest (inject sources — including `source = "factory"`
+for the spawn `fn` pointer — supervision strategies, bootstrap messages) and the codegen
+behind it (the ref symbol table and the supervisor two-phase wiring split, moved there
+from this document). [17-blox-toml-source-of-truth.md](17-blox-toml-source-of-truth.md)
+defines the schema and the round-trip contract (`cargo blox generate` is the mandatory
+first step after checkout — generated files are not committed). The running example in
+both is the real `apps/tokio-pool-demo/system.toml`.
 
 ---
 
@@ -1614,7 +1651,7 @@ A `fn` pointer is the simplest type that works:
    hack, no `static` singleton.
 
 5. **If state is needed in the future:** the state can go in the `SpawnRequest`
-   (per-request), in the Pool's context (shared, accessible via accessor traits), or in a
+   (per-request), in the Pool's context (shared — context structs are plain fields), or in a
    `&'static` (compile-time constant). For the common case, `fn` pointer + request data is
    sufficient. If a future use case genuinely needs captured state that can't go in the
    request, the `fn` pointer can be replaced with a small concrete struct that implements

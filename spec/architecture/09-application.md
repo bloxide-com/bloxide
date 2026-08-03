@@ -36,7 +36,7 @@ blox = "ping-blox"
 
 [[supervision]]
 supervisor = "bloxide-supervisor"
-strategy = "one_for_one"
+strategy = "when_any_done"
 children = ["ping", "pong"]
 
   [supervision.policies]
@@ -52,7 +52,7 @@ with refs injected per `[actors.inject]`, a `ChildGroupBuilder` with
 
 Actors never call `machine.start()` / `machine.reset()` — lifecycle commands
 flow through `dispatch()` and are intercepted at the VirtualRoot level
-(see [14-unified-lifecycle.md](14-unified-lifecycle.md)). This includes the
+(see [02-hsm-engine.md](02-hsm-engine.md)). This includes the
 supervisor itself at boot:
 
 ```rust
@@ -100,5 +100,11 @@ implementations):
 - All static wiring happens before the executor starts (Embassy) or in `main` before awaiting the root task (Tokio). Dynamic actor creation at runtime is a Tokio/TestRuntime capability — see [11-dynamic-actors.md](11-dynamic-actors.md).
 - Never pass an `ActorRef` through a message; all refs are injected via `Ctx::new()` at wiring time.
 - Domain `Mailboxes` tuples contain **no lifecycle stream** — lifecycle channels are created by `spawn_child!` and are invisible to blox code.
-- Internal state fields (counters, round numbers) are initialized by the generated `Ctx::new()` / `on_init`, never at the wiring site.
+- Internal state fields (counters, round numbers) are zero-initialized via
+  `Default::default()` in the generated `Ctx::new()`, never at the wiring site.
+- Actor IDs come from two disjoint spaces: static wiring uses the compile-time
+  proc-macro counter (`channels!`, `next_actor_id!`, `spawn_timer!`) starting
+  at 1; dynamically spawned actors use `DynamicChannelCap::alloc_actor_id`,
+  whose counter starts at `DYNAMIC_ACTOR_ID_BASE` (1_000_000) — see
+  [11-dynamic-actors.md](11-dynamic-actors.md).
 - The supervisor is started via `dispatch()` of `LifecycleCommand::Start`, like every other lifecycle transition.

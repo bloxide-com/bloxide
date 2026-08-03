@@ -73,7 +73,7 @@ Rules:
 Context crates are the portable interface layer. They define:
 
 - **Free action functions** taking concrete params (e.g., `increment_round(&mut u32)`,
-  `send_ping::<R>(ActorId, &ActorRef<M, R>, u32)`)
+  `send_ping::<R>(ActorId, &ActorRef<M, R>, u32)`), each returning `ActionResult`
 
 There is no `B` generic, no `#[delegatable]`, no `#[delegates]`, no accessor traits.
 State is stored as plain fields on the context struct; action functions take the
@@ -81,8 +81,9 @@ fields they need as concrete parameters.
 
 ```rust
 // crates/blox-ctx-rounds/src/lib.rs
-pub fn increment_round(round: &mut u32) {
+pub fn increment_round(round: &mut u32) -> ActionResult {
     *round += 1;
+    ActionResult::Ok
 }
 ```
 
@@ -92,8 +93,8 @@ pub fn send_ping<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
     round: u32,
-) {
-    let _ = peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round }));
+) -> ActionResult {
+    ActionResult::from(peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round })))
 }
 ```
 
@@ -146,27 +147,47 @@ closures inlined from context/impl crates.
 
 ## Two-Stage Codegen
 
-### Stage 1 — Blox-level (`cargo blox generate`)
+Both stages run under `cargo blox generate` (which lints first and is
+idempotent); all generated artifacts (`src/generated/`, `apps/*/main.rs`,
+`apps/*/Cargo.toml`) are gitignored.
 
-Generates stub action closures (no-op) with real guards. The blox compiles standalone
-without any impl dependency. Guard/transition logic is functional with stubs; only
-side-effecting actions are no-ops.
+### Stage 1 — Blox-level
+
+From `blox.toml`, generates stub action closures with real guards. The blox
+compiles standalone without any impl dependency. Guard/transition logic is
+functional with stubs; only side-effecting actions are stubs. A stub is a
+marker plus a no-op `ActionResult::Ok`:
 
 ```rust
-// generated/spec_skeleton.rs — stub actions
-|_ctx, _ev| { /* stub: forward_ping */ ActionResult::Ok }
+// src/generated/spec_skeleton.rs — stub actions
+|_ctx, _ev| {
+    let _stub = "forward_ping";
+    ActionResult::Ok
+}
 ```
 
-### Stage 2 — System-level (`cargo blox build`)
+### Stage 2 — System-level
 
-Reads `system.toml`, resolves impl crates, generates concrete action closures with
-real function calls. Guards are unchanged from blox-level (already real).
+From `system.toml`, resolves impl crates and generates the app's `main.rs`
+plus concrete `spec_skeleton.rs` files with real action closures calling
+context/impl crate functions. Guards are unchanged from blox-level (already
+real).
+
+Transition action closures return the action function's `ActionResult`
+verbatim (the uniform contract — the guard can react to failure via
+`results.any_failed()`):
 
 ```rust
-// generated/spec_skeleton.rs — concrete, impl inlined
-|ctx, _ev| {
-    blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round);
-    ActionResult::Ok
+// apps/<app>/src/generated/ping_spec_skeleton.rs — concrete, impl inlined
+|ctx, _ev| blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round)
+```
+
+Entry/exit actions are infallible (`fn(&mut Ctx)`), so their closures call
+the function and discard its `ActionResult`:
+
+```rust
+|ctx| {
+    blox_ctx_ping_pong::send_initial_ping(ctx.self_id, &ctx.peer_ref, &mut ctx.round);
 }
 ```
 
@@ -206,29 +227,33 @@ functions.
 
 ```rust
 // crates/impl/tokio-pool-demo-impl/src/lib.rs
-pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) {
+pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) -> ActionResult {
     *task_id = do_work.task_id;
     *result = do_work.task_id * 2;
+    ActionResult::Ok
 }
 ```
 
 Dependency direction stays one-way: the wiring binary depends on both the blox crate
 and the impl crate; the blox crate never depends on the impl crate.
 
-## Field Naming Convention
+## Field Declaration Convention
 
 Context fields are plain fields on the context struct. The codegen auto-emits
-`self_id` as the first field. Fields named with a `_ref` suffix or `_factory`
-suffix are treated as constructor parameters (injected at wiring time). State
-fields come from `[[context.fields]]` entries and are zero-initialized in
-`on_init`.
+`self_id` as the first field. Constructor parameters come from `[[context.uses]]`
+entries with `role = "ctor"` (injected at wiring time); `role` is validated —
+only `ctor` and `state` are accepted. The `crate` key on a `[[context.uses]]`
+entry is optional and informational (used by scaffolding and visualization, not
+by codegen). State fields come from `[[context.fields]]` entries (or
+`[[context.uses]]` with `role = "state"`) and are zero-initialized via
+`Default::default()` in `Ctx::new()`.
 
-| Name Pattern | Use Case | Example |
+| Declaration | Use Case | Example |
 |---------------|----------|---------|
 | `self_id: ActorId` | Auto-emitted first field | always present |
-| `foo_ref: ActorRef<M, R>` | Constructor param (injected at wiring) | `peer_ref`, `timer_ref` |
-| `foo_factory: fn(...)` | Constructor param (function pointer) | `worker_factory` |
-| `round: u32` | State field (from `[[context.fields]]`) | zero-initialized |
+| `[[context.uses]] role = "ctor"` | Constructor param (injected at wiring) | `peer_ref`, `timer_ref`, `spawn_fn` |
+| `[[context.fields]]` | State field | `round`, `pending` |
+| `[[context.uses]] role = "state"` | State field from a composable crate | `spawn_queue` |
 
 ## Supervisor As The Same Pattern
 

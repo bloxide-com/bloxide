@@ -26,10 +26,10 @@ cargo-blox          CLI: see QUICK_REFERENCE.md → "cargo blox Command Referenc
 bloxide-log         Feature-gated logging macros                              (no_std)
 bloxide-timer       Timer service: commands, queue, timer action functions     (no_std)
 bloxide-spawn       Spawn capability: SpawnCap, ChildRegistrar, spawn_child   (no_std)
-bloxide-child-management  Child tracking: ChildGroup, ChildEntry, ChildPhase  (no_std)
+bloxide-child-management  Child tracking: ChildGroup, ChildGroupBuilder, ChildPolicy, GroupShutdown  (no_std)
 bloxide-supervisor  Supervisor blox: SupervisorSpec, ChildCtrl, actions  (no_std)
-bloxide-peers       Peer introduction: PeerCtrl, AddPeer, RemovePeer, introduce_peers  (no_std)
-blox-ctx-ping-pong   Messaging helpers: send_ping, broadcast_to_peers         (no_std)
+bloxide-peers       Peer introduction: PeerCtrl, AddPeer, RemovePeer, introduce_peers, apply_peer_control, broadcast_to_peers  (no_std)
+blox-ctx-ping-pong   Messaging helpers: send_ping, send_pong, send_initial_ping, schedule_resume  (no_std)
 bloxide-embassy     Embassy runtime: channels, tasks, timer bridge            (no_std)
 bloxide-tokio       Tokio runtime: channels, tasks, SpawnCap, KillCapability  (std)
 ```
@@ -86,7 +86,7 @@ applies to framework code too. Framework-specific reminders:
 
 - `bloxide-core` stays `no_std` with zero OS/executor imports
 - Lifecycle commands flow through `dispatch()` at VirtualRoot level
-- `is_error` states report `Failed`; actors self-suspend via `Guard::Stop` or self-terminate cleanly via `Guard::Done` (task ends, supervisor deregisters)
+- `is_error` states report `Failed`; actors self-suspend via `Decision::Stop` or self-terminate cleanly via `Decision::Done` (task ends, supervisor deregisters)
 - `KillCapability::kill` fires no callbacks — the task is dropped in-place
 
 ## Adding a Standard Library Crate
@@ -248,6 +248,7 @@ Any  --Kill-->  abort immediately (permanent death)
 Located in `runtimes/bloxide-test-runtime/src/lib.rs`. Provides:
 - In-memory channels with `try_send`/`drain` 
 - `alloc_actor_id()` for unique IDs
+- `SpawnCap` for dynamic-spawn wiring — `kill` / `kill_handle` are documented no-ops (TestRuntime does not destroy tasks)
 - No async executor needed
 
 ### VirtualClock

@@ -35,17 +35,38 @@ jobs:
           rustup component add rustfmt clippy
           rustup target add riscv32imc-unknown-none-elf
 
-      - name: Cargo Build
-        run: cargo build
-
+      # Installed from the current checkout so the invoked binary always
+      # matches the sources under test.
       - name: Install cargo-blox
         run: cargo install --path crates/tools/cargo-blox
+
+      # Generated artifacts (src/generated/, apps/*/main.rs, apps/*/Cargo.toml)
+      # are gitignored — the workspace does not compile from a pristine
+      # checkout until codegen runs. Generate BEFORE any build/test step.
+      - name: Generate code (cargo blox generate)
+        run: cargo blox generate
+
+      - name: Cargo Build
+        run: cargo build
 
       # Single source of truth for the check matrix: auto-discovered from the
       # workspace (see #133). Covers: cargo check feature matrix, no_std
       # audit, tests, fmt, clippy, doc build, copyright compliance.
       - name: cargo blox ci
         run: cargo blox ci
+
+  lint:
+    name: Lint (cargo blox lint)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      # blox.toml validation + spec conformance + dead doc references.
+      # cargo run builds cargo-blox from the current sources.
+      - name: cargo blox lint
+        run: cargo run -p cargo-blox -- blox lint
 
   feature-tests:
     name: Feature-specific tests
@@ -54,6 +75,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+
+      # Generate first: the workspace does not compile from a pristine
+      # checkout (generated artifacts are gitignored).
+      - name: Generate code (cargo blox generate)
+        run: cargo run -p cargo-blox -- blox generate
 
       - name: Run optional-feature tests
         run: |
@@ -91,6 +117,11 @@ jobs:
           rustup toolchain list
           cargo --version
 
+      # Generate first: the workspace does not compile from a pristine
+      # checkout (generated artifacts are gitignored).
+      - name: Generate code (cargo blox generate)
+        run: cargo run -p cargo-blox -- blox generate
+
       - name: Run tests and report code coverage
         run: |
           RUSTC_BOOTSTRAP=1 cargo tarpaulin -o xml -o lcov -o html --doc --tests
@@ -119,6 +150,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Generate first: the workspace does not compile from a pristine
+      # checkout (generated artifacts are gitignored).
+      - name: Generate code (cargo blox generate)
+        run: cargo run -p cargo-blox -- blox generate
+
       - name: Create Documentation for bloxide
         working-directory: ${{github.workspace}}
         run: RUSTDOCFLAGS=-Dwarnings cargo doc --workspace --no-deps

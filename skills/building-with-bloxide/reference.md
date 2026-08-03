@@ -2,7 +2,7 @@
 
 Quick reference for blox.toml syntax, common patterns, and generated code.
 
-## Macros Quick Reference
+## `blox.toml` Quick Reference
 
 ### Messages in `blox.toml`
 
@@ -47,13 +47,13 @@ Context fields come from `[[context.uses]]` (reference fields) and `[[context.fi
 | `peer_ref: ActorRef<M, R>` | Plain field (constructor param) |
 | `timer_ref: ActorRef<TimerCommand, R>` | Plain field (constructor param) |
 | `pool_ref: ActorRef<PoolMsg, R>` | Plain field (constructor param) |
-| `worker_factory: fn(...) -> ...` | Plain field (constructor param) |
+| `spawn_fn: SpawnFn<R, ...>` | Plain field (constructor param) |
 | `round: u32` (from `[[context.fields]]`) | Plain field, zero-initialized |
 
 **Generated constructor signature:**
 
 ```rust
-// For fields: self_id, peer_ref, timer_ref, worker_factory
+// For fields: self_id, peer_ref, timer_ref
 fn new(
     self_id: ActorId,
     peer_ref: ActorRef<M, R>,
@@ -83,12 +83,12 @@ Run `cargo blox generate` to produce `src/generated/topology.rs`, then use `pub 
 Declare transition rules in `blox.toml`. The codegen emits `StateRule` struct literals from these entries:
 
 ```toml
-# Message pattern → actions + guard
+# Message pattern → actions + guards
 [[topology.transitions]]
 state = "Active"
 event = "PingPongMsg::Pong(_)"
-target = "Active"
-actions = ["Self::forward_ping"]
+target = "stay"
+actions = ["Self::increment_round", "Self::forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "results.any_failed()"
@@ -101,19 +101,18 @@ actions = ["Self::forward_ping"]
   [[topology.transitions.guards]]
   condition = "ctx.round == PAUSE_AT_ROUND as u32"
   target = "Paused"
-
-  [[topology.transitions.guards]]
-  condition = "_"
-  target = "stay"
 ```
+
+Guards are evaluated in order; if none matches, the outcome is `Decision::Stay`. An explicit catch-all guard uses `condition = "_"`.
 
 **Target options:**
 - `target = "StateName"` — change state
-- `target = "stay"` — absorb event, keep state
-- `target = "stop"` — self-suspend (Guard::Stop)
-- `target = "done"` — clean self-termination (Guard::Done; task ends, supervisor deregisters)
-- `target = "reset"` — exit to Init
-- `[[topology.transitions.guards]]` — conditional decision (each guard has `condition` and `target`; the final guard without a `condition` is the fallback)
+- `target = "stay"` — absorb event, keep state (`Decision::Stay`)
+- `target = "stop"` — self-suspend to Init (`Decision::Stop`)
+- `target = "done"` — clean self-termination (`Decision::Done`; task ends, supervisor deregisters)
+- `target = "reset"` — go directly to `initial_state()` (`Decision::Reset`)
+- `target = "fail"` — go to the error state, or Init if none is declared (`Decision::Fail`)
+- `[[topology.transitions.guards]]` — conditional decision (each guard has `condition` and `target`; a guard with `condition = "_"` is the catch-all fallback; if no guard matches, the outcome is `Decision::Stay`)
 
 **Guard expressions** use direct field access (no trait methods, no `B::Type::from()`):
 - `ctx.round >= MAX_ROUNDS as u32` — direct field comparison
@@ -155,6 +154,8 @@ impl_required = true
 | `"exit"` | `fn(&mut Ctx) -> ()` |
 | `"transition"` | `fn(&mut Ctx, &Event) -> ActionResult` |
 
+`kind` is **required** and validated against the use site — an action wired in `[[topology.entry]]` must be `kind = "entry"`, and so on. `crate` is optional and informational. Unknown TOML keys are hard errors (`deny_unknown_fields`).
+
 ## StateFns Structure
 
 The codegen emits `StateFns` constants from the TOML entries:
@@ -163,21 +164,37 @@ The codegen emits `StateFns` constants from the TOML entries:
 ```rust
 const ACTIVE_FNS: StateFns<Self> = StateFns {
     on_entry: &[
-        |_ctx| { /* stub: increment_round */ },
-        |_ctx| { /* stub: send_initial_ping */ },
+        |_ctx| {
+            let _stub = "send_initial_ping";
+        },
     ],
-    transitions: &[StateRule { ... }],
+    transitions: &[StateRule {
+        actions: &[
+            |_ctx, _ev| {
+                let _stub = "increment_round";
+                ActionResult::Ok
+            },
+        ],
+        ..
+    }],
 };
 ```
 
-**Stage 2 (system-level — concrete):**
+**Stage 2 (system-level — concrete):** each closure returns the action function's `ActionResult` verbatim (entry/exit closures discard it — entry/exit functions are infallible):
 ```rust
 const ACTIVE_FNS: StateFns<Self> = StateFns {
     on_entry: &[
-        |ctx| { blox_ctx_rounds::increment_round(&mut ctx.round); },
-        |ctx| { blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round); },
+        |ctx| {
+            ::blox_ctx_ping_pong::send_initial_ping(ctx.self_id, &ctx.peer_ref, &mut ctx.round);
+        },
     ],
-    transitions: &[StateRule { ... }],
+    transitions: &[StateRule {
+        actions: &[
+            |ctx, _ev| { ::blox_ctx_rounds::increment_round(&mut ctx.round) },
+            |ctx, _ev| { ::blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round) },
+        ],
+        ..
+    }],
 };
 ```
 
@@ -213,77 +230,104 @@ impl<R: BloxRuntime> MachineSpec for MySpec<R> {
 
 ### Timer Setup
 
+Timer primitives live in `bloxide-timer` (module `actions`; `set_timer`, `cancel_timer`, and `cancel_timer_by_id` are also re-exported at the crate root and in the prelude). `set_timer` returns `Option<TimerId>` — `None` when the timer channel is full and the command was dropped. Domain scheduling logic lives in the context crate:
+
 ```rust
-// In context crate (blox-ctx-ping-pong)
+// In context crate (blox-ctx-ping-pong): arms a one-shot Resume timer,
+// duration derived from the round (2000 + round * 500 ms), stores the TimerId.
 pub fn schedule_resume<R: BloxRuntime>(
     self_id: ActorId,
-    self_ref: &ActorRef<M, R>,
+    self_ref: &ActorRef<PingPongMsg, R>,
     timer_ref: &ActorRef<TimerCommand, R>,
-    duration_ms: u64,
-) -> TimerId {
-    let id = TimerId::new();
-    let _ = timer_ref.try_send(self_id, TimerCommand::Set {
-        id, duration_ms, target: self_ref.clone(), msg: Envelope(self_id, msg),
-    });
-    id
+    round: u32,
+    current_timer: &mut Option<TimerId>,
+) -> ActionResult {
+    let duration_ms = 2000 + (round as u64 * 500);
+    match bloxide_timer::actions::set_timer(
+        self_id, timer_ref, duration_ms, self_ref, PingPongMsg::Resume(Resume),
+    ) {
+        Some(id) => { *current_timer = Some(id); ActionResult::Ok }
+        None => { *current_timer = None; ActionResult::Err }
+    }
 }
+```
 
+```rust
+// In bloxide-timer (module `actions`): cancel the stored timer (if any) and clear the slot.
 pub fn cancel_timer_by_id<R: BloxRuntime>(
     self_id: ActorId,
     timer_ref: &ActorRef<TimerCommand, R>,
-    timer_id: Option<TimerId>,
-) {
-    if let Some(id) = timer_id {
-        let _ = timer_ref.try_send(self_id, TimerCommand::Cancel { id });
-    }
-}
+    current_timer: &mut Option<TimerId>,
+) -> ActionResult
 ```
 
 ### Error Handling in Guards
 
 ```toml
 [[topology.transitions]]
-state = "Active"
-event = "PingPongMsg::Pong(_)"
-target = "Active"
-actions = ["Self::forward_ping"]
+state = "Ready"
+event = "CounterMsg::Tick(_)"
+target = "stay"
+actions = ["Self::count_tick"]
 
   [[topology.transitions.guards]]
-  condition = "results.any_failed()"
-  target = "Error"
+  condition = "ctx.count >= DONE_AT_COUNT"
+  target = "done"
 
   [[topology.transitions.guards]]
   condition = "_"
   target = "stay"
 ```
 
+Use `results.any_failed()` as the first guard when a send failure should divert to an error state before any domain condition is checked.
+
 ### Factory Injection (Dynamic Spawning)
 
 ```rust
-// Generated ctx.rs — factory field is a constructor parameter
+// Generated ctx.rs (feature = "dynamic") — factory field is a constructor parameter
 pub struct PoolCtx<R: BloxRuntime> {
     pub self_id: ActorId,
     pub self_ref: ActorRef<PoolMsg, R>,
-    pub spawn_fn: SpawnFn<R, SpawnRequest<R>>,
-    pub worker_refs: Vec<ActorRef<WorkerMsg, R>>,
+    pub spawn_fn: SpawnFn<R, SpawnRequest<PeerCtrl<WorkerMsg, R>, R>>,
+    pub spawn_ref: ActorRef<ChildCtrl<R>, R>,
+    pub notify_ref: ActorRef<ChildLifecycleEvent, R>,
+    pub spawn_reply_ref: ActorRef<SpawnedWorker<PeerCtrl<WorkerMsg, R>, R>, R>,
+    // ... state fields (pending_task_id, spawn_in_flight, spawn_queue, ...)
 }
 
-// Binary provides factory
-let pool_ctx = PoolCtx::new(pool_id, pool_ref, spawn_worker_tokio);
+// Binary provides the factory
+let pool_ctx = PoolCtx::new(pool_id, pool_ref, spawn_worker_tokio, spawn_ref, notify_ref, spawn_reply_ref);
 ```
 
 ### Peer Introduction
 
 ```rust
-// In context crate (bloxide-peers)
-pub fn broadcast_to_peers<R: BloxRuntime>(
+// In bloxide-peers (platform crate, domain-agnostic):
+// broadcasts a caller-supplied message to every registered peer.
+pub fn broadcast_to_peers<M, R>(
+    self_id: ActorId,
+    peers: &[ActorRef<M, R>],
+    msg: M,
+) -> ActionResult
+where
+    M: Clone + Send + 'static,
+    R: BloxRuntime,
+```
+
+Domain message construction stays in the domain context crate — e.g. `blox-ctx-pool-ref::broadcast_result` builds the `WorkerMsg::PeerResult` and calls `broadcast_to_peers`:
+
+```rust
+// In context crate (blox-ctx-pool-ref)
+pub fn broadcast_result<R: BloxRuntime>(
     self_id: ActorId,
     peers: &[ActorRef<WorkerMsg, R>],
     result: u32,
-) {
-    for peer in peers {
-        let _ = peer.try_send(self_id, WorkerMsg::PeerResult(PeerResult { result }));
-    }
+) -> ActionResult {
+    bloxide_peers::broadcast_to_peers(
+        self_id,
+        peers,
+        WorkerMsg::PeerResult(PeerResult { from_id: self_id, result }),
+    )
 }
 ```
 

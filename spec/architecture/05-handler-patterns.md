@@ -4,13 +4,10 @@
 > handlers, transition rules, or state topologies for a blox. For the
 > dispatch algorithm and lifecycle handling, see `02-hsm-engine.md`.
 
-> ⚠️ **Syntax Update (Phase 4, July 2026):** Transition rules are
-> declared declaratively in `blox.toml` via `[[topology.transitions]]`,
-> and `bloxide-codegen` emits raw `StateRule { ... }` struct literals
-> from those entries. The **PATTERNS** described here (guards, reset,
-> stay, transition targets, action-then-guard ordering) are unchanged —
-> only the *syntax* moved from a Rust proc-macro to TOML. The code
-> blocks below show the TOML syntax for each pattern. See
+> Transition rules are declared declaratively in `blox.toml` via
+> `[[topology.transitions]]`, and `bloxide-codegen` emits raw
+> `StateRule { ... }` struct literals from those entries — no proc macro is
+> involved. The code blocks below show the TOML syntax for each pattern. See
 > `spec/architecture/17-blox-toml-source-of-truth.md` for the current
 > TOML schema and `QUICK_REFERENCE.md` → "Declarative Transitions
 > (blox.toml)" for a worked example.
@@ -34,7 +31,7 @@ pub struct TransitionRule<S: MachineSpec, G> {
 
 The ordering enforces the invariant: **actions always precede the guard**. The borrow checker enforces that **guards cannot mutate context** (`&Ctx`, not `&mut Ctx`). Each action returns `ActionResult`; the engine collects them into `ActionResults` before calling the guard. Guards receive `&ActionResults` to inspect failures (e.g. `results.any_failed()`).
 
-Root-level rules use `StateRule<S>`, the same type as state-level rules — both use `Guard<S>`. `Guard::Reset` is available at all levels — state rules and root rules have identical guard capabilities.
+Root-level rules use `StateRule<S>`, the same type as state-level rules — both return `Decision<S>`. All six `Decision` variants (`Transition`, `Stay`, `Reset`, `Stop`, `Done`, `Fail`) are available at all levels — state rules and root rules have identical decision capabilities.
 
 ---
 
@@ -154,13 +151,13 @@ The "Bubble" pattern is the **absence of a rule**. Do not add a catch-all rule t
 
 Use when: a leaf state does not handle an event and wants its parent (or root) to handle it.
 
-**Example**: `Done` state (if declared) has an empty `transitions: &[]` — all events bubble to root, which silently drops them (or handles any root rules you define). Actors that self-suspend via `Guard::Stop` do not need a `Done` state at all.
+**Example**: `Done` state (if declared) has an empty `transitions: &[]` — all events bubble to root, which silently drops them (or handles any root rules you define). Actors that self-suspend via `Decision::Stop` do not need a `Done` state at all.
 
 ---
 
 ## Root Rule Patterns
 
-Root rules use `StateRule<S>` with `Guard` (`Transition`, `Stay`, or `Reset`). Root rules are the same type as state-level rules — `root_transitions()` returns `&'static [StateRule<Self>]`.
+Root rules use `StateRule<S>` with `Decision` — all six variants (`Transition`, `Stay`, `Reset`, `Stop`, `Done`, `Fail`). Root rules are the same type as state-level rules — `root_transitions()` returns `&'static [StateRule<Self>]`.
 
 > **Canonical source for lifecycle handling**: `spec/architecture/02-hsm-engine.md`
 > documents how lifecycle commands (Start, Reset, Stop, Ping) flow through
@@ -176,7 +173,7 @@ fn root_transitions() -> &'static [StateRule<Self>] { &[] }
 
 ### `reset` in State-Level Transitions
 
-Since `Guard::Reset` is available in any transition rule, actors can self-restart directly from a state handler without root rules. When a guard returns `Reset`, the engine fires `on_exit` for every state from the current leaf up to the topmost ancestor (full LCA exit chain), then fires `on_entry` for the `initial_state()` path. Reset skips Init — `on_init_entry` does NOT fire. The runtime observes `DispatchOutcome::Started(initial_state)` and emits `ChildLifecycleEvent::Started` to the supervisor.
+Since `Decision::Reset` is available in any transition rule, actors can self-restart directly from a state handler without root rules. When a rule returns `Reset`, the engine performs an LCA-based `change_state` to `initial_state()`: `on_exit` fires for every state from the current leaf up to (but not including) the lowest common ancestor with the `initial_state()` path, then `on_entry` fires down to `initial_state()`. Reset skips Init — `on_init_entry` does NOT fire. The runtime observes `DispatchOutcome::Started(initial_state)` and emits `ChildLifecycleEvent::Started` to the supervisor.
 
 ```toml
 # Supervisor's ShuttingDown state: reset when all children have stopped
@@ -196,7 +193,7 @@ event = "SupervisorEvent::Child(_)"
 target = "stay"
 ```
 
-The `reset` target in a `[[topology.transitions]]` entry produces `Guard::Reset`. The full exit chain is guaranteed: `ShuttingDown::on_exit` fires, then `on_entry` for `initial_state()` (Running). The runtime observes `DispatchOutcome::Started(Running)` and emits `ChildLifecycleEvent::Started`. The supervisor self-restarts by re-entering `Running` and calling `start_children` to send `Start` to all children.
+The `reset` target in a `[[topology.transitions]]` entry produces `Decision::Reset`. The LCA-based `change_state` applies: `ShuttingDown` and `Running` share no user ancestor, so `ShuttingDown::on_exit` fires (full exit chain in this topology), then `on_entry` for `initial_state()` (Running). The runtime observes `DispatchOutcome::Started(Running)` and emits `ChildLifecycleEvent::Started`. The supervisor self-restarts by re-entering `Running` and calling `start_children` to send `Start` to all children.
 
 ---
 
@@ -251,7 +248,7 @@ A composite operating state with an `Active` leaf and a `Paused` leaf. Paused se
 
 Use for: rate-limiting, backoff, or any pattern where the actor pauses work for a duration then resumes.
 
-**Example**: Ping blox — pauses after round 2 for `PAUSE_DURATION_MS`.
+**Example**: Ping blox — pauses after round 2 for `2000 + round × 500` ms (via `schedule_resume`).
 
 ---
 
@@ -268,9 +265,9 @@ Use when: the blox initiates an operation and waits for a response before procee
 
 ---
 
-### Self-Suspend via Guard::Stop
+### Self-Suspend via Decision::Stop
 
-An actor that has completed its work can self-suspend by returning `Guard::Stop` from a transition guard. The engine fires the full exit chain, calls `on_init_entry` (for cleanup), sets the state to `Init`, and returns `DispatchOutcome::Stopped`. The runtime notifies the supervisor via `ChildLifecycleEvent::Stopped`.
+An actor that has completed its work can self-suspend by returning `Decision::Stop` from a transition rule. The engine fires the full exit chain, calls `on_init_entry` (for cleanup), sets the state to `Init`, and returns `DispatchOutcome::Stopped`. The runtime notifies the supervisor via `ChildLifecycleEvent::Stopped`.
 
 ```toml
 [[topology.transitions]]
@@ -284,9 +281,9 @@ actions = ["forward_ping"]
   target = "stop"
 ```
 
-The `stop` target in a `[[topology.transitions]]` entry produces `Guard::Stop`. The full exit chain is guaranteed, then `on_init_entry` fires for cleanup. The actor sits suspended in `Init`; the run loop stays alive (only `Abort` ends the task). The supervisor sees `Stopped` and can later send `Start` to resume.
+The `stop` target in a `[[topology.transitions]]` entry produces `Decision::Stop`. The full exit chain is guaranteed, then `on_init_entry` fires for cleanup. The actor sits suspended in `Init`; for supervised actors the run loop stays alive (`exit_on_stop = false`) and the supervisor sees `Stopped` and can later send `Start` to resume — for root/unsupervised/bare actors (`exit_on_stop = true`) the run loop exits instead.
 
-**Example**: Ping's `Active` state returns `Guard::Stop` when `round >= MAX_ROUNDS`.
+**Example**: Ping's `Active` state returns `Decision::Stop` when `round >= MAX_ROUNDS`.
 
 ---
 
@@ -312,7 +309,7 @@ Use when: the blox retries an operation a fixed number of times before giving up
 
 ## Declarative Transition Syntax (blox.toml)
 
-The patterns above are expressed in `blox.toml` as `[[topology.transitions]]` entries. The codegen emits `StateRule` struct literals directly — no proc macro is involved. Both state-level and root-level rules support the `reset` target, which produces `Guard::Reset`:
+The patterns above are expressed in `blox.toml` as `[[topology.transitions]]` entries. The codegen emits `StateRule` struct literals directly — no proc macro is involved. Both state-level and root-level rules support the `reset` target, which produces `Decision::Reset`:
 
 ```toml
 # Pure Transition
@@ -378,7 +375,7 @@ an explicit wildcard fallback (see `crates/bloxes/counter/blox.toml`).
 In guard conditions, `ctx` is `&Ctx` (read-only — direct field access, no mutation)
 and `results` is `&ActionResults`.
 In `actions = ["fn1", "fn2"]` lists, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.
-The `reset` target triggers the full LCA exit chain (leaf → root) followed by `on_entry` for `initial_state()`. The `stop` target triggers the full exit chain plus `on_init_entry` (the actor enters Init).
+The `reset` target performs an LCA-based `change_state` to `initial_state()`: `on_exit` fires from the current leaf up to (not including) the lowest common ancestor, then `on_entry` fires down to `initial_state()`; Init is skipped. The `stop` target triggers the full exit chain plus `on_init_entry` (the actor enters Init).
 
 ## Related Docs
 

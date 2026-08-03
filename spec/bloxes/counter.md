@@ -4,8 +4,8 @@
 
 The Counter actor is the simplest possible bloxide actor, designed for teaching the four-layer architecture. It:
 - Receives `Tick` messages and increments an internal counter
-- Self-terminates cleanly via `Guard::Done` after a configurable number of ticks
-- Demonstrates: flat state topology, plain context struct, clean self-termination via Guard::Done
+- Self-terminates cleanly via `Decision::Done` after `DONE_AT_COUNT` ticks
+- Demonstrates: flat state topology, plain context struct, clean self-termination via `Decision::Done`
 
 ## Crate Location
 
@@ -19,7 +19,7 @@ The Counter actor is the simplest possible bloxide actor, designed for teaching 
 ```mermaid
 stateDiagram-v2
     [*] --> Ready : dispatch(Start)
-    Ready --> [*] : CounterMsg::Tick [count >= DONE_AT_COUNT] : Guard::Done
+    Ready --> [*] : CounterMsg::Tick [count >= DONE_AT_COUNT] : Decision::Done
 ```
 
 > `[Init]` is engine-implicit. `Ready` is a leaf state.
@@ -35,7 +35,7 @@ stateDiagram-v2
 
 | Event | Handled by | Rule pattern | Guard outcome | Side effects |
 |-------|-----------|--------------|--------------|--------------|
-| `CounterMsg::Tick` | `Ready` | Action-Then-Guard | `Stop` if count >= threshold, else `Stay` | `increment_count` |
+| `CounterMsg::Tick` | `Ready` | Action-Then-Guard | `Decision::Done` if `count >= DONE_AT_COUNT`, else `Decision::Stay` | `increment_count` |
 | any unhandled | root (no rules) | — | dropped | none |
 
 ## Context
@@ -75,14 +75,14 @@ None — Counter is a sink actor.
 
 | Name | Value | Description |
 |------|-------|-------------|
-| `DONE_AT_COUNT` | 2 | Ticks required to trigger Guard::Done |
+| `DONE_AT_COUNT` | 2 | Ticks required to trigger `Decision::Done`; defined in `crates/bloxes/counter/src/lib.rs`, imported into the guard via `spec_imports` |
 
 ## Acceptance Criteria
 
-- [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`
-- [ ] `CounterMsg::Tick` in `Ready` with `count < DONE_AT_COUNT` stays in `Ready`
-- [ ] `CounterMsg::Tick` in `Ready` with `count >= DONE_AT_COUNT` triggers `Guard::Done` (clean self-termination: exit chain + on_init_entry, then the task ends)
-- [ ] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Reset))` from any state exits states, enters `initial_state()` (Ready); `on_init_entry` does NOT fire; count reset to 0 via `Ready::on_entry`
+- [x] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Ready`
+- [x] `CounterMsg::Tick` in `Ready` with `count < DONE_AT_COUNT` stays in `Ready`
+- [x] `CounterMsg::Tick` in `Ready` with `count >= DONE_AT_COUNT` triggers `Decision::Done` (clean self-termination: exit chain + on_init_entry, then the task ends)
+- [x] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Reset))` from any state goes directly to `initial_state()` (Ready); `on_init_entry` does NOT fire and `Ready` has no `on_entry`, so `count` is **not** reset
 
 ## Acceptance Criteria → Test Mapping
 
@@ -90,8 +90,37 @@ None — Counter is a sink actor.
 |---|---|
 | `dispatch(LifecycleCommand::Start)` exits Init → Ready | `test_start_enters_ready()` |
 | Tick stays in Ready when count < threshold | `test_tick_in_ready_stays()` |
-| Tick triggers Guard::Done at threshold | `test_tick_reaches_done()` |
+| Tick triggers Decision::Done at threshold | `test_tick_reaches_done()` |
+| Reset returns to Ready without resetting count | `test_reset_returns_to_ready_without_resetting_count()` |
 
+`test_increment_count_function()` additionally covers the `increment_count` action function directly (no codegen needed).
+
+## blox.toml
+
+The full declarative source is `crates/bloxes/counter/blox.toml`:
+
+```toml
+[topology]
+spec_imports = ["crate::DONE_AT_COUNT"]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.transitions]]
+state = "Ready"
+event = "CounterMsg::Tick(_)"
+target = "stay"
+actions = ["Self::count_tick"]
+
+[[topology.transitions.guards]]
+condition = "ctx.count >= DONE_AT_COUNT"
+target = "done"
+
+[[topology.transitions.guards]]
+condition = "_"
+target = "stay"
+```
 
 ## Context Crate Dependencies
 
@@ -103,3 +132,7 @@ None — Counter is a sink actor.
 
 - See `spec/architecture/12-action-crate-pattern.md` for the four-layer model
 - See `tokio-minimal-demo.rs` for wiring example
+
+## Open Questions
+
+None currently.
