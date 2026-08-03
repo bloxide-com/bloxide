@@ -56,10 +56,8 @@ fn string_array(items: &[String]) -> Item {
 
 // ── add-use / remove-use ────────────────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
 pub fn add_use(
     blox_name: &str,
-    crate_name: &str,
     field: &str,
     field_type: &str,
     role: &str,
@@ -95,7 +93,6 @@ pub fn add_use(
     }
 
     let mut t = Table::new();
-    t["crate"] = toml_edit::value(crate_name);
     t["field"] = toml_edit::value(field);
     t["field_type"] = toml_edit::value(field_type);
     t["role"] = toml_edit::value(role);
@@ -105,10 +102,7 @@ pub fn add_use(
     uses.push(t);
 
     save_toml(&path, &doc)?;
-    println!(
-        "Added context use '{}' ({} from {}) to {}",
-        field, role, crate_name, blox_name
-    );
+    println!("Added context use '{}' ({}) to {}", field, role, blox_name);
     Ok(())
 }
 

@@ -130,21 +130,18 @@ message_path = "bloxide_child_management::control::ChildCtrl<R>"
 
 # children: ChildGroup<R> from bloxide-child-management
 [[context.uses]]
-crate = "bloxide_child_management"
 field = "children"
 field_type = "ChildGroup<R>"
 role = "ctor"
 
 # child_notify: ActorRef<ChildLifecycleEvent, R> from bloxide-child-management
 [[context.uses]]
-crate = "bloxide_child_management"
 field = "child_notify"
 field_type = "ActorRef<ChildLifecycleEvent, R>"
 role = "ctor"
 
 # pending: ChildAction — state field
 [[context.uses]]
-crate = "bloxide_child_management"
 fields = [
     { name = "pending", ty = "ChildAction", role = "state" },
 ]

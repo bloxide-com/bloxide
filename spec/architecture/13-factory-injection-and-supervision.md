@@ -85,7 +85,6 @@ pub struct SpawnOutput<R: BloxRuntime> {
 
 ```toml
 [[context.uses]]
-crate = "pool_messages"
 feature = "dynamic"
 fields = [
     { name = "spawn_fn",        ty = "SpawnFn<R, SpawnRequest<PeerCtrl<WorkerMsg, R>, R>>", role = "ctor" },

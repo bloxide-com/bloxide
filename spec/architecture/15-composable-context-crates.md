@@ -147,16 +147,13 @@ imports = [
 ]
 
 # Reference fields — codegen emits plain fields + constructor params.
-# The `crate` key is optional and informational (scaffolding/visualization);
-# imports come from `imports` above, not from `uses` entries.
+# Imports come from `imports` above, not from `uses` entries.
 [[context.uses]]
-crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
-crate = "blox_ctx_ping_pong"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
@@ -164,7 +161,6 @@ role = "ctor"
 # Multi-field form — several fields contributed by one domain crate
 # (from pool-blox, feature-gated under `dynamic`)
 [[context.uses]]
-crate = "pool_messages"
 feature = "dynamic"
 fields = [
     { name = "spawn_fn", ty = "SpawnFn<R, SpawnRequest<PeerCtrl<WorkerMsg, R>, R>>", role = "ctor" },

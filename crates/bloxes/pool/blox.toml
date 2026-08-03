@@ -67,7 +67,6 @@ type = "u32"
 # These are Pool-specific constructor params and state — no accessor traits.
 # Types are imported via feature_imports above.
 [[context.uses]]
-crate = "pool_messages"
 feature = "dynamic"
 fields = [
     { name = "spawn_fn", ty = "SpawnFn<R, SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>>", role = "ctor" },

@@ -322,7 +322,6 @@ pub struct ContextActionConfig {
 /// **Single-field** (from a service crate like `bloxide-messaging`):
 /// ```toml
 /// [[context.uses]]
-/// crate = "blox_ctx_ping_pong"
 /// field = "peer_ref"
 /// field_type = "ActorRef<PingPongMsg, R>"
 /// role = "ctor"
@@ -331,7 +330,6 @@ pub struct ContextActionConfig {
 /// **Multi-field** (domain context crate):
 /// ```toml
 /// [[context.uses]]
-/// crate = "blox_ctx_pool_ref"
 ///
 ///   [[context.uses.fields]]
 ///   name = "worker_refs"
@@ -341,13 +339,6 @@ pub struct ContextActionConfig {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ContextUse {
-    /// Crate providing the context fields (underscores, e.g. `blox_ctx_ping_pong`).
-    /// Informational: used by scaffolding (`new-impl`) and visualization, not by
-    /// codegen — imports come from `context.imports` and field-type detection.
-    /// Renamed from `crate_name` because `crate` is a Rust keyword.
-    #[serde(rename = "crate")]
-    pub crate_name: Option<String>,
-
     /// Field name for single-field context crates (e.g. `"peer_ref"`).
     pub field: Option<String>,
 

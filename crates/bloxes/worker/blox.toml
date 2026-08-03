@@ -35,7 +35,6 @@ imports = [
 # pool_ref is a constructor parameter (passed to WorkerCtx::new),
 # not a state field. Accessed directly as ctx.pool_ref.
 [[context.uses]]
-crate = "blox_ctx_pool_ref"
 field = "pool_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "ctor"

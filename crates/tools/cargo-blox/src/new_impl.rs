@@ -93,16 +93,10 @@ pub fn new_impl(name: &str, blox_name: &str) -> Result<()> {
         dep_crates.insert(mc.clone());
     }
 
-    // Depend on context/service crates from [[context.uses]].
-    for uses in &context.uses {
-        if let Some(crate_name) = &uses.crate_name {
-            dep_crates.insert(crate_name.replace('_', "-"));
-        }
-    }
-
     // Scan context.imports and context.feature_imports for additional crate names.
     // These are raw `use` statements like "pool_messages::{PoolMsg, WorkerMsg}"
-    // or "bloxide_spawn::SpawnFn".
+    // or "bloxide_spawn::SpawnFn". Context crate deps come from this scan —
+    // uses entries carry no crate key.
     for import in context.imports.iter().chain(context.feature_imports.iter()) {
         if let Some(crate_part) = import.split("::").next() {
             let trimmed = crate_part.trim();

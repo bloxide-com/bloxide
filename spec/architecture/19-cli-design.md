@@ -90,7 +90,7 @@ All scaffolding commands register new crates in the workspace `Cargo.toml` (memb
 
 | Command | Purpose |
 |---------|---------|
-| `cargo blox add-use <blox> --crate-name <c> --field <f> --field-type <ty> --role <ctor\|state> [--feature <f>] [--if-not-exists]` | Add a `[[context.uses]]` entry |
+| `cargo blox add-use <blox> --field <f> --field-type <ty> --role <ctor\|state> [--feature <f>] [--if-not-exists]` | Add a `[[context.uses]]` entry |
 | `cargo blox remove-use <blox> --field <f>` | Remove a `[[context.uses]]` entry |
 | `cargo blox add-field <blox> --name <n> --ty <ty> [--default <expr>] [--if-not-exists]` | Add a `[[context.fields]]` state field |
 | `cargo blox remove-field <blox> --name <n>` | Remove a context field (from `fields`, `uses`, or `uses.fields`) |
@@ -314,7 +314,7 @@ Fields are trailing positional arguments in `name:ty` form (e.g. `round:u32 payl
 
 `add-use`, `add-field`, and `add-action` append to `[[context.uses]]`, `[[context.fields]]`, and `[[context.actions]]` respectively in the blox's blox.toml, creating the `[context]` section when missing.
 
-- **`add-use`** — `--role` must be exactly `ctor` or `state` (anything else → exit 1). Dedup key: `field`. Writes `crate`, `field`, `field_type`, `role`, and optional `feature`.
+- **`add-use`** — `--role` must be exactly `ctor` or `state` (anything else → exit 1). Dedup key: `field`. Writes `field`, `field_type`, `role`, and optional `feature`.
 - **`remove-use`** — removes all `[[context.uses]]` entries whose `field` matches `--field`. No match → exit 3.
 - **`add-field`** — dedup key: `name`. Writes `name`, `type`, and optional `default`.
 - **`remove-field`** — removes the name from `[[context.fields]]`, from single-field `[[context.uses]]` entries, and from nested `[[context.uses.fields]]` sub-tables — whichever matches. No match anywhere → exit 3.

@@ -195,8 +195,6 @@ The building guide is portable — downstream projects that depend on bloxide sh
 Context fields are defined via `[[context.fields]]` and `[[context.uses]]` entries in `blox.toml`.
 The codegen auto-emits `self_id: ActorId` (always, first field).
 State fields are declared directly in the context struct. No annotations — plain struct fields.
-The `crate` key on `[[context.uses]]` is optional and informational (used by scaffolding and
-visualization, not by codegen — imports come from `context.imports` and field-type detection).
 `role` is validated: `ctor` (constructor parameter) and `state` (zero-initialized field) are the
 only values.
 

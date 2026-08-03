@@ -49,7 +49,6 @@ name = \"RoleCtx\"
 generics = \"<R: BloxRuntime>\"
 
 [[context.uses]]
-crate = \"some_crate\"
 field = \"peer_ref\"
 field_type = \"u32\"
 role = \"ctro\"

@@ -13,20 +13,17 @@ imports = [
 
 # Accessor traits removed — fields are now plain struct fields.
 [[context.uses]]
-crate = "blox_ctx_ping_pong"
 field = "peer_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 [[context.uses]]
-crate = "blox_ctx_ping_pong"
 field = "self_ref"
 field_type = "ActorRef<PingPongMsg, R>"
 role = "ctor"
 
 # Timer ref — plain struct field
 [[context.uses]]
-crate = "bloxide_timer"
 field = "timer_ref"
 field_type = "ActorRef<TimerCommand, R>"
 role = "ctor"

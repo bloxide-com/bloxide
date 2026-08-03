@@ -468,7 +468,7 @@ checkout of this repo, run the CLI as `cargo run -p cargo-blox -- blox ...` — 
 | `remove-exit <blox> --state S` | Remove an exit hook |
 | `add-message <crate> <Variant> [field:ty ...]` | Add a message variant |
 | `remove-message <crate> <Variant>` | Remove a message variant |
-| `add-use <blox> --crate-name C --field F --field-type T --role ctor\|state` | Add a `[[context.uses]]` entry |
+| `add-use <blox> --field F --field-type T --role ctor\|state` | Add a `[[context.uses]]` entry |
 | `remove-use <blox> --field F` | Remove a `[[context.uses]]` entry |
 | `add-field <blox> --name N --ty T [--default D]` | Add a `[[context.fields]]` state field |
 | `remove-field <blox> --name N` | Remove a context field (fields, uses, or uses sub-fields) |

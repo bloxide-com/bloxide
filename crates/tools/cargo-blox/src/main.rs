@@ -347,8 +347,6 @@ enum BloxSubcommand {
     AddUse {
         blox_name: String,
         #[arg(long)]
-        crate_name: String,
-        #[arg(long)]
         field: String,
         #[arg(long)]
         field_type: String,
@@ -599,7 +597,6 @@ fn dispatch() -> anyhow::Result<()> {
             } => system_cmd::add_injection(&app_name, &actor, &field, &from),
             BloxSubcommand::AddUse {
                 blox_name,
-                crate_name,
                 field,
                 field_type,
                 role,
@@ -607,7 +604,6 @@ fn dispatch() -> anyhow::Result<()> {
                 if_not_exists,
             } => context_cmd::add_use(
                 &blox_name,
-                &crate_name,
                 &field,
                 &field_type,
                 &role,
