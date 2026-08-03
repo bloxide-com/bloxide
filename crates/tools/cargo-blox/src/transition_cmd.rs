@@ -5,6 +5,7 @@
 //! issue #96); this module is the CLI wrapper.
 
 use crate::toml_helpers::{blox_toml_path_for_blox, load_toml, save_toml};
+use anyhow::Context;
 
 #[allow(clippy::too_many_arguments)]
 pub fn add_transition(
@@ -23,8 +24,10 @@ pub fn add_transition(
         &mut doc, state, event, target, actions, guards, feature,
     ) {
         Ok(()) => {}
-        Err(e) if if_not_exists && e.to_string().contains("already exists") => return Ok(()),
-        Err(e) => anyhow::bail!("{} in {}", e, blox_name),
+        Err(e) if if_not_exists && crate::exit::code_of(&e) == Some(crate::exit::EXIT_CONFLICT) => {
+            return Ok(())
+        }
+        Err(e) => return Err(e).with_context(|| format!("in {}", blox_name)),
     }
     save_toml(&path, &doc)?;
     println!(
@@ -38,7 +41,7 @@ pub fn remove_transition(blox_name: &str, state: &str, event: &str) -> anyhow::R
     let path = blox_toml_path_for_blox(blox_name);
     let mut doc = load_toml(&path)?;
     bloxide_codegen::edit::remove_transition(&mut doc, state, event)
-        .map_err(|e| anyhow::anyhow!("{} in {}", e, blox_name))?;
+        .with_context(|| format!("in {}", blox_name))?;
     save_toml(&path, &doc)?;
     println!(
         "Removed transition {} + {} from {}",

@@ -261,14 +261,13 @@ stateDiagram-v2
 
 ## Events
 
-| Event | Handled by | Rule pattern | Guard outcome | Side effects |
+| Event | Handled by | Rule pattern | Decision outcome | Side effects |
 |-------|-----------|--------------|--------------|--------------|
 | any unhandled | root | — | dropped | none |
 
 ## Context
 
 ```rust
-#[derive(BloxCtx)]
 pub struct <BloxName>Ctx<R: BloxRuntime> {
     pub self_id: ActorId,
 }
@@ -288,7 +287,7 @@ pub struct <BloxName>Ctx<R: BloxRuntime> {
 
 ## Acceptance Criteria
 
-- [ ] `machine.start()` enters `Ready`
-- [ ] Actor self-suspends via `Guard::Stop` (goes to Init, reports `Stopped`)
+- [ ] `LifecycleCommand::Start` enters `Ready` (via dispatch)
+- [ ] Actor self-suspends via `Decision::Stop` (goes to Init, reports `Stopped`)
 "#
 }

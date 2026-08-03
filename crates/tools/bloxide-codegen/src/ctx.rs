@@ -145,7 +145,15 @@ fn generate_variant(
                 })?;
 
                 // Single-field accessor uses are ctor params (not state).
-                // The `role` field may be "ctor", "accessor", or "state".
+                // The `role` field may be "ctor" or "state".
+                if let Some(role) = u.role.as_deref() {
+                    anyhow::ensure!(
+                        matches!(role, "ctor" | "state"),
+                        "invalid role '{role}' in [[context.uses]] (field '{}') — \
+                         expected \"ctor\" or \"state\"",
+                        field_name
+                    );
+                }
                 let is_state = u.role.as_deref() == Some("state");
 
                 fields.push(FieldDesc {
@@ -164,6 +172,14 @@ fn generate_variant(
                 anyhow::anyhow!("invalid field type '{}' in uses.fields: {}", sub.ty, e)
             })?;
 
+            if let Some(role) = sub.role.as_deref() {
+                anyhow::ensure!(
+                    matches!(role, "ctor" | "state"),
+                    "invalid role '{role}' in [[context.uses.fields]] (field '{}') — \
+                     expected \"ctor\" or \"state\"",
+                    sub.name
+                );
+            }
             let is_state = sub.role.as_deref() == Some("state");
 
             // Per-sub-field feature gate.

@@ -87,11 +87,11 @@ pub fn add_use(
         if if_not_exists {
             return Ok(());
         }
-        bail!(
+        return Err(crate::exit::conflict(format!(
             "context use field '{}' already exists in {}",
-            field,
-            blox_name
-        );
+            field, blox_name
+        ))
+        .into());
     }
 
     let mut t = Table::new();
@@ -122,7 +122,11 @@ pub fn remove_use(blox_name: &str, field: &str) -> anyhow::Result<()> {
         .iter()
         .any(|u| u.get("field").and_then(|v| v.as_str()) == Some(field));
     if !exists {
-        bail!("context use field '{}' not found in {}", field, blox_name);
+        return Err(crate::exit::not_found(format!(
+            "context use field '{}' not found in {}",
+            field, blox_name
+        ))
+        .into());
     }
 
     let indices: Vec<usize> = uses
@@ -160,7 +164,11 @@ pub fn add_field(
         if if_not_exists {
             return Ok(());
         }
-        bail!("context field '{}' already exists in {}", name, blox_name);
+        return Err(crate::exit::conflict(format!(
+            "context field '{}' already exists in {}",
+            name, blox_name
+        ))
+        .into());
     }
 
     let mut t = Table::new();
@@ -223,7 +231,11 @@ pub fn remove_field(blox_name: &str, name: &str) -> anyhow::Result<()> {
     }
 
     if !removed {
-        bail!("context field '{}' not found in {}", name, blox_name);
+        return Err(crate::exit::not_found(format!(
+            "context field '{}' not found in {}",
+            name, blox_name
+        ))
+        .into());
     }
 
     save_toml(&path, &doc)?;
@@ -268,7 +280,11 @@ pub fn add_action(
         if if_not_exists {
             return Ok(());
         }
-        bail!("context action '{}' already exists in {}", name, blox_name);
+        return Err(crate::exit::conflict(format!(
+            "context action '{}' already exists in {}",
+            name, blox_name
+        ))
+        .into());
     }
 
     let mut t = Table::new();
@@ -315,7 +331,11 @@ pub fn remove_action(blox_name: &str, name: &str) -> anyhow::Result<()> {
         .iter()
         .any(|a| a.get("name").and_then(|v| v.as_str()) == Some(name));
     if !exists {
-        bail!("context action '{}' not found in {}", name, blox_name);
+        return Err(crate::exit::not_found(format!(
+            "context action '{}' not found in {}",
+            name, blox_name
+        ))
+        .into());
     }
 
     let indices: Vec<usize> = actions

@@ -11,7 +11,10 @@ pub fn wire(system: Option<PathBuf>, output: Option<PathBuf>, run: bool) -> Resu
     let system_path = system.unwrap_or_else(|| workspace_root.join("system.toml"));
 
     if !system_path.exists() {
-        anyhow::bail!("system.toml not found at {}", system_path.display());
+        anyhow::bail!(crate::exit::not_found(format!(
+            "system.toml not found at {}",
+            system_path.display()
+        )));
     }
 
     let main_rs = bloxide_codegen::generate_system_wiring_from_toml(&system_path, &workspace_root)?;

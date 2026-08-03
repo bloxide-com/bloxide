@@ -45,17 +45,27 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
             }
         };
         for (filename, content) in &files {
+            // mod.rs is owned by `ensure_generated_mod` below (single writer —
+            // two writers with different formatting would ping-pong the file).
+            if filename == "mod.rs" {
+                continue;
+            }
             let path = generated_dir.join(filename);
+
+            // Format the candidate before comparing so previously written
+            // (already rustfmt'd) files compare equal — otherwise every run
+            // rewrites every file (mtime churn) and spams "generated ...".
+            let content = rustfmt_text(content);
 
             // Only write if changed (preserves mtime for caching)
             let needs_write = if path.exists() {
-                std::fs::read_to_string(&path)? != *content
+                std::fs::read_to_string(&path)? != content
             } else {
                 true
             };
 
             if needs_write {
-                std::fs::write(&path, content)?;
+                std::fs::write(&path, &content)?;
                 println!("bloxide: generated {}", path.display());
             }
         }
@@ -145,16 +155,42 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
         println!("bloxide: processed {} system.toml files", wire_count);
     }
 
-    // Format generated files so that `cargo fmt -- --check` passes.
-    let status = std::process::Command::new("cargo")
-        .args(["fmt"])
-        .current_dir(&root)
-        .status();
-    if let Err(e) = status {
-        eprintln!("bloxide: warning: failed to run cargo fmt: {}", e);
-    }
+    // Generated files were rustfmt'd individually before writing (see
+    // `rustfmt_text`) — no whole-workspace `cargo fmt` here, which would also
+    // rewrite hand-written files.
 
     Ok(())
+}
+
+/// Format Rust source via `rustfmt` (edition 2021). Best effort: returns the
+/// input unchanged if rustfmt is unavailable or fails — the file is still
+/// written, just unformatted.
+fn rustfmt_text(source: &str) -> String {
+    use std::io::Write;
+    let mut child = match std::process::Command::new("rustfmt")
+        .args(["--edition", "2021"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return source.to_string(),
+    };
+    if child
+        .stdin
+        .take()
+        .map(|mut s| s.write_all(source.as_bytes()))
+        .is_none()
+    {
+        return source.to_string();
+    }
+    match child.wait_with_output() {
+        Ok(out) if out.status.success() => {
+            String::from_utf8(out.stdout).unwrap_or_else(|_| source.to_string())
+        }
+        _ => source.to_string(),
+    }
 }
 
 fn ensure_generated_mod(
@@ -201,7 +237,16 @@ fn ensure_generated_mod(
             mod_name
         ));
     }
-    std::fs::write(&generated_mod, mod_content)?;
+    // Only write when the module list changed — unconditional writes churn
+    // mtime and make every `generate` look non-idempotent.
+    let needs_write = if generated_mod.exists() {
+        std::fs::read_to_string(&generated_mod)? != mod_content
+    } else {
+        true
+    };
+    if needs_write {
+        std::fs::write(&generated_mod, mod_content)?;
+    }
 
     Ok(())
 }

@@ -45,10 +45,10 @@ pub fn init(dir: &str, runtime: &str) -> Result<()> {
 
     let target = Path::new(dir);
     if target.exists() && target.read_dir()?.next().is_some() {
-        bail!(
+        bail!(crate::exit::conflict(format!(
             "target directory '{}' already exists and is not empty",
             target.display()
-        );
+        )));
     }
 
     // The bloxide checkout this CLI runs from (for path dependencies).
@@ -111,7 +111,7 @@ fn create_workspace_layout(target: &Path, runtime: &str, bloxide_root: &Path) ->
         deps.push_str(
             "embassy-executor = { version = \"0.9\", features = [\"arch-std\", \"executor-thread\"] }\n\
              embassy-sync = \"0.7\"\n\
-             embassy-time = { version = \"0.4\", features = [\"std\", \"generic-queue-8\"] }\n",
+             embassy-time = { version = \"0.5\", features = [\"std\", \"generic-queue-8\"] }\n",
         );
     }
 
@@ -193,8 +193,8 @@ apps/                 ← system.toml wiring manifests (main.rs is generated)
 - Spec first: write `spec/bloxes/<name>.md` before implementing.
 - Never hand-edit generated code (`src/generated/`, `apps/*/src/main.rs`,
   `apps/*/Cargo.toml`) — edit `blox.toml` / `system.toml` and run
-  `cargo blox generate`.
-- Run `cargo blox lint` before generating; `cargo blox ci` before committing.
+  `cargo blox generate` (it runs lint first).
+- Run `cargo blox ci` before committing.
 "#;
     fs::write(target.join("AGENTS.md"), content)?;
     Ok(())

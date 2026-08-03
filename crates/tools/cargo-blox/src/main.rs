@@ -9,6 +9,7 @@ mod check;
 mod ci;
 mod context_cmd;
 mod entry_exit_cmd;
+mod exit;
 mod forward;
 mod generate;
 mod init;
@@ -414,7 +415,13 @@ enum BloxSubcommand {
     },
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    if let Err(err) = dispatch() {
+        exit::exit_process(err);
+    }
+}
+
+fn dispatch() -> anyhow::Result<()> {
     let cli = CargoCli::parse();
     match cli.command {
         BloxCommand::Blox(args) => match args.command {

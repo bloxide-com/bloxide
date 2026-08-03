@@ -166,10 +166,12 @@ fn generate_variant(
             Self::#variant_ident(..) => #tag
         });
     }
-    // Add wildcard arm for _Phantom marker variant if present
+    // Add wildcard arm for _Phantom marker variant if present. Uses
+    // WILDCARD_TAG (never matched by a real mailbox) instead of tag 0, which
+    // would collide with the first mailbox variant's tag.
     if phantom_marker.is_some() {
         event_tag_arms.push(quote! {
-            Self::_Phantom(..) => 0u8
+            Self::_Phantom(..) => ::bloxide_core::event_tag::WILDCARD_TAG
         });
     }
 

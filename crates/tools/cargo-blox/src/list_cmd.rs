@@ -1,7 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! `list-states` command — list the states defined in a blox's topology.
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use serde::Serialize;
 
 use crate::toml_helpers::{
@@ -55,14 +55,15 @@ fn state_row_from_value(table: &toml_edit::Table) -> Option<StateRow> {
 pub fn list_states(blox_name: &str, json: bool) -> anyhow::Result<()> {
     let path = blox_toml_path_for_blox(blox_name);
     if !path.exists() {
-        bail!(
+        return Err(crate::exit::not_found(format!(
             "blox.toml not found for blox '{}' at {}",
             blox_name,
             path.display()
-        );
+        ))
+        .into());
     }
 
-    let doc = load_toml(&path).with_context(|| format!("failed to load {}", path.display()))?;
+    let doc = load_toml(&path)?;
 
     let rows: Vec<StateRow> = topology_table(&doc)
         .and_then(|topo| states_array(topo))
@@ -143,11 +144,12 @@ fn message_variant_row_from_value(table: &toml_edit::Table) -> Option<MessageVar
 pub fn list_messages(crate_name: &str, json: bool) -> anyhow::Result<()> {
     let path = blox_toml_path_for_messages(crate_name);
     if !path.exists() {
-        bail!(
+        return Err(crate::exit::not_found(format!(
             "blox.toml not found for messages crate '{}' at {}",
             crate_name,
             path.display()
-        );
+        ))
+        .into());
     }
 
     let doc = load_toml(&path).with_context(|| format!("failed to load {}", path.display()))?;
@@ -270,14 +272,15 @@ fn transition_row_from_value(table: &toml_edit::Table) -> Option<TransitionRow> 
 pub fn list_transitions(blox_name: &str, json: bool) -> anyhow::Result<()> {
     let path = blox_toml_path_for_blox(blox_name);
     if !path.exists() {
-        bail!(
+        return Err(crate::exit::not_found(format!(
             "blox.toml not found for blox '{}' at {}",
             blox_name,
             path.display()
-        );
+        ))
+        .into());
     }
 
-    let doc = load_toml(&path).with_context(|| format!("failed to load {}", path.display()))?;
+    let doc = load_toml(&path)?;
 
     let rows: Vec<TransitionRow> = topology_table(&doc)
         .and_then(|topo| transitions_array(topo))

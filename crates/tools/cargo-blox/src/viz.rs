@@ -39,10 +39,10 @@ pub fn viz(export: Option<PathBuf>, port: u16, open_browser: bool) -> anyhow::Re
     // ── Server mode: launch the visualizer fullstack server ─────────────
     let viz_dir = root.join("tools/bloxide-visualizer");
     if !viz_dir.join("Dioxus.toml").exists() {
-        bail!(
+        bail!(crate::exit::not_found(format!(
             "visualizer not found at {} — `cargo blox viz` must run from a bloxide checkout",
             viz_dir.display()
-        );
+        )));
     }
 
     // The dioxus CLI is required: a fullstack app's WASM client bundle is

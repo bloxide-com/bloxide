@@ -11,6 +11,32 @@ use std::path::Path;
 
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table};
 
+/// Classification of edit failures so CLI callers can map them to process
+/// exit codes (spec 19): `Conflict` → 5, `NotFound` → 3.
+#[derive(Debug)]
+pub enum EditError {
+    Conflict(String),
+    NotFound(String),
+}
+
+impl std::fmt::Display for EditError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Conflict(msg) | Self::NotFound(msg) => f.write_str(msg),
+        }
+    }
+}
+
+impl std::error::Error for EditError {}
+
+fn conflict(msg: String) -> anyhow::Error {
+    EditError::Conflict(msg).into()
+}
+
+fn not_found(msg: String) -> anyhow::Error {
+    EditError::NotFound(msg).into()
+}
+
 /// Load a blox.toml (or system.toml) into an editable document.
 pub fn load_blox_toml(path: &Path) -> anyhow::Result<DocumentMut> {
     let content = std::fs::read_to_string(path)?;
@@ -80,7 +106,7 @@ pub fn add_state(
         .iter()
         .any(|s| s.get("name").and_then(|v| v.as_str()) == Some(name))
     {
-        anyhow::bail!("state '{}' already exists", name);
+        anyhow::bail!(conflict(format!("state '{}' already exists", name)));
     }
 
     let mut t = Table::new();
@@ -108,7 +134,7 @@ pub fn remove_state(doc: &mut DocumentMut, name: &str) -> anyhow::Result<()> {
         .iter()
         .any(|s| s.get("name").and_then(|v| v.as_str()) == Some(name))
     {
-        anyhow::bail!("state '{}' not found", name);
+        anyhow::bail!(not_found(format!("state '{}' not found", name)));
     }
 
     let children: Vec<String> = states
@@ -158,7 +184,10 @@ pub fn add_transition(
             && t.get("event").and_then(|v| v.as_str()) == Some(event)
     });
     if duplicate {
-        anyhow::bail!("transition {} + {} already exists", state, event);
+        anyhow::bail!(conflict(format!(
+            "transition {} + {} already exists",
+            state, event
+        )));
     }
 
     let mut t = Table::new();
@@ -208,7 +237,10 @@ pub fn remove_transition(doc: &mut DocumentMut, state: &str, event: &str) -> any
             && t.get("event").and_then(|v| v.as_str()) == Some(event)
     });
     if !exists {
-        anyhow::bail!("transition {} + {} not found", state, event);
+        anyhow::bail!(not_found(format!(
+            "transition {} + {} not found",
+            state, event
+        )));
     }
 
     remove_where(transitions, |t| {
@@ -238,7 +270,10 @@ pub fn add_hook(
         .iter()
         .any(|e| e.get("state").and_then(|v| v.as_str()) == Some(state))
     {
-        anyhow::bail!("{} hook for state {} already exists", hook, state);
+        anyhow::bail!(conflict(format!(
+            "{} hook for state {} already exists",
+            hook, state
+        )));
     }
 
     let mut t = Table::new();
@@ -262,7 +297,10 @@ pub fn remove_hook(doc: &mut DocumentMut, hook: &str, state: &str) -> anyhow::Re
         .iter()
         .any(|e| e.get("state").and_then(|v| v.as_str()) == Some(state))
     {
-        anyhow::bail!("{} hook for state {} not found", hook, state);
+        anyhow::bail!(not_found(format!(
+            "{} hook for state {} not found",
+            hook, state
+        )));
     }
 
     remove_where(entries, |e| {

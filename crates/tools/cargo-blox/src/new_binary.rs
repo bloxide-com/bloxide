@@ -37,7 +37,7 @@ blox = "{name_snake}-blox"
 
 [[supervision]]
 supervisor = "bloxide-supervisor"
-strategy = "one_for_one"
+strategy = "when_any_done"
 children = ["{name_snake}"]
 
   [supervision.policies]

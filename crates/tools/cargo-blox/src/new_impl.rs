@@ -14,7 +14,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 
 use bloxide_codegen::schema::{BloxConfig, ContextActionConfig, ContextConfig};
 
@@ -35,11 +35,12 @@ pub fn new_impl(name: &str, blox_name: &str) -> Result<()> {
     // ── Load and parse the blox.toml ────────────────────────────────────────
     let blox_toml_path = blox_toml_path_for_blox(&blox_snake);
     if !blox_toml_path.exists() {
-        bail!(
+        return Err(crate::exit::not_found(format!(
             "blox.toml not found for blox '{}' at {}",
             blox_snake,
             blox_toml_path.display()
-        );
+        ))
+        .into());
     }
 
     let toml_content = fs::read_to_string(&blox_toml_path)
@@ -94,8 +95,9 @@ pub fn new_impl(name: &str, blox_name: &str) -> Result<()> {
 
     // Depend on context/service crates from [[context.uses]].
     for uses in &context.uses {
-        let hyphen_crate = uses.crate_name.replace('_', "-");
-        dep_crates.insert(hyphen_crate);
+        if let Some(crate_name) = &uses.crate_name {
+            dep_crates.insert(crate_name.replace('_', "-"));
+        }
     }
 
     // Scan context.imports and context.feature_imports for additional crate names.

@@ -208,6 +208,9 @@ pub fn generate_system_wiring_from_toml(
         for (actor_name, spec_code) in &all_spec_files {
             let module_name = actor_name.replace('-', "_").to_lowercase() + "_spec_skeleton";
             let filename = format!("{}.rs", module_name);
+            // Format before writing so `cargo fmt --check` passes on generated
+            // files and re-generation is byte-identical (idempotent).
+            let spec_code = system_wiring::rustfmt_source(spec_code)?;
             std::fs::write(generated_dir.join(&filename), spec_code)?;
             mod_content.push_str(&format!("pub mod {};\n", module_name));
             mod_content.push_str(&format!(

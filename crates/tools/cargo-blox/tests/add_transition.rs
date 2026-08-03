@@ -414,7 +414,7 @@ fn blox_not_found() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 9: Guard with `::` in condition — verify condition parsed correctly
+// Test 9: Decision with `::` in condition — verify condition parsed correctly
 // (split on last `:`).
 // ---------------------------------------------------------------------------
 

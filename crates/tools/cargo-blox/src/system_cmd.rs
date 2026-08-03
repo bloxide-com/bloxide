@@ -2,27 +2,22 @@
 //! Manage `system.toml` wiring manifests (#117): actors, supervision, policies,
 //! and constructor injections.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::bail;
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 
-use crate::toml_helpers::{load_toml, save_toml};
-
-/// Returns the path `apps/<app_name>/system.toml` relative to the current
-/// working directory.
-fn system_toml_path(app_name: &str) -> PathBuf {
-    Path::new("apps").join(app_name).join("system.toml")
-}
+use crate::toml_helpers::{load_toml, save_toml, system_toml_path_for_app};
 
 fn load_app(app_name: &str) -> anyhow::Result<(PathBuf, DocumentMut)> {
-    let path = system_toml_path(app_name);
+    let path = system_toml_path_for_app(app_name);
     if !path.exists() {
-        bail!(
+        return Err(crate::exit::not_found(format!(
             "system.toml not found for app '{}' at {}",
             app_name,
             path.display()
-        );
+        ))
+        .into());
     }
     let doc = load_toml(&path)?;
     Ok((path, doc))
@@ -80,7 +75,11 @@ pub fn add_actor(
         if if_not_exists {
             return Ok(());
         }
-        bail!("actor '{}' already exists in {}", name, app_name);
+        return Err(crate::exit::conflict(format!(
+            "actor '{}' already exists in {}",
+            name, app_name
+        ))
+        .into());
     }
 
     let mut t = Table::new();
@@ -122,7 +121,9 @@ pub fn remove_actor(app_name: &str, name: &str) -> anyhow::Result<()> {
         exists
     };
     if !exists {
-        bail!("actor '{}' not found in {}", name, app_name);
+        return Err(
+            crate::exit::not_found(format!("actor '{}' not found in {}", name, app_name)).into(),
+        );
     }
 
     // Clean up dangling references: supervision children + policies.
@@ -157,7 +158,7 @@ pub fn add_supervision(
     children: Vec<String>,
     if_not_exists: bool,
 ) -> anyhow::Result<()> {
-    const STRATEGIES: [&str; 3] = ["one_for_one", "one_for_all", "rest_for_one"];
+    const STRATEGIES: [&str; 2] = ["when_any_done", "when_all_done"];
     if !STRATEGIES.contains(&strategy) {
         bail!(
             "unknown strategy '{}' — expected one of: {}",
@@ -176,11 +177,11 @@ pub fn add_supervision(
         if if_not_exists {
             return Ok(());
         }
-        bail!(
+        return Err(crate::exit::conflict(format!(
             "supervision for '{}' already exists in {}",
-            supervisor,
-            app_name
-        );
+            supervisor, app_name
+        ))
+        .into());
     }
 
     let mut t = Table::new();
@@ -209,7 +210,11 @@ pub fn remove_supervision(app_name: &str, supervisor: &str) -> anyhow::Result<()
         .iter()
         .any(|t| t.get("supervisor").and_then(|v| v.as_str()) == Some(supervisor));
     if !exists {
-        bail!("supervision for '{}' not found in {}", supervisor, app_name);
+        return Err(crate::exit::not_found(format!(
+            "supervision for '{}' not found in {}",
+            supervisor, app_name
+        ))
+        .into());
     }
 
     let indices: Vec<usize> = sup
@@ -243,10 +248,26 @@ pub fn set_policy(
 
     let (path, mut doc) = load_app(app_name)?;
     let sup = supervision_array_mut(&mut doc)?;
-    let entry = sup
-        .iter_mut()
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("no [[supervision]] entries in {}", app_name))?;
+    // With multiple [[supervision]] groups, edit the one whose `children`
+    // list contains the actor — not blindly the first entry.
+    let entry = if sup.len() == 1 {
+        sup.iter_mut().next().unwrap()
+    } else {
+        sup.iter_mut()
+            .find(|t| {
+                t.get("children")
+                    .and_then(|c| c.as_array())
+                    .map(|children| children.iter().any(|a| a.as_str() == Some(actor)))
+                    .unwrap_or(false)
+            })
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no [[supervision]] group in {} lists '{}' among its children",
+                    app_name,
+                    actor
+                )
+            })?
+    };
 
     if entry.get("policies").is_none() {
         entry["policies"] = Item::Table(Table::new());
@@ -327,7 +348,12 @@ pub fn add_injection(app_name: &str, actor: &str, field: &str, from: &str) -> an
     let entry = actors
         .iter_mut()
         .find(|t| actor_name_of(t) == Some(actor))
-        .ok_or_else(|| anyhow::anyhow!("actor '{}' not found in {}", actor, app_name))?;
+        .ok_or_else(|| {
+            anyhow::Error::from(crate::exit::not_found(format!(
+                "actor '{}' not found in {}",
+                actor, app_name
+            )))
+        })?;
 
     if entry.get("inject").is_none() {
         entry["inject"] = Item::Table(Table::new());

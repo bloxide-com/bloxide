@@ -3,6 +3,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct BloxConfig {
     pub actor: Option<ActorConfig>,
     pub messages: Option<Vec<MessageEnumConfig>>,
@@ -13,11 +14,13 @@ pub struct BloxConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ActorConfig {
     pub name: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MessageEnumConfig {
     pub name: String,
     pub visibility: Option<String>,
@@ -29,6 +32,7 @@ pub struct MessageEnumConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MessageVariantConfig {
     pub name: String,
     #[serde(default)]
@@ -36,12 +40,14 @@ pub struct MessageVariantConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MessageFieldConfig {
     pub name: String,
     pub ty: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct EventConfig {
     pub name: String,
     pub generics: Option<String>, // e.g. "<R: BloxRuntime>"
@@ -63,6 +69,7 @@ pub struct EventConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MailboxConfig {
     pub variant: String,
     pub message: String,
@@ -75,6 +82,7 @@ pub struct MailboxConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct TopologyConfig {
     pub states: Vec<StateConfig>,
     /// Declarative transitions grouped by state. When present, the codegen
@@ -100,6 +108,7 @@ pub struct TopologyConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct TransitionConfig {
     /// Which state handles this transition.
     pub state: String,
@@ -121,6 +130,7 @@ pub struct TransitionConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct GuardConfig {
     /// Guard condition expression, e.g. "ctx.round >= MAX_ROUNDS".
     /// `ctx` is `&Ctx` — direct field access, no accessor methods.
@@ -131,6 +141,7 @@ pub struct GuardConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct EntryExitConfig {
     /// Which state this entry/exit applies to.
     pub state: String,
@@ -143,6 +154,7 @@ pub struct EntryExitConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct StateConfig {
     pub name: String,
     pub composite: Option<bool>,
@@ -152,6 +164,7 @@ pub struct StateConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ContextConfig {
     pub name: String,
     pub generics: Option<String>,
@@ -245,6 +258,7 @@ pub struct ContextConfig {
 /// A `[[context.fields]]` entry — a state field declared directly in the
 /// context struct (not via a composable crate trait).
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ContextFieldConfig {
     pub name: String,
     pub r#type: String,
@@ -255,6 +269,7 @@ pub struct ContextFieldConfig {
 /// A `[[context.actions]]` entry — declares an action's signature for
 /// the system codegen to generate concrete action closures.
 #[derive(Debug, Clone, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ContextActionConfig {
     /// Action name (without `Self::` prefix), e.g. `"process_work"`.
     pub name: String,
@@ -326,11 +341,14 @@ pub struct ContextActionConfig {
 ///   role = "state"
 /// ```
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ContextUse {
-    /// Crate name (underscores, e.g. `blox_ctx_ping_pong`).
+    /// Crate providing the context fields (underscores, e.g. `blox_ctx_ping_pong`).
+    /// Informational: used by scaffolding (`new-impl`) and visualization, not by
+    /// codegen — imports come from `context.imports` and field-type detection.
     /// Renamed from `crate_name` because `crate` is a Rust keyword.
     #[serde(rename = "crate")]
-    pub crate_name: String,
+    pub crate_name: Option<String>,
 
     /// Field name for single-field context crates (e.g. `"peer_ref"`).
     pub field: Option<String>,
@@ -356,6 +374,7 @@ pub struct ContextUse {
 /// A `[[context.uses.fields]]` entry — a field contributed by a multi-field
 /// context crate.
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ContextUseField {
     pub name: String,
     pub ty: String,
@@ -368,6 +387,7 @@ pub struct ContextUseField {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MailboxesConfig {
     pub max_arity: usize,
 }
@@ -380,7 +400,7 @@ pub struct MailboxesConfig {
 // supervisor tree, and which runtime to target. The codegen turns this into a
 // complete `main.rs` binary.
 //
-// See `spec/architecture/19-declarative-wiring.md`.
+// See `spec/architecture/16-declarative-wiring.md`.
 // ---------------------------------------------------------------------------
 
 /// Top-level wiring manifest (`system.toml`).
@@ -396,10 +416,11 @@ pub struct MailboxesConfig {
 ///
 /// [[supervision]]
 /// supervisor = "bloxide-supervisor"
-/// strategy = "one_for_one"
+/// strategy = "when_any_done"
 /// children = ["ping", "pong"]
 /// ```
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct SystemConfig {
     /// Runtime selection and global system settings.
     pub system: SystemMeta,
@@ -413,6 +434,7 @@ pub struct SystemConfig {
 
 /// `[system]` table — runtime selection.
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct SystemMeta {
     /// Target runtime: `"tokio"`, `"embassy"`, or `"test"`.
     pub runtime: String,
@@ -422,6 +444,7 @@ pub struct SystemMeta {
 
 /// A bootstrap message to send to an actor after the supervisor starts.
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct BootstrapMessage {
     /// Full message variant path, e.g. "CounterMsg::Tick" or "PoolMsg::SpawnWorker".
     /// Format: `<MsgType>::<VariantName>`
@@ -436,6 +459,7 @@ pub struct BootstrapMessage {
 
 /// An `[[actors]]` entry — one actor instance in the system.
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ActorInstance {
     /// Instance name (unique within the system).
     pub name: String,
@@ -487,6 +511,7 @@ pub struct ActorInstance {
 /// When `source = "factory"`, `crate` and `function` identify the factory
 /// function to inject as a function pointer.
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct InjectSource {
     /// `"self"` — create a channel for this actor and inject its ref.
     /// `"actor"` — use another actor's channel ref (requires `actor` field).
@@ -505,9 +530,6 @@ pub struct InjectSource {
     /// notify_ref).
     #[serde(default)]
     pub field: Option<String>,
-    /// Mailbox index for multi-mailbox actors (0-based).
-    /// When absent, defaults to 0 (the primary mailbox).
-    pub mailbox: Option<usize>,
     /// Index for `source = "self_secondary"` — which additional
     /// channel ref to use from a multi-mailbox actor's `channels!` call.
     /// Defaults to 1 (the second channel).
@@ -517,10 +539,13 @@ pub struct InjectSource {
 
 /// A `[[supervision]]` entry — one supervisor group.
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct SupervisionConfig {
     /// Supervisor crate/spec name (e.g. `"bloxide-supervisor"`).
     pub supervisor: String,
-    /// Restart strategy: `"one_for_one"`, `"one_for_all"`, or `"rest_for_one"`.
+    /// Group shutdown strategy: `"when_any_done"` (shut the group down when any
+    /// child ends) or `"when_all_done"` (wait for all children). Maps directly
+    /// to `GroupShutdown::WhenAnyDone` / `GroupShutdown::WhenAllDone`.
     pub strategy: String,
     /// Child actor names managed by this supervisor.
     pub children: Vec<String>,
@@ -533,12 +558,11 @@ pub struct SupervisionConfig {
     /// ```
     #[serde(default)]
     pub policies: BTreeMap<String, ChildPolicyConfig>,
-    /// Optional health-check interval in milliseconds.
-    pub health_check_interval_ms: Option<u64>,
 }
 
 /// A value in `[supervision.policies]` — restart or stop policy for a child.
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ChildPolicyConfig {
     /// Restart policy with max restart count.
     pub restart: Option<RestartPolicy>,
@@ -548,6 +572,7 @@ pub struct ChildPolicyConfig {
 
 /// Restart policy parameters.
 #[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct RestartPolicy {
     /// Maximum restart attempts before escalation.
     pub max: u32,

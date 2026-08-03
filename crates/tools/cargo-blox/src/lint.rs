@@ -20,6 +20,11 @@
 //! Warnings (do not fail the run):
 //! - unreachable states (nothing targets them, not initial, not error)
 //! - states with no outgoing transitions (events bubble to parents)
+//! - blox specs (`spec/bloxes/<name>.md`) missing template sections
+//!   (`## blox.toml`, `## Open Questions`) or using stale `Guard::`
+//!   vocabulary (the current vocabulary is `Decision::`)
+//! - spec files referencing backtick-quoted workspace paths that do not
+//!   exist (dead doc references)
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -58,7 +63,8 @@ impl Diagnostic {
 }
 
 pub fn lint() -> anyhow::Result<()> {
-    let files = discover_blox_tomls();
+    let root = crate::toml_helpers::discovery_root();
+    let files = discover_blox_tomls(&root);
     if files.is_empty() {
         println!("bloxide: no blox.toml files found");
         return Ok(());
@@ -83,6 +89,10 @@ pub fn lint() -> anyhow::Result<()> {
             lint_topology(path, config, topology, &message_enums, &mut diags);
         }
     }
+
+    // Phase 3: spec checks (warnings only — never fail the run).
+    lint_spec_conformance(&root, &files, &mut diags);
+    lint_dead_doc_refs(&root, &mut diags);
 
     // Report.
     let mut errors = 0;
@@ -114,8 +124,8 @@ pub fn lint() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn discover_blox_tomls() -> Vec<PathBuf> {
-    WalkDir::new(".")
+fn discover_blox_tomls(root: &Path) -> Vec<PathBuf> {
+    WalkDir::new(root)
         .max_depth(5)
         .into_iter()
         .filter_entry(|e| e.file_name() != "target")
@@ -431,7 +441,6 @@ fn check_guard_condition(
     ctx_fields: &BTreeSet<String>,
     diags: &mut Vec<Diagnostic>,
 ) {
-    let bytes = condition.as_bytes();
     let mut i = 0;
     while let Some(pos) = condition[i..].find("ctx.") {
         let start = i + pos + 4;
@@ -459,7 +468,6 @@ fn check_guard_condition(
             ));
         }
         i = start + field.len();
-        let _ = bytes;
     }
 }
 
@@ -550,4 +558,194 @@ fn levenshtein(a: &str, b: &str) -> usize {
         std::mem::swap(&mut prev, &mut cur);
     }
     prev[b.len()]
+}
+
+// ── Spec checks (warnings only) ─────────────────────────────────────────────
+
+/// Sections every blox spec must carry per the template
+/// (spec/templates/blox-spec.md).
+const REQUIRED_SPEC_SECTIONS: [&str; 2] = ["blox.toml", "Open Questions"];
+
+/// Workspace path prefixes considered checkable doc references.
+const DOC_PATH_PREFIXES: [&str; 4] = ["crates/", "apps/", "runtimes/", "tools/"];
+
+/// Spec template conformance: for each `crates/bloxes/<name>/blox.toml` that
+/// has a spec at `spec/bloxes/<name>.md`, warn when the spec lacks a
+/// template-required section or uses stale `Guard::` vocabulary (the current
+/// vocabulary is `Decision::`). Specs without a matching blox.toml (and blox
+/// crates without a spec) are not checked.
+fn lint_spec_conformance(root: &Path, blox_tomls: &[PathBuf], diags: &mut Vec<Diagnostic>) {
+    for toml_path in blox_tomls {
+        let Some(name) = blox_crate_name(toml_path) else {
+            continue;
+        };
+        let spec_path = root.join("spec/bloxes").join(format!("{}.md", name));
+        if !spec_path.exists() {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&spec_path) else {
+            continue;
+        };
+
+        let headings = collect_headings(&content);
+        for section in REQUIRED_SPEC_SECTIONS {
+            if !headings.iter().any(|h| h == section) {
+                diags.push(Diagnostic::warning(
+                    &spec_path,
+                    format!(
+                        "spec for blox '{}' lacks the '## {}' section required by the template (spec/templates/blox-spec.md)",
+                        name, section
+                    ),
+                ));
+            }
+        }
+
+        let stale = content.matches("Guard::").count();
+        if stale > 0 {
+            diags.push(Diagnostic::warning(
+                &spec_path,
+                format!(
+                    "spec for blox '{}' uses stale `Guard::` vocabulary ({} occurrence(s)) — the current vocabulary is `Decision::`",
+                    name, stale
+                ),
+            ));
+        }
+    }
+}
+
+/// Extract the blox name from a `…/crates/bloxes/<name>/blox.toml` path.
+/// Returns None for blox.toml files outside the bloxes layout (messages,
+/// context, framework crates).
+fn blox_crate_name(path: &Path) -> Option<String> {
+    let dir = path.parent()?;
+    let bloxes = dir.parent()?;
+    let crates = bloxes.parent()?;
+    if crates.file_name()?.to_str()? == "crates" && bloxes.file_name()?.to_str()? == "bloxes" {
+        Some(dir.file_name()?.to_str()?.to_string())
+    } else {
+        None
+    }
+}
+
+/// Heading texts of a markdown document (`## Foo` → "Foo", any level).
+fn collect_headings(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let t = line.trim_start();
+            if t.starts_with('#') {
+                Some(t.trim_start_matches('#').trim().to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Dead doc references: warn when a spec file under `spec/` references a
+/// backtick-quoted workspace path that does not exist. Templates are skipped
+/// (their paths are illustrative examples, not references). Extraction is
+/// deliberately conservative — a miss is better than a false positive.
+fn lint_dead_doc_refs(root: &Path, diags: &mut Vec<Diagnostic>) {
+    let spec_root = root.join("spec");
+    if !spec_root.is_dir() {
+        return;
+    }
+    for entry in WalkDir::new(&spec_root).into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        if path.components().any(|c| c.as_os_str() == "templates") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let mut reported: BTreeSet<String> = BTreeSet::new();
+        for (lineno, span) in extract_doc_refs(&content) {
+            let Some(p) = normalize_doc_path(&span) else {
+                continue;
+            };
+            if !root.join(&p).exists() && reported.insert(p) {
+                diags.push(Diagnostic::warning(
+                    path,
+                    format!(
+                        "line {}: spec references `{}` which does not exist in the workspace",
+                        lineno, span
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+/// Extract backtick-quoted workspace paths (single-line inline code spans)
+/// from markdown, skipping fenced code blocks. Returns (line number, span)
+/// pairs, 1-based. Spans containing placeholders (`<…>`), globs, or
+/// whitespace are skipped.
+pub(crate) fn extract_doc_refs(content: &str) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    let mut in_fence = false;
+    for (idx, line) in content.lines().enumerate() {
+        let lineno = idx + 1;
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        let bytes = line.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'`' {
+                if let Some(end) = line[i + 1..].find('`') {
+                    let span = line[i + 1..i + 1 + end].trim();
+                    if DOC_PATH_PREFIXES.iter().any(|p| span.starts_with(p)) && is_plain_path(span)
+                    {
+                        out.push((lineno, span.to_string()));
+                    }
+                    i += end + 2;
+                    continue;
+                }
+            }
+            i += 1;
+        }
+    }
+    out
+}
+
+/// A span is a plain workspace path when it carries no placeholder, glob, or
+/// punctuation characters that mark it as illustrative rather than literal.
+fn is_plain_path(span: &str) -> bool {
+    !span.chars().any(|c| {
+        matches!(
+            c,
+            '<' | '>' | '*' | '{' | '}' | '[' | ']' | '(' | ')' | '|' | ' ' | '\t' | '"' | '\''
+        )
+    })
+}
+
+/// Normalize a raw doc span to a checkable filesystem path: strip Rust path
+/// suffixes (`foo.rs::validate`), line anchors (`foo.rs:42`, `foo.rs#L10`),
+/// and trailing slashes/dots. Returns None for bare roots (`crates/`) and
+/// empty remnants.
+pub(crate) fn normalize_doc_path(span: &str) -> Option<String> {
+    let p = span.split("::").next()?;
+    let p = p.split('#').next()?;
+    let p = match p.rfind(':') {
+        Some(idx) if idx + 1 < p.len() && p[idx + 1..].chars().all(|c| c.is_ascii_digit()) => {
+            &p[..idx]
+        }
+        _ => p,
+    };
+    let p = p.trim_end_matches(['/', '.']);
+    let bare_root = DOC_PATH_PREFIXES
+        .iter()
+        .any(|pre| p == pre.trim_end_matches('/'));
+    if p.len() <= 1 || bare_root {
+        return None;
+    }
+    Some(p.to_string())
 }

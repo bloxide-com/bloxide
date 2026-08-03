@@ -237,21 +237,21 @@ fn generate_matches_closure(
     }
 }
 
-/// Resolve a target string to a Guard expression token stream.
-/// "stay" => Guard::Stay, "reset" => Guard::Reset, "stop" => Guard::Stop,
-/// "done" => Guard::Done, "fail" => Guard::Fail,
-/// "StateName" => Guard::Transition(LeafState::new(StateEnum::StateName))
+/// Resolve a target string to a Decision expression token stream.
+/// "stay" => Decision::Stay, "reset" => Decision::Reset, "stop" => Decision::Stop,
+/// "done" => Decision::Done, "fail" => Decision::Fail,
+/// "StateName" => Decision::Transition(LeafState::new(StateEnum::StateName))
 fn target_to_guard(target: &str, state_enum_ident: &syn::Ident) -> proc_macro2::TokenStream {
     match target {
-        "stay" => quote! { ::bloxide_core::transition::Guard::Stay },
-        "reset" => quote! { ::bloxide_core::transition::Guard::Reset },
-        "stop" => quote! { ::bloxide_core::transition::Guard::Stop },
-        "done" => quote! { ::bloxide_core::transition::Guard::Done },
-        "fail" => quote! { ::bloxide_core::transition::Guard::Fail },
+        "stay" => quote! { ::bloxide_core::transition::Decision::Stay },
+        "reset" => quote! { ::bloxide_core::transition::Decision::Reset },
+        "stop" => quote! { ::bloxide_core::transition::Decision::Stop },
+        "done" => quote! { ::bloxide_core::transition::Decision::Done },
+        "fail" => quote! { ::bloxide_core::transition::Decision::Fail },
         state_name => {
             let ident = format_ident!("{}", state_name);
             quote! {
-                ::bloxide_core::transition::Guard::Transition(
+                ::bloxide_core::transition::Decision::Transition(
                     ::bloxide_core::topology::LeafState::new(#state_enum_ident::#ident)
                 )
             }
@@ -261,7 +261,7 @@ fn target_to_guard(target: &str, state_enum_ident: &syn::Ident) -> proc_macro2::
 
 /// Generate a guard closure from TOML guards.
 ///
-/// If no guards: returns a simple closure `|_, _, _| Guard::X`.
+/// If no guards: returns a simple closure `|_, _, _| Decision::X`.
 /// If guards present: generates an if/else-if/else chain.
 fn generate_guard_closure(
     trans: &TransitionConfig,

@@ -56,7 +56,7 @@ fn make_payload_pattern(event_pattern: &str, payload_var: &str) -> String {
         format!("{path}({payload_var})")
     } else {
         // No parens — shouldn't happen for payload actions, but handle gracefully
-        format!("{event_pattern}")
+        event_pattern.to_string()
     }
 }
 
@@ -132,26 +132,28 @@ pub fn resolve_concrete_action(
     }
 
     // Determine the function path.
-    // When `crate = "crate"` is set on the action config, use the relative
-    // `crate` path (for blox-level codegen where the actions live in the
-    // blox crate itself). Otherwise, build an absolute `::crate_name` path.
-    let fn_path = if config
-        .crate_name
-        .as_deref()
-        .map(|c| c == "crate")
-        .unwrap_or(false)
-    {
-        "crate".to_string()
-    } else if config.impl_required {
-        // Use the impl crate from the system.toml.
-        let crate_name = impl_crate.unwrap_or("unknown_impl");
+    let fn_path = if config.impl_required {
+        // Use the impl crate from the system.toml. `validate_concrete_actions`
+        // rejects impl_required actions without an impl_crate before generation,
+        // so a missing value here is a caller bug.
+        let crate_name = impl_crate.unwrap_or_else(|| {
+            panic!(
+                "action '{}' is impl_required = true but no impl_crate was provided",
+                config.name
+            )
+        });
         format!("::{}", crate_name.replace('-', "_"))
     } else {
         // Use the crate from the [[context.actions]] entry.
         // The crate_name may already be an absolute path (e.g. "::bloxide_supervisor")
         // if it was translated by generate_concrete_spec_skeleton. In that case,
         // don't prepend another "::".
-        let crate_name = config.crate_name.as_deref().unwrap_or("unknown_crate");
+        let crate_name = config.crate_name.as_deref().unwrap_or_else(|| {
+            panic!(
+                "action '{}' has no crate = \"...\" and is not impl_required",
+                config.name
+            )
+        });
         if crate_name.starts_with("::") {
             crate_name.replace('-', "_")
         } else {
@@ -180,8 +182,8 @@ pub fn resolve_concrete_action(
         let args = field_args.join(", ");
         let code = format!("|ctx| {{ {fn_full_path}({args}); }}");
         Some(
-            syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|_| {
-                quote::quote! { |_ctx| { /* error: cannot parse concrete action #name */ } }
+            syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|e| {
+                panic!("codegen produced unparseable entry/exit closure for action '{name}': {e}")
             }),
         )
     } else if !has_payload {
@@ -200,13 +202,14 @@ pub fn resolve_concrete_action(
             field_args.join(", ")
         };
         let ev_param = if config.event_arg { "ev" } else { "_ev" };
-        let code = format!(
-            "|ctx, {ev_param}| {{ {fn_full_path}({args}); \
-             ::bloxide_core::transition::ActionResult::Ok }}"
-        );
-        Some(syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|_| {
-            quote::quote! { |_ctx, _ev| { /* error: cannot parse concrete action #name */ ::bloxide_core::transition::ActionResult::Ok } }
-        }))
+        // Uniform contract: transition action functions return `ActionResult`;
+        // the wrapper returns the function's result verbatim.
+        let code = format!("|ctx, {ev_param}| {{ {fn_full_path}({args}) }}");
+        Some(
+            syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|e| {
+                panic!("codegen produced unparseable transition closure for action '{name}': {e}")
+            }),
+        )
     } else {
         // Transition with event payload.
         //
@@ -232,11 +235,7 @@ pub fn resolve_concrete_action(
 
         // Determine which payload accessor to use and the if-let pattern.
         // `event_type_str` is the event enum name (e.g. "PoolEvent<R>").
-        let event_type_name = event_type_str
-            .split(|c| c == '<' || c == ',')
-            .next()
-            .unwrap_or("")
-            .trim();
+        let event_type_name = event_type_str.split(['<', ',']).next().unwrap_or("").trim();
 
         let (payload_accessor, if_let_pattern) = match event_pattern {
             Some(ep) => {
@@ -264,27 +263,39 @@ pub fn resolve_concrete_action(
                     // Bind the whole PeerCtrl value — the action function
                     // (e.g. apply_peer_control) takes &PeerCtrl<M, R>, not a
                     // destructured variant.
-                    (format!("ev.ctrl_payload()"), format!("Some({payload_var})"))
+                    (
+                        "ev.ctrl_payload()".to_string(),
+                        format!("Some({payload_var})"),
+                    )
                 } else {
                     // Message-variant pattern: use msg_payload() and pattern match.
                     let pat = make_payload_pattern(ep, &payload_var);
-                    (format!("ev.msg_payload()"), format!("Some({pat})"))
+                    ("ev.msg_payload()".to_string(), format!("Some({pat})"))
                 }
             }
-            None => (format!("ev.msg_payload()"), format!("Some({payload_var})")),
+            None => (
+                "ev.msg_payload()".to_string(),
+                format!("Some({payload_var})"),
+            ),
         };
 
+        // Uniform contract: transition action functions return `ActionResult`.
+        // A payload that doesn't match is a no-op (Ok); when it matches, the
+        // wrapper returns the function's result verbatim.
         let code = format!(
             "|ctx, ev| {{ \
              if let {if_let_pattern} = {payload_accessor} {{ \
-             {fn_full_path}({args_with_payload}); \
-             }} \
+             {fn_full_path}({args_with_payload}) \
+             }} else {{ \
              ::bloxide_core::transition::ActionResult::Ok \
+             }} \
              }}"
         );
-        Some(syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|_| {
-            quote::quote! { |_ctx, _ev| { /* error: cannot parse concrete action #name */ ::bloxide_core::transition::ActionResult::Ok } }
-        }))
+        Some(
+            syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|e| {
+                panic!("codegen produced unparseable payload closure for action '{name}': {e}")
+            }),
+        )
     }
 }
 
@@ -337,20 +348,7 @@ pub fn generate_concrete_spec_skeleton(
         .ok_or_else(|| anyhow::anyhow!("blox config has no [context] section"))?;
 
     // Collect the action declarations — these are moved into the closure.
-    // Translate `crate = "crate"` to the actual blox crate path so that
-    // system-level codegen references the blox crate correctly.
-    let actions: Vec<ContextActionConfig> = context
-        .actions
-        .iter()
-        .map(|a| {
-            let mut a = a.clone();
-            if a.crate_name.as_deref() == Some("crate") && blox_crate_path != "crate" {
-                // System-level: replace "crate" with the absolute blox crate path.
-                a.crate_name = Some(blox_crate_path.to_string());
-            }
-            a
-        })
-        .collect();
+    let actions: Vec<ContextActionConfig> = context.actions.to_vec();
     let impl_crate_owned = impl_crate.map(|s| s.to_string());
 
     // Build the concrete action resolver closure.
@@ -401,6 +399,96 @@ pub fn generate_concrete_spec_skeleton(
     )
 }
 
+/// Validate that every `Self::` action referenced by the topology resolves to
+/// a concrete function: declared in `[[context.actions]]`, with a resolvable
+/// crate (or an `impl_crate` from system.toml), and with `kind` matching its
+/// use site ("transition" in transitions, "entry" in entry, "exit" in exit).
+/// Rules gated behind an inactive feature are skipped (they are cfg'd out).
+fn validate_concrete_actions(
+    blox_config: &BloxConfig,
+    impl_crate: Option<&str>,
+    active_feature: Option<&str>,
+) -> anyhow::Result<()> {
+    let blox_name = blox_config
+        .actor
+        .as_ref()
+        .map(|a| a.name.as_str())
+        .unwrap_or("<unnamed>");
+    let empty = Vec::new();
+    let actions = blox_config
+        .context
+        .as_ref()
+        .map(|c| c.actions.as_slice())
+        .unwrap_or(&empty);
+
+    let gated_off = |feature: &Option<String>| match feature {
+        Some(f) => Some(f.as_str()) != active_feature,
+        None => false,
+    };
+
+    let check = |action_ref: &str, site: &str| -> anyhow::Result<()> {
+        let Some(name) = strip_self_prefix(action_ref) else {
+            // Function-path actions (non-Self::) resolve via spec_imports.
+            return Ok(());
+        };
+        let cfg = actions.iter().find(|a| a.name == name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "action '{name}' used in a {site} slot of blox '{blox_name}' \
+                 is not declared in [[context.actions]]"
+            )
+        })?;
+        if cfg.kind != site {
+            anyhow::bail!(
+                "action '{name}' declares kind = \"{}\" but is used in a {site} slot \
+                 of blox '{blox_name}' — fix the kind or the use site",
+                cfg.kind
+            );
+        }
+        if cfg.impl_required {
+            if impl_crate.is_none() {
+                anyhow::bail!(
+                    "action '{name}' in blox '{blox_name}' is impl_required = true \
+                     but the actor declares no impl_crate in system.toml"
+                );
+            }
+        } else if cfg.crate_name.is_none() {
+            anyhow::bail!(
+                "action '{name}' in blox '{blox_name}' has no crate = \"...\" \
+                 and is not impl_required"
+            );
+        }
+        Ok(())
+    };
+
+    if let Some(topology) = blox_config.topology.as_ref() {
+        for t in &topology.transitions {
+            if gated_off(&t.feature) {
+                continue;
+            }
+            for a in &t.actions {
+                check(a, "transition")?;
+            }
+        }
+        for e in &topology.entry {
+            if gated_off(&e.feature) {
+                continue;
+            }
+            for a in &e.actions {
+                check(a, "entry")?;
+            }
+        }
+        for e in &topology.exit {
+            if gated_off(&e.feature) {
+                continue;
+            }
+            for a in &e.actions {
+                check(a, "exit")?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Generate concrete spec_skeleton.rs files for all actors in a system.
 ///
 /// For each actor in the system.toml, this looks up the actor's BloxConfig,
@@ -434,6 +522,8 @@ pub fn generate_concrete_spec_files(
         // Pass the active feature (if any) so the spec skeleton emits only
         // the matching variant without #[cfg] gates.
         let active_feature = actor.features.first().map(|s| s.as_str());
+        // Hard-fail on unresolvable action wiring before emitting anything.
+        validate_concrete_actions(blox_config, actor.impl_crate.as_deref(), active_feature)?;
         let code = generate_concrete_spec_skeleton(
             blox_config,
             actor.impl_crate.as_deref(),
@@ -516,7 +606,9 @@ mod tests {
         assert!(tokens.contains("blox_ctx_rounds"));
         assert!(tokens.contains("increment_round"));
         assert!(tokens.contains("ctx . round"));
-        assert!(tokens.contains("ActionResult"));
+        // Uniform contract: the wrapper returns the action function's
+        // `ActionResult` verbatim — no literal `ActionResult::Ok` appended.
+        assert!(!tokens.contains("ActionResult"));
     }
 
     #[test]
@@ -555,7 +647,8 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_concrete_impl_required_no_impl_crate() {
+    #[should_panic(expected = "impl_required = true but no impl_crate")]
+    fn test_resolve_concrete_impl_required_no_impl_crate_panics() {
         let actions = vec![make_action(
             "process_work",
             None,
@@ -564,8 +657,9 @@ mod tests {
             Some("do_work"),
             true,
         )];
-        // Without an impl_crate, it should still generate something (with "unknown_impl")
-        let result = resolve_concrete_action(
+        // Without an impl_crate, resolution is a hard failure (validation
+        // catches this in the real flow before generation).
+        let _ = resolve_concrete_action(
             "Self::process_work",
             &actions,
             None,
@@ -573,9 +667,6 @@ mod tests {
             None,
             true,
         );
-        assert!(result.is_some());
-        let tokens = result.unwrap().to_string();
-        assert!(tokens.contains("unknown_impl"));
     }
 
     #[test]

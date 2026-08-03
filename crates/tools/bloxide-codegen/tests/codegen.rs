@@ -844,8 +844,8 @@ actions = ["reply_pong_action"]
     assert!(content.contains("StateRule"));
     // Event pattern in matches closure
     assert!(content.contains("PingPongMsg::Ping"));
-    // Guard::Stay
-    assert!(content.contains("Guard::Stay"));
+    // Decision::Stay
+    assert!(content.contains("Decision::Stay"));
     // Action function
     assert!(content.contains("reply_pong_action"));
     // Handler table array
@@ -909,13 +909,13 @@ target = "stay"
         .expect("spec_skeleton.rs missing");
     let content = &spec_file.1;
 
-    // Guard chain generated as if/else-if/else
+    // Decision chain generated as if/else-if/else
     assert!(content.contains("ctx.count() >= 2"));
     assert!(content.contains("ctx.count() < 2"));
-    // State targets in Guard::Transition
+    // State targets in Decision::Transition
     assert!(content.contains("CounterState::Done"));
-    // Guard::Stay for fallback
-    assert!(content.contains("Guard::Stay"));
+    // Decision::Stay for fallback
+    assert!(content.contains("Decision::Stay"));
     // Raw StateRule struct literal emitted by codegen
     assert!(content.contains("StateRule"));
 }
@@ -1035,8 +1035,8 @@ target = "AllDone"
     let content = &spec_file.1;
 
     // transition targets (not stay/reset/fail)
-    // Guard::Transition with LeafState::new
-    assert!(content.contains("Guard::Transition"));
+    // Decision::Transition with LeafState::new
+    assert!(content.contains("Decision::Transition"));
     assert!(content.contains("PoolState::Active"));
     assert!(content.contains("PoolState::AllDone"));
 }
@@ -1168,7 +1168,7 @@ role = "ctor"
     assert_eq!(ctx.uses.len(), 2);
 
     let u0 = &ctx.uses[0];
-    assert_eq!(u0.crate_name, "blox_ctx_ping_pong");
+    assert_eq!(u0.crate_name.as_deref(), Some("blox_ctx_ping_pong"));
     assert_eq!(u0.field.as_deref(), Some("peer_ref"));
     assert_eq!(u0.field_type.as_deref(), Some("ActorRef<PingPongMsg, R>"));
     assert_eq!(u0.role.as_deref(), Some("ctor"));
@@ -1245,8 +1245,8 @@ target = "fail"
         .expect("spec_skeleton.rs missing");
     let content = &spec_file.1;
 
-    assert!(content.contains("Guard::Reset"));
-    assert!(content.contains("Guard::Fail"));
+    assert!(content.contains("Decision::Reset"));
+    assert!(content.contains("Decision::Fail"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1297,7 +1297,7 @@ blox = "pong-blox"
 
 [[supervision]]
 supervisor = "bloxide-supervisor"
-strategy = "one_for_one"
+strategy = "when_any_done"
 children = ["ping", "pong"]
 
   [supervision.policies]
@@ -1325,7 +1325,6 @@ children = ["ping", "pong"]
     let self_ref = ping.inject.get("self_ref").expect("self_ref missing");
     assert_eq!(self_ref.source, "self");
     assert!(self_ref.actor.is_none());
-    assert!(self_ref.mailbox.is_none());
 
     let peer_ref = ping.inject.get("peer_ref").expect("peer_ref missing");
     assert_eq!(peer_ref.source, "actor");
@@ -1345,7 +1344,7 @@ children = ["ping", "pong"]
     // Supervision
     let sup = &config.supervision[0];
     assert_eq!(sup.supervisor, "bloxide-supervisor");
-    assert_eq!(sup.strategy, "one_for_one");
+    assert_eq!(sup.strategy, "when_any_done");
     assert_eq!(sup.children, vec!["ping", "pong"]);
     assert_eq!(sup.policies.len(), 2);
 
@@ -1357,14 +1356,12 @@ children = ["ping", "pong"]
     let pong_policy = sup.policies.get("pong").expect("pong policy missing");
     assert_eq!(pong_policy.stop, Some(true));
     assert!(pong_policy.restart.is_none());
-
-    // No health check configured
-    assert!(sup.health_check_interval_ms.is_none());
 }
 
 #[test]
 fn test_parse_system_toml_multi_mailbox_actor() {
-    // Worker actor with mailbox index in inject.
+    // Worker actor with a secondary-channel inject (multi-mailbox actors use
+    // `source = "self_secondary", index = N`).
     let toml = r#"
 [system]
 runtime = "tokio"
@@ -1374,7 +1371,8 @@ name = "worker-1"
 blox = "worker-blox"
 
   [actors.inject]
-  self_ref = { source = "self", mailbox = 0 }
+  self_ref = { source = "self" }
+  ctrl_ref = { source = "self_secondary", index = 1 }
   pool_ref = { source = "actor", actor = "pool" }
 "#;
 
@@ -1384,7 +1382,11 @@ blox = "worker-blox"
 
     let self_ref = worker.inject.get("self_ref").expect("self_ref missing");
     assert_eq!(self_ref.source, "self");
-    assert_eq!(self_ref.mailbox, Some(0));
+    assert!(self_ref.index.is_none());
+
+    let ctrl_ref = worker.inject.get("ctrl_ref").expect("ctrl_ref missing");
+    assert_eq!(ctrl_ref.source, "self_secondary");
+    assert_eq!(ctrl_ref.index, Some(1));
 
     let pool_ref = worker.inject.get("pool_ref").expect("pool_ref missing");
     assert_eq!(pool_ref.source, "actor");
@@ -1418,28 +1420,6 @@ runtime = "test"
 
     let config: SystemConfig = toml::from_str(toml).expect("parse failed");
     assert_eq!(config.system.runtime, "test");
-}
-
-#[test]
-fn test_parse_system_toml_health_check_interval() {
-    // Supervisor with health check interval.
-    let toml = r#"
-[system]
-runtime = "tokio"
-
-[[supervision]]
-supervisor = "bloxide-supervisor"
-strategy = "one_for_all"
-children = ["worker-1", "worker-2"]
-health_check_interval_ms = 5000
-"#;
-
-    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
-    let sup = &config.supervision[0];
-    assert_eq!(sup.strategy, "one_for_all");
-    assert_eq!(sup.children, vec!["worker-1", "worker-2"]);
-    assert_eq!(sup.health_check_interval_ms, Some(5000));
-    assert!(sup.policies.is_empty());
 }
 
 #[test]

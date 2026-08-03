@@ -95,6 +95,29 @@ fn collect_ctor_fields(
     fields
 }
 
+/// All constructor field names ignoring feature gates — used to distinguish
+/// "inject targets a feature-gated-off field" (tolerated) from "inject
+/// targets a field that does not exist at all" (hard error, usually a typo).
+fn collect_all_ctor_field_names(blox_config: &BloxConfig) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    names.insert("self_id".to_string());
+    if let Some(context) = &blox_config.context {
+        for u in &context.uses {
+            if let Some(field_name) = &u.field {
+                if u.role.as_deref() != Some("state") {
+                    names.insert(field_name.clone());
+                }
+            }
+            for sub in &u.fields {
+                if sub.role.as_deref() != Some("state") {
+                    names.insert(sub.name.clone());
+                }
+            }
+        }
+    }
+    names
+}
+
 fn toml_value_to_tokens(value: &toml::Value) -> anyhow::Result<proc_macro2::TokenStream> {
     use proc_macro2::Span;
     match value {
@@ -310,13 +333,21 @@ fn validate(
         })?;
         let ctor_fields = collect_ctor_fields(blox_config, &actor.blox, active_features);
         let ctor_names: BTreeSet<String> = ctor_fields.iter().map(|f| f.name.clone()).collect();
+        let all_ctor_names = collect_all_ctor_field_names(blox_config);
 
         for field_name in actor.inject.keys() {
             if !ctor_names.contains(field_name) {
-                // The field may be feature-gated and the feature is not active.
-                // Silently skip — the injection targets a field that doesn't
-                // exist in the compiled struct when the feature is off.
-                continue;
+                // Tolerated only when the field exists but its feature gate is
+                // off — the injection is cfg'd out together with the field.
+                // Anything else (typically a typo) is a hard error.
+                if !all_ctor_names.contains(field_name) {
+                    anyhow::bail!(
+                        "actor '{}' injects unknown constructor field '{}' (blox '{}')",
+                        actor.name,
+                        field_name,
+                        actor.blox
+                    );
+                }
             }
         }
 
@@ -713,11 +744,15 @@ pub fn generate(
         let control_ref_ident = format_ident!("sup_control_ref_{}", idx);
         let notify_ref_ident = format_ident!("sup_notify_ref_{}", idx);
 
-        // Map strategy to GroupShutdown.
-        let shutdown_strategy = if sup.strategy == "all_for_one" {
-            quote! { GroupShutdown::WhenAllDone }
-        } else {
-            quote! { GroupShutdown::WhenAnyDone }
+        // Map strategy to GroupShutdown. Only the two strategies matching
+        // GroupShutdown's semantics exist; anything else is a hard error
+        // (previously every unknown value silently became WhenAnyDone).
+        let shutdown_strategy = match sup.strategy.as_str() {
+            "when_all_done" => quote! { GroupShutdown::WhenAllDone },
+            "when_any_done" => quote! { GroupShutdown::WhenAnyDone },
+            other => anyhow::bail!(
+                "unknown supervision strategy '{other}' — expected `when_any_done` or `when_all_done`"
+            ),
         };
 
         // Phase 1: create builder + extract control_ref and notify_ref.
@@ -1220,7 +1255,7 @@ pub fn generate(
 ///
 /// Falls back to the unformatted input if `rustfmt` is not available,
 /// so the codegen still works in environments without rustfmt installed.
-fn rustfmt_source(source: &str) -> anyhow::Result<String> {
+pub(crate) fn rustfmt_source(source: &str) -> anyhow::Result<String> {
     use std::io::Write;
     use std::process::Command;
 

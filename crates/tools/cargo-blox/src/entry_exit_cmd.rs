@@ -5,6 +5,7 @@
 //! issue #96); this module is the CLI wrapper.
 
 use crate::toml_helpers::{blox_toml_path_for_blox, load_toml, save_toml};
+use anyhow::Context;
 
 fn add_hook(
     hook: &str,
@@ -18,8 +19,10 @@ fn add_hook(
     let mut doc = load_toml(&path)?;
     match bloxide_codegen::edit::add_hook(&mut doc, hook, state, actions, feature) {
         Ok(()) => {}
-        Err(e) if if_not_exists && e.to_string().contains("already exists") => return Ok(()),
-        Err(e) => anyhow::bail!("{} in {}", e, blox_name),
+        Err(e) if if_not_exists && crate::exit::code_of(&e) == Some(crate::exit::EXIT_CONFLICT) => {
+            return Ok(())
+        }
+        Err(e) => return Err(e).with_context(|| format!("in {}", blox_name)),
     }
     save_toml(&path, &doc)?;
     println!("Added {} hook for state {} to {}", hook, state, blox_name);
@@ -30,7 +33,7 @@ fn remove_hook(hook: &str, blox_name: &str, state: &str) -> anyhow::Result<()> {
     let path = blox_toml_path_for_blox(blox_name);
     let mut doc = load_toml(&path)?;
     bloxide_codegen::edit::remove_hook(&mut doc, hook, state)
-        .map_err(|e| anyhow::anyhow!("{} in {}", e, blox_name))?;
+        .with_context(|| format!("in {}", blox_name))?;
     save_toml(&path, &doc)?;
     println!(
         "Removed {} hook for state {} from {}",

@@ -53,10 +53,11 @@ pub(crate) fn replace_placeholders(
 /// When the action string starts with `Self::` (e.g. `Self::increment_round`),
 /// generate a stub no-op closure instead of a function path reference.
 /// The stub closures are no-ops that will be replaced by real implementations
-/// in the system-level codegen.
+/// in the system-level codegen. The stub body carries the action name in a
+/// marker binding for readability.
 ///
-/// For transition actions: `|_ctx, _ev| { /* stub: <name> */ ::bloxide_core::transition::ActionResult::Ok }`
-/// For entry/exit actions: `|_ctx| { /* stub: <name> */ }`
+/// For transition actions: `|_ctx, _ev| { let _stub = "<name>"; ::bloxide_core::transition::ActionResult::Ok }`
+/// For entry/exit actions: `|_ctx| { let _stub = "<name>"; }`
 ///
 /// Action strings that do NOT start with `Self::` (e.g. `handle_work_done` or
 /// `bloxide_child_management::start_children`) are parsed as function path
@@ -268,8 +269,8 @@ pub fn generate(
     // blox_crate_path instead. Only replaces the leading `crate::`, not
     // occurrences in the middle of a path.
     let translate_crate_import = |imp: &str| -> String {
-        if imp.starts_with("crate::") {
-            format!("{}::{}", blox_crate_path_str, &imp["crate::".len()..])
+        if let Some(rest) = imp.strip_prefix("crate::") {
+            format!("{}::{}", blox_crate_path_str, rest)
         } else if imp == "crate" {
             blox_crate_path_str.clone()
         } else {

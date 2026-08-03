@@ -49,8 +49,10 @@ pub mod prelude {{
 /// Example action function: increments a counter field by one.
 /// Declare it in `[[context.actions]]` in the blox's `blox.toml` with
 /// `kind = "transition"` and `fields = ["count:mut"]`.
-pub fn increment_count(count: &mut u32) {{
+/// Action functions return `ActionResult` so guards can react to failures.
+pub fn increment_count(count: &mut u32) -> bloxide_core::transition::ActionResult {{
     *count += 1;
+    bloxide_core::transition::ActionResult::Ok
 }}
 "#
     );
