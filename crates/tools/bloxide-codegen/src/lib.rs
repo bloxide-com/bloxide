@@ -17,6 +17,11 @@ use schema::{BloxConfig, SystemConfig};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+/// Callback that maps an action reference to wrapper-closure tokens for its
+/// use site. Threaded through topology and spec-skeleton generation.
+pub(crate) type ActionResolver<'a> =
+    &'a dyn Fn(&str, &str, &str, &[String], Option<&str>, bool) -> proc_macro2::TokenStream;
+
 /// Generate all artifacts from a parsed `BloxConfig`.
 ///
 /// Returns a vector of `(filename, content)` pairs.

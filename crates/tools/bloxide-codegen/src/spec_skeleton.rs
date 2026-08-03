@@ -111,14 +111,7 @@ pub(crate) fn generate_state_fns_impl(
     spec_where_clause: Option<&syn::WhereClause>,
     feature_filter: Option<&str>,
     strip_feature_cfg: bool,
-    action_resolver: &dyn Fn(
-        &str,
-        &str,
-        &str,
-        &[String],
-        Option<&str>,
-        bool,
-    ) -> proc_macro2::TokenStream,
+    action_resolver: crate::ActionResolver<'_>,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
     use crate::schema::{EntryExitConfig, TransitionConfig};
     use crate::topology::generate_state_rule;
@@ -245,6 +238,7 @@ pub(crate) fn generate_state_fns_impl(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn generate(
     actor: &ActorConfig,
     topology: &TopologyConfig,
@@ -252,14 +246,7 @@ pub fn generate(
     event: Option<&EventConfig>,
     _crate_name: &str,
     blox_crate_path: &str,
-    action_resolver: &dyn Fn(
-        &str,
-        &str,
-        &str,
-        &[String],
-        Option<&str>,
-        bool,
-    ) -> proc_macro2::TokenStream,
+    action_resolver: crate::ActionResolver<'_>,
     active_feature: Option<&str>,
 ) -> anyhow::Result<String> {
     let actor_name = &actor.name;

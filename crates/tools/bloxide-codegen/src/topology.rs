@@ -323,14 +323,7 @@ pub(crate) fn generate_state_rule(
     ctx_type_str: &str,
     event_type_str: &str,
     type_params: &[String],
-    action_resolver: &dyn Fn(
-        &str,
-        &str,
-        &str,
-        &[String],
-        Option<&str>,
-        bool,
-    ) -> proc_macro2::TokenStream,
+    action_resolver: crate::ActionResolver<'_>,
     strip_feature_cfg: bool,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
     let kind = classify_pattern_str(&trans.event);
