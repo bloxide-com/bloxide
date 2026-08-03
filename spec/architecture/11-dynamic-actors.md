@@ -313,8 +313,10 @@ classDiagram
 
 **Actor ID spaces cannot collide**: compile-time wiring (`channels!`,
 `next_actor_id!`, `spawn_timer!`) hands out small sequential IDs starting at 1
-from a proc-macro counter; `DynamicChannelCap::alloc_actor_id` (dynamic spawn)
-starts its counter at `DYNAMIC_ACTOR_ID_BASE` (1_000_000, defined in
+from a proc-macro counter — a hard limit of 255 statically wired actors per
+system, enforced by a compile-time assert baked into each macro expansion;
+`DynamicChannelCap::alloc_actor_id` (dynamic spawn)
+starts its counter at `DYNAMIC_ACTOR_ID_BASE` (256, defined in
 `bloxide-core::capability`).
 
 ### Runtime Support

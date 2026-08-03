@@ -134,7 +134,10 @@ pub fn channels(input: TokenStream) -> TokenStream {
 // ── next_actor_id!() ──────────────────────────────────────────────────────────
 
 /// Allocate the next compile-time actor ID from the same counter used by
-/// `channels!`. Returns a literal `usize` integer baked into generated code.
+/// `channels!`. Expands to a block that evaluates to a literal `usize`
+/// integer baked into generated code, preceded by a compile-time guard
+/// (`const _: () = assert!(id < DYNAMIC_ACTOR_ID_BASE)`) so the 255-actor
+/// static-wiring limit is enforced at compile time.
 ///
 /// Useful for obtaining a supervisor's `ActorId` without a runtime atomic.
 #[proc_macro]
@@ -142,7 +145,16 @@ pub fn next_actor_id(_input: TokenStream) -> TokenStream {
     use crate::channels::NEXT_ACTOR_ID;
     use core::sync::atomic::Ordering;
     let id = NEXT_ACTOR_ID.fetch_add(1, Ordering::Relaxed);
-    quote::quote! { #id }.into()
+    quote::quote! {
+        {
+            const _: () = assert!(
+                #id < ::bloxide_core::capability::DYNAMIC_ACTOR_ID_BASE,
+                "statically wired actor limit exceeded: compile-time actor IDs must stay below DYNAMIC_ACTOR_ID_BASE"
+            );
+            #id
+        }
+    }
+    .into()
 }
 
 // ── dyn_channels!(RuntimeType; MsgType1(CAP1), ...) ──────────────────────────

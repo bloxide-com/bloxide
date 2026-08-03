@@ -104,7 +104,9 @@ implementations):
   `Default::default()` in the generated `Ctx::new()`, never at the wiring site.
 - Actor IDs come from two disjoint spaces: static wiring uses the compile-time
   proc-macro counter (`channels!`, `next_actor_id!`, `spawn_timer!`) starting
-  at 1; dynamically spawned actors use `DynamicChannelCap::alloc_actor_id`,
-  whose counter starts at `DYNAMIC_ACTOR_ID_BASE` (1_000_000) — see
+  at 1 (at most 255 statically wired actors per system — enforced by a
+  compile-time assert baked into each macro expansion); dynamically spawned
+  actors use `DynamicChannelCap::alloc_actor_id`,
+  whose counter starts at `DYNAMIC_ACTOR_ID_BASE` (256) — see
   [11-dynamic-actors.md](11-dynamic-actors.md).
 - The supervisor is started via `dispatch()` of `LifecycleCommand::Start`, like every other lifecycle transition.

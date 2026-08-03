@@ -120,10 +120,15 @@ pub trait StaticChannelCap: BloxRuntime {
 /// First actor ID available for runtime allocation (dynamic spawning).
 ///
 /// Compile-time allocation (`channels!`, `dyn_channels!`, `next_actor_id!`)
-/// hands out small sequential IDs starting at 1. Runtime `alloc_actor_id`
-/// counters MUST start at this base so dynamically spawned actors can never
-/// collide with compile-time IDs.
-pub const DYNAMIC_ACTOR_ID_BASE: usize = 1_000_000;
+/// hands out small sequential IDs starting at 1, so the static ID space is
+/// `1..DYNAMIC_ACTOR_ID_BASE` — a hard limit of 255 statically wired actors
+/// per system. The wiring macros bake a compile-time guard
+/// (`const _: () = assert!(id < DYNAMIC_ACTOR_ID_BASE)`) into their expansion,
+/// so exceeding the limit is a compile error, not a runtime collision.
+///
+/// Runtime `alloc_actor_id` counters MUST start at this base so dynamically
+/// spawned actors can never collide with compile-time IDs.
+pub const DYNAMIC_ACTOR_ID_BASE: usize = 256;
 
 /// Channel creation for runtimes with runtime-configurable capacity.
 ///
@@ -170,4 +175,27 @@ pub struct NoKill;
 impl<R: BloxRuntime> KillCapability<R> for NoKill {
     type Handle = ();
     fn kill(_: ()) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DYNAMIC_ACTOR_ID_BASE;
+
+    /// Pins the actor-ID split: compile-time allocation (`channels!`,
+    /// `dyn_channels!`, `next_actor_id!`) starts at 1, so the static space is
+    /// `1..DYNAMIC_ACTOR_ID_BASE` — a hard limit of 255 statically wired
+    /// actors per system; dynamic IDs start at the base.
+    ///
+    /// The compile-fail side of the wiring-macro guard (an expansion baking
+    /// an ID ≥ 256 fails the const assert) is not testable in-tree:
+    /// `trybuild` is not a dependency and proc-macro counter state cannot be
+    /// forced to the limit from a unit test. The pass side is covered by
+    /// every workspace build — all existing `channels!` / `dyn_channels!` /
+    /// `next_actor_id!` expansions carry the guard and compile.
+    #[test]
+    fn dynamic_actor_id_base_caps_static_space_at_255() {
+        assert_eq!(DYNAMIC_ACTOR_ID_BASE, 256);
+        // Compile-time counter starts at 1 (bloxide-macros `NEXT_ACTOR_ID`).
+        assert_eq!(DYNAMIC_ACTOR_ID_BASE - 1, 255);
+    }
 }

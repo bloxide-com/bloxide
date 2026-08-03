@@ -319,9 +319,12 @@ pub type SpawnFn<R, Req> = fn(
 #### Actor ID allocation
 
 The child's actor ID comes from `R::alloc_actor_id()` (`DynamicChannelCap`), whose
-counter starts at `DYNAMIC_ACTOR_ID_BASE = 1_000_000` (bloxide-core `capability.rs`).
+counter starts at `DYNAMIC_ACTOR_ID_BASE = 256` (bloxide-core `capability.rs`).
 Compile-time wiring — the proc-macro counter behind `channels!`, `dyn_channels!`,
-`next_actor_id!`, and `spawn_timer!` — hands out small sequential IDs starting at 1, so
+`next_actor_id!`, and `spawn_timer!` — hands out small sequential IDs starting at 1
+(at most 255 statically wired actors per system; each expansion carries a
+compile-time assert against `DYNAMIC_ACTOR_ID_BASE`, so hitting the limit is a
+compile error), so
 dynamically spawned actors can never collide with statically wired ones.
 
 ### 3.3 The Spawn Request

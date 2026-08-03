@@ -203,9 +203,12 @@ let sup_id = bloxide_embassy::next_actor_id!();
 
 `TestRuntime` uses a runtime `AtomicUsize` counter since test channels are created
 dynamically. `DynamicChannelCap::alloc_actor_id()` increments this counter and
-returns the next ID. The counter starts at `DYNAMIC_ACTOR_ID_BASE` (1_000_000,
+returns the next ID. The counter starts at `DYNAMIC_ACTOR_ID_BASE` (256,
 in `bloxide-core::capability`) so runtime-allocated IDs can never collide with
-the compile-time IDs handed out by `channels!` / `next_actor_id!`.
+the compile-time IDs handed out by `channels!` / `next_actor_id!`. The static
+space is `1..=255` — a hard limit of 255 statically wired actors per system;
+the wiring macros bake a `const _: () = assert!(id < DYNAMIC_ACTOR_ID_BASE)`
+guard into their expansion, so exceeding the limit is a compile error.
 
 ## Relationship to HSM
 
@@ -250,7 +253,7 @@ feature) and provides:
   and then returns `Poll::Ready(None)`.
 - `DynamicChannelCap` — creates `(ActorRef, TestReceiver)` pairs on demand;
   `alloc_actor_id()` hands out IDs starting at `DYNAMIC_ACTOR_ID_BASE`
-  (1_000_000) so they can never collide with compile-time IDs.
+  (256) so they can never collide with compile-time IDs.
 - `SpawnCap` — dynamic spawning in tests; `kill` / `kill_handle` are
   documented no-ops (`KillHandle = ()`) since TestRuntime runs no real tasks.
 

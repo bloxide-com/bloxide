@@ -58,6 +58,13 @@ pub(crate) fn channels_inner(input: TokenStream) -> TokenStream {
     let actor_id = NEXT_ACTOR_ID.fetch_add(1, Ordering::Relaxed);
     quote! {
         {
+            // Compile-time guard: statically wired actor IDs live below
+            // `DYNAMIC_ACTOR_ID_BASE` (hard limit: 255 statically wired
+            // actors per system). Exceeding the limit fails compilation here.
+            const _: () = assert!(
+                #actor_id < ::bloxide_core::capability::DYNAMIC_ACTOR_ID_BASE,
+                "statically wired actor limit exceeded: compile-time actor IDs must stay below DYNAMIC_ACTOR_ID_BASE"
+            );
             #(
                 let (#ref_idents, #stream_idents) =
                     <#runtime as ::bloxide_core::capability::StaticChannelCap>
