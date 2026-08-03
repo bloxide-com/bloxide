@@ -11,3 +11,6 @@ pub mod prelude;
 mod tests;
 
 pub use generated::*;
+
+/// Number of ticks after which the counter completes (`Decision::Done`).
+pub const DONE_AT_COUNT: u32 = 2;

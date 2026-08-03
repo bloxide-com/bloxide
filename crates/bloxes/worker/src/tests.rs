@@ -71,10 +71,10 @@ mod worker_tests {
         let mut h = WorkerHarness::new();
         h.start();
         h.dispatch_do_work(7);
-        // Guard::Stop fires after stub actions — machine returns to Init.
+        // Decision::Stop fires after stub actions — machine returns to Init.
         assert!(
             h.current_state().is_init(),
-            "machine must be in Init after DoWork (Guard::Stop)"
+            "machine must be in Init after DoWork (Decision::Stop)"
         );
     }
 
@@ -176,5 +176,65 @@ mod worker_tests {
         let p2_msgs = peer2_rx.drain_payloads();
         assert_eq!(p1_msgs.len(), 0, "stub action does not send PeerResult");
         assert_eq!(p2_msgs.len(), 0, "stub action does not send PeerResult");
+    }
+
+    // ── Mailbox priority ───────────────────────────────────────────────────
+    //
+    // The Worker's `Mailboxes` tuple declares the Ctrl stream at index 0
+    // (highest priority — see generated/spec_skeleton.rs), so all pending
+    // `AddPeer` messages are processed before `DoWork` is dispatched.
+
+    #[test]
+    fn ctrl_mailbox_is_polled_before_domain_mailbox() {
+        use bloxide_core::mailboxes::Mailboxes;
+        use bloxide_core::spec::MachineSpec;
+        use std::task::{Context, Poll};
+
+        fn noop_waker() -> std::task::Waker {
+            use std::task::{RawWaker, RawWakerVTable, Waker};
+            static VTABLE: RawWakerVTable = RawWakerVTable::new(
+                |_| RawWaker::new(std::ptr::null(), &VTABLE),
+                |_| {},
+                |_| {},
+                |_| {},
+            );
+            unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
+        }
+
+        let worker_id = TestRuntime::alloc_actor_id();
+        let (ctrl_ref, ctrl_rx) = <TestRuntime as DynamicChannelCap>::channel::<
+            PeerCtrl<WorkerMsg, TestRuntime>,
+        >(worker_id, 16);
+        let (msg_ref, msg_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 16);
+
+        // Queue the domain message FIRST, then the ctrl message.
+        msg_ref
+            .try_send(0, WorkerMsg::DoWork(DoWork { task_id: 1 }))
+            .unwrap();
+        let peer_id = TestRuntime::alloc_actor_id();
+        let (peer_ref, _peer_rx) =
+            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(peer_id, 16);
+        ctrl_ref
+            .try_send(0, PeerCtrl::AddPeer(AddPeer { peer_id, peer_ref }))
+            .unwrap();
+
+        // The spec's declared mailbox set — index 0 (Ctrl) is polled first.
+        let mut mailboxes: <WorkerSpec<TestRuntime> as MachineSpec>::Mailboxes<TestRuntime> =
+            (ctrl_rx, msg_rx);
+        let waker = noop_waker();
+        let mut cx = Context::from_waker(&waker);
+
+        let first: Poll<Option<WorkerEvent<TestRuntime>>> = mailboxes.poll_next(&mut cx);
+        assert!(
+            matches!(first, Poll::Ready(Some(WorkerEvent::Ctrl(_)))),
+            "ctrl message must be polled before the earlier-queued domain message"
+        );
+
+        let second: Poll<Option<WorkerEvent<TestRuntime>>> = mailboxes.poll_next(&mut cx);
+        assert!(
+            matches!(second, Poll::Ready(Some(WorkerEvent::Msg(_)))),
+            "domain message must be polled after the ctrl message"
+        );
     }
 }

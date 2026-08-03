@@ -14,8 +14,7 @@ pub use generated::*;
 
 pub const MAX_ROUNDS: u8 = 5;
 
-/// After receiving `Pong(PAUSE_AT_ROUND)`, Active internally transitions to
-/// Paused instead of self-transitioning. `Paused::on_entry` then sets a timer
-/// to deliver `PingPongMsg::Resume` after `PAUSE_DURATION_MS` milliseconds.
+/// After receiving `Pong(PAUSE_AT_ROUND)`, Active transitions to Paused.
+/// `Paused::on_entry` schedules a resume timer whose duration is derived
+/// from the round number (see `schedule_resume`: 2000 + round × 500 ms).
 pub const PAUSE_AT_ROUND: u8 = 2;
-pub const PAUSE_DURATION_MS: u64 = 150;

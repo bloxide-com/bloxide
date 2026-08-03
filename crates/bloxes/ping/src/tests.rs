@@ -14,7 +14,7 @@ mod ping_tests {
     use bloxide_core::{
         spec::MachineSpec, DynamicChannelCap, Envelope, MachineState, StateMachine,
     };
-    use bloxide_test_runtime::{TestReceiver, TestRuntime, TestSender};
+    use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use bloxide_timer::TimerCommand;
     use ping_pong_messages::{PingPongMsg, Pong, Resume};
     use std::vec::Vec;
@@ -150,15 +150,15 @@ mod ping_tests {
         h.start();
         h.drain_to_pong_rx();
 
-        // Manually set round to MAX_ROUNDS to trigger Guard::Stop
+        // Manually set round to MAX_ROUNDS to trigger Decision::Stop
         h.machine.ctx_mut().round = MAX_ROUNDS as u32;
         h.send_pong();
 
-        // Guard::Stop fires when round >= MAX_ROUNDS, returning the machine
+        // Decision::Stop fires when round >= MAX_ROUNDS, returning the machine
         // to Init (suspended).
         assert!(
             h.current_state().is_init(),
-            "machine must be in Init after Guard::Stop at MAX_ROUNDS"
+            "machine must be in Init after Decision::Stop at MAX_ROUNDS"
         );
     }
 
@@ -185,7 +185,7 @@ mod ping_tests {
 
         assert!(
             h.current_state().is_init(),
-            "machine must be in Init after Guard::Stop at MAX_ROUNDS"
+            "machine must be in Init after Decision::Stop at MAX_ROUNDS"
         );
 
         h.terminate();

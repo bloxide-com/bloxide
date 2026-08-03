@@ -30,6 +30,7 @@ message = "CounterMsg"
 message_path = "counter_messages::CounterMsg"
 
 [topology]
+spec_imports = ["crate::DONE_AT_COUNT"]
 
 [[topology.states]]
 name = "Ready"
@@ -44,7 +45,7 @@ target = "stay"
 actions = ["Self::count_tick"]
 
 [[topology.transitions.guards]]
-condition = "ctx.count >= 2"
+condition = "ctx.count >= DONE_AT_COUNT"
 target = "done"
 
 [[topology.transitions.guards]]

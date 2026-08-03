@@ -21,7 +21,7 @@ use bloxide_core::mailboxes::NoMailboxes;
 use bloxide_core::messaging::Envelope;
 use bloxide_core::spec::{MachineSpec, StateFns};
 use bloxide_core::topology::LeafState;
-use bloxide_core::transition::{ActionResult, Guard, StateRule};
+use bloxide_core::transition::{ActionResult, Decision, StateRule};
 
 extern crate std;
 use std::cell::RefCell;
@@ -95,7 +95,7 @@ static S_FNS: StateFns<RecSpec> = StateFns {
     on_entry: &[|_| log("s-ENTRY")],
     on_exit: &[|_| log("s-EXIT")],
     transitions: &[
-        rule!(H, |_, _, _| Guard::Transition(LeafState::new(
+        rule!(H, |_, _, _| Decision::Transition(LeafState::new(
             BhsmTstState::S11
         ))),
         rule!(
@@ -104,19 +104,19 @@ static S_FNS: StateFns<RecSpec> = StateFns {
                 log("s-I");
                 ActionResult::Ok
             },
-            |_, _, _| Guard::Stay
+            |_, _, _| Decision::Stay
         ),
-        rule!(K, |_, _, _| Guard::Transition(LeafState::new(
+        rule!(K, |_, _, _| Decision::Transition(LeafState::new(
             BhsmTstState::Error
         ))),
-        rule!(X, |_, _, _| Guard::Stop),
+        rule!(X, |_, _, _| Decision::Stop),
     ],
 };
 
 static S1_FNS: StateFns<RecSpec> = StateFns {
     on_entry: &[|_| log("s1-ENTRY")],
     on_exit: &[|_| log("s1-EXIT")],
-    transitions: &[rule!(C, |_, _, _| Guard::Transition(LeafState::new(
+    transitions: &[rule!(C, |_, _, _| Decision::Transition(LeafState::new(
         BhsmTstState::S211
     )))],
 };
@@ -131,7 +131,7 @@ static S11_FNS: StateFns<RecSpec> = StateFns {
                 log("s11-A");
                 ActionResult::Ok
             },
-            |_, _, _| Guard::Transition(LeafState::new(BhsmTstState::S11))
+            |_, _, _| Decision::Transition(LeafState::new(BhsmTstState::S11))
         ),
         rule!(
             B,
@@ -139,9 +139,9 @@ static S11_FNS: StateFns<RecSpec> = StateFns {
                 log("s11-B");
                 ActionResult::Ok
             },
-            |_, _, _| Guard::Transition(LeafState::new(BhsmTstState::S11))
+            |_, _, _| Decision::Transition(LeafState::new(BhsmTstState::S11))
         ),
-        rule!(D, |_, _, _| Guard::Transition(LeafState::new(
+        rule!(D, |_, _, _| Decision::Transition(LeafState::new(
             BhsmTstState::S211
         ))),
     ],
@@ -157,10 +157,10 @@ static S21_FNS: StateFns<RecSpec> = StateFns {
     on_entry: &[|_| log("s21-ENTRY")],
     on_exit: &[|_| log("s21-EXIT")],
     transitions: &[
-        rule!(E, |_, _, _| Guard::Transition(LeafState::new(
+        rule!(E, |_, _, _| Decision::Transition(LeafState::new(
             BhsmTstState::S211
         ))),
-        rule!(G, |_, _, _| Guard::Transition(LeafState::new(
+        rule!(G, |_, _, _| Decision::Transition(LeafState::new(
             BhsmTstState::S11
         ))),
     ],
@@ -169,7 +169,7 @@ static S21_FNS: StateFns<RecSpec> = StateFns {
 static S211_FNS: StateFns<RecSpec> = StateFns {
     on_entry: &[|_| log("s211-ENTRY")],
     on_exit: &[|_| log("s211-EXIT")],
-    transitions: &[rule!(F, |_, _, _| Guard::Transition(LeafState::new(
+    transitions: &[rule!(F, |_, _, _| Decision::Transition(LeafState::new(
         BhsmTstState::S11
     )))],
 };
@@ -366,7 +366,7 @@ mod tests {
     fn x_from_any_state_guard_stop_suspends() {
         let mut m = machine_in_s11();
         let outcome = m.dispatch(msg(BhsmTstMsg::X(X)));
-        // Guard::Stop: full exit chain + on_init_entry; suspended in Init.
+        // Decision::Stop: full exit chain + on_init_entry; suspended in Init.
         assert_eq!(
             take_log(),
             vec!["s11-EXIT", "s1-EXIT", "s-EXIT", "Init:entry"]

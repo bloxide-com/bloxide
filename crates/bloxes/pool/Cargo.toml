@@ -22,6 +22,7 @@ bloxide-core    = { workspace = true, features = ["alloc"] }
 bloxide-child-management = { workspace = true }
 bloxide-spawn   = { workspace = true, features = ["alloc"] }
 bloxide-peers   = { workspace = true }
+blox-ctx-pool-ref = { workspace = true }
 pool-messages   = { workspace = true }
 
 [dev-dependencies]

@@ -19,7 +19,7 @@ message_path = "pool_messages::PoolMsg"
 [[event.mailboxes]]
 variant = "SpawnReply"
 message = "SpawnedWorker"
-message_path = "pool_messages::SpawnedWorker<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>, R>"
+message_path = "blox_ctx_pool_ref::SpawnedWorker<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>, R>"
 feature = "dynamic"
 
 # ── Context struct ───────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ imports = [
     "alloc::vec::Vec",
 ]
 feature_imports = [
-    "pool_messages::{SpawnRequest, SpawnedWorker}",
+    "blox_ctx_pool_ref::{SpawnRequest, SpawnedWorker}",
     "bloxide_spawn::SpawnFn",
     "bloxide_core::lifecycle::ChildLifecycleEvent",
     "bloxide_child_management::control::ChildCtrl",
@@ -46,7 +46,6 @@ feature_imports = [
 
 # Accessor traits removed — fields are now plain struct fields.
 [[context.uses]]
-crate = "crate"
 field = "self_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "ctor"

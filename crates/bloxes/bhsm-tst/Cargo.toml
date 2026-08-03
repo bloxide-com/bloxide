@@ -10,7 +10,6 @@ license.workspace = true
 [features]
 default = ["std"]
 std = ["bloxide-core/std"]
-codegen = []
 
 [dependencies]
 bloxide-core = { workspace = true, features = ["alloc"] }

@@ -34,35 +34,48 @@ pub fn send_pong<R: BloxRuntime>(
     ActionResult::from(peer_ref.try_send(self_id, PingPongMsg::Pong(Pong { round: ping.round })))
 }
 
-/// Send a `PingPongMsg::Ping` to the peer only if this is the first round (round == 1).
-/// This is an entry action — no return value.
+/// Send the first `PingPongMsg::Ping` when the machine is fresh (`round == 0`),
+/// advancing to round 1. No-op on re-entry (round > 0) — e.g. when returning
+/// from Paused — so each round is sent exactly once.
 pub fn send_initial_ping<R: BloxRuntime>(
     self_id: ActorId,
     peer_ref: &ActorRef<PingPongMsg, R>,
-    round: u32,
-) {
-    if round == 1 {
-        let _ = peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round }));
+    round: &mut u32,
+) -> ActionResult {
+    if *round == 0 {
+        *round = 1;
+        ActionResult::from(peer_ref.try_send(self_id, PingPongMsg::Ping(Ping { round: 1 })))
+    } else {
+        ActionResult::Ok
     }
 }
 
 /// Schedule a resume timer delivering `PingPongMsg::Resume` to self after
 /// a duration derived from the current round number. Stores the `TimerId`
-/// in `current_timer`.
+/// in `current_timer`. Returns `Err` (leaving `current_timer` unset) if the
+/// timer command could not be queued.
 pub fn schedule_resume<R: BloxRuntime>(
     self_id: ActorId,
     self_ref: &ActorRef<PingPongMsg, R>,
     timer_ref: &ActorRef<TimerCommand, R>,
     round: u32,
     current_timer: &mut Option<TimerId>,
-) {
+) -> ActionResult {
     let duration_ms = 2000 + (round as u64 * 500);
-    let id = bloxide_timer::actions::set_timer(
+    match bloxide_timer::actions::set_timer(
         self_id,
         timer_ref,
         duration_ms,
         self_ref,
         PingPongMsg::Resume(Resume),
-    );
-    *current_timer = Some(id);
+    ) {
+        Some(id) => {
+            *current_timer = Some(id);
+            ActionResult::Ok
+        }
+        None => {
+            *current_timer = None;
+            ActionResult::Err
+        }
+    }
 }

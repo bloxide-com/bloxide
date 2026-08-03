@@ -1,14 +1,26 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Unit tests for the Pool blox.
+//! Unit tests for the Pool blox (blox-level tier).
 //!
-//! Uses `TestRuntime` to verify the pool state-machine behavior for the
-//! supervisor-based 2-phase spawn model. Spawn requests are sent to a mock
-//! spawn mailbox and replies are injected via `SpawnReply` events.
+//! These tests run against the blox-level `PoolSpec`, whose action closures
+//! are STUBS (no-ops returning `ActionResult::Ok`) while the guards are real.
+//! They therefore only cover what is true at this level:
 //!
-//! Run with: `cargo test -p pool-blox --features std`
+//! - topology: states, flat hierarchy, initial state
+//! - stub-level lifecycle: `Start` → `Idle`, guard-driven transitions that do
+//!   not depend on action side effects
+//!
+//! Behavior that lives in the concrete actions (spawn flow, spawn-queue
+//! processing, `DoWork` dispatch, `WorkDone` accounting) is NOT tested here —
+//! it is covered at the app level by `apps/tokio-pool-demo/tests/`, which
+//! drives the system-generated concrete specs. With stub actions the ctx
+//! fields (`pending`, `spawn_queue`, `spawn_in_flight`, `worker_refs`, …)
+//! never change from their defaults, and the tests below assert exactly that.
+//!
+//! Run with: `cargo test -p pool-blox --features std,dynamic`
 
 #[cfg(all(test, feature = "std", feature = "dynamic"))]
 mod pool_tests {
+    use blox_ctx_pool_ref::{SpawnRequest, SpawnedWorker};
     use bloxide_child_management::ChildCtrl;
     use bloxide_child_management::ChildPolicy;
     use bloxide_core::lifecycle::ChildLifecycleEvent;
@@ -16,12 +28,14 @@ mod pool_tests {
         capability::{BloxRuntime, DynamicChannelCap},
         lifecycle::LifecycleCommand,
         messaging::ActorRef,
+        spec::MachineSpec,
+        topology::StateTopology,
         Envelope, MachineState, StateMachine,
     };
     use bloxide_peers::PeerCtrl;
     use bloxide_spawn::{SpawnFn, SpawnOutput};
     use bloxide_test_runtime::TestRuntime;
-    use pool_messages::{PoolMsg, SpawnRequest, SpawnWorker, SpawnedWorker, WorkDone, WorkerMsg};
+    use pool_messages::{PoolMsg, SpawnWorker, WorkDone, WorkerMsg};
 
     use crate::{PoolCtx, PoolEvent, PoolSpec, PoolState};
 
@@ -165,10 +179,6 @@ mod pool_tests {
         fn current_state(&self) -> MachineState<PoolState> {
             self.machine.current_state()
         }
-
-        fn pending(&self) -> u32 {
-            self.machine.ctx().pending
-        }
     }
 
     // Helper to create dummy worker refs for a reply.
@@ -186,10 +196,29 @@ mod pool_tests {
         (domain_ref, ctrl_ref)
     }
 
-    // ── Tests ────────────────────────────────────────────────────────────────
+    // ── Topology tests ───────────────────────────────────────────────────────
 
     #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
+    fn pool_topology_is_flat() {
+        assert_eq!(PoolState::STATE_COUNT, 3);
+        assert_eq!(PoolSpec::<TestRuntime>::initial_state(), PoolState::Idle);
+        for state in [PoolState::Idle, PoolState::Spawning, PoolState::Active] {
+            assert!(state.parent().is_none(), "{:?} must have no parent", state);
+            assert!(state.is_leaf(), "{:?} must be a leaf state", state);
+            assert!(
+                !PoolSpec::<TestRuntime>::is_error(&state),
+                "{:?} must not be an error state",
+                state
+            );
+        }
+        assert_eq!(PoolState::Idle.as_index(), 0);
+        assert_eq!(PoolState::Spawning.as_index(), 1);
+        assert_eq!(PoolState::Active.as_index(), 2);
+    }
+
+    // ── Stub-level lifecycle tests ───────────────────────────────────────────
+
+    #[test]
     fn pool_starts_in_idle() {
         let mut h = PoolHarness::new();
         h.start();
@@ -197,7 +226,6 @@ mod pool_tests {
     }
 
     #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
     fn spawn_worker_transitions_idle_to_spawning() {
         let mut h = PoolHarness::new();
         h.start();
@@ -205,11 +233,12 @@ mod pool_tests {
         h.dispatch_spawn_worker(1);
 
         assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
-        assert_eq!(h.pending(), 0);
+        // Stub action is a no-op: no accounting happens at blox level.
+        assert_eq!(h.machine.ctx().pending, 0);
+        assert!(!h.machine.ctx().spawn_in_flight);
     }
 
     #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
     fn spawn_worker_then_spawned_worker_transitions_to_active() {
         let mut h = PoolHarness::new();
         h.start();
@@ -218,16 +247,22 @@ mod pool_tests {
         let (domain_ref, ctrl_ref) = dummy_worker_refs(1);
         h.dispatch_spawned_worker(1, domain_ref, ctrl_ref);
 
+        // With stub actions spawn_in_flight stays false, spawn_queue stays
+        // empty and worker_refs stays empty, so the guard takes the Active
+        // branch. (The pending==0 && !worker_refs.is_empty() stop branch is
+        // not reachable with stubs because worker_refs is never populated.)
         assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
-        assert_eq!(h.pending(), 1);
+        // Stub action is a no-op: pending is never incremented at blox level.
+        assert_eq!(h.machine.ctx().pending, 0);
     }
 
     #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
     fn multiple_spawn_workers_stay_active() {
         let mut h = PoolHarness::new();
         h.start();
 
+        // Each SpawnWorker goes Active → Spawning; each SpawnReply returns to
+        // Active (stub actions leave spawn_in_flight/spawn_queue untouched).
         for i in 1u32..=3 {
             let worker_id = i as usize;
             h.dispatch_spawn_worker(i);
@@ -236,301 +271,42 @@ mod pool_tests {
         }
 
         assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
-        assert_eq!(h.pending(), 3);
+        assert_eq!(h.machine.ctx().pending, 0);
     }
 
     #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
-    fn work_done_decrements_pending() {
-        let mut h = PoolHarness::new();
-        h.start();
-
-        h.dispatch_spawn_worker(10);
-        let (domain_ref, ctrl_ref) = dummy_worker_refs(1);
-        h.dispatch_spawned_worker(1, domain_ref, ctrl_ref);
-
-        h.dispatch_spawn_worker(20);
-        let (domain_ref2, ctrl_ref2) = dummy_worker_refs(2);
-        h.dispatch_spawned_worker(2, domain_ref2, ctrl_ref2);
-
-        assert_eq!(h.pending(), 2);
-
-        h.dispatch_work_done(1, 10, 20);
-        assert_eq!(h.pending(), 1);
-        assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
-    }
-
-    #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
-    fn all_work_done_transitions_to_stop() {
+    fn work_done_with_zero_pending_stops_to_init() {
         let mut h = PoolHarness::new();
         h.start();
 
         h.dispatch_spawn_worker(1);
         let (domain_ref, ctrl_ref) = dummy_worker_refs(1);
         h.dispatch_spawned_worker(1, domain_ref, ctrl_ref);
-
-        h.dispatch_spawn_worker(2);
-        let (domain_ref2, ctrl_ref2) = dummy_worker_refs(2);
-        h.dispatch_spawned_worker(2, domain_ref2, ctrl_ref2);
-
-        h.dispatch_work_done(1, 1, 2);
         assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
 
-        h.dispatch_work_done(2, 2, 4);
-        // All workers done → Guard::Stop → machine returns to Init
+        // The Active + WorkDone guard is real: pending == 0 (stub actions
+        // never increment it) → Decision::Stop → machine returns to Init.
+        h.dispatch_work_done(1, 1, 0);
         assert!(
             h.current_state().is_init(),
-            "machine must be in Init after all workers done (Guard::Stop)"
+            "machine must be in Init after WorkDone with pending == 0 (Decision::Stop)"
         );
+
+        // The machine can be restarted: Start from Init re-enters Idle.
+        h.start();
+        assert_eq!(h.current_state(), MachineState::State(PoolState::Idle));
     }
 
     #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
-    fn pool_stores_worker_refs() {
+    fn work_done_in_spawning_is_absorbed() {
         let mut h = PoolHarness::new();
         h.start();
 
         h.dispatch_spawn_worker(1);
-        let (domain_ref, ctrl_ref) = dummy_worker_refs(1);
-        h.dispatch_spawned_worker(1, domain_ref, ctrl_ref);
-
-        h.dispatch_spawn_worker(2);
-        let (domain_ref2, ctrl_ref2) = dummy_worker_refs(2);
-        h.dispatch_spawned_worker(2, domain_ref2, ctrl_ref2);
-
-        assert_eq!(
-            h.machine.ctx().worker_refs.len(),
-            2,
-            "pool should store refs for all spawned workers"
-        );
-    }
-
-    #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
-    fn spawned_worker_with_full_domain_channel_decrements_pending() {
-        let pool_id = TestRuntime::alloc_actor_id();
-        let (pool_ref, _pool_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<PoolMsg>(pool_id, 32);
-
-        let control_id = TestRuntime::alloc_actor_id();
-        let (control_ref, _control_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<ChildCtrl<TestRuntime>>(control_id, 16);
-
-        let notify_id = TestRuntime::alloc_actor_id();
-        let (notify_ref, _notify_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(notify_id, 16);
-
-        let reply_id = TestRuntime::alloc_actor_id();
-        let (spawn_reply_ref, _reply_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-            SpawnedWorker<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
-        >(reply_id, 16);
-
-        let spawn_fn: SpawnFn<
-            TestRuntime,
-            SpawnRequest<PeerCtrl<WorkerMsg, TestRuntime>, TestRuntime>,
-        > = test_spawn_worker;
-        let ctx = PoolCtx::new(
-            pool_id,
-            pool_ref.clone(),
-            spawn_fn,
-            control_ref,
-            notify_ref,
-            spawn_reply_ref,
-        );
-        let mut machine = StateMachine::<PoolSpec<TestRuntime>>::new(ctx);
-        machine.dispatch(PoolEvent::Lifecycle(LifecycleCommand::Start));
-
-        machine.dispatch(PoolEvent::Msg(Envelope(
-            0,
-            PoolMsg::SpawnWorker(SpawnWorker { task_id: 42 }),
-        )));
-
-        let worker_id = 1usize;
-        // Capacity 0 = always-full channel: every try_send fails, so the
-        // DoWork send to this worker fails (models a saturated worker).
-        let (domain_ref, _domain_rx) =
-            <TestRuntime as DynamicChannelCap>::channel::<WorkerMsg>(worker_id, 0);
-        let (ctrl_ref, _ctrl_rx) = <TestRuntime as DynamicChannelCap>::channel::<
-            PeerCtrl<WorkerMsg, TestRuntime>,
-        >(worker_id, 16);
-
-        machine.dispatch(PoolEvent::SpawnReply(Envelope(
-            0,
-            SpawnedWorker {
-                child_id: worker_id,
-                domain_ref,
-                ctrl_ref,
-            },
-        )));
-
-        assert_eq!(
-            machine.ctx().pending,
-            0,
-            "pending should be decremented back to 0 when DoWork send fails"
-        );
-        // Guard::Stop fires because pending==0 and worker_refs is non-empty,
-        // then on_init_entry clears worker_refs. The worker ref was stored
-        // by the action but cleared by the Init entry.
-        assert_eq!(
-            machine.ctx().worker_refs.len(),
-            0,
-            "worker refs cleared by on_init_entry after Guard::Stop"
-        );
-        assert!(
-            machine.current_state().is_init(),
-            "machine should be in Init after Guard::Stop"
-        );
-    }
-
-    // ── Spawn queue tests ────────────────────────────────────────────────────
-
-    #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
-    fn spawn_worker_while_spawning_is_queued() {
-        let mut h = PoolHarness::new();
-        h.start();
-
-        // First SpawnWorker → Spawning
-        h.dispatch_spawn_worker(0);
         assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
 
-        // Additional SpawnWorkers while in Spawning should be queued (stay in Spawning)
-        h.dispatch_spawn_worker(1);
-        h.dispatch_spawn_worker(2);
-        assert_eq!(
-            h.current_state(),
-            MachineState::State(PoolState::Spawning),
-            "pool should stay in Spawning when buffering additional spawn requests"
-        );
-        assert_eq!(
-            h.machine.ctx().spawn_queue.len(),
-            2,
-            "two spawn requests should be queued"
-        );
-    }
-
-    #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
-    fn queued_spawns_are_processed_after_spawn_reply() {
-        let mut h = PoolHarness::new();
-        h.start();
-
-        // Send 3 SpawnWorker requests: first transitions to Spawning, other 2 are queued
-        h.dispatch_spawn_worker(0);
-        h.dispatch_spawn_worker(1);
-        h.dispatch_spawn_worker(2);
-        assert_eq!(h.machine.ctx().spawn_queue.len(), 2);
-
-        // First SpawnReply (for task_id=0): pops queued task_id=1, stays in Spawning
-        let (dr1, cr1) = dummy_worker_refs(1);
-        h.dispatch_spawned_worker(1, dr1, cr1);
-        assert_eq!(
-            h.current_state(),
-            MachineState::State(PoolState::Spawning),
-            "should stay in Spawning because queue still has task_id=2"
-        );
-        assert_eq!(h.machine.ctx().spawn_queue.len(), 1);
-        assert_eq!(h.pending(), 1);
-
-        // Second SpawnReply (for task_id=1): pops queued task_id=2, stays in Spawning
-        let (dr2, cr2) = dummy_worker_refs(2);
-        h.dispatch_spawned_worker(2, dr2, cr2);
-        assert_eq!(
-            h.current_state(),
-            MachineState::State(PoolState::Spawning),
-            "should stay in Spawning because task_id=2 spawn is in-flight"
-        );
-        assert_eq!(h.machine.ctx().spawn_queue.len(), 0);
-        assert_eq!(h.pending(), 2);
-
-        // Third SpawnReply (for task_id=2): queue empty, no in-flight spawn → Active
-        let (dr3, cr3) = dummy_worker_refs(3);
-        h.dispatch_spawned_worker(3, dr3, cr3);
-        assert_eq!(
-            h.current_state(),
-            MachineState::State(PoolState::Active),
-            "should transition to Active after all queued spawns are processed"
-        );
-        assert_eq!(h.machine.ctx().spawn_queue.len(), 0);
-        assert_eq!(h.pending(), 3);
-    }
-
-    #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
-    fn work_done_in_spawning_state_stays_in_spawning() {
-        let mut h = PoolHarness::new();
-        h.start();
-
-        // Spawn 2 workers: first goes to Spawning, second is queued
-        h.dispatch_spawn_worker(0);
-        h.dispatch_spawn_worker(1);
-
-        // First worker is spawned
-        let (dr1, cr1) = dummy_worker_refs(1);
-        h.dispatch_spawned_worker(1, dr1, cr1);
+        // Spawning + WorkDone → stay (real guard, no action side effects).
+        h.dispatch_work_done(1, 1, 0);
         assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
-        assert_eq!(h.pending(), 1);
-
-        // First worker finishes while pool is still Spawning (second spawn in-flight)
-        h.dispatch_work_done(1, 0, 0);
-        assert_eq!(
-            h.current_state(),
-            MachineState::State(PoolState::Spawning),
-            "WorkDone in Spawning should stay in Spawning"
-        );
-        assert_eq!(h.pending(), 0);
-    }
-
-    #[test]
-    #[ignore = "Phase 2: actions are stubs, behavior tests deferred to Phase 3"]
-    fn full_three_worker_flow_with_queue() {
-        let mut h = PoolHarness::new();
-        h.start();
-
-        // Send all 3 SpawnWorker messages at once
-        h.dispatch_spawn_worker(0);
-        h.dispatch_spawn_worker(1);
-        h.dispatch_spawn_worker(2);
-        assert_eq!(h.machine.ctx().spawn_queue.len(), 2);
-
-        // Worker 1 spawned (for task_id=0), queued task_id=1 starts
-        let (dr1, cr1) = dummy_worker_refs(1);
-        h.dispatch_spawned_worker(1, dr1, cr1);
-        assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
-        assert_eq!(h.pending(), 1);
-
-        // Worker 1 finishes while Spawning
-        h.dispatch_work_done(1, 0, 0);
-        assert_eq!(h.pending(), 0);
-
-        // Worker 2 spawned (for task_id=1), queued task_id=2 starts
-        let (dr2, cr2) = dummy_worker_refs(2);
-        h.dispatch_spawned_worker(2, dr2, cr2);
-        assert_eq!(h.current_state(), MachineState::State(PoolState::Spawning));
-        assert_eq!(h.pending(), 1);
-
-        // Worker 2 finishes while Spawning
-        h.dispatch_work_done(2, 1, 2);
-        assert_eq!(h.pending(), 0);
-
-        // Worker 3 spawned (for task_id=2), queue empty → Active
-        let (dr3, cr3) = dummy_worker_refs(3);
-        h.dispatch_spawned_worker(3, dr3, cr3);
-        assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
-        assert_eq!(h.pending(), 1);
-
-        // Worker 3 finishes → Guard::Stop → Init
-        h.dispatch_work_done(3, 2, 4);
-        assert!(
-            h.current_state().is_init(),
-            "machine must be in Init after all workers done (Guard::Stop)"
-        );
-        // on_init_entry clears worker_refs on Guard::Stop.
-        assert_eq!(
-            h.machine.ctx().worker_refs.len(),
-            0,
-            "worker refs cleared by on_init_entry after Guard::Stop"
-        );
     }
 }

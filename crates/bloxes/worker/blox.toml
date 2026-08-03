@@ -40,8 +40,7 @@ field = "pool_ref"
 field_type = "ActorRef<PoolMsg, R>"
 role = "ctor"
 
-# State fields (moved from B into Ctx) — accessed directly, no trait accessor.
-# task_id, result, and peers are zero-initialized by BloxCtx derive macro.
+# State fields — plain struct fields, zero-initialized via `Default` in `Ctx::new`.
 [[context.fields]]
 name = "task_id"
 type = "u32"
@@ -74,8 +73,8 @@ impl_required = true
 
 [[context.actions]]
 name = "do_broadcast"
-crate = "bloxide_peers"
-fn_name = "broadcast_to_peers"
+crate = "blox_ctx_pool_ref"
+fn_name = "broadcast_result"
 kind = "transition"
 fields = ["self_id", "peers:ref", "result"]
 impl_required = false

@@ -52,8 +52,8 @@ impl_required = false
 [[context.actions]]
 name = "send_initial_ping"
 crate = "blox_ctx_ping_pong"
-kind = "transition"
-fields = ["self_id", "peer_ref:ref", "round"]
+kind = "entry"
+fields = ["self_id", "peer_ref:ref", "round:mut"]
 impl_required = false
 
 [[context.actions]]
@@ -68,7 +68,7 @@ impl_required = false
 name = "schedule_pause_timer"
 fn_name = "schedule_resume"
 crate = "blox_ctx_ping_pong"
-kind = "transition"
+kind = "entry"
 fields = ["self_id", "self_ref:ref", "timer_ref:ref", "round", "current_timer:mut"]
 impl_required = false
 
@@ -77,7 +77,7 @@ name = "cancel_pause_timer"
 fn_name = "cancel_timer_by_id"
 crate = "bloxide_timer"
 module = "actions"
-kind = "transition"
+kind = "exit"
 fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
 impl_required = false
 
@@ -120,16 +120,17 @@ state = "Operating"
 event = "PingPongMsg::Pong(_)"
 target = "stay"
 
-# Active: entry increments round, logs, sends ping; handles Pong with guards
+# Active: entry sends the first ping (round 0→1); each Pong advances the round
+# and forwards exactly one ping for the new round (stay — no re-entry).
 [[topology.entry]]
 state = "Active"
-actions = ["Self::increment_round", "Self::send_initial_ping"]
+actions = ["Self::send_initial_ping"]
 
 [[topology.transitions]]
 state = "Active"
 event = "PingPongMsg::Pong(_)"
-target = "Active"
-actions = ["Self::forward_ping"]
+target = "stay"
+actions = ["Self::increment_round", "Self::forward_ping"]
 
 [[topology.transitions.guards]]
 condition = "results.any_failed()"
@@ -143,7 +144,8 @@ target = "stop"
 condition = "ctx.round == PAUSE_AT_ROUND as u32"
 target = "Paused"
 
-# Paused: entry schedules timer, exit cancels it; Resume → Active
+# Paused: entry schedules timer, exit cancels it; Resume advances the round
+# and forwards one ping, re-entering Active
 [[topology.entry]]
 state = "Paused"
 actions = ["Self::schedule_pause_timer"]
@@ -156,7 +158,7 @@ actions = ["Self::cancel_pause_timer"]
 state = "Paused"
 event = "PingPongMsg::Resume(_)"
 target = "Active"
-actions = ["Self::forward_ping"]
+actions = ["Self::increment_round", "Self::forward_ping"]
 
 # Error: entry logs error
 [[topology.entry]]

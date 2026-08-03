@@ -7,7 +7,7 @@
 //! - `Active`: workers are running; accepts more `SpawnWorker` and `WorkDone`
 //!
 //! When all workers have reported completion (`pending == 0`), the transition
-//! guard returns `Guard::Stop`, returning the machine to `Init`.
+//! guard returns `Decision::Stop`, returning the machine to `Init`.
 #![no_std]
 extern crate alloc;
 
