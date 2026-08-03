@@ -32,7 +32,7 @@ classDiagram
 
 - `ActorRef<M, R>` is `Clone + Send + Sync`. Hand it to any state that needs to send a message to that actor.
 - `send` awaits mailbox capacity (async, backpressure).
-- `try_send` returns an error immediately if the mailbox is full (non-blocking, preferred in `actions` / `on_entry`).
+- `try_send` returns an error immediately if the mailbox is full or closed (non-blocking, preferred in `actions` / `on_entry`). Distinguish the two failure kinds with `BloxRuntime::try_send_error_is_closed`: full is genuine backpressure (worth a warning); closed means the receiving task is gone — an expected shutdown race, handled as a silent no-op.
 - `sender()` returns the underlying `R::Sender<M>` (a clone of the internal sender). Used by the wiring layer to hand a raw sender to a `ChildGroup` without wrapping it in an `ActorRef`.
 - `Envelope` wraps every message with the sender's `ActorId` so recipients know who sent it.
 

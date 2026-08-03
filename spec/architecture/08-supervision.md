@@ -318,6 +318,8 @@ Entering `ShuttingDown` runs the entry action `stop_all_children`, which sends `
 
 Note the supervisor self-stops via **`Decision::Stop`**, not Reset: there is nothing to restart to. Both `Running` and `ShuttingDown` have `Done` transitions (`deregister_done`) so clean completions are handled in either state.
 
+**The shutdown race is silent by design.** `Stopped` children still get `Stop` intentionally (their task is alive), but a child may die *while* stopped — its run loop exits via all-streams-close and the group still holds the now-dead lifecycle channel. Sends to such already-exited tasks fail with `Closed`, which `stop_all` / `start_all` / `start_child` treat as a silent no-op via `BloxRuntime::try_send_error_is_closed`; only genuine backpressure (`Full`) logs a warning. The reporting direction classifies the same way: a child's `report_outcome` to an already-exited supervisor is dropped silently, while a full notify channel still warns.
+
 ### `SupervisorCtx<R>`
 
 Generated from `blox.toml` — four fields, three constructor args (`pending` is a state field):

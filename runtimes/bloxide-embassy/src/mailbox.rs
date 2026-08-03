@@ -42,6 +42,11 @@ impl BloxRuntime for EmbassyRuntime {
             .map_err(|_| EmbassyTrySendError)
     }
 
+    fn try_send_error_is_closed(_: &Self::TrySendError) -> bool {
+        // Embassy channels are process-lifetime statics — they never close.
+        false
+    }
+
     async fn yield_now() {
         embassy_futures::yield_now().await;
     }

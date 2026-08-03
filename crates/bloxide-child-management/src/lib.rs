@@ -199,32 +199,37 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
     pub fn start_child(&self, child_id: ActorId, from: ActorId) {
         if let Some(entry) = self.children.iter().find(|entry| entry.id == child_id) {
-            if entry
-                .lifecycle_ref
-                .try_send(from, LifecycleCommand::Start)
-                .is_err()
-            {
-                bloxide_log::blox_log_warn!(
-                    from,
-                    "try_send Start to child {} failed (channel full)",
-                    entry.id
-                );
+            match entry.lifecycle_ref.try_send(from, LifecycleCommand::Start) {
+                Ok(()) => {}
+                // Expected shutdown race: the child's task already exited
+                // (self-stopped or completed, run loop ended via
+                // all-streams-close). Silent no-op.
+                Err(e) if R::try_send_error_is_closed(&e) => {}
+                Err(_) => {
+                    bloxide_log::blox_log_warn!(
+                        from,
+                        "try_send Start to child {} failed (channel full)",
+                        entry.id
+                    );
+                }
             }
         }
     }
 
     pub fn start_all(&self, from: ActorId) {
         for entry in &self.children {
-            if entry
-                .lifecycle_ref
-                .try_send(from, LifecycleCommand::Start)
-                .is_err()
-            {
-                bloxide_log::blox_log_warn!(
-                    from,
-                    "try_send Start to child {} failed (channel full)",
-                    entry.id
-                );
+            match entry.lifecycle_ref.try_send(from, LifecycleCommand::Start) {
+                Ok(()) => {}
+                // Expected shutdown race: the child's task already exited.
+                // Silent no-op (see start_child).
+                Err(e) if R::try_send_error_is_closed(&e) => {}
+                Err(_) => {
+                    bloxide_log::blox_log_warn!(
+                        from,
+                        "try_send Start to child {} failed (channel full)",
+                        entry.id
+                    );
+                }
             }
         }
     }
@@ -238,16 +243,19 @@ impl<R: BloxRuntime> ChildGroup<R> {
             if entry.phase.is_task_gone() {
                 continue;
             }
-            if entry
-                .lifecycle_ref
-                .try_send(from, LifecycleCommand::Stop)
-                .is_err()
-            {
-                bloxide_log::blox_log_warn!(
-                    from,
-                    "try_send Stop to child {} failed (channel full)",
-                    entry.id
-                );
+            match entry.lifecycle_ref.try_send(from, LifecycleCommand::Stop) {
+                Ok(()) => {}
+                // Expected shutdown race: the child died while Stopped —
+                // its task exited (all-streams-close) but the group still
+                // holds the (now dead) lifecycle channel. Silent no-op.
+                Err(e) if R::try_send_error_is_closed(&e) => {}
+                Err(_) => {
+                    bloxide_log::blox_log_warn!(
+                        from,
+                        "try_send Stop to child {} failed (channel full)",
+                        entry.id
+                    );
+                }
             }
         }
     }

@@ -227,6 +227,12 @@ impl BloxRuntime for TestRuntime {
         sender.shared.wake();
         Ok(())
     }
+
+    fn try_send_error_is_closed(_: &Self::TrySendError) -> bool {
+        // The send side cannot observe a close: TestReceiver drop is not
+        // tracked in `Shared`, so try_send only ever fails on full.
+        false
+    }
 }
 
 impl DynamicChannelCap for TestRuntime {

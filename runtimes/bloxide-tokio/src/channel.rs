@@ -53,5 +53,11 @@ impl<M: Send + 'static> Stream for TokioStream<M> {
 #[derive(Debug)]
 pub struct TokioSendError;
 
-#[derive(Debug)]
-pub struct TokioTrySendError;
+/// Error returned by a non-blocking send.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokioTrySendError {
+    /// Channel buffer is full (backpressure).
+    Full,
+    /// Channel is closed — the receiving task is gone.
+    Closed,
+}

@@ -54,10 +54,14 @@ impl BloxRuntime for TokioRuntime {
         sender: &Self::Sender<M>,
         envelope: Envelope<M>,
     ) -> Result<(), Self::TrySendError> {
-        sender
-            .inner
-            .try_send(envelope)
-            .map_err(|_| TokioTrySendError)
+        sender.inner.try_send(envelope).map_err(|e| match e {
+            mpsc::error::TrySendError::Full(_) => TokioTrySendError::Full,
+            mpsc::error::TrySendError::Closed(_) => TokioTrySendError::Closed,
+        })
+    }
+
+    fn try_send_error_is_closed(err: &Self::TrySendError) -> bool {
+        matches!(err, TokioTrySendError::Closed)
     }
 
     async fn yield_now() {

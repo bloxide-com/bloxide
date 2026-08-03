@@ -15,9 +15,10 @@ use crate::spec::MachineSpec;
 /// Translate a `DispatchOutcome` into the appropriate `ChildLifecycleEvent`
 /// and send it to the supervisor via `notify`.
 ///
-/// If the supervisor's channel is full or closed, the event is silently
-/// dropped and a warning is logged — supervision must never block the actor's
-/// run loop.
+/// Supervision must never block the actor's run loop: a full channel drops
+/// the event and logs a warning (genuine backpressure), while a closed
+/// channel — the supervisor already exited, an expected shutdown race —
+/// drops the event silently.
 ///
 /// # Type Parameters
 ///
@@ -34,11 +35,17 @@ pub fn report_outcome<S, R>(
     R: BloxRuntime,
 {
     let send = |event| {
-        if <R as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)).is_err() {
-            bloxide_log::blox_log_warn!(
-                actor_id,
-                "failed to send lifecycle event to supervisor (channel full or closed)"
-            );
+        match <R as BloxRuntime>::try_send_via(notify, Envelope(actor_id, event)) {
+            Ok(()) => {}
+            // Expected shutdown race: the supervisor's task already exited —
+            // nobody consumes the report. Silent no-op.
+            Err(e) if R::try_send_error_is_closed(&e) => {}
+            Err(_) => {
+                bloxide_log::blox_log_warn!(
+                    actor_id,
+                    "failed to send lifecycle event to supervisor (channel full)"
+                );
+            }
         }
     };
 

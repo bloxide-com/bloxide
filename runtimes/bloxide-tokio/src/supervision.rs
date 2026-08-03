@@ -76,6 +76,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn try_send_error_classification_distinguishes_full_and_closed() {
+        let id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
+        let (notify_ref, notify_rx) =
+            <TokioRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(id, 1);
+
+        // Full: capacity 1, the second send is genuine backpressure.
+        notify_ref
+            .try_send(1, ChildLifecycleEvent::Alive { child_id: 1 })
+            .expect("first send fits");
+        let err = notify_ref
+            .try_send(1, ChildLifecycleEvent::Alive { child_id: 1 })
+            .expect_err("second send is full");
+        assert!(!TokioRuntime::try_send_error_is_closed(&err));
+
+        // Closed: the receiver is dropped — sends now fail with Closed
+        // (the expected shutdown race, silent at call sites).
+        drop(notify_rx);
+        let err = notify_ref
+            .try_send(1, ChildLifecycleEvent::Alive { child_id: 1 })
+            .expect_err("send to a dropped receiver is closed");
+        assert!(TokioRuntime::try_send_error_is_closed(&err));
+    }
+
+    #[tokio::test]
     async fn report_outcome_logs_warning_when_channel_full() {
         let capacity: usize = 2;
         let id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();

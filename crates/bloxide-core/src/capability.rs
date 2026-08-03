@@ -20,7 +20,8 @@ use crate::messaging::{ActorId, ActorRef, Envelope};
 ///   operation fails (e.g., channel closed). Most runtimes succeed unless
 ///   the receiver is dropped.
 /// * `TrySendError` — Error returned specifically by [`try_send_via`](Self::try_send_via)
-///   when the channel buffer is full (non-blocking send failed).
+///   when a non-blocking send fails (channel full or closed — classify with
+///   [`try_send_error_is_closed`](Self::try_send_error_is_closed)).
 ///
 /// # When to Use Which Send Method
 ///
@@ -75,14 +76,26 @@ pub trait BloxRuntime: Clone + Send + 'static {
     ///
     /// Returns immediately:
     /// - `Ok(())` if the message was queued successfully
-    /// - `Err(TrySendError)` if the channel buffer is full
+    /// - `Err(TrySendError)` if the channel buffer is full or the channel
+    ///   is closed (the receiving task is gone)
     ///
     /// Use this for non-blocking sends where you want to implement custom
-    /// backpressure handling or drop messages under load.
+    /// backpressure handling or drop messages under load. Distinguish the
+    /// two failure kinds with [`try_send_error_is_closed`](Self::try_send_error_is_closed):
+    /// a full channel is genuine backpressure (worth a warning), while a
+    /// closed channel during shutdown is an expected race (a silent no-op).
     fn try_send_via<M: Send + 'static>(
         sender: &Self::Sender<M>,
         envelope: Envelope<M>,
     ) -> Result<(), Self::TrySendError>;
+
+    /// Returns `true` if a [`try_send_via`](Self::try_send_via) error means
+    /// the channel is **closed** (the receiving task is gone), as opposed to
+    /// **full** (backpressure).
+    ///
+    /// Runtimes whose channels never close (static, process-lifetime) or
+    /// whose send side cannot observe a close return `false` unconditionally.
+    fn try_send_error_is_closed(err: &Self::TrySendError) -> bool;
 
     /// Kill capability. `NoKill` for static runtimes, `Kill` for dynamic.
     /// Determines the `Handle` type stored in `ChildEntry::kill_handle` —
