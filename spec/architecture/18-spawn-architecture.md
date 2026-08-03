@@ -659,11 +659,7 @@ struct ChildEntry<R: BloxRuntime> {
     id: ActorId,
     lifecycle_ref: ActorRef<LifecycleCommand, R>,
     policy: ChildPolicy,
-    stopped: bool,
     phase: ChildPhase,
-    /// The child's task is gone (killed or aborted) — its mailboxes are dead,
-    /// so lifecycle commands (e.g. `stop_all`) must not be sent to it.
-    task_gone: bool,
     awaiting_alive: bool,
     /// Abort capability mailbox (send side). None for static children
     /// registered via RegisterChild (no abort capability).
@@ -700,17 +696,17 @@ or `Failed` lifecycle event arrives — four variants:
 - **`ChildPolicy::Kill`** (ripcord): Takes the `kill_handle`, calls `R::Kill::kill(handle)`.
   External kill — works even if the child is stuck. No callbacks fire. Emits
   `ChildLifecycleEvent::Killed` on the notify channel, sets phase to
-  `PermanentlyDone` and `task_gone = true`, then checks group shutdown.
+  `ChildPhase::Killed`, then checks group shutdown.
 - **`ChildPolicy::Abort`** (cooperative): Sends `AbortCommand::Abort` on the child's
   `abort_ref`. The child self-terminates via its run loop and later reports `Aborted`.
-  The entry is marked `PermanentlyDone` + `task_gone = true` immediately (the abort is
+  The entry is marked `Aborted` immediately (the abort is
   fire-and-forget; the late `Aborted` event is informational only).
 - **`ChildPolicy::Reset`**: Sends `Reset` to the child. Reset goes directly
   to `initial_state()` — the child reports `Started`, no separate `Start` needed. Sets
   phase to `ResetPending`.
 - **`ChildPolicy::Stop`**: Sends **no command** — the child already self-stopped
   (suspended in Init) or failed (parked in its error state). Marks the entry
-  `PermanentlyDone` and checks group shutdown.
+  `Stopped` (task alive, terminal for this epoch) and checks group shutdown.
 
 ```rust
 // In ChildGroup::handle_done_or_failed (simplified)
@@ -725,8 +721,7 @@ if policy == ChildPolicy::Kill {
     }
     // Kill is synchronous — emit the Killed event directly.
     let _ = notify.try_send(from, ChildLifecycleEvent::Killed { child_id });
-    self.children[idx].phase = ChildPhase::PermanentlyDone;
-    self.children[idx].task_gone = true;
+    self.children[idx].phase = ChildPhase::Killed;
     return self.check_shutdown();
 }
 if policy == ChildPolicy::Abort {
@@ -735,10 +730,9 @@ if policy == ChildPolicy::Abort {
     if let Some(abort_ref) = &self.children[idx].abort_ref {
         let _ = abort_ref.try_send(from, AbortCommand::Abort { child_id });
     }
-    // Marked PermanentlyDone immediately; the later Aborted event is a no-op
-    // here (record_aborted finalizes the same fields).
-    self.children[idx].phase = ChildPhase::PermanentlyDone;
-    self.children[idx].task_gone = true;
+    // Marked Aborted immediately; the later Aborted event is a no-op
+    // here (record_aborted finalizes the same phase).
+    self.children[idx].phase = ChildPhase::Aborted;
     return self.check_shutdown();
 }
 if policy == ChildPolicy::Reset {
@@ -748,7 +742,7 @@ if policy == ChildPolicy::Reset {
     return ChildAction::Continue;
 }
 // Stop: the child is already stopping or has failed — mark done for this epoch.
-self.children[idx].phase = ChildPhase::PermanentlyDone;
+self.children[idx].phase = ChildPhase::Stopped;
 self.check_shutdown()
 ```
 
@@ -1339,8 +1333,8 @@ Termination uses two distinct mechanisms — cooperative abort and ripcord kill:
    nothing. For `Kill` runtimes (Tokio), this calls `AbortHandle::abort()`.
 
 Both `Abort` and `Kill` result in permanent termination — no restart, no reset.
-`ChildGroup::handle_done_or_failed` sets the phase to `ChildPhase::PermanentlyDone` and
-`task_gone = true` for both (so `stop_all` skips their dead mailboxes). The difference
+`ChildGroup::handle_done_or_failed` sets the phase to `ChildPhase::Aborted` or
+`ChildPhase::Killed` — task gone, so `stop_all` skips their dead mailboxes. The difference
 is cooperation: `Abort` lets the child exit cleanly, `Kill` forces it — and because the
 kill is synchronous, the Kill path also emits `ChildLifecycleEvent::Killed` on the
 notify channel, mirroring the `Aborted` event the run loop emits on the cooperative
@@ -1532,7 +1526,7 @@ stateDiagram-v2
     Running --> Aborted : "ChildPolicy::Abort (AbortCommand)"
     Running --> Killed : "ChildPolicy::Kill (ripcord)"
     Error --> [*] : "task exits only if exit_on_fail (supervised: stays alive for Reset)"
-    Aborted --> [*] : "task exits cooperatively (permanently done)"
+    Aborted --> [*] : "task exits cooperatively (task gone)"
     Killed --> [*] : "task killed externally (permanently dead)"
 ```
 

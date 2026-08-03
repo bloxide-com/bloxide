@@ -313,7 +313,7 @@ fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
 // ──────────────────────────────────────────────────────────────
 
 #[test]
-fn aborted_child_marked_permanently_done() {
+fn aborted_child_marked_aborted() {
     let (mut machine, mut receivers) = make_supervisor(
         GroupShutdown::WhenAllDone,
         &[ChildPolicy::Reset, ChildPolicy::Reset],
@@ -323,16 +323,16 @@ fn aborted_child_marked_permanently_done() {
 
     // Child 1 aborts (cooperative task termination)
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Aborted { child_id: 1 });
-    // Aborted children are permanently done — if all children are done/aborted,
-    // the supervisor may transition to ShuttingDown or stay in Running depending
-    // on the shutdown strategy. With WhenAllDone, one aborted + one running
-    // means we stay in Running.
+    // Aborted children are terminal (task gone) — if all children are
+    // terminal, the supervisor may transition to ShuttingDown or stay in
+    // Running depending on the shutdown strategy. With WhenAllDone, one
+    // aborted + one running means we stay in Running.
     assert!(
         matches!(outcome, DispatchOutcome::HandledNoTransition),
         "aborted child with WhenAllDone and one still running should stay in Running"
     );
 
-    // Child 1 should not be restarted — it's permanently done
+    // Child 1 should not be restarted — it's terminal
     let cmds = receivers[0].drain_payloads();
     assert!(
         cmds.is_empty(),
@@ -341,8 +341,34 @@ fn aborted_child_marked_permanently_done() {
 }
 
 #[test]
+fn killed_child_marked_killed() {
+    let (mut machine, mut receivers) = make_supervisor(
+        GroupShutdown::WhenAllDone,
+        &[ChildPolicy::Reset, ChildPolicy::Reset],
+    );
+    machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+    drain_start_commands(&mut receivers);
+
+    // Child 1 is killed (external task destruction)
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Killed { child_id: 1 });
+    // Killed children are terminal (task gone, permanently dead) — with
+    // WhenAllDone and one child still running, the supervisor stays Running.
+    assert!(
+        matches!(outcome, DispatchOutcome::HandledNoTransition),
+        "killed child with WhenAllDone and one still running should stay in Running"
+    );
+
+    // Child 1 should not be restarted — it's terminal
+    let cmds = receivers[0].drain_payloads();
+    assert!(
+        cmds.is_empty(),
+        "killed child should not receive any commands"
+    );
+}
+
+#[test]
 fn aborted_child_does_not_trigger_shutdown_check() {
-    // Aborted children are marked permanently_done, but the Aborted event
+    // Aborted children are terminal, but the Aborted event
     // does not trigger the shutdown check (only Stopped/Failed do). This is
     // by design — Abort is cooperative termination, not a lifecycle event
     // that should cascade to shutdown.

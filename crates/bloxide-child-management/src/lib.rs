@@ -91,21 +91,38 @@ enum ChildPhase {
     /// Reset was sent; waiting for the child to report Started.
     /// Health checks skip children in this phase — the child is transitioning.
     ResetPending,
-    /// Child is permanently done (stopped, aborted, or killed).
-    /// Covers all terminal states where the child will not revive on its own.
-    PermanentlyDone,
+    /// Child is done for this epoch but its task is alive: self-stopped
+    /// (suspended in Init), failed (parked in its error state), or marked
+    /// done by the `Stop` policy. Terminal — it will not revive on its own.
     Stopped,
+    /// Child was aborted (cooperative self-termination via `AbortCommand`).
+    /// The task is gone; restarting requires respawning it.
+    Aborted,
+    /// Child was killed (forced destruction via `KillCapability::kill`).
+    /// The task is gone; permanently dead.
+    Killed,
+}
+
+impl ChildPhase {
+    /// Terminal for this epoch: the child will not revive on its own.
+    /// `Stopped` children still have a live (suspended/parked) task;
+    /// `Aborted`/`Killed` children do not.
+    fn is_terminal(self) -> bool {
+        matches!(self, Self::Stopped | Self::Aborted | Self::Killed)
+    }
+
+    /// The child's task is gone — its mailboxes are dead, so lifecycle
+    /// commands (e.g. `stop_all`) must not be sent to it.
+    fn is_task_gone(self) -> bool {
+        matches!(self, Self::Aborted | Self::Killed)
+    }
 }
 
 struct ChildEntry<R: BloxRuntime> {
     id: ActorId,
     lifecycle_ref: ActorRef<LifecycleCommand, R>,
     policy: ChildPolicy,
-    stopped: bool,
     phase: ChildPhase,
-    /// The child's task is gone (killed or aborted) — its mailboxes are dead,
-    /// so lifecycle commands (e.g. `stop_all`) must not be sent to it.
-    task_gone: bool,
     awaiting_alive: bool,
     /// Abort capability mailbox (send side). `None` for static children
     /// registered via `RegisterChild` (no abort capability).
@@ -145,9 +162,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             id,
             lifecycle_ref,
             policy,
-            stopped: false,
             phase: ChildPhase::Init,
-            task_gone: false,
             awaiting_alive: false,
             abort_ref: None,
             kill_handle: None,
@@ -175,9 +190,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             id,
             lifecycle_ref,
             policy,
-            stopped: false,
             phase: ChildPhase::Init,
-            task_gone: false,
             awaiting_alive: false,
             abort_ref: Some(abort_ref),
             kill_handle: Some(kill_handle),
@@ -218,9 +231,11 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
     pub fn stop_all(&self, from: ActorId) {
         for entry in &self.children {
-            // Skip children whose task is gone (killed/aborted) — their
+            // Skip children whose task is gone (Aborted/Killed) — their
             // mailboxes are dead; sending Stop would only log warnings.
-            if entry.task_gone {
+            // Stopped children still get Stop: their task is alive
+            // (suspended in Init or failed-parked) and consumes the command.
+            if entry.phase.is_task_gone() {
                 continue;
             }
             if entry
@@ -241,9 +256,9 @@ impl<R: BloxRuntime> ChildGroup<R> {
     ///
     /// Applies the child's `ChildPolicy`:
     /// - `Reset` → send `Reset` to child, set `ResetPending` → `Continue` (child revives)
-    /// - `Stop` → set `PermanentlyDone` → `check_shutdown()`
-    /// - `Abort` → send `AbortCommand`, set `PermanentlyDone` → `check_shutdown()`
-    /// - `Kill` → `KillCapability::kill(handle)`, set `PermanentlyDone` → `check_shutdown()`
+    /// - `Stop` → set `Stopped` (task alive, terminal for epoch) → `check_shutdown()`
+    /// - `Abort` → send `AbortCommand`, set `Aborted` → `check_shutdown()`
+    /// - `Kill` → `KillCapability::kill(handle)`, set `Killed` → `check_shutdown()`
     pub fn handle_done_or_failed(
         &mut self,
         child_id: ActorId,
@@ -261,10 +276,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             (entry.phase, entry.policy)
         };
 
-        if matches!(
-            phase,
-            ChildPhase::PermanentlyDone | ChildPhase::Stopped | ChildPhase::ResetPending
-        ) {
+        if phase.is_terminal() || phase == ChildPhase::ResetPending {
             return ChildAction::Continue;
         }
 
@@ -296,8 +308,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 );
             }
 
-            self.children[idx].phase = ChildPhase::PermanentlyDone;
-            self.children[idx].task_gone = true;
+            self.children[idx].phase = ChildPhase::Killed;
             self.children[idx].awaiting_alive = false;
             return self.check_shutdown();
         }
@@ -319,18 +330,17 @@ impl<R: BloxRuntime> ChildGroup<R> {
             }
             // The child will self-terminate; we'll get Aborted event later.
             //
-            // The child is marked PermanentlyDone immediately because the abort
+            // The child is marked Aborted immediately because the abort
             // is fire-and-forget: once AbortCommand is queued on the abort
             // mailbox there is no way to recall or observe its progress from
             // here, so the ChildGroup's bookkeeping for this entry is already
             // final. The Aborted lifecycle event will arrive later but is
             // informational only — the ChildGroup state is already finalized
-            // (phase == PermanentlyDone), so `handle_aborted`/this method's
+            // (phase == Aborted), so `record_aborted`/this method's
             // early-return guard treat the late event as a no-op. The
             // supervisor's state machine processes the Aborted event for its
             // own transitions but does not re-enter the ChildGroup logic.
-            self.children[idx].phase = ChildPhase::PermanentlyDone;
-            self.children[idx].task_gone = true;
+            self.children[idx].phase = ChildPhase::Aborted;
             self.children[idx].awaiting_alive = false;
             return self.check_shutdown();
         }
@@ -356,11 +366,11 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
 
         // Handle Stop policy: the child is already stopping (Stopped event)
-        // or has failed. Mark PermanentlyDone and check group shutdown.
-        // Stop means the child goes to Init, suspended — it can be restarted
-        // with `Start` later, but from the ChildGroup's perspective it is
-        // done for this epoch.
-        self.children[idx].phase = ChildPhase::PermanentlyDone;
+        // or has failed. Mark Stopped and check group shutdown.
+        // Stop means the child goes to Init, suspended (task alive) — it can
+        // be restarted with `Start` later, but from the ChildGroup's
+        // perspective it is done for this epoch (terminal).
+        self.children[idx].phase = ChildPhase::Stopped;
         self.children[idx].awaiting_alive = false;
 
         self.check_shutdown()
@@ -370,11 +380,8 @@ impl<R: BloxRuntime> ChildGroup<R> {
         match self.shutdown {
             GroupShutdown::WhenAnyDone => ChildAction::BeginShutdown,
             GroupShutdown::WhenAllDone => {
-                if self
-                    .children
-                    .iter()
-                    .all(|e| e.phase == ChildPhase::PermanentlyDone || e.stopped)
-                {
+                // Empty group: vacuously true (Done-deregistration shutdown).
+                if self.children.iter().all(|e| e.phase.is_terminal()) {
                     ChildAction::BeginShutdown
                 } else {
                     ChildAction::Continue
@@ -391,10 +398,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// self-contained.
     pub fn handle_started(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
-            if !matches!(
-                entry.phase,
-                ChildPhase::PermanentlyDone | ChildPhase::Stopped
-            ) {
+            if !entry.phase.is_terminal() {
                 entry.phase = ChildPhase::Running;
                 entry.awaiting_alive = false;
             }
@@ -403,10 +407,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
     pub fn handle_alive(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
-            if !matches!(
-                entry.phase,
-                ChildPhase::PermanentlyDone | ChildPhase::Stopped
-            ) {
+            if !entry.phase.is_terminal() {
                 entry.awaiting_alive = false;
             }
         }
@@ -457,17 +458,18 @@ impl<R: BloxRuntime> ChildGroup<R> {
     }
 
     fn is_health_monitored(entry: &ChildEntry<R>) -> bool {
-        !entry.stopped
-            && !matches!(
-                entry.phase,
-                ChildPhase::PermanentlyDone | ChildPhase::ResetPending
-            )
+        // Only Init/Running children are monitored: terminal phases
+        // (Stopped/Aborted/Killed) are done for the epoch, and ResetPending
+        // children are transitioning.
+        !entry.phase.is_terminal() && entry.phase != ChildPhase::ResetPending
     }
 
     pub fn record_stopped(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
-            if !entry.stopped {
-                entry.stopped = true;
+            // Idempotent via phase, and never overwrite a task-gone phase
+            // (Aborted/Killed): a late Stopped must not resurrect mailbox
+            // sends to a dead task.
+            if !entry.phase.is_terminal() {
                 entry.phase = ChildPhase::Stopped;
                 entry.awaiting_alive = false;
             }
@@ -480,8 +482,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// needs to respawn the task.
     pub fn record_aborted(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
-            entry.phase = ChildPhase::PermanentlyDone;
-            entry.task_gone = true;
+            entry.phase = ChildPhase::Aborted;
             entry.awaiting_alive = false;
         }
     }
@@ -490,16 +491,14 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// `KillCapability::kill`). The child's task is gone. Permanently dead.
     pub fn record_killed(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
-            entry.phase = ChildPhase::PermanentlyDone;
-            entry.task_gone = true;
+            entry.phase = ChildPhase::Killed;
             entry.awaiting_alive = false;
         }
     }
 
     pub fn all_stopped(&self) -> bool {
-        self.children
-            .iter()
-            .all(|e| e.phase == ChildPhase::PermanentlyDone || e.stopped)
+        // Empty group: vacuously true (Done-deregistration shutdown).
+        self.children.iter().all(|e| e.phase.is_terminal())
     }
 
     /// Deregister a child that self-terminated cleanly
@@ -517,7 +516,9 @@ impl<R: BloxRuntime> ChildGroup<R> {
         self.check_shutdown()
     }
 
-    /// Reset all phases for a new lifecycle epoch.
+    /// Reset all non-terminal phases for a new lifecycle epoch.
+    ///
+    /// Terminal entries (`Stopped`/`Aborted`/`Killed`) keep their phase.
     ///
     /// # Warning
     ///
@@ -528,7 +529,13 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// commands before calling `clear_counters`.
     pub fn clear_counters(&mut self) {
         for entry in &mut self.children {
-            entry.stopped = false;
+            // Terminal entries keep their phase: resetting them to Init would
+            // make them health-monitored again — a Ping to a dead mailbox
+            // (Aborted/Killed) or a suspended child (Stopped), and a spurious
+            // second Kill when the Ping goes unanswered.
+            if entry.phase.is_terminal() {
+                continue;
+            }
             entry.phase = ChildPhase::Init;
             entry.awaiting_alive = false;
         }
@@ -617,16 +624,17 @@ mod tests {
     }
 
     #[test]
-    fn stop_policy_sets_permanently_done_and_triggers_shutdown() {
+    fn stop_policy_sets_stopped_and_triggers_shutdown() {
         let (mut group, mut rx, notify_ref, _notify_rx) = setup_one_child(ChildPolicy::Stop);
         let from = 100usize;
 
         // Start the child so it's in Running phase
         group.handle_started(1);
 
-        // Failure with Stop policy → PermanentlyDone, BeginShutdown (WhenAnyDone)
+        // Failure with Stop policy → Stopped (terminal), BeginShutdown (WhenAnyDone)
         let action = group.handle_done_or_failed(1, from, &notify_ref);
         assert_eq!(action, ChildAction::BeginShutdown);
+        assert_eq!(group.children[0].phase, ChildPhase::Stopped);
         // No commands should be sent to the child (Stop event already came from child)
         assert_eq!(rx.drain_payloads().len(), 0);
     }
@@ -743,7 +751,7 @@ mod tests {
     }
 
     #[test]
-    fn all_stopped_checks_permanently_done_phase() {
+    fn all_stopped_checks_terminal_phase() {
         let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
         let id = 1usize;
         let (lifecycle_ref, _rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
@@ -756,8 +764,50 @@ mod tests {
         // Not all stopped yet
         assert!(!group.all_stopped());
 
-        // Fail the child → PermanentlyDone
+        // Fail the child → Stopped (terminal)
         group.handle_done_or_failed(1, from, &notify_ref);
         assert!(group.all_stopped());
+    }
+
+    #[test]
+    fn clear_counters_preserves_terminal_phases() {
+        // Behavior fix: clear_counters used to reset killed/aborted children
+        // to Init, making them health-monitored again (Ping to a dead
+        // mailbox, spurious second Kill). Terminal phases now survive the
+        // epoch reset untouched.
+        let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
+        let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
+        let from = 100usize;
+
+        let mut receivers = Vec::new();
+        for id in 1..=4usize {
+            let (lifecycle_ref, rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
+            group.add(id, lifecycle_ref, ChildPolicy::Reset);
+            receivers.push(rx);
+        }
+
+        // Drive the four children into Running, Stopped, Aborted, Killed.
+        group.handle_started(1);
+        group.handle_started(2);
+        group.record_stopped(2);
+        group.record_aborted(3);
+        group.record_killed(4);
+
+        group.clear_counters();
+
+        // Running resets to Init; terminal phases are preserved.
+        assert_eq!(group.children[0].phase, ChildPhase::Init);
+        assert_eq!(group.children[1].phase, ChildPhase::Stopped);
+        assert_eq!(group.children[2].phase, ChildPhase::Aborted);
+        assert_eq!(group.children[3].phase, ChildPhase::Killed);
+
+        // Health check pings only the reset child — terminal children are
+        // not health-monitored (pre-fix: all four were pinged).
+        group.health_check_tick(from, &notify_ref);
+        let pings: Vec<usize> = receivers
+            .iter_mut()
+            .map(|rx| rx.drain_payloads().len())
+            .collect();
+        assert_eq!(pings, [1, 0, 0, 0]);
     }
 }
