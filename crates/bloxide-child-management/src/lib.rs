@@ -35,17 +35,22 @@ use bloxide_core::{
 /// | Policy | Mechanism | Cooperative? | Callbacks? | Revivable? |
 /// |--------|-----------|-------------|------------|------------|
 /// | `Reset` | Send `Reset` | Yes | Exit + entry chain | Yes (immediately) |
-/// | `Stop` | Send `Stop` | Yes | Exit + `on_init_entry` | Yes (via `Start`) |
+/// | `Stop` | No command — child marked done for this epoch | — | — | No |
 /// | `Abort` | Send `AbortCommand` on abort mailbox | Yes (cooperative) | None | Yes (respawn task) |
 /// | `Kill` | `KillCapability::kill(handle)` | No (forced) | None | No (permanently dead) |
+///
+/// `Abort` and `Kill` require a dynamically spawned child (registered via
+/// `ChildGroup::add_dynamic` with abort/kill handles); `ChildGroup::add`
+/// panics if either policy is requested for a static child.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum ChildPolicy {
     /// Send `Reset` to the child — goes directly to `initial_state()`.
     /// The actor is immediately operational. No need to send `Start` separately.
     /// The child revives and continues running.
     Reset,
-    /// Send `Stop` command for clean shutdown (exit chain + `on_init_entry` fire).
-    /// Actor goes to Init, suspended, can be restarted with `Start`.
+    /// Leave the child as-is and mark it done for this epoch (counts toward
+    /// group shutdown). No command is sent: the child already self-stopped
+    /// (suspended in Init) or failed (parked in its error state).
     Stop,
     /// Send `AbortCommand` on the abort mailbox for cooperative self-termination.
     /// No callbacks fire. The child's task ends. Requires the child to have
@@ -98,6 +103,9 @@ struct ChildEntry<R: BloxRuntime> {
     policy: ChildPolicy,
     stopped: bool,
     phase: ChildPhase,
+    /// The child's task is gone (killed or aborted) — its mailboxes are dead,
+    /// so lifecycle commands (e.g. `stop_all`) must not be sent to it.
+    task_gone: bool,
     awaiting_alive: bool,
     /// Abort capability mailbox (send side). `None` for static children
     /// registered via `RegisterChild` (no abort capability).
@@ -112,7 +120,6 @@ struct ChildEntry<R: BloxRuntime> {
 pub struct ChildGroup<R: BloxRuntime> {
     children: Vec<ChildEntry<R>>,
     shutdown: GroupShutdown,
-    stopped_count: usize,
 }
 
 impl<R: BloxRuntime> ChildGroup<R> {
@@ -120,7 +127,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
         Self {
             children: Vec::new(),
             shutdown,
-            stopped_count: 0,
         }
     }
 
@@ -130,12 +136,18 @@ impl<R: BloxRuntime> ChildGroup<R> {
         lifecycle_ref: ActorRef<LifecycleCommand, R>,
         policy: ChildPolicy,
     ) {
+        assert!(
+            !matches!(policy, ChildPolicy::Kill | ChildPolicy::Abort),
+            "ChildPolicy::Kill/Abort require abort/kill handles — register the child \
+             via add_dynamic (dynamic spawn) or choose ChildPolicy::Reset/Stop"
+        );
         self.children.push(ChildEntry {
             id,
             lifecycle_ref,
             policy,
             stopped: false,
             phase: ChildPhase::Init,
+            task_gone: false,
             awaiting_alive: false,
             abort_ref: None,
             kill_handle: None,
@@ -165,6 +177,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             policy,
             stopped: false,
             phase: ChildPhase::Init,
+            task_gone: false,
             awaiting_alive: false,
             abort_ref: Some(abort_ref),
             kill_handle: Some(kill_handle),
@@ -205,6 +218,11 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
     pub fn stop_all(&self, from: ActorId) {
         for entry in &self.children {
+            // Skip children whose task is gone (killed/aborted) — their
+            // mailboxes are dead; sending Stop would only log warnings.
+            if entry.task_gone {
+                continue;
+            }
             if entry
                 .lifecycle_ref
                 .try_send(from, LifecycleCommand::Stop)
@@ -253,6 +271,8 @@ impl<R: BloxRuntime> ChildGroup<R> {
         // Handle Kill policy: call R::Kill::kill(kill_handle) — the ripcord.
         // This immediately terminates the child — no callbacks fire, no
         // cooperative shutdown. Permanently dead.
+        // `add` rejects Kill policies for static children and `add_dynamic`
+        // always stores a handle, so `kill_handle` is always `Some` here.
         if policy == ChildPolicy::Kill {
             // Take the kill_handle out — kill() consumes it by value.
             let kill_handle = self.children[idx].kill_handle.take();
@@ -277,6 +297,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             }
 
             self.children[idx].phase = ChildPhase::PermanentlyDone;
+            self.children[idx].task_gone = true;
             self.children[idx].awaiting_alive = false;
             return self.check_shutdown();
         }
@@ -309,6 +330,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             // supervisor's state machine processes the Aborted event for its
             // own transitions but does not re-enter the ChildGroup logic.
             self.children[idx].phase = ChildPhase::PermanentlyDone;
+            self.children[idx].task_gone = true;
             self.children[idx].awaiting_alive = false;
             return self.check_shutdown();
         }
@@ -448,7 +470,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 entry.stopped = true;
                 entry.phase = ChildPhase::Stopped;
                 entry.awaiting_alive = false;
-                self.stopped_count += 1;
             }
         }
     }
@@ -460,6 +481,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
     pub fn record_aborted(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
             entry.phase = ChildPhase::PermanentlyDone;
+            entry.task_gone = true;
             entry.awaiting_alive = false;
         }
     }
@@ -469,6 +491,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
     pub fn record_killed(&mut self, child_id: ActorId) {
         if let Some(entry) = self.children.iter_mut().find(|e| e.id == child_id) {
             entry.phase = ChildPhase::PermanentlyDone;
+            entry.task_gone = true;
             entry.awaiting_alive = false;
         }
     }
@@ -509,7 +532,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
             entry.phase = ChildPhase::Init;
             entry.awaiting_alive = false;
         }
-        self.stopped_count = 0;
     }
 }
 

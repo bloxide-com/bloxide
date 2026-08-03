@@ -20,15 +20,6 @@ use bloxide_core::messaging::{ActorId, ActorRef};
 use core::fmt;
 use core::future::Future;
 
-/// Accessor trait for the child-notify channel ref.
-///
-/// A blox that manages spawned children needs a reference to the
-/// child-event mailbox so spawned children can report lifecycle events
-/// back. This trait provides read-only access to that ref.
-pub trait HasNotifyRef<R: BloxRuntime> {
-    fn notify_ref(&self) -> &ActorRef<ChildLifecycleEvent, R>;
-}
-
 // Re-export KillCapability and NoKill so downstream crates can get everything
 // from one place.
 pub use bloxide_core::capability::{KillCapability, NoKill};
@@ -152,9 +143,9 @@ where
 /// per-request state comes through the request parameter.
 ///
 /// The `Req` type parameter is the application's concrete spawn request
-/// enum (e.g., `SpawnRequest<R>` in pool-messages). The runtime helper
-/// is generic over `Req` so it doesn't depend on any specific app's
-/// messages crate.
+/// enum (e.g., `SpawnRequest<R>` in the pool demo's `blox-ctx-pool-ref`).
+/// The runtime helper is generic over `Req` so it doesn't depend on any
+/// specific app's domain crate.
 pub type SpawnFn<R, Req> = fn(req: Req, notify: ActorRef<ChildLifecycleEvent, R>) -> SpawnOutput<R>;
 
 /// A blox that manages spawned children implements this to define how

@@ -2,9 +2,11 @@
 //! Peer introduction control messages and helpers.
 //!
 //! Provides the generic `PeerCtrl<M, R>` control message type and the
-//! `introduce_peers` / `apply_peer_control` helper functions.  Domain
-//! code uses these directly instead of defining per-domain copies like
-//! `WorkerCtrl`, `AddWorkerPeer`, etc.
+//! `introduce_peers` / `apply_peer_control` / `broadcast_to_peers` helper
+//! functions. All helpers are domain-agnostic (spec 20): the message
+//! broadcast to peers is supplied by the caller. Domain code uses these
+//! directly instead of defining per-domain copies like `WorkerCtrl`,
+//! `AddWorkerPeer`, etc.
 
 #![no_std]
 extern crate alloc;
@@ -14,8 +16,8 @@ use core::fmt;
 use bloxide_core::{
     capability::BloxRuntime,
     messaging::{ActorId, ActorRef},
+    transition::ActionResult,
 };
-use pool_messages::{PeerResult, WorkerMsg};
 
 /// Control message for managing a peer collection.
 pub enum PeerCtrl<M: Send + 'static, R: BloxRuntime> {
@@ -97,55 +99,66 @@ pub fn introduce_peers<M, R>(
     b_id: ActorId,
     b_ref: ActorRef<M, R>,
     b_ctrl: ActorRef<PeerCtrl<M, R>, R>,
-) where
+) -> ActionResult
+where
     M: Send + 'static,
     R: BloxRuntime,
 {
-    let _ = a_ctrl.try_send(
+    let r1 = a_ctrl.try_send(
         from,
         PeerCtrl::AddPeer(AddPeer {
             peer_id: b_id,
             peer_ref: b_ref.clone(),
         }),
     );
-    let _ = b_ctrl.try_send(
+    let r2 = b_ctrl.try_send(
         from,
         PeerCtrl::AddPeer(AddPeer {
             peer_id: a_id,
             peer_ref: a_ref.clone(),
         }),
     );
+    ActionResult::from(r1.and(r2))
 }
 
 /// Apply a `PeerCtrl` command to a peer collection.
 ///
-/// Handles both `AddPeer` and `RemovePeer` variants.
-pub fn apply_peer_control<M, R>(peers: &mut Vec<ActorRef<M, R>>, ctrl: &PeerCtrl<M, R>)
+/// Handles both `AddPeer` and `RemovePeer` variants. `AddPeer` is idempotent:
+/// a peer whose id is already present is not added again.
+pub fn apply_peer_control<M, R>(
+    peers: &mut Vec<ActorRef<M, R>>,
+    ctrl: &PeerCtrl<M, R>,
+) -> ActionResult
 where
     M: Send + 'static,
     R: BloxRuntime,
 {
     match ctrl {
-        PeerCtrl::AddPeer(add) => peers.push(add.peer_ref.clone()),
+        PeerCtrl::AddPeer(add) => {
+            if !peers.iter().any(|r| r.id() == add.peer_id) {
+                peers.push(add.peer_ref.clone());
+            }
+        }
         PeerCtrl::RemovePeer(remove) => {
             peers.retain(|r| r.id() != remove.peer_id);
         }
     }
+    ActionResult::Ok
 }
 
-/// Broadcast this worker's result to all registered peers.
-pub fn broadcast_to_peers<R: BloxRuntime>(
-    self_id: ActorId,
-    peers: &[ActorRef<WorkerMsg, R>],
-    result: u32,
-) {
+/// Broadcast a message to all registered peers. `Err` if any send fails
+/// (sends continue best-effort past the first failure).
+pub fn broadcast_to_peers<M, R>(self_id: ActorId, peers: &[ActorRef<M, R>], msg: M) -> ActionResult
+where
+    M: Clone + Send + 'static,
+    R: BloxRuntime,
+{
+    let mut result = ActionResult::Ok;
     for peer_ref in peers {
-        let _ = peer_ref.try_send(
-            self_id,
-            WorkerMsg::PeerResult(PeerResult {
-                from_id: self_id,
-                result,
-            }),
-        );
+        let r = peer_ref.try_send(self_id, msg.clone());
+        if r.is_err() {
+            result = ActionResult::from(r);
+        }
     }
+    result
 }

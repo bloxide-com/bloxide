@@ -164,9 +164,10 @@ fn shutting_down_stops_all_and_completes_when_done() {
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
 
-    // When all children are stopped, the guard returns Guard::Stop — the
-    // supervisor stops itself (goes to Init, reports Stopped). run_root
-    // sees DispatchOutcome::Stopped and exits.
+    // When all children are stopped, the guard returns Decision::Stop — the
+    // supervisor stops itself (goes to Init, reports Stopped). The root run
+    // loop (`run()` + `RunConfig::root()`) sees DispatchOutcome::Stopped and
+    // exits.
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
     assert_eq!(outcome, DispatchOutcome::Stopped);
 }
@@ -236,9 +237,10 @@ fn shutdown_completes_when_single_child_stops() {
     }
 
     // When the child stops, all children are stopped → guard returns
-    // Guard::Stop — the supervisor stops itself (goes to Init, reports
-    // Stopped). run_root sees DispatchOutcome::Stopped and exits.
-    // Note: after Guard::Stop fires, on_init_entry calls clear_counters(),
+    // Decision::Stop — the supervisor stops itself (goes to Init, reports
+    // Stopped). The root run loop (`run()` + `RunConfig::root()`) sees
+    // DispatchOutcome::Stopped and exits.
+    // Note: after Decision::Stop fires, on_init_entry calls clear_counters(),
     // so we cannot assert all_stopped() here — the DispatchOutcome::Stopped
     // is the proof that the guard fired.
     let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
@@ -404,21 +406,31 @@ fn register_dynamic_child_adds_and_starts() {
 }
 
 #[test]
-fn register_dynamic_child_during_shutdown_still_starts_child() {
-    // NOTE: The current implementation sends Start to dynamically registered
-    // children even during ShuttingDown. This is a known limitation —
-    // ideally, registration during shutdown should be absorbed without
-    // starting the child. This test documents the current behavior.
+fn register_dynamic_child_during_shutdown_is_absorbed() {
+    // Registration during ShuttingDown is correctly absorbed by the Control
+    // catch-all in SHUTTING_DOWN_FNS: the child is NOT registered and NOT
+    // started. (The previous version of this test — "still_starts_child" —
+    // claimed the child was started during shutdown, but its setup used
+    // WhenAnyDone + ChildPolicy::Reset, so the supervisor never actually left
+    // Running.)
     let (mut machine, mut receivers) =
-        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Reset]);
+        make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Stop]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
-    // Child 1 reports Stopped → triggers shutdown (WhenAnyDone)
-    dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
+    // Child 1 reports Stopped with Stop policy → WhenAnyDone → ShuttingDown.
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
+    assert!(matches!(
+        outcome,
+        DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
+    ));
+    // Drain the Stop sent by ShuttingDown's on_entry (stop_all_children).
+    for rx in receivers.iter_mut() {
+        rx.drain_payloads();
+    }
 
-    // In ShuttingDown state, dynamic child registration is handled and
-    // the child receives a Start (current behavior).
+    // In ShuttingDown, a RegisterDynamicChild control message hits the
+    // Control catch-all and is absorbed without running any action.
     let child_id = 99;
     let (lifecycle_ref, mut lifecycle_rx) = TestRuntime::channel::<LifecycleCommand>(child_id, 16);
     let (abort_ref, _abort_rx) = TestRuntime::channel::<AbortCommand>(child_id + 100, 16);
@@ -432,20 +444,21 @@ fn register_dynamic_child_during_shutdown_still_starts_child() {
     };
 
     let outcome = dispatch_control_event(&mut machine, ChildCtrl::RegisterDynamicChild(reg));
-
     assert!(
         matches!(outcome, DispatchOutcome::HandledNoTransition),
-        "dynamic child registration should not cause state transition"
+        "dynamic child registration in ShuttingDown must be absorbed"
     );
+    assert!(matches!(
+        machine.current_state(),
+        MachineState::State(SupervisorState::ShuttingDown)
+    ));
 
-    // Current behavior: child receives Start even during shutdown
     let cmds = lifecycle_rx.drain_payloads();
-    assert_eq!(
-        cmds.len(),
-        1,
-        "child receives Start (current behavior during shutdown)"
+    assert!(
+        cmds.is_empty(),
+        "no Start may be sent during ShuttingDown, got {:?}",
+        cmds
     );
-    assert!(matches!(cmds[0], LifecycleCommand::Start));
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -495,4 +508,96 @@ fn done_last_child_completes_group_shutdown() {
         outcome,
         DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown))
     ));
+}
+
+// ──────────────────────────────────────────────────────────────
+// concrete_spec ↔ generated topology equivalence
+// ──────────────────────────────────────────────────────────────
+
+/// `concrete_spec.rs` is a hand-written duplicate of the generated topology
+/// (`generated/spec_skeleton.rs`). It exists because in-crate tests need
+/// concrete action closures — the blox-level generated spec only carries stub
+/// actions (invariant #18), and the system-level concrete spec lives in the
+/// app crate. This test pins the hand-written copy to the generated spec so
+/// the two cannot drift: same state set, same parents, same transition count
+/// per state, same entry/exit action counts.
+#[test]
+fn concrete_spec_matches_generated_topology() {
+    use bloxide_core::spec::MachineSpec;
+    use bloxide_core::topology::StateTopology;
+
+    type Generated = crate::SupervisorSpec<TestRuntime>;
+
+    // Same state set: both specs share the generated `SupervisorState` enum.
+    // If a variant is ever added, this array must be updated too.
+    const ALL_STATES: [SupervisorState; 2] =
+        [SupervisorState::Running, SupervisorState::ShuttingDown];
+    assert_eq!(ALL_STATES.len(), SupervisorState::STATE_COUNT);
+    assert_eq!(
+        <Spec as MachineSpec>::initial_state(),
+        <Generated as MachineSpec>::initial_state()
+    );
+
+    // Same parents: the supervisor topology is flat — every state is
+    // top-level (parent = None) and a leaf.
+    for state in ALL_STATES {
+        assert_eq!(state.parent(), None, "parent mismatch at {:?}", state);
+        assert!(state.is_leaf(), "{:?} must be a leaf", state);
+        assert_eq!(state.path(), &[state], "path mismatch at {:?}", state);
+    }
+
+    // Both handler tables cover exactly the state set.
+    let concrete_table = <Spec as MachineSpec>::HANDLER_TABLE;
+    let generated_table = <Generated as MachineSpec>::HANDLER_TABLE;
+    assert_eq!(concrete_table.len(), SupervisorState::STATE_COUNT);
+    assert_eq!(concrete_table.len(), generated_table.len());
+
+    for state in ALL_STATES {
+        let idx = state.as_index();
+        let concrete = concrete_table[idx];
+        let generated = generated_table[idx];
+
+        // Same entry/exit action counts per state.
+        assert_eq!(
+            concrete.on_entry.len(),
+            generated.on_entry.len(),
+            "on_entry action count mismatch at {:?}",
+            state
+        );
+        assert_eq!(
+            concrete.on_exit.len(),
+            generated.on_exit.len(),
+            "on_exit action count mismatch at {:?}",
+            state
+        );
+
+        // Same transition count per state; each rule agrees on event tag and
+        // action count (the concrete rule's action is the real platform
+        // function, the generated rule's is a stub — count, not identity).
+        assert_eq!(
+            concrete.transitions.len(),
+            generated.transitions.len(),
+            "transition count mismatch at {:?}",
+            state
+        );
+        for (i, (cr, gr)) in concrete
+            .transitions
+            .iter()
+            .zip(generated.transitions.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                cr.event_tag, gr.event_tag,
+                "rule {} event_tag mismatch at {:?}",
+                i, state
+            );
+            assert_eq!(
+                cr.actions.len(),
+                gr.actions.len(),
+                "rule {} action count mismatch at {:?}",
+                i,
+                state
+            );
+        }
+    }
 }

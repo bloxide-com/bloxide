@@ -43,7 +43,7 @@ kind = "entry"
 fields = ["self_id", "children:ref"]
 
 [[context.actions]]
-name = "handle_stopped_or_failed"
+name = "handle_done_or_failed"
 crate = "bloxide_child_management"
 module = "actions"
 kind = "transition"
@@ -174,14 +174,14 @@ spec_imports = [
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
-actions = ["Self::handle_stopped_or_failed"]
+actions = ["Self::handle_done_or_failed"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { .. }))"
 target = "stay"
-actions = ["Self::handle_stopped_or_failed"]
+actions = ["Self::handle_done_or_failed"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 [[topology.transitions]]

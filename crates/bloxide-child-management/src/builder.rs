@@ -17,7 +17,10 @@ use bloxide_core::{
 /// Builder for assembling a `ChildGroup` with dynamic channels.
 ///
 /// Generic over runtime `R` (must support `DynamicChannelCap`) and control message
-/// type `Ctrl` (chosen by the app — e.g. `ChildCtrl<R>`).
+/// type `Ctrl` (chosen by the app — e.g. `ChildCtrl<R>`). On Embassy, the
+/// static-channel counterpart is `bloxide_embassy::supervision::ChildGroupBuilder`
+/// (built on `StaticChannelCap`) — same name and API shape so generated wiring
+/// is identical across runtimes.
 ///
 /// Created with `::new(shutdown)`, children are added via `add_child()`, and the
 /// group is consumed via `finish()`.

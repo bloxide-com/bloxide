@@ -20,7 +20,7 @@ use bloxide_core::lifecycle::ChildLifecycleEvent;
 use bloxide_core::messaging::Envelope;
 use bloxide_core::spec::{MachineSpec, StateFns};
 use bloxide_core::topology::LeafState;
-use bloxide_core::transition::{ActionResult, Guard, StateRule};
+use bloxide_core::transition::{ActionResult, Decision, StateRule};
 use core::marker::PhantomData;
 
 pub struct ConcreteSupervisorSpec<R: BloxRuntime> {
@@ -48,7 +48,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 },
                 actions: &[|ctx, ev| {
                     if let Some(payload) = ev.child_payload() {
-                        bloxide_child_management::actions::handle_stopped_or_failed(
+                        bloxide_child_management::actions::handle_done_or_failed(
                             ctx.self_id,
                             &mut ctx.children,
                             &ctx.child_notify,
@@ -60,9 +60,9 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 }],
                 guard: |ctx, _results, _ev| {
                     if ctx.pending == ChildAction::BeginShutdown {
-                        Guard::Transition(LeafState::new(SupervisorState::ShuttingDown))
+                        Decision::Transition(LeafState::new(SupervisorState::ShuttingDown))
                     } else {
-                        Guard::Stay
+                        Decision::Stay
                     }
                 },
             },
@@ -76,7 +76,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 },
                 actions: &[|ctx, ev| {
                     if let Some(payload) = ev.child_payload() {
-                        bloxide_child_management::actions::handle_stopped_or_failed(
+                        bloxide_child_management::actions::handle_done_or_failed(
                             ctx.self_id,
                             &mut ctx.children,
                             &ctx.child_notify,
@@ -88,9 +88,9 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 }],
                 guard: |ctx, _results, _ev| {
                     if ctx.pending == ChildAction::BeginShutdown {
-                        Guard::Transition(LeafState::new(SupervisorState::ShuttingDown))
+                        Decision::Transition(LeafState::new(SupervisorState::ShuttingDown))
                     } else {
-                        Guard::Stay
+                        Decision::Stay
                     }
                 },
             },
@@ -111,7 +111,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     }
                     ActionResult::Ok
                 }],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
             StateRule {
                 event_tag: SupervisorEvent::<R>::CHILD_TAG,
@@ -130,7 +130,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     }
                     ActionResult::Ok
                 }],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
             StateRule {
                 event_tag: SupervisorEvent::<R>::CHILD_TAG,
@@ -149,7 +149,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     }
                     ActionResult::Ok
                 }],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
             StateRule {
                 event_tag: SupervisorEvent::<R>::CHILD_TAG,
@@ -165,7 +165,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     }
                     ActionResult::Ok
                 }],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
             StateRule {
                 event_tag: SupervisorEvent::<R>::CHILD_TAG,
@@ -187,9 +187,9 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 }],
                 guard: |ctx, _results, _ev| {
                     if ctx.pending == ChildAction::BeginShutdown {
-                        Guard::Transition(LeafState::new(SupervisorState::ShuttingDown))
+                        Decision::Transition(LeafState::new(SupervisorState::ShuttingDown))
                     } else {
-                        Guard::Stay
+                        Decision::Stay
                     }
                 },
             },
@@ -211,7 +211,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     }
                     ActionResult::Ok
                 }],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
             StateRule {
                 event_tag: SupervisorEvent::<R>::CONTROL_TAG,
@@ -231,7 +231,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     }
                     ActionResult::Ok
                 }],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
             StateRule {
                 event_tag: SupervisorEvent::<R>::CONTROL_TAG,
@@ -255,9 +255,9 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 }],
                 guard: |ctx, _results, _ev| {
                     if ctx.pending == ChildAction::BeginShutdown {
-                        Guard::Transition(LeafState::new(SupervisorState::ShuttingDown))
+                        Decision::Transition(LeafState::new(SupervisorState::ShuttingDown))
                     } else {
-                        Guard::Stay
+                        Decision::Stay
                     }
                 },
             },
@@ -266,14 +266,14 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 event_tag: SupervisorEvent::<R>::CHILD_TAG,
                 matches: |ev| matches!(ev, SupervisorEvent::Child(_)),
                 actions: &[],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
             // Catch-all: any other Control event → absorb
             StateRule {
                 event_tag: SupervisorEvent::<R>::CONTROL_TAG,
                 matches: |ev| matches!(ev, SupervisorEvent::Control(_)),
                 actions: &[],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
         ],
     };
@@ -303,9 +303,9 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 }],
                 guard: |ctx, _results, _ev| {
                     if ctx.all_children_stopped() {
-                        Guard::Stop
+                        Decision::Stop
                     } else {
-                        Guard::Stay
+                        Decision::Stay
                     }
                 },
             },
@@ -329,9 +329,9 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 }],
                 guard: |ctx, _results, _ev| {
                     if ctx.all_children_stopped() {
-                        Guard::Stop
+                        Decision::Stop
                     } else {
-                        Guard::Stay
+                        Decision::Stay
                     }
                 },
             },
@@ -340,14 +340,14 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 event_tag: SupervisorEvent::<R>::CHILD_TAG,
                 matches: |ev| matches!(ev, SupervisorEvent::Child(_)),
                 actions: &[],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
             // Catch-all: any Control event → absorb
             StateRule {
                 event_tag: SupervisorEvent::<R>::CONTROL_TAG,
                 matches: |ev| matches!(ev, SupervisorEvent::Control(_)),
                 actions: &[],
-                guard: |_ctx, _results, _ev| Guard::Stay,
+                guard: |_ctx, _results, _ev| Decision::Stay,
             },
         ],
     };

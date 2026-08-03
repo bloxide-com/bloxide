@@ -13,7 +13,7 @@ use bloxide_core::{lifecycle::ChildLifecycleEvent, messaging::ActorRef, transiti
 /// Start all children in the group and clear lifecycle counters.
 ///
 /// This is the `on_entry` for the managing blox's Running state. In the
-/// four-level lifecycle model, `Guard::Reset` goes directly to
+/// four-level lifecycle model, `Decision::Reset` goes directly to
 /// `initial_state()` (Running) — it does NOT fire `on_init_entry`. So
 /// counters must be cleared here, in the Running on_entry, which fires both
 /// on initial Start and on Reset.
@@ -21,27 +21,34 @@ pub fn start_children<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
     pending: &mut ChildAction,
-) where
+) -> ActionResult
+where
     R: bloxide_core::capability::BloxRuntime,
 {
     children.clear_counters();
     *pending = ChildAction::default();
     children.start_all(self_id);
+    ActionResult::Ok
 }
 
 /// Stop all children in the group.
-pub fn stop_all_children<R>(self_id: bloxide_core::ActorId, children: &ChildGroup<R>)
+pub fn stop_all_children<R>(
+    self_id: bloxide_core::ActorId,
+    children: &ChildGroup<R>,
+) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     children.stop_all(self_id);
+    ActionResult::Ok
 }
 
 /// Handle a Stopped or Failed child lifecycle event.
 ///
 /// Serves both the `Stopped` and `Failed` transition rules — the extracted
-/// payload is matched internally.
-pub fn handle_stopped_or_failed<R>(
+/// payload is matched internally. Applies the child's `ChildPolicy` via
+/// `ChildGroup::handle_done_or_failed`.
+pub fn handle_done_or_failed<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
     child_notify: &ActorRef<ChildLifecycleEvent, R>,

@@ -14,9 +14,7 @@ std     = ["bloxide-core/std", "alloc"]
 
 [dependencies]
 bloxide-core = { workspace = true }
-bloxide-log = { workspace = true }
 bloxide-child-management = { workspace = true }
-bloxide-spawn = { workspace = true }
 
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std"] }

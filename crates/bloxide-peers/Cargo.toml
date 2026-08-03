@@ -14,4 +14,3 @@ std = ["bloxide-core/std", "alloc"]
 
 [dependencies]
 bloxide-core = { workspace = true }
-pool-messages = { workspace = true }
