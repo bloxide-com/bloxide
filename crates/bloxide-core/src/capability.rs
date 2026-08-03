@@ -117,13 +117,23 @@ pub trait StaticChannelCap: BloxRuntime {
     ) -> (ActorRef<M, Self>, Self::Receiver<M>);
 }
 
+/// First actor ID available for runtime allocation (dynamic spawning).
+///
+/// Compile-time allocation (`channels!`, `dyn_channels!`, `next_actor_id!`)
+/// hands out small sequential IDs starting at 1. Runtime `alloc_actor_id`
+/// counters MUST start at this base so dynamically spawned actors can never
+/// collide with compile-time IDs.
+pub const DYNAMIC_ACTOR_ID_BASE: usize = 1_000_000;
+
 /// Channel creation for runtimes with runtime-configurable capacity.
 ///
 /// Used by `std` / Tokio runtimes where channel capacity can be set at
 /// runtime. Only the wiring layer calls this trait. Blox crates are never
 /// generic over `DynamicChannelCap`.
 pub trait DynamicChannelCap: BloxRuntime {
-    /// Allocate the next actor ID from the runtime's internal counter.
+    /// Allocate the next actor ID from the runtime's dynamic counter, starting
+    /// at [`DYNAMIC_ACTOR_ID_BASE`]. Used by dynamically spawned actors;
+    /// static wiring uses the compile-time counter instead.
     fn alloc_actor_id() -> ActorId;
 
     /// Create a new channel with the given `id` and runtime `capacity`.

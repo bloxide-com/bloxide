@@ -14,7 +14,7 @@ pub use crate::{
     // Topology types (StateTopology for path queries; LeafState for manual rules)
     topology::{LeafState, StateTopology},
     // Transition types (needed by action functions + StateRule literals)
-    transition::{ActionFn, ActionResult, Guard, StateRule},
+    transition::{ActionFn, ActionResult, Decision, StateRule},
     // Identity and messaging
     ActorId,
     ActorRef,

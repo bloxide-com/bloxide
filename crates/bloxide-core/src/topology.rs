@@ -46,7 +46,7 @@ pub trait StateTopology: Copy + Eq + core::fmt::Debug + Send + 'static {
 
 /// A newtype wrapper that can only be constructed for **leaf** states.
 ///
-/// `Guard::Transition` takes `LeafState<S::State>`
+/// `Decision::Transition` takes `LeafState<S::State>`
 /// instead of `S::State`, turning attempts to transition to a composite state
 /// into a compile-time or debug-time error rather than silent UB.
 ///

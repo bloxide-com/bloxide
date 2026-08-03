@@ -4,7 +4,7 @@ use crate::event_tag::LifecycleEvent;
 use crate::lifecycle::LifecycleCommand;
 use crate::spec::{MachineSpec, StateFns};
 use crate::topology::LeafState;
-use crate::transition::{ActionResult, Guard, StateRule};
+use crate::transition::{ActionResult, Decision, StateRule};
 use std::cell::RefCell;
 use std::thread_local;
 use std::vec::Vec;
@@ -84,6 +84,7 @@ pub enum TEvent {
     Reset,
     TriggerErr,
     Finish,
+    Fail,
 }
 
 impl crate::event_tag::EventTag for TEvent {
@@ -99,6 +100,7 @@ impl crate::event_tag::EventTag for TEvent {
             TEvent::Reset => 7,
             TEvent::TriggerErr => 8,
             TEvent::Finish => 9,
+            TEvent::Fail => 10,
         }
     }
 }
@@ -113,6 +115,7 @@ impl TEvent {
     pub const RESET_TAG: u8 = 7;
     pub const TRIGGER_ERR_TAG: u8 = 8;
     pub const FINISH_TAG: u8 = 9;
+    pub const FAIL_TAG: u8 = 10;
 }
 
 impl LifecycleEvent for TEvent {
@@ -162,19 +165,19 @@ pub static ROOT_RULES: [StateRule<TSpec>; 3] = [
             log("root_on_event:UnhandledDeep");
             ActionResult::Ok
         }],
-        guard: |_, _, _| Guard::Stay,
+        guard: |_, _, _| Decision::Stay,
     },
     StateRule {
         event_tag: TEvent::RESET_TAG,
         matches: |ev| matches!(ev, TEvent::Reset),
         actions: &[],
-        guard: |_, _, _| Guard::Reset,
+        guard: |_, _, _| Decision::Reset,
     },
     StateRule {
         event_tag: TEvent::FINISH_TAG,
         matches: |ev| matches!(ev, TEvent::Finish),
         actions: &[],
-        guard: |_, _, _| Guard::Done,
+        guard: |_, _, _| Decision::Done,
     },
 ];
 
@@ -188,7 +191,7 @@ pub static TOP_FNS: StateFns<TSpec> = StateFns {
             log("Top:handled_Unhandled");
             ActionResult::Ok
         }],
-        guard: |_, _, _| Guard::Stay,
+        guard: |_, _, _| Decision::Stay,
     }],
 };
 
@@ -200,25 +203,25 @@ pub static A_FNS: StateFns<TSpec> = StateFns {
             event_tag: TEvent::GO_B_TAG,
             matches: |ev| matches!(ev, TEvent::GoB),
             actions: &[],
-            guard: |_, _, _| Guard::Transition(LeafState::new(TState::B)),
+            guard: |_, _, _| Decision::Transition(LeafState::new(TState::B)),
         },
         StateRule {
             event_tag: TEvent::GO_C_TAG,
             matches: |ev| matches!(ev, TEvent::GoC),
             actions: &[],
-            guard: |_, _, _| Guard::Transition(LeafState::new(TState::C)),
+            guard: |_, _, _| Decision::Transition(LeafState::new(TState::C)),
         },
         StateRule {
             event_tag: TEvent::NO_OP_TAG,
             matches: |ev| matches!(ev, TEvent::NoOp),
             actions: &[],
-            guard: |_, _, _| Guard::Stay,
+            guard: |_, _, _| Decision::Stay,
         },
         StateRule {
             event_tag: TEvent::SELF_LOOP_TAG,
             matches: |ev| matches!(ev, TEvent::SelfLoop),
             actions: &[],
-            guard: |_, _, _| Guard::Transition(LeafState::new(TState::A)),
+            guard: |_, _, _| Decision::Transition(LeafState::new(TState::A)),
         },
         StateRule {
             event_tag: TEvent::TRIGGER_ERR_TAG,
@@ -229,11 +232,22 @@ pub static A_FNS: StateFns<TSpec> = StateFns {
             }],
             guard: |_, results, _| {
                 if results.any_failed() {
-                    Guard::Transition(LeafState::new(TState::C))
+                    Decision::Transition(LeafState::new(TState::C))
                 } else {
-                    Guard::Stay
+                    Decision::Stay
                 }
             },
+        },
+        // Decision::Fail with the default error_state() (= None): the engine
+        // goes to Init, firing the exit chain + on_init_entry.
+        StateRule {
+            event_tag: TEvent::FAIL_TAG,
+            matches: |ev| matches!(ev, TEvent::Fail),
+            actions: &[|_, _| {
+                log("A:Fail:action");
+                ActionResult::Ok
+            }],
+            guard: |_, _, _| Decision::Fail,
         },
     ],
 };
@@ -266,6 +280,204 @@ pub fn machine_in_a() -> StateMachine<TSpec> {
 pub fn machine_in_c() -> StateMachine<TSpec> {
     let mut m = machine_in_a();
     m.dispatch(TEvent::GoC);
+    take_log();
+    m
+}
+
+// ── Error-state fixture ─────────────────────────────────────────────────────
+//
+// A second spec with an `error_state()`/`is_error` override: `Err` is a leaf
+// error state (child of `Top`, sibling of initial state `A`). `Decision::Fail`
+// transitions into it; while there, the state is absorbing — domain events are
+// dropped without evaluating state rules or root rules (engine.rs). Log
+// strings are "E"-prefixed to stay distinct from the TSpec log.
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Default)]
+pub enum EState {
+    Top,
+    #[default]
+    A,
+    Err,
+}
+
+impl crate::topology::StateTopology for EState {
+    const STATE_COUNT: usize = 3;
+
+    fn parent(self) -> Option<Self> {
+        match self {
+            EState::Top => None,
+            EState::A | EState::Err => Some(EState::Top),
+        }
+    }
+
+    fn is_leaf(self) -> bool {
+        matches!(self, EState::A | EState::Err)
+    }
+
+    fn path(self) -> &'static [Self] {
+        match self {
+            EState::Top => &[EState::Top],
+            EState::A => &[EState::Top, EState::A],
+            EState::Err => &[EState::Top, EState::Err],
+        }
+    }
+
+    fn as_index(self) -> usize {
+        match self {
+            EState::Top => 0,
+            EState::A => 1,
+            EState::Err => 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum EEvent {
+    Lifecycle(LifecycleCommand),
+    Boom,
+}
+
+impl crate::event_tag::EventTag for EEvent {
+    fn event_tag(&self) -> u8 {
+        match self {
+            EEvent::Lifecycle(_) => crate::event_tag::LIFECYCLE_TAG,
+            EEvent::Boom => 0,
+        }
+    }
+}
+
+impl EEvent {
+    pub const BOOM_TAG: u8 = 0;
+}
+
+impl LifecycleEvent for EEvent {
+    fn as_lifecycle_command(&self) -> Option<LifecycleCommand> {
+        match self {
+            EEvent::Lifecycle(cmd) => Some(*cmd),
+            _ => None,
+        }
+    }
+}
+
+pub struct ECtx;
+
+pub struct ESpec;
+
+impl MachineSpec for ESpec {
+    type State = EState;
+    type Event = EEvent;
+    type Ctx = ECtx;
+    type Mailboxes<R: crate::capability::BloxRuntime> = crate::mailboxes::NoMailboxes;
+
+    const HANDLER_TABLE: &'static [&'static crate::spec::StateFns<Self>] =
+        &[&E_TOP_FNS, &E_A_FNS, &E_ERR_FNS];
+
+    fn initial_state() -> EState {
+        EState::A
+    }
+
+    fn error_state() -> Option<EState> {
+        Some(EState::Err)
+    }
+
+    fn is_error(state: &EState) -> bool {
+        matches!(state, EState::Err)
+    }
+
+    fn on_init_entry(_ctx: &mut ECtx) {
+        log("EInit:entry");
+    }
+
+    fn on_init_exit(_ctx: &mut ECtx) {
+        log("EInit:exit");
+    }
+
+    fn root_transitions() -> &'static [StateRule<Self>] {
+        &E_ROOT_RULES
+    }
+}
+
+pub static E_ROOT_RULES: [StateRule<ESpec>; 1] = [StateRule {
+    event_tag: EEvent::BOOM_TAG,
+    matches: |ev| matches!(ev, EEvent::Boom),
+    actions: &[|_, _| {
+        log("Eroot:Boom:action");
+        ActionResult::Ok
+    }],
+    guard: |_, _, _| Decision::Stay,
+}];
+
+pub static E_TOP_FNS: StateFns<ESpec> = StateFns {
+    on_entry: &[|_| log("ETop:entry")],
+    on_exit: &[|_| log("ETop:exit")],
+    transitions: &[],
+};
+
+pub static E_A_FNS: StateFns<ESpec> = StateFns {
+    on_entry: &[|_| log("EA:entry")],
+    on_exit: &[|_| log("EA:exit")],
+    transitions: &[StateRule {
+        event_tag: EEvent::BOOM_TAG,
+        matches: |ev| matches!(ev, EEvent::Boom),
+        actions: &[|_, _| {
+            log("EA:Boom:action");
+            ActionResult::Ok
+        }],
+        guard: |_, _, _| Decision::Fail,
+    }],
+};
+
+pub static E_ERR_FNS: StateFns<ESpec> = StateFns {
+    on_entry: &[|_| log("EErr:entry")],
+    on_exit: &[|_| log("EErr:exit")],
+    // This rule must NEVER fire: error states are absorbing, so domain events
+    // are dropped before any state rule (or root rule) is evaluated.
+    transitions: &[StateRule {
+        event_tag: EEvent::BOOM_TAG,
+        matches: |ev| matches!(ev, EEvent::Boom),
+        actions: &[|_, _| {
+            log("EErr:Boom:action");
+            ActionResult::Ok
+        }],
+        guard: |_, _, _| Decision::Transition(LeafState::new(EState::A)),
+    }],
+};
+
+/// Spec whose `error_state()` returns a composite state — `StateMachine::new`
+/// debug_asserts that an error state must be a leaf.
+pub struct BadESpec;
+
+impl MachineSpec for BadESpec {
+    type State = EState;
+    type Event = EEvent;
+    type Ctx = ECtx;
+    type Mailboxes<R: crate::capability::BloxRuntime> = crate::mailboxes::NoMailboxes;
+
+    const HANDLER_TABLE: &'static [&'static crate::spec::StateFns<Self>] =
+        &[&BAD_E_FNS, &BAD_E_FNS, &BAD_E_FNS];
+
+    fn initial_state() -> EState {
+        EState::A
+    }
+
+    fn error_state() -> Option<EState> {
+        Some(EState::Top) // composite — must panic in debug builds
+    }
+
+    fn is_error(state: &EState) -> bool {
+        matches!(state, EState::Top)
+    }
+}
+
+pub static BAD_E_FNS: StateFns<BadESpec> = StateFns {
+    on_entry: &[],
+    on_exit: &[],
+    transitions: &[],
+};
+
+pub fn machine_in_ea() -> StateMachine<ESpec> {
+    let mut m = StateMachine::<ESpec>::new(ECtx);
+    m.dispatch(EEvent::Lifecycle(LifecycleCommand::Start));
     take_log();
     m
 }

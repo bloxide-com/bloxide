@@ -50,10 +50,10 @@ pub fn report_outcome<S, R>(
                 send(ChildLifecycleEvent::Started { child_id: actor_id });
             }
         }
-        DispatchOutcome::Transition(MachineState::State(s)) => {
-            if S::is_error(s) {
-                send(ChildLifecycleEvent::Failed { child_id: actor_id });
-            }
+        DispatchOutcome::Transition(MachineState::State(_)) => {
+            // Transitions into an error state are converted to
+            // `DispatchOutcome::Failed` by dispatch() before reaching here,
+            // so there is nothing to report for ordinary transitions.
         }
         DispatchOutcome::Failed => {
             send(ChildLifecycleEvent::Failed { child_id: actor_id });
@@ -66,9 +66,6 @@ pub fn report_outcome<S, R>(
         }
         DispatchOutcome::Aborted => {
             send(ChildLifecycleEvent::Aborted { child_id: actor_id });
-        }
-        DispatchOutcome::Killed => {
-            send(ChildLifecycleEvent::Killed { child_id: actor_id });
         }
         DispatchOutcome::Alive => {
             send(ChildLifecycleEvent::Alive { child_id: actor_id });

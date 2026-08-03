@@ -29,10 +29,10 @@ pub enum AbortCommand {
 /// | `Abort`  | No (mailbox)      | None                         | Task ends (cooperative) |
 /// | `Ping`   | Yes               | None                         | Unchanged               |
 ///
-/// `Guard::Done` is the self-initiated clean exit: full exit chain +
+/// `Decision::Done` is the self-initiated clean exit: full exit chain +
 /// `on_init_entry` (same ritual as `Stop`), then the task ENDS. The
-/// supervisor deregisters the child — no restart policy. `Guard::Stop`
-/// suspends (restartable); `Guard::Done` terminates (completion).
+/// supervisor deregisters the child — no restart policy. `Decision::Stop`
+/// suspends (restartable); `Decision::Done` terminates (completion).
 ///
 /// `Kill` is not a `LifecycleCommand` — it is a runtime capability
 /// (`KillCapability::kill(handle)`) that destroys the task externally.
@@ -42,9 +42,10 @@ pub enum LifecycleCommand {
     /// Fires `on_init_exit` (resource acquisition).
     Start,
     /// Reset directly to `initial_state()` — immediately operational.
-    /// Fires the full exit chain for the current state, then the entry chain
-    /// for `initial_state()`. Does NOT visit Init, does NOT fire
-    /// `on_init_entry` or `on_init_exit`. The actor is immediately operational.
+    /// Uses LCA-based `change_state` (ancestors at/above the LCA do not fire
+    /// `on_exit`), then the entry chain for `initial_state()`. Does NOT visit
+    /// Init and does NOT fire `on_init_entry`; resetting FROM Init fires
+    /// `on_init_exit` (equivalent to Start).
     Reset,
     /// Transition to Init, report Stopped. Actor is suspended.
     /// Fires the full exit chain, then `on_init_entry` (resource cleanup).
@@ -63,17 +64,17 @@ pub enum LifecycleCommand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChildLifecycleEvent {
     /// Child exited Init and entered its initial state.
-    /// Also sent when a child self-resets via `Guard::Reset` or
+    /// Also sent when a child self-resets via `Decision::Reset` or
     /// `LifecycleCommand::Reset` — both go directly to `initial_state()`.
     Started { child_id: ActorId },
     /// Child entered an error state (`is_error()` returned true) or
-    /// returned `Guard::Fail`.
+    /// returned `Decision::Fail`.
     Failed { child_id: ActorId },
     /// Child was stopped via `LifecycleCommand::Stop`.
     /// The exit chain and `on_init_entry` fired. The child is in Init,
     /// suspended, and can be restarted with `Start`.
     Stopped { child_id: ActorId },
-    /// Child self-terminated cleanly via `Guard::Done` — normal completion.
+    /// Child self-terminated cleanly via `Decision::Done` — normal completion.
     /// The exit chain and `on_init_entry` fired, then the child's task ended.
     /// The supervisor deregisters the child (no restart policy triggered).
     Done { child_id: ActorId },

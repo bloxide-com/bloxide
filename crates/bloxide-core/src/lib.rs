@@ -36,7 +36,7 @@ pub use runloop::{run, RunConfig};
 pub use spec::{MachineSpec, StateFns};
 pub use supervision::report_outcome;
 pub use topology::{LeafState, StateTopology};
-pub use transition::{ActionResult, ActionResults, Guard, StateRule};
+pub use transition::{ActionResult, ActionResults, Decision, StateRule};
 // Note: TransitionRule is public because StateRule is a type alias over it. Use
 // StateRule<S> in user code.
 

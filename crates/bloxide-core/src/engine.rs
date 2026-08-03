@@ -5,7 +5,7 @@ use crate::event_tag::{EventTag, LifecycleEvent, WILDCARD_TAG};
 use crate::lifecycle::LifecycleCommand;
 use crate::spec::{MachineSpec, StateFns};
 use crate::topology::StateTopology;
-use crate::transition::{ActionFn, ActionResults, Guard, TransitionRule};
+use crate::transition::{ActionFn, ActionResults, Decision, TransitionRule};
 
 // ── Handler-table bounds-checked lookup ──────────────────────────────────────
 
@@ -153,14 +153,14 @@ pub enum DispatchOutcome<State> {
     /// Transition occurred to a user state.
     Transition(MachineState<State>),
     /// Left Init via Start command, or reset directly to initial_state()
-    /// via Reset command or Guard::Reset. Actor is immediately operational.
+    /// via Reset command or Decision::Reset. Actor is immediately operational.
     Started(MachineState<State>),
-    /// Actor failed via Guard::Fail or entered error state.
+    /// Actor failed via Decision::Fail or entered error state.
     Failed,
-    /// Actor stopped to Init via LifecycleCommand::Stop.
+    /// Actor stopped to Init via LifecycleCommand::Stop or Decision::Stop.
     /// Exit chain and on_init_entry fired. Actor is suspended in Init.
     Stopped,
-    /// Actor self-terminated cleanly via Guard::Done.
+    /// Actor self-terminated cleanly via Decision::Done.
     /// Exit chain and on_init_entry fired (same cleanup as Stop), then the
     /// run loop exits — the task ends. The supervisor deregisters the child.
     Done,
@@ -168,9 +168,6 @@ pub enum DispatchOutcome<State> {
     /// No callbacks fired — the run loop self-terminated cooperatively.
     /// This outcome is synthesized by the run loop, not by dispatch().
     Aborted,
-    /// Actor was killed via KillCapability — external task destruction.
-    /// This outcome is synthesized by the supervisor, not by dispatch().
-    Killed,
     /// Actor responded to Ping.
     Alive,
 }
@@ -209,6 +206,10 @@ impl<S: MachineSpec> StateMachine<S> {
         debug_assert!(
             S::initial_state().is_leaf(),
             "initial_state() must return a leaf state"
+        );
+        debug_assert!(
+            S::error_state().is_none_or(|s| s.is_leaf()),
+            "error_state() must return a leaf state when it returns Some"
         );
         trace_init_entry!();
         Self {
@@ -276,8 +277,9 @@ impl<S: MachineSpec> StateMachine<S> {
             }
             LifecycleCommand::Reset => {
                 // Reset always goes directly to initial_state() — skip Init
-                // entirely (from Init this is equivalent to Start). Fire the
-                // full exit chain, then the entry chain for initial_state().
+                // entirely (from Init this is equivalent to Start). Uses
+                // LCA-based change_state (ancestors at/above the LCA do not
+                // fire on_exit), then the entry chain for initial_state().
                 // No on_init_entry or on_init_exit.
                 let target = S::initial_state();
                 self.transition_to_state(target);
@@ -289,7 +291,7 @@ impl<S: MachineSpec> StateMachine<S> {
                         // Already in Init — acknowledge with Stopped so the
                         // supervisor's ShuttingDown state can confirm this child
                         // is stopped.  Without this acknowledgment, a child
-                        // that self-suspended via Guard::Stop and was then sent
+                        // that self-suspended via Decision::Stop and was then sent
                         // Stop by stop_all_children would silently no-op, and
                         // the supervisor would never receive the Stopped event
                         // it needs to evaluate all_children_stopped().
@@ -329,7 +331,7 @@ impl<S: MachineSpec> StateMachine<S> {
             let fns = handler_fns::<S>(&ancestor);
 
             if let Some(guard) =
-                eval_rules::<S, Guard<S>>(fns.transitions, &mut self.ctx, &event, event_tag)
+                eval_rules::<S, Decision<S>>(fns.transitions, &mut self.ctx, &event, event_tag)
             {
                 return self.apply_guard(guard);
             }
@@ -337,7 +339,7 @@ impl<S: MachineSpec> StateMachine<S> {
 
         // Bubbled to VirtualRoot - check root transitions for domain events
         if let Some(guard) =
-            eval_rules::<S, Guard<S>>(S::root_transitions(), &mut self.ctx, &event, event_tag)
+            eval_rules::<S, Decision<S>>(S::root_transitions(), &mut self.ctx, &event, event_tag)
         {
             return self.apply_guard(guard);
         }
@@ -346,10 +348,10 @@ impl<S: MachineSpec> StateMachine<S> {
         DispatchOutcome::NoRuleMatched
     }
 
-    /// Apply a Guard outcome.
-    fn apply_guard(&mut self, guard: Guard<S>) -> DispatchOutcome<S::State> {
+    /// Apply a Decision outcome.
+    fn apply_guard(&mut self, guard: Decision<S>) -> DispatchOutcome<S::State> {
         match guard {
-            Guard::Transition(leaf) => {
+            Decision::Transition(leaf) => {
                 let target = leaf.into_inner();
                 self.transition_to_state(target);
 
@@ -360,27 +362,28 @@ impl<S: MachineSpec> StateMachine<S> {
                     DispatchOutcome::Transition(MachineState::State(target))
                 }
             }
-            Guard::Stay => DispatchOutcome::HandledNoTransition,
-            Guard::Reset => {
+            Decision::Stay => DispatchOutcome::HandledNoTransition,
+            Decision::Reset => {
                 // Self-reset: go directly to initial_state(), skip Init.
-                // Fire the full exit chain, then the entry chain for initial_state().
+                // LCA-based change_state (ancestors at/above the LCA do not
+                // fire on_exit), then the entry chain for initial_state().
                 let target = S::initial_state();
                 self.transition_to_state(target);
                 DispatchOutcome::Started(MachineState::State(target))
             }
-            Guard::Stop => {
+            Decision::Stop => {
                 // Self-suspend: go to Init (fire exit chain + on_init_entry).
                 self.transition_to_init();
                 DispatchOutcome::Stopped
             }
-            Guard::Done => {
+            Decision::Done => {
                 // Clean self-termination: same cleanup ritual as Stop (exit
                 // chain + on_init_entry), but the outcome tells the run loop
                 // to end the task instead of suspending in Init.
                 self.transition_to_init();
                 DispatchOutcome::Done
             }
-            Guard::Fail => {
+            Decision::Fail => {
                 // Error propagation: go to user-defined error_state() or Init.
                 match S::error_state() {
                     Some(error_state) => {

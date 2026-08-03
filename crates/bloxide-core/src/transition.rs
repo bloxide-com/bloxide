@@ -101,10 +101,10 @@ impl core::iter::FromIterator<ActionResult> for ActionResults {
 /// Internal representation of a transition rule.
 ///
 /// **Users should not name this type directly.** Use the `StateRule<S>` type alias instead,
-/// which adds the `Guard<S>` type parameter.
+/// which adds the `Decision<S>` type parameter.
 ///
 /// This struct is public because `StateRule<S>` is a type alias that expands
-/// to `TransitionRule<S, Guard<S>>`; Rust requires the aliased type to be at
+/// to `TransitionRule<S, Decision<S>>`; Rust requires the aliased type to be at
 /// least as visible as the alias. Users should use `StateRule<S>` in their
 /// code.
 ///
@@ -155,14 +155,14 @@ pub struct TransitionRule<S: MachineSpec, G> {
 /// returns an [`ActionResult`] indicating success or failure.
 pub type ActionFn<S> = fn(&mut <S as MachineSpec>::Ctx, &<S as MachineSpec>::Event) -> ActionResult;
 
-/// State-level transition rule. Guard returns [`Guard<S>`] (Transition or Stay).
-pub type StateRule<S> = TransitionRule<S, Guard<S>>;
+/// State-level transition rule. The guard closure returns a [`Decision<S>`].
+pub type StateRule<S> = TransitionRule<S, Decision<S>>;
 
-// ── Guard outcomes ───────────────────────────────────────────────────────────
+// ── Decision outcomes ───────────────────────────────────────────────────────────
 
 /// The outcome of a guard evaluation (state-level or root-level).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Guard<S: MachineSpec> {
+pub enum Decision<S: MachineSpec> {
     /// Perform a transition to `target`. When `target == current_state` this
     /// is a self-transition: fires `on_exit` then `on_entry`.
     ///
@@ -174,8 +174,8 @@ pub enum Guard<S: MachineSpec> {
     /// Stay in the current state. No `on_exit` or `on_entry` is called.
     Stay,
     /// Self-reset: go directly to `initial_state()`, skipping Init entirely.
-    /// Fires the full exit chain for the current state, then the entry chain
-    /// for `initial_state()`. Does NOT call `on_init_entry` or `on_init_exit`.
+    /// Uses LCA-based `change_state` (ancestors at/above the LCA do not fire
+    /// `on_exit`), then the entry chain for `initial_state()`. Does NOT call `on_init_entry` or `on_init_exit`.
     /// The actor is immediately operational.
     Reset,
     /// Self-suspend: go to Init (fire exit chain + `on_init_entry`).

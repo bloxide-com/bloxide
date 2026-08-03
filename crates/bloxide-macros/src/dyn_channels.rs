@@ -1,8 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
+use core::sync::atomic::Ordering;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::channels::ChannelsInput;
+use crate::channels::{ChannelsInput, NEXT_ACTOR_ID};
 
 pub(crate) fn dyn_channels_inner(input: TokenStream) -> TokenStream {
     let parsed = syn::parse_macro_input!(input as ChannelsInput);
@@ -23,13 +24,16 @@ pub(crate) fn dyn_channels_inner(input: TokenStream) -> TokenStream {
     let msg_types: Vec<&syn::Type> = parsed.entries.iter().map(|e| &e.msg_type).collect();
     let capacities: Vec<&syn::LitInt> = parsed.entries.iter().map(|e| &e.capacity).collect();
 
+    // Bake the ID from the same compile-time counter used by `channels!` and
+    // `next_actor_id!` — static wiring never touches the runtime's dynamic
+    // `alloc_actor_id` counter (reserved for dynamically spawned actors).
+    let actor_id = NEXT_ACTOR_ID.fetch_add(1, Ordering::Relaxed);
     quote! {
         {
-            let __actor_id = <#runtime as ::bloxide_core::capability::DynamicChannelCap>::alloc_actor_id();
             #(
                 let (#ref_idents, #stream_idents) =
                     <#runtime as ::bloxide_core::capability::DynamicChannelCap>
-                        ::channel::<#msg_types>(__actor_id, #capacities);
+                        ::channel::<#msg_types>(#actor_id, #capacities);
             )*
             ((#(#ref_idents,)*), (#(#stream_idents,)*))
         }

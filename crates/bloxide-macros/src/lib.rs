@@ -34,7 +34,6 @@ mod dyn_channels;
 mod event_tag;
 
 mod blox_event_new;
-mod blox_mailboxes;
 mod blox_messages;
 
 // ── EventTag derive ───────────────────────────────────────────────────────────
@@ -158,7 +157,8 @@ pub fn next_actor_id(_input: TokenStream) -> TokenStream {
 ///
 /// Unlike `channels!` (which uses `StaticChannelCap` with a const-generic `N`),
 /// this macro calls `DynamicChannelCap::channel(id, capacity)` where capacity
-/// is a runtime `usize` value and `id` is allocated via `alloc_actor_id()`.
+/// is a runtime `usize` value and `id` is baked from the same compile-time
+/// counter used by `channels!` and `next_actor_id!`.
 ///
 /// Returns `((ref1, ref2, ...), (stream1, stream2, ...))`.
 ///

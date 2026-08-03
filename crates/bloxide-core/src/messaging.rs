@@ -50,7 +50,7 @@ impl<M: Send + 'static, R: BloxRuntime> ActorRef<M, R> {
 
     /// Returns a clone of the raw sender. Used by the wiring layer when a
     /// supervised actor needs to notify a supervisor directly via the raw
-    /// sender type (e.g. to construct an `EmbassyChildHandle`).
+    /// sender type (e.g. to build a `RunConfig`'s `supervisor_notify`).
     pub fn sender(&self) -> R::Sender<M> {
         self.tx.clone()
     }

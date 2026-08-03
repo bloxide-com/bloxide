@@ -32,14 +32,15 @@ use crate::supervision::report_outcome;
 /// | `supervisor_notify` | Reports outcomes to supervisor | No outcome reporting |
 /// | `auto_start` | Calls `handle_lifecycle(Start)` before entering the loop | Actor starts via lifecycle stream |
 /// | `exit_on_stop` | `DispatchOutcome::Stopped` breaks the loop | Actor stays alive in Init, waiting for Start/Reset |
+/// | `exit_on_fail` | `DispatchOutcome::Failed` breaks the loop | Actor stays alive in its absorbing error state; supervisor's `ChildPolicy` decides (Reset revives) |
 ///
 /// **Typical configurations:**
 ///
-/// - **Root supervisor**: `exit_on_stop = true`, no lifecycle/abort/notify
-/// - **Supervised child**: `lifecycle + supervisor_notify`, `exit_on_stop = false`
-/// - **Supervised child with kill capability**: `lifecycle + abort + supervisor_notify`, `exit_on_stop = false`
-/// - **Unsupervised actor**: `auto_start = true`, `exit_on_stop = true`
-/// - **Bare (test)**: no lifecycle/abort/notify, `auto_start = false`, `exit_on_stop = true`
+/// - **Root supervisor**: `exit_on_stop = true`, `exit_on_fail = true`, no lifecycle/abort/notify
+/// - **Supervised child**: `lifecycle + supervisor_notify`, `exit_on_stop = false`, `exit_on_fail = false`
+/// - **Supervised child with kill capability**: `lifecycle + abort + supervisor_notify`, `exit_on_stop = false`, `exit_on_fail = false`
+/// - **Unsupervised actor**: `auto_start = true`, `exit_on_stop = true`, `exit_on_fail = true`
+/// - **Bare (test)**: no lifecycle/abort/notify, `auto_start = false`, `exit_on_stop = true`, `exit_on_fail = true`
 pub struct RunConfig<R: BloxRuntime> {
     /// Lifecycle command stream from the supervisor. `None` for unsupervised/root actors.
     pub lifecycle: Option<R::Stream<LifecycleCommand>>,
@@ -52,6 +53,11 @@ pub struct RunConfig<R: BloxRuntime> {
     /// Exit the loop when `DispatchOutcome::Stopped` is observed.
     /// `true` for root/unsupervised, `false` for supervised (stays alive in Init).
     pub exit_on_stop: bool,
+    /// Exit the loop when `DispatchOutcome::Failed` is observed.
+    /// `true` for root/unsupervised, `false` for supervised: the actor parks in
+    /// its (absorbing) error state and stays alive so the supervisor's
+    /// `ChildPolicy` can reset, stop, abort, or kill it.
+    pub exit_on_fail: bool,
 }
 
 impl<R: BloxRuntime> RunConfig<R> {
@@ -66,6 +72,7 @@ impl<R: BloxRuntime> RunConfig<R> {
             supervisor_notify: None,
             auto_start: false,
             exit_on_stop: true,
+            exit_on_fail: true,
         }
     }
 
@@ -82,6 +89,7 @@ impl<R: BloxRuntime> RunConfig<R> {
             supervisor_notify: Some(supervisor_notify),
             auto_start: false,
             exit_on_stop: false,
+            exit_on_fail: false,
         }
     }
 
@@ -99,6 +107,7 @@ impl<R: BloxRuntime> RunConfig<R> {
             supervisor_notify: Some(supervisor_notify),
             auto_start: false,
             exit_on_stop: false,
+            exit_on_fail: false,
         }
     }
 
@@ -110,6 +119,7 @@ impl<R: BloxRuntime> RunConfig<R> {
             supervisor_notify: None,
             auto_start: true,
             exit_on_stop: true,
+            exit_on_fail: true,
         }
     }
 
@@ -124,6 +134,7 @@ impl<R: BloxRuntime> RunConfig<R> {
             supervisor_notify: None,
             auto_start: false,
             exit_on_stop: true,
+            exit_on_fail: true,
         }
     }
 }
@@ -138,8 +149,8 @@ impl<R: BloxRuntime> RunConfig<R> {
 ///
 /// The loop exits when:
 /// - `exit_on_stop` is true and `DispatchOutcome::Stopped` is observed
+/// - `exit_on_fail` is true and `DispatchOutcome::Failed` is observed
 /// - `DispatchOutcome::Aborted` is observed (always exits)
-/// - `DispatchOutcome::Failed` is observed (always exits)
 /// - `DispatchOutcome::Done` is observed (always exits — clean self-termination)
 /// - The lifecycle or abort stream returns `Poll::Ready(None)` (stream
 ///   closed — always fatal; shutdown flows through these streams)
@@ -149,7 +160,9 @@ impl<R: BloxRuntime> RunConfig<R> {
 ///
 /// When `exit_on_stop` is false (supervised actors), `Stopped` is NOT terminal —
 /// the actor self-suspends to Init and the task stays alive, waiting for a
-/// future `Start` or `Reset` from the supervisor.
+/// future `Start` or `Reset` from the supervisor. Likewise, when `exit_on_fail`
+/// is false, `Failed` is NOT terminal — the actor parks in its absorbing error
+/// state and the supervisor's `ChildPolicy` decides (Reset restarts it).
 pub async fn run<S, M, R>(
     mut machine: StateMachine<S>,
     mut domain_mailboxes: M,
@@ -170,7 +183,7 @@ pub async fn run<S, M, R>(
             DispatchOutcome::Started(MachineState::State(state)) if S::is_error(state) => {
                 return;
             }
-            DispatchOutcome::Failed => return,
+            DispatchOutcome::Failed if config.exit_on_fail => return,
             DispatchOutcome::Stopped if config.exit_on_stop => return,
             _ => {}
         }
@@ -197,9 +210,10 @@ pub async fn run<S, M, R>(
                             report_outcome::<S, R>(&outcome, actor_id, notify);
                         }
                         match &outcome {
-                            DispatchOutcome::Aborted
-                            | DispatchOutcome::Failed
-                            | DispatchOutcome::Done => {
+                            DispatchOutcome::Aborted | DispatchOutcome::Done => {
+                                return Poll::Ready(LoopAction::Stop);
+                            }
+                            DispatchOutcome::Failed if config.exit_on_fail => {
                                 return Poll::Ready(LoopAction::Stop);
                             }
                             DispatchOutcome::Stopped if config.exit_on_stop => {
@@ -234,9 +248,12 @@ pub async fn run<S, M, R>(
                         report_outcome::<S, R>(&outcome, actor_id, notify);
                     }
                     match &outcome {
-                        DispatchOutcome::Aborted
-                        | DispatchOutcome::Failed
-                        | DispatchOutcome::Done => Poll::Ready(LoopAction::Stop),
+                        DispatchOutcome::Aborted | DispatchOutcome::Done => {
+                            Poll::Ready(LoopAction::Stop)
+                        }
+                        DispatchOutcome::Failed if config.exit_on_fail => {
+                            Poll::Ready(LoopAction::Stop)
+                        }
                         DispatchOutcome::Stopped if config.exit_on_stop => {
                             Poll::Ready(LoopAction::Stop)
                         }

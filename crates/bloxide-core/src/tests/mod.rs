@@ -133,9 +133,9 @@ mod hsm_engine {
         assert_eq!(take_log(), vec!["root_on_event:UnhandledDeep"]);
     }
 
-    // ── Guard::Reset ────────────────────────────────────────────────────────
+    // ── Decision::Reset ────────────────────────────────────────────────────────
     //
-    // In the four-level lifecycle model, Guard::Reset goes directly to
+    // In the four-level lifecycle model, Decision::Reset goes directly to
     // initial_state() (TState::A) — it does NOT visit Init and does NOT
     // fire on_init_entry. The exit chain fires for the current state,
     // then the entry chain fires for initial_state().
@@ -179,9 +179,40 @@ mod hsm_engine {
         assert!(matches!(m.current_state(), MachineState::State(TState::A)));
     }
 
-    // ── Guard::Done ─────────────────────────────────────────────────────────
+    #[test]
+    fn reset_with_shared_ancestor_does_not_exit_lca() {
+        let mut m = machine_in_a();
+        m.dispatch(TEvent::GoB); // B — shares ancestor Top with initial state A
+        take_log();
+        let outcome = m.dispatch(TEvent::Reset);
+        // Corrected semantics: Reset uses LCA-based change_state. B and A
+        // share ancestor Top (the LCA), so ancestors at/above the LCA do NOT
+        // fire on_exit — only B exits and A enters.
+        assert_eq!(take_log(), vec!["B:exit", "A:entry"]);
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TState::A))
+        ));
+    }
+
+    #[test]
+    fn reset_from_init_fires_init_exit_equivalent_to_start() {
+        let mut m = StateMachine::<TSpec>::new(TCtx);
+        take_log();
+        let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Reset));
+        // Reset from Init is equivalent to Start: fires on_init_exit, then
+        // the entry chain for initial_state(). on_init_entry never fired
+        // (construction is silent and Reset skips Init).
+        assert_eq!(take_log(), vec!["Init:exit", "Top:entry", "A:entry"]);
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TState::A))
+        ));
+    }
+
+    // ── Decision::Done ─────────────────────────────────────────────────────────
     //
-    // Guard::Done fires the same cleanup ritual as Stop (full exit chain for
+    // Decision::Done fires the same cleanup ritual as Stop (full exit chain for
     // the current state + on_init_entry) but returns DispatchOutcome::Done,
     // which tells the run loop to END the task instead of suspending in Init.
 
@@ -304,6 +335,78 @@ mod hsm_engine {
         assert!(take_log().is_empty());
     }
 
+    // ── Decision::Fail / error states ───────────────────────────────────────
+    //
+    // Decision::Fail goes to `error_state()` when one is defined (firing the
+    // exit/entry chains, no on_init_entry), otherwise to Init (firing the
+    // exit chain + on_init_entry). Error states are absorbing: domain events
+    // are dropped without evaluating state rules or root rules — the only way
+    // out is a lifecycle Reset (or Start from Init after Stop).
+
+    #[test]
+    fn fail_with_error_state_enters_error_state_and_returns_failed() {
+        let mut m = machine_in_ea();
+        let outcome = m.dispatch(EEvent::Boom);
+        // Action runs, then exit chain of A + entry chain of Err (LCA = Top,
+        // so Top is untouched). on_init_entry must NOT fire.
+        assert_eq!(take_log(), vec!["EA:Boom:action", "EA:exit", "EErr:entry"]);
+        assert!(matches!(outcome, DispatchOutcome::Failed));
+        assert!(matches!(
+            m.current_state(),
+            MachineState::State(EState::Err)
+        ));
+    }
+
+    #[test]
+    fn fail_without_error_state_goes_to_init_and_fires_init_entry() {
+        // TSpec uses the default error_state() = None.
+        let mut m = machine_in_a();
+        let outcome = m.dispatch(TEvent::Fail);
+        assert_eq!(
+            take_log(),
+            vec!["A:Fail:action", "A:exit", "Top:exit", "Init:entry"]
+        );
+        assert!(matches!(outcome, DispatchOutcome::Failed));
+        assert!(m.current_state().is_init());
+    }
+
+    #[test]
+    fn error_state_is_absorbing_until_lifecycle_reset() {
+        let mut m = machine_in_ea();
+        m.dispatch(EEvent::Boom); // -> Err (Failed)
+        take_log();
+
+        // Domain events are dropped: no state rules, no root rules, no
+        // actions, no transitions — even though both Err and the root rules
+        // have a Boom rule that would log/transition if evaluated.
+        let outcome = m.dispatch(EEvent::Boom);
+        assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
+        assert!(
+            take_log().is_empty(),
+            "error states are absorbing — no rule evaluation"
+        );
+        assert!(matches!(
+            m.current_state(),
+            MachineState::State(EState::Err)
+        ));
+
+        // Lifecycle Reset revives the machine to initial_state().
+        let outcome = m.dispatch(EEvent::Lifecycle(LifecycleCommand::Reset));
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(EState::A))
+        ));
+        assert_eq!(take_log(), vec!["EErr:exit", "EA:entry"]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn error_state_composite_panics_in_debug() {
+        // error_state() = Some(EState::Top) — StateMachine::new debug_asserts
+        // the error state is a leaf (same pattern as the LeafState assert).
+        let _m = StateMachine::<BadESpec>::new(ECtx);
+    }
+
     // ── ActionResult::Err path through guard ────────────────────────────────
 
     #[test]
@@ -335,6 +438,35 @@ mod hsm_engine {
         assert!(matches!(outcome, DispatchOutcome::Stopped));
         assert!(m.current_state().is_init());
         assert!(take_log().contains(&"A:exit") || take_log().contains(&"Top:exit"));
+    }
+
+    #[test]
+    fn stop_in_init_is_idempotent_and_does_not_refire_init_entry() {
+        let mut m = StateMachine::<TSpec>::new(TCtx);
+        take_log();
+
+        // Stop while already in Init: returns Stopped WITHOUT re-firing
+        // on_init_entry (the supervisor's ShuttingDown state relies on this
+        // acknowledgment from children that self-suspended).
+        let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Stop));
+        assert!(matches!(outcome, DispatchOutcome::Stopped));
+        assert!(m.current_state().is_init());
+
+        let outcome2 = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Stop));
+        assert!(matches!(outcome2, DispatchOutcome::Stopped));
+
+        let log = take_log();
+        assert_eq!(
+            log.iter().filter(|e| **e == "Init:entry").count(),
+            0,
+            "on_init_entry must not re-fire on Stop-in-Init, got: {:?}",
+            log
+        );
+        assert!(
+            log.is_empty(),
+            "Stop-in-Init must be silent, got: {:?}",
+            log
+        );
     }
 
     #[test]

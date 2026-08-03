@@ -18,11 +18,11 @@ pub struct StateFns<S: MachineSpec> {
 
 /// The core trait every state machine must implement.
 ///
-/// # Engine-implicit Init and Root
+/// # Engine-implicit Init and VirtualRoot
 ///
-/// Neither `Root` nor `Init` appear in the user's `State` enum:
+/// Neither `VirtualRoot` nor `Init` appear in the user's `State` enum:
 ///
-/// - **Root** is engine-implicit. Top-level user states return `None` from
+/// - **VirtualRoot** is engine-implicit. Top-level user states return `None` from
 ///   `StateTopology::parent()`. The engine handles lifecycle commands at
 ///   VirtualRoot level before state handlers. Domain events may bubble to
 ///   `root_transitions()` for global fallback handling.
@@ -52,7 +52,7 @@ pub trait MachineSpec: Sized + 'static {
     /// Does NOT fire on Reset (which skips Init).
     fn on_init_exit(_ctx: &mut Self::Ctx) {}
 
-    /// User-defined error recovery state for `Guard::Fail`.
+    /// User-defined error recovery state for `Decision::Fail`.
     ///
     /// - `Some(state)`: the engine transitions to this state (firing exit/entry
     ///   chains). The supervisor sees `DispatchOutcome::Failed` and applies
