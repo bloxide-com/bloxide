@@ -1,14 +1,14 @@
 // Copyright 2025 Bloxide, all rights reserved
+//! Convenience re-exports for Embassy-based wiring sites.
+//!
+//! Re-exports everything from `bloxide_core::prelude` plus Embassy-specific
+//! runtime types and `Spawner`. A single `use bloxide_embassy::prelude::*;`
+//! covers all framework types needed in a wiring binary.
+//!
+//! Supervisor types are NOT re-exported here — the runtime does not depend
+//! on `bloxide-supervisor`. Apps that use the supervisor import it directly:
+//! `use bloxide_supervisor::*;`
 pub use crate::{run, ChildGroupBuilder, EmbassyRuntime, EmbassySender, EmbassyStream, RunConfig};
-/// Convenience re-exports for Embassy-based wiring sites.
-///
-/// Re-exports everything from `bloxide_core::prelude` plus Embassy-specific
-/// runtime types and `Spawner`. A single `use bloxide_embassy::prelude::*;`
-/// covers all framework types needed in a wiring binary.
-///
-/// Supervisor types are NOT re-exported here — the runtime does not depend
-/// on `bloxide-supervisor`. Apps that use the supervisor import it directly:
-/// `use bloxide_supervisor::*;`
 pub use bloxide_child_management::{ChildGroup, ChildPolicy, GroupShutdown};
 pub use bloxide_core::prelude::*;
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};

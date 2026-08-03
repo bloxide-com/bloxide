@@ -109,8 +109,9 @@ macro_rules! actor_task_supervised {
 
 /// Generate an `#[embassy_executor::task]` wrapper for a top-level supervisor.
 ///
-/// When the supervisor's spec transitions to Init via `Guard::Reset`, the
-/// runtime returns and the optional exit expression is executed.
+/// The runtime returns when the run loop exits (on `Stopped`, `Done`,
+/// `Failed`, or `Aborted` — root actors use `RunConfig::root`, which exits on
+/// any of these), and the optional exit expression is then executed.
 ///
 /// # Usage
 ///

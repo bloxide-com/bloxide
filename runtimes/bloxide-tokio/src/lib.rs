@@ -18,7 +18,6 @@ pub use bloxide_child_management::ChildGroupBuilder;
 pub use bloxide_core::{run, RunConfig};
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{TokioSender, TokioStream, TokioTrySendError};
-pub use supervision::GenericChildGroupBuilder;
 
 // ── TokioRuntime ──────────────────────────────────────────────────────────────
 

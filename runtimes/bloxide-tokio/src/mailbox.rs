@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap},
+    capability::{BloxRuntime, DynamicChannelCap, DYNAMIC_ACTOR_ID_BASE},
     messaging::{ActorId, ActorRef, Envelope},
 };
 use bloxide_spawn::Kill;
@@ -16,7 +16,10 @@ use crate::{
 
 // ── Actor ID allocation ───────────────────────────────────────────────────────
 
-static NEXT_TOKIO_ID: AtomicUsize = AtomicUsize::new(1);
+// Dynamic actor IDs (spawned at runtime) start well above the compile-time
+// counter used by `channels!` / `next_actor_id!` so the two spaces can never
+// collide (`DYNAMIC_ACTOR_ID_BASE`).
+static NEXT_TOKIO_ID: AtomicUsize = AtomicUsize::new(DYNAMIC_ACTOR_ID_BASE);
 
 fn alloc_tokio_id() -> ActorId {
     NEXT_TOKIO_ID.fetch_add(1, Ordering::Relaxed)

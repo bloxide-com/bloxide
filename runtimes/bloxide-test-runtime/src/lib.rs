@@ -31,7 +31,7 @@
 
 extern crate alloc;
 
-use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
+use bloxide_core::capability::{BloxRuntime, DynamicChannelCap, DYNAMIC_ACTOR_ID_BASE};
 use bloxide_core::messaging::{ActorId, ActorRef, Envelope};
 use bloxide_spawn::{Kill, SpawnCap};
 
@@ -45,7 +45,9 @@ use std::vec::Vec;
 
 // ── Unique actor ID generator ────────────────────────────────────────────
 
-static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
+// Starts at `DYNAMIC_ACTOR_ID_BASE` so runtime-allocated IDs can never
+// collide with the compile-time counter used by `channels!` / `next_actor_id!`.
+static NEXT_ID: AtomicUsize = AtomicUsize::new(DYNAMIC_ACTOR_ID_BASE);
 
 fn alloc_test_id() -> ActorId {
     NEXT_ID.fetch_add(1, Ordering::Relaxed)
@@ -112,17 +114,28 @@ impl<M: Send + 'static> Stream for TestReceiver<M> {
     type Item = Envelope<M>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        {
+            let mut lock = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(env) = lock.pop_front() {
+                return Poll::Ready(Some(env));
+            }
+            if self.shared.sender_count.load(Ordering::SeqCst) == 0 {
+                // All senders dropped and queue drained — channel closed (fused:
+                // this keeps returning Ready(None) on re-poll).
+                return Poll::Ready(None);
+            }
+        }
+        // Register the waker, then re-check the queue: a send that landed
+        // between the first check and registration must not be lost (the
+        // sender's wake() would have found an empty waker slot).
+        *self.shared.waker.lock().unwrap_or_else(|e| e.into_inner()) = Some(cx.waker().clone());
         let mut lock = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(env) = lock.pop_front() {
             return Poll::Ready(Some(env));
         }
         if self.shared.sender_count.load(Ordering::SeqCst) == 0 {
-            // All senders dropped and queue drained — channel closed (fused:
-            // this keeps returning Ready(None) on re-poll).
             return Poll::Ready(None);
         }
-        drop(lock);
-        *self.shared.waker.lock().unwrap_or_else(|e| e.into_inner()) = Some(cx.waker().clone());
         Poll::Pending
     }
 }
@@ -291,7 +304,7 @@ mod waker_tests {
     use bloxide_core::messaging::Envelope;
     use bloxide_core::spec::MachineSpec;
     use bloxide_core::topology::StateTopology;
-    use bloxide_core::transition::{ActionResult, Guard, TransitionRule};
+    use bloxide_core::transition::{ActionResult, Decision, TransitionRule};
     use bloxide_core::{run, RunConfig};
     use std::marker::PhantomData;
     use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -434,9 +447,9 @@ mod waker_tests {
                     }],
                     guard: |ctx, _results, _ev| {
                         if ctx.processed.load(Ordering::SeqCst) >= ctx.threshold {
-                            Guard::Stop
+                            Decision::Stop
                         } else {
-                            Guard::Stay
+                            Decision::Stay
                         }
                     },
                 }],
@@ -469,7 +482,6 @@ mod waker_tests {
 
         let sender_clone = sender_ref.clone();
         let handle = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(50));
             sender_clone.try_send(0, 42u32).unwrap();
         });
 
@@ -495,7 +507,6 @@ mod waker_tests {
 
         let sender_clone = sender_ref.clone();
         let handle = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(50));
             for i in 0..5u32 {
                 sender_clone.try_send(0, i).unwrap();
             }
@@ -522,7 +533,7 @@ mod lifecycle_dispatch {
     use bloxide_core::messaging::Envelope;
     use bloxide_core::spec::MachineSpec;
     use bloxide_core::topology::{LeafState, StateTopology};
-    use bloxide_core::transition::{ActionFn, ActionResults, Guard, TransitionRule};
+    use bloxide_core::transition::{ActionFn, ActionResults, Decision, TransitionRule};
     use core::marker::PhantomData;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
@@ -638,7 +649,7 @@ mod lifecycle_dispatch {
                     matches: |event: &TestEvent| matches!(event, TestEvent::Complete),
                     actions: &[] as &[ActionFn<Self>],
                     guard: |_ctx: &SpyCtx, _results: &ActionResults, _event: &TestEvent| {
-                        Guard::Transition(LeafState::new(TestState::Done))
+                        Decision::Transition(LeafState::new(TestState::Done))
                     },
                 }],
             },
@@ -650,7 +661,7 @@ mod lifecycle_dispatch {
                     matches: |event: &TestEvent| matches!(event, TestEvent::GoRunning),
                     actions: &[] as &[ActionFn<Self>],
                     guard: |_ctx: &SpyCtx, _results: &ActionResults, _event: &TestEvent| {
-                        Guard::Transition(LeafState::new(TestState::Running))
+                        Decision::Transition(LeafState::new(TestState::Running))
                     },
                 }],
             },
@@ -812,7 +823,7 @@ mod lifecycle_dispatch {
 #[cfg(test)]
 mod fidelity_tests {
     use crate::TestRuntime;
-    use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
+    use bloxide_core::capability::DynamicChannelCap;
     use bloxide_core::messaging::Envelope;
     use futures_core::Stream;
     use std::pin::Pin;

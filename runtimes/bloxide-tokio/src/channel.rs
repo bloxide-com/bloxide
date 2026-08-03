@@ -28,9 +28,9 @@ unsafe impl<M: Send + 'static> Sync for TokioSender<M> {}
 
 /// The receiver half plus a `Stream` adapter.
 ///
-/// The [`Stream`] implementation on this type **never yields `None`** by design:
-/// if the channel is closed it panics, matching the invariant that channels are
-/// never intentionally closed in the bloxide actor model.
+/// The [`Stream`] implementation propagates `None` when the channel closes,
+/// so callers (timer service, supervision loop) can detect channel close and
+/// shut down gracefully.
 pub struct TokioStream<M: Send + 'static> {
     pub(crate) inner: mpsc::Receiver<Envelope<M>>,
 }

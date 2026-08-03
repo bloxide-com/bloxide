@@ -1,10 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Tokio runtime supervision support.
 //!
-//! The run loop itself lives in `bloxide-core::runloop`. This module provides
-//! the Tokio-specific `ChildGroupBuilder` re-export and integration tests.
-
-pub use bloxide_child_management::ChildGroupBuilder as GenericChildGroupBuilder;
+//! The run loop itself lives in `bloxide-core::runloop`; the builder is
+//! re-exported at the crate root (`bloxide_tokio::ChildGroupBuilder`). This
+//! module hosts the integration tests.
 
 #[cfg(test)]
 mod tests {

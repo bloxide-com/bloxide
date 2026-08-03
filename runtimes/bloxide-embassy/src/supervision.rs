@@ -13,8 +13,12 @@ use crate::{EmbassyRuntime, EmbassySender, EmbassyStream};
 
 // ── ChildGroupBuilder ─────────────────────────────────────────────────────────
 //
-// Static-channel builder for Embassy. Generic over the control message type `Ctrl`
-// — the runtime does NOT know about `ChildCtrl`. The app chooses `Ctrl`.
+// Static-channel builder for Embassy — the `StaticChannelCap` counterpart of
+// `bloxide_child_management::ChildGroupBuilder` (which builds on
+// `DynamicChannelCap`). Same name and API shape on purpose: generated wiring
+// (`ChildGroupBuilder::new(...)`) is identical across runtimes. Generic over
+// the control message type `Ctrl` — the runtime does NOT know about
+// `ChildCtrl`. The app chooses `Ctrl`.
 
 pub struct ChildGroupBuilder<Ctrl: Send + 'static> {
     group: bloxide_child_management::ChildGroup<EmbassyRuntime>,

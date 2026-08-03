@@ -8,9 +8,7 @@
 /// Supervisor types are NOT re-exported here — the runtime does not depend
 /// on `bloxide-supervisor`. Apps that use the supervisor import it directly:
 /// `use bloxide_supervisor::*;`
-pub use crate::{
-    run, GenericChildGroupBuilder, RunConfig, SpawnCap, TokioRuntime, TokioSender, TokioStream,
-};
+pub use crate::{run, RunConfig, SpawnCap, TokioRuntime, TokioSender, TokioStream};
 pub use bloxide_child_management::{ChildGroup, ChildGroupBuilder, ChildPolicy, GroupShutdown};
 pub use bloxide_core::prelude::*;
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
