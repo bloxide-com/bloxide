@@ -249,7 +249,7 @@ fn config_to_spec(name: &str, crate_path: &str, config: &BloxConfig) -> BloxSpec
     // --- Context ---
     if let Some(context) = &config.context {
         extract_context(&mut spec, context);
-        extract_actions(&mut spec, context);
+        extract_actions(&mut spec, context, config.topology.as_ref());
     }
 
     // --- Post-processing: compute hierarchy, inherited/dropped handlers ---
@@ -511,9 +511,13 @@ fn extract_context(spec: &mut BloxSpec, context: &ContextConfig) {
 }
 
 /// Export action declarations as renderable definitions (#124): crate,
-/// function name, and a reconstructed signature from kind + fields +
+/// function name, and a reconstructed signature from use site + fields +
 /// event payload.
-fn extract_actions(spec: &mut BloxSpec, context: &ContextConfig) {
+fn extract_actions(
+    spec: &mut BloxSpec,
+    context: &ContextConfig,
+    topology: Option<&TopologyConfig>,
+) {
     // Field name → type map from the context definition.
     let mut field_types: HashMap<String, String> = HashMap::new();
     field_types.insert("self_id".to_string(), "ActorId".to_string());
@@ -528,6 +532,19 @@ fn extract_actions(spec: &mut BloxSpec, context: &ContextConfig) {
     for f in &context.fields {
         field_types.insert(f.name.clone(), f.r#type.clone());
     }
+
+    // Use-site classification: an action whose name appears in a transition
+    // action list is annotated `-> ActionResult`; entry/exit-only and unused
+    // actions get no return annotation.
+    let transition_actions: Vec<&str> = topology
+        .map(|t| {
+            t.transitions
+                .iter()
+                .flat_map(|tr| tr.actions.iter())
+                .filter_map(|a| a.strip_prefix("Self::"))
+                .collect()
+        })
+        .unwrap_or_default();
 
     for a in &context.actions {
         let fn_name = a.fn_name.clone().unwrap_or_else(|| a.name.clone());
@@ -556,7 +573,7 @@ fn extract_actions(spec: &mut BloxSpec, context: &ContextConfig) {
         } else if a.event_arg {
             params.push("ev: &Event".to_string());
         }
-        let ret = if a.kind == "transition" {
+        let ret = if transition_actions.contains(&a.name.as_str()) {
             " -> ActionResult"
         } else {
             ""

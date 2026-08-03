@@ -145,13 +145,11 @@ Actions are declared in `[[context.actions]]` entries in `blox.toml`:
 [[context.actions]]
 name = "increment_round"
 crate = "blox_ctx_rounds"
-kind = "transition"
 fields = ["round:mut"]
 impl_required = false
 
 [[context.actions]]
 name = "process_work"
-kind = "transition"
 fields = ["task_id:mut", "result:mut"]
 event_payload = "do_work"
 impl_required = true
@@ -159,7 +157,6 @@ impl_required = true
 
 Each action specifies:
 - `name` — action identifier used in transition/entry/exit declarations
-- `kind` — **required**: `"entry"`, `"exit"`, or `"transition"` (determines closure signature); validated against the use site — the kind must match where the action is wired
 - `fields` — list of ctx fields the action needs, with access mode (`"round:mut"`, `"self_id"`, `"peer_ref:ref"`)
 - `event_payload` — optional, name of the extracted payload variable (e.g., `"do_work"`)
 - `impl_required` — `true` if the function comes from an impl crate, `false` if from a context crate

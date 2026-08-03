@@ -83,7 +83,6 @@ fields = [
 
 [[context.actions]]
 name = "handle_spawn_worker"
-kind = "transition"
 fields = ["self_id", "self_ref:ref", "spawn_fn:ref", "spawn_ref:ref", "notify_ref:ref", "spawn_reply_ref:ref", "pending_task_id:mut", "spawn_in_flight:mut", "pending:mut"]
 event_payload = "spawn_worker"
 impl_required = true
@@ -91,7 +90,6 @@ feature = "dynamic"
 
 [[context.actions]]
 name = "handle_spawned_worker"
-kind = "transition"
 fields = ["self_id", "self_ref:ref", "spawn_fn:ref", "spawn_ref:ref", "notify_ref:ref", "spawn_reply_ref:ref", "pending_task_id:mut", "spawn_in_flight:mut", "spawn_queue:mut", "worker_refs:mut", "worker_ctrls:mut"]
 event_payload = "spawned_worker"
 impl_required = true
@@ -99,7 +97,6 @@ feature = "dynamic"
 
 [[context.actions]]
 name = "handle_spawn_worker_queued"
-kind = "transition"
 fields = ["spawn_queue:mut", "pending:mut"]
 event_payload = "spawn_worker"
 impl_required = true
@@ -107,7 +104,6 @@ feature = "dynamic"
 
 [[context.actions]]
 name = "handle_work_done"
-kind = "transition"
 fields = ["pending:mut"]
 event_payload = "work_done"
 impl_required = true

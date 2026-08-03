@@ -124,7 +124,6 @@ The full declarative source is `crates/bloxes/pong/blox.toml`:
 name = "reply_pong_action"
 fn_name = "send_pong"
 crate = "blox_ctx_ping_pong"
-kind = "transition"
 fields = ["self_id", "peer_ref:ref"]
 event_payload = "ping"
 impl_required = false

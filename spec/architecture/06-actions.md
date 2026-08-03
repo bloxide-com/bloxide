@@ -59,23 +59,24 @@ The **blox declares what actions to call** via `[[context.actions]]` entries in 
 
 Action functions are **free functions** in context crates (or impl crates for impl-specific behavior). They take **concrete params** extracted from the context struct, not trait-bounded `&mut C` references.
 
-### Function signatures by `kind`
+### Function signatures by use site
 
-Each action is declared in `blox.toml` with a `kind` field that determines the closure signature the codegen generates:
+The use site — where the action is wired in the topology — determines the closure signature the codegen generates:
 
-| `kind` | Closure signature | When called |
-|--------|-------------------|-------------|
-| `"entry"` | `fn(&mut Ctx) -> ()` | State entry (infallible) |
-| `"exit"` | `fn(&mut Ctx) -> ()` | State exit (infallible) |
-| `"transition"` | `fn(&mut Ctx, &Event) -> ActionResult` | Transition rule action |
+| Use site | Closure signature | When called |
+|----------|-------------------|-------------|
+| `[[topology.entry]]` | `fn(&mut Ctx) -> ()` | State entry (infallible) |
+| `[[topology.exit]]` | `fn(&mut Ctx) -> ()` | State exit (infallible) |
+| `[[topology.transitions]]` `actions` | `fn(&mut Ctx, &Event) -> ActionResult` | Transition rule action |
 
-**Uniform contract.** Every transition action function returns `ActionResult`
-(Ok/Err — send failures become `ActionResult::from(result)`). The generated
-transition wrapper returns the function's result **verbatim** — no
-`ActionResult::Ok` is appended. When the rule declares `event_payload` and the
-incoming event's payload does not match, the wrapper is a no-op returning
-`ActionResult::Ok`. Entry/exit functions are infallible (`fn(&mut Ctx)`); the
-generated wrapper is `|ctx| { the_fn(args); }`.
+**Uniform contract.** A transition action function returns `ActionResult`,
+`Result<(), E>`, or `()` — send failures become `ActionResult::from(result)`.
+The generated transition wrapper normalizes the function's result via
+`::bloxide_core::transition::ActionResult::from(...)`. When the rule declares
+`event_payload` and the incoming event's payload does not match, the wrapper is
+a no-op returning `ActionResult::Ok`. Entry/exit functions are infallible
+(`fn(&mut Ctx)`); the generated wrapper is `|ctx| { the_fn(args); }` and
+discards any return value.
 
 ### Example: context crate action function
 
@@ -115,32 +116,27 @@ pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) -> Ac
 [[context.actions]]
 name = "increment_round"
 crate = "blox_ctx_rounds"
-kind = "transition"
 fields = ["round:mut"]
 impl_required = false
 
 [[context.actions]]
 name = "send_initial_ping"
 crate = "blox_ctx_ping_pong"
-kind = "entry"
 fields = ["self_id", "peer_ref:ref", "round:mut"]
 impl_required = false
 
 [[context.actions]]
 name = "process_work"
-kind = "transition"
 fields = ["task_id:mut", "result:mut"]
 event_payload = "do_work"
 impl_required = true
 ```
 
-`kind` is **required** and validated against the use site — declaring
-`kind = "entry"` and then listing the action in a `[[topology.transitions]]`
-`actions` list (or vice versa) is a hard codegen error. The logical `name` can
-differ from the called function via `fn_name` (e.g. ping's `forward_ping` calls
-`blox_ctx_ping_pong::send_ping`), and `module` inserts a module segment
-(e.g. `module = "actions"` → `bloxide_timer::actions::cancel_timer_by_id`).
-Unknown TOML keys are hard errors (`deny_unknown_fields`).
+The logical `name` can differ from the called function via `fn_name` (e.g.
+ping's `forward_ping` calls `blox_ctx_ping_pong::send_ping`), and `module`
+inserts a module segment (e.g. `module = "actions"` →
+`bloxide_timer::actions::cancel_timer_by_id`). Unknown TOML keys are hard
+errors (`deny_unknown_fields`) — a stale `kind` key is rejected the same way.
 
 ### Field access modes
 
@@ -210,9 +206,8 @@ context/impl crates and generates **concrete action closures** with real,
 fully-qualified function calls into the app's `src/generated/`. Guards are
 unchanged from blox-level (already real). Before emitting anything,
 `validate_concrete_actions` hard-fails on any `Self::` action that is not
-declared in `[[context.actions]]`, has no resolvable crate (or no `impl_crate`
-for `impl_required = true`), or whose `kind` does not match its use site —
-there are no placeholder fallbacks.
+declared in `[[context.actions]]` or has no resolvable crate (or no `impl_crate`
+for `impl_required = true`) — there are no placeholder fallbacks.
 
 ```rust
 // apps/<app>/src/generated/ping_spec_skeleton.rs — concrete, context fns inlined
@@ -225,8 +220,8 @@ impl<R: BloxRuntime> PingSpec<R> {
             matches: |ev| ev.msg_payload()
                 .is_some_and(|m| matches!(m, PingPongMsg::Pong(_))),
             actions: &[
-                // fn result returned verbatim — no appended ActionResult::Ok
-                |ctx, _ev| { ::blox_ctx_rounds::increment_round(&mut ctx.round) },
+                // fn result normalized via ActionResult::from(...)
+                |ctx, _ev| { ::bloxide_core::transition::ActionResult::from(::blox_ctx_rounds::increment_round(&mut ctx.round)) },
                 // forward_ping → send_ping via fn_name
                 |ctx, _ev| { ::blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round) },
             ],
@@ -332,10 +327,10 @@ Never add `blox_log_*!` calls to blox crates or add `bloxide-log` as a dependenc
 
 - Action functions live in **context crates** (free functions) or **impl crates** (impl-specific behavior).
 - Action functions take **concrete params** extracted from context fields, not trait-bounded `&mut C` references.
-- Transition action functions return `ActionResult`; the generated wrapper returns it verbatim. Entry/exit functions are infallible.
+- Transition action functions return `ActionResult`, `Result<(), E>`, or `()`; the generated wrapper normalizes the result via `ActionResult::from(...)`. Entry/exit functions are infallible.
 - Context crates must not import Embassy, Tokio, file I/O, or executor-specific code.
 - Blox crates contain zero logic — no `actions.rs`, no `Self::` methods, no logging, no computation.
-- The `kind` field (`"entry"`, `"exit"`, `"transition"`) is required, determines the closure signature the codegen generates, and is validated against the use site (mismatch = hard codegen error).
+- The use site (transition vs entry/exit slot) determines the closure signature the codegen generates. A stale `kind` key is a hard parse error (`deny_unknown_fields`).
 - `role` in `[[context.uses]]` is validated — only `"ctor"` (constructor parameter) or `"state"` (zero-initialized field). Unknown TOML keys anywhere are hard errors.
 - Guards are pure field comparisons generated at the blox level — they don't depend on impl crates.
 

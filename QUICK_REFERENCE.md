@@ -168,7 +168,6 @@ Use `bloxide-timer` and `blox-ctx-ping-pong` action functions instead of manual 
    name = "schedule_pause_timer"
    fn_name = "schedule_resume"
    crate = "blox_ctx_ping_pong"
-   kind = "entry"
    fields = ["self_id", "self_ref:ref", "timer_ref:ref", "round", "current_timer:mut"]
    impl_required = false
 
@@ -179,7 +178,6 @@ Use `bloxide-timer` and `blox-ctx-ping-pong` action functions instead of manual 
    fn_name = "cancel_timer_by_id"
    crate = "bloxide_timer"
    module = "actions"
-   kind = "exit"
    fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
    impl_required = false
    ```
@@ -474,7 +472,7 @@ checkout of this repo, run the CLI as `cargo run -p cargo-blox -- blox ...` — 
 | `remove-use <blox> --field F` | Remove a `[[context.uses]]` entry |
 | `add-field <blox> --name N --ty T [--default D]` | Add a `[[context.fields]]` state field |
 | `remove-field <blox> --name N` | Remove a context field (fields, uses, or uses sub-fields) |
-| `add-action <blox> --name N --kind entry\|exit\|transition [--field ...] [--crate-name C] [--fn-name F] ...` | Add a `[[context.actions]]` entry |
+| `add-action <blox> --name N [--field ...] [--crate-name C] [--fn-name F] ...` | Add a `[[context.actions]]` entry |
 | `remove-action <blox> --name N` | Remove a `[[context.actions]]` entry |
 | `add-actor <app> --name N --blox B [--impl-crate C] [--kind dynamic\|timer] [--feature F ...]` | Add an actor to a system.toml (no `kind` = static) |
 | `remove-actor <app> --name N` | Remove an actor (also cleans supervision refs) |

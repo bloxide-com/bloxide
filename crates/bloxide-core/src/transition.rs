@@ -30,6 +30,19 @@ impl<E> From<Result<(), E>> for ActionResult {
     }
 }
 
+/// Converts `()` into `ActionResult::Ok`.
+///
+/// Lets transition action functions return nothing: the system codegen wraps
+/// every concrete transition call in `ActionResult::from(...)`, so action
+/// functions may return `ActionResult`, `Result<(), E>`, or `()` — the use
+/// site in the topology (transition vs entry/exit slot) determines the
+/// closure shape, and the return type is inferred by rustc.
+impl From<()> for ActionResult {
+    fn from(_: ()) -> Self {
+        ActionResult::Ok
+    }
+}
+
 // ── ActionResults ─────────────────────────────────────────────────────────────
 
 /// The collected outcomes of all action functions for one rule firing.
@@ -154,6 +167,27 @@ pub struct TransitionRule<S: MachineSpec, G> {
 /// A single action function: receives mutable context and the triggering event,
 /// returns an [`ActionResult`] indicating success or failure.
 pub type ActionFn<S> = fn(&mut <S as MachineSpec>::Ctx, &<S as MachineSpec>::Event) -> ActionResult;
+
+#[cfg(test)]
+mod tests {
+    use super::ActionResult;
+
+    #[test]
+    fn action_result_from_conversions() {
+        // Transition action fns may return ActionResult, Result<(), E>, or ();
+        // the codegen wrapper normalizes all three via ActionResult::from.
+        assert_eq!(ActionResult::from(ActionResult::Err), ActionResult::Err);
+        assert_eq!(
+            ActionResult::from(Ok::<(), &'static str>(())),
+            ActionResult::Ok
+        );
+        assert_eq!(
+            ActionResult::from(Err::<(), &'static str>("boom")),
+            ActionResult::Err
+        );
+        assert_eq!(ActionResult::from(()), ActionResult::Ok);
+    }
+}
 
 /// State-level transition rule. The guard closure returns a [`Decision<S>`].
 pub type StateRule<S> = TransitionRule<S, Decision<S>>;

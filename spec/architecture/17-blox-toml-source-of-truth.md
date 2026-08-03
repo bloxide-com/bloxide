@@ -156,7 +156,7 @@ target = "stop"
 
 - The state hierarchy (`parent`, `composite`, `initial`).
 - Error flags.
-- Declarative transitions with event patterns, action function paths, guards, and targets (`stay`, `reset`, `stop`, `done`, `fail`, or a state name). Actions used in `Self::` form must be declared in `[[context.actions]]` with a matching `kind`.
+- Declarative transitions with event patterns, action function paths, guards, and targets (`stay`, `reset`, `stop`, `done`, `fail`, or a state name). Actions used in `Self::` form must be declared in `[[context.actions]]`.
 - Per-state `entry` and `exit` action lists.
 - `spec_imports` — raw `use` statements for the spec_skeleton module (imports the action functions referenced by transitions/entry/exit).
 
@@ -231,9 +231,9 @@ Notes on `[[context.uses]]` entries:
 
 Notes on `[[context.actions]]` entries:
 
-- `kind` is **required** and must be `"entry"`, `"exit"`, or `"transition"` — and it
-  must match the use site. An action declared `kind = "entry"` but wired into a
-  transition rule (or vice versa) is a hard codegen error.
+- The use site determines the closure signature — an action wired in a
+  transition rule gets a transition closure, one wired in `entry`/`exit` gets an
+  entry/exit closure. There is no `kind` key.
 - `crate` names the crate the function lives in; `impl_required = true` instead
   resolves it from the actor's `impl_crate` in `system.toml`. `fn_name` overrides the
   called function name; `module` inserts a module path segment.
@@ -603,11 +603,10 @@ Validation happens in three places: the TOML parser, the codegen, and
    `cargo build`.
 4. **Field roles** — `role` on `[[context.uses]]` entries may only be `"ctor"` or
    `"state"`; anything else is a hard error.
-5. **Action kinds** — every `Self::` action referenced by the topology must be declared
-   in `[[context.actions]]` with `kind` matching its use site (`"transition"`,
-   `"entry"`, `"exit"`); a mismatch — or a missing declaration, a missing `crate` on a
+5. **Action declarations** — every `Self::` action referenced by the topology must be
+   declared in `[[context.actions]]`; a missing declaration, a missing `crate` on a
    non-`impl_required` action, or `impl_required` without an `impl_crate` in
-   `system.toml` — is a hard codegen error.
+   `system.toml` is a hard codegen error.
 
 **System wiring (`system.toml`) — `system_wiring.rs` (`validate()` plus generation):**
 

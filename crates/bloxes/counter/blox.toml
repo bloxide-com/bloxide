@@ -17,7 +17,6 @@ type = "u32"
 name = "count_tick"
 fn_name = "increment_count"
 crate = "blox_ctx_ticks"
-kind = "transition"
 fields = ["count:mut"]
 impl_required = false
 

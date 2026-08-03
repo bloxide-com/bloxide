@@ -174,11 +174,14 @@ pub fn resolve_concrete_action(
     // Build the field arguments.
     let field_args: Vec<String> = config.fields.iter().map(|f| field_access(f)).collect();
 
-    // Generate the closure based on kind.
+    // Generate the closure based on the use site (transition vs entry/exit).
     let has_payload = config.event_payload.is_some();
 
     if !is_transition {
         // Entry/exit action: |ctx| { <fn_full_path>(<args>); }
+        // The wrapper discards any return value — entry/exit closures are
+        // infallible fn(&mut Ctx) by contract; an action fn that returns a
+        // value (e.g. ActionResult) is fine here too.
         let args = field_args.join(", ");
         let code = format!("|ctx| {{ {fn_full_path}({args}); }}");
         Some(
@@ -189,9 +192,9 @@ pub fn resolve_concrete_action(
     } else if !has_payload {
         // Transition without event payload.
         // When event_arg is true, pass the full event reference as the last arg:
-        //   |ctx, ev| { <fn_full_path>(<args>, ev); ActionResult::Ok }
+        //   |ctx, ev| { ActionResult::from(<fn_full_path>(<args>, ev)) }
         // Otherwise (no event needed):
-        //   |ctx, _ev| { <fn_full_path>(<args>); ActionResult::Ok }
+        //   |ctx, _ev| { ActionResult::from(<fn_full_path>(<args>)) }
         let args = if config.event_arg {
             if field_args.is_empty() {
                 "ev".to_string()
@@ -202,9 +205,12 @@ pub fn resolve_concrete_action(
             field_args.join(", ")
         };
         let ev_param = if config.event_arg { "ev" } else { "_ev" };
-        // Uniform contract: transition action functions return `ActionResult`;
-        // the wrapper returns the function's result verbatim.
-        let code = format!("|ctx, {ev_param}| {{ {fn_full_path}({args}) }}");
+        // Transition action functions may return `ActionResult`,
+        // `Result<(), E>`, or `()`; the wrapper normalizes via
+        // `ActionResult::from`.
+        let code = format!(
+            "|ctx, {ev_param}| {{ ::bloxide_core::transition::ActionResult::from({fn_full_path}({args})) }}"
+        );
         Some(
             syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|e| {
                 panic!("codegen produced unparseable transition closure for action '{name}': {e}")
@@ -279,13 +285,13 @@ pub fn resolve_concrete_action(
             ),
         };
 
-        // Uniform contract: transition action functions return `ActionResult`.
-        // A payload that doesn't match is a no-op (Ok); when it matches, the
-        // wrapper returns the function's result verbatim.
+        // A payload that doesn't match is a no-op (literal Ok); when it
+        // matches, the function's result (`ActionResult`, `Result<(), E>`,
+        // or `()`) is normalized via `ActionResult::from`.
         let code = format!(
             "|ctx, ev| {{ \
              if let {if_let_pattern} = {payload_accessor} {{ \
-             {fn_full_path}({args_with_payload}) \
+             ::bloxide_core::transition::ActionResult::from({fn_full_path}({args_with_payload})) \
              }} else {{ \
              ::bloxide_core::transition::ActionResult::Ok \
              }} \
@@ -400,9 +406,10 @@ pub fn generate_concrete_spec_skeleton(
 }
 
 /// Validate that every `Self::` action referenced by the topology resolves to
-/// a concrete function: declared in `[[context.actions]]`, with a resolvable
-/// crate (or an `impl_crate` from system.toml), and with `kind` matching its
-/// use site ("transition" in transitions, "entry" in entry, "exit" in exit).
+/// a concrete function: declared in `[[context.actions]]` and with a resolvable
+/// crate (or an `impl_crate` from system.toml). The use site (transition vs
+/// entry/exit slot) determines the generated closure shape — there is no
+/// declared kind to cross-check.
 /// Rules gated behind an inactive feature are skipped (they are cfg'd out).
 fn validate_concrete_actions(
     blox_config: &BloxConfig,
@@ -437,13 +444,6 @@ fn validate_concrete_actions(
                  is not declared in [[context.actions]]"
             )
         })?;
-        if cfg.kind != site {
-            anyhow::bail!(
-                "action '{name}' declares kind = \"{}\" but is used in a {site} slot \
-                 of blox '{blox_name}' — fix the kind or the use site",
-                cfg.kind
-            );
-        }
         if cfg.impl_required {
             if impl_crate.is_none() {
                 anyhow::bail!(
@@ -545,7 +545,6 @@ mod tests {
     fn make_action(
         name: &str,
         crate_name: Option<&str>,
-        kind: &str,
         fields: Vec<&str>,
         event_payload: Option<&str>,
         impl_required: bool,
@@ -553,7 +552,6 @@ mod tests {
         ContextActionConfig {
             name: name.to_string(),
             crate_name: crate_name.map(|s| s.to_string()),
-            kind: kind.to_string(),
             fields: fields.iter().map(|s| s.to_string()).collect(),
             event_payload: event_payload.map(|s| s.to_string()),
             event_arg: false,
@@ -569,7 +567,6 @@ mod tests {
         let actions = vec![make_action(
             "s_entry",
             Some("bloxide_core"),
-            "entry",
             vec![],
             None,
             false,
@@ -587,7 +584,6 @@ mod tests {
         let actions = vec![make_action(
             "increment_round",
             Some("blox_ctx_rounds"),
-            "transition",
             vec!["round:mut"],
             None,
             false,
@@ -602,13 +598,11 @@ mod tests {
         );
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
-        eprintln!("DEBUG tokens: {tokens}");
         assert!(tokens.contains("blox_ctx_rounds"));
         assert!(tokens.contains("increment_round"));
         assert!(tokens.contains("ctx . round"));
-        // Uniform contract: the wrapper returns the action function's
-        // `ActionResult` verbatim — no literal `ActionResult::Ok` appended.
-        assert!(!tokens.contains("ActionResult"));
+        // The wrapper normalizes the function's return via `ActionResult::from`.
+        assert!(tokens.contains("ActionResult :: from"));
     }
 
     #[test]
@@ -616,7 +610,6 @@ mod tests {
         let actions = vec![make_action(
             "process_work",
             None,
-            "transition",
             vec!["task_id:mut", "result:mut"],
             Some("do_work"),
             true,
@@ -652,7 +645,6 @@ mod tests {
         let actions = vec![make_action(
             "process_work",
             None,
-            "transition",
             vec!["task_id:mut"],
             Some("do_work"),
             true,
@@ -691,7 +683,6 @@ mod tests {
         let actions = vec![make_action(
             "s_entry",
             Some("bloxide_core"),
-            "entry",
             vec![],
             None,
             false,
@@ -711,7 +702,6 @@ mod tests {
         let actions = vec![make_action(
             "s_i",
             Some("bloxide_core"),
-            "transition",
             vec![],
             None,
             false,

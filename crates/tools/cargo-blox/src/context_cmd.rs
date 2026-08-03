@@ -249,7 +249,6 @@ pub fn remove_field(blox_name: &str, name: &str) -> anyhow::Result<()> {
 pub fn add_action(
     blox_name: &str,
     name: &str,
-    kind: &str,
     fields: Vec<String>,
     crate_name: Option<&str>,
     module: Option<&str>,
@@ -259,15 +258,6 @@ pub fn add_action(
     feature: Option<&str>,
     if_not_exists: bool,
 ) -> anyhow::Result<()> {
-    const KINDS: [&str; 3] = ["entry", "exit", "transition"];
-    if !KINDS.contains(&kind) {
-        bail!(
-            "unknown kind '{}' — expected one of: {}",
-            kind,
-            KINDS.join(", ")
-        );
-    }
-
     let path = blox_toml_path_for_blox(blox_name);
     let mut doc = load_toml(&path)?;
     let context = context_table_mut(&mut doc)?;
@@ -298,7 +288,6 @@ pub fn add_action(
     if let Some(m) = module {
         t["module"] = toml_edit::value(m);
     }
-    t["kind"] = toml_edit::value(kind);
     if !fields.is_empty() {
         t["fields"] = string_array(&fields);
     }
@@ -314,10 +303,7 @@ pub fn add_action(
     actions.push(t);
 
     save_toml(&path, &doc)?;
-    println!(
-        "Added context action '{}' ({}) to {}",
-        name, kind, blox_name
-    );
+    println!("Added context action '{}' to {}", name, blox_name);
     Ok(())
 }
 

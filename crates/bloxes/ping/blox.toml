@@ -45,14 +45,12 @@ type = "u32"
 [[context.actions]]
 name = "increment_round"
 crate = "blox_ctx_rounds"
-kind = "transition"
 fields = ["round:mut"]
 impl_required = false
 
 [[context.actions]]
 name = "send_initial_ping"
 crate = "blox_ctx_ping_pong"
-kind = "entry"
 fields = ["self_id", "peer_ref:ref", "round:mut"]
 impl_required = false
 
@@ -60,7 +58,6 @@ impl_required = false
 name = "forward_ping"
 fn_name = "send_ping"
 crate = "blox_ctx_ping_pong"
-kind = "transition"
 fields = ["self_id", "peer_ref:ref", "round"]
 impl_required = false
 
@@ -68,7 +65,6 @@ impl_required = false
 name = "schedule_pause_timer"
 fn_name = "schedule_resume"
 crate = "blox_ctx_ping_pong"
-kind = "entry"
 fields = ["self_id", "self_ref:ref", "timer_ref:ref", "round", "current_timer:mut"]
 impl_required = false
 
@@ -77,7 +73,6 @@ name = "cancel_pause_timer"
 fn_name = "cancel_timer_by_id"
 crate = "bloxide_timer"
 module = "actions"
-kind = "exit"
 fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
 impl_required = false
 

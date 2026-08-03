@@ -6,9 +6,10 @@
 //! Covered:
 //! - `[[context.uses]] role` must be `ctor` or `state` (a typo fails
 //!   generation with a clear error)
-//! - unknown TOML keys are rejected (`deny_unknown_fields`)
-//! - an action with `kind = "entry"` wired in a transition slot is a hard
-//!   error at system codegen
+//! - unknown TOML keys are rejected (`deny_unknown_fields`) — including a
+//!   stale `kind` key on `[[context.actions]]`
+//! - an action without a `kind` key generates cleanly in a transition slot
+//!   (the use site determines the closure shape)
 //! - unknown supervision strategies are a hard error at system codegen
 
 use std::fs;
@@ -106,12 +107,14 @@ name = \"Test\"
 }
 
 // ---------------------------------------------------------------------------
-// Use-site validation at system codegen: kind = "entry" wired in a
-// transition slot is a hard error.
+// Actions declare no `kind`: the use site determines the generated closure
+// shape. An action without a `kind` key generates cleanly in a transition
+// slot; a stale `kind` key is a hard parse error (deny_unknown_fields).
 // ---------------------------------------------------------------------------
 
-/// A blox with one action `do_thing`; `{{KIND}}` is substituted per test.
-const BLOX_KIND_FIXTURE: &str = "\
+/// A blox with one action `do_thing` wired into a transition slot — no
+/// `kind` key anywhere (actions no longer declare one).
+const BLOX_NO_KIND_FIXTURE: &str = "\
 [actor]
 name = \"Test\"
 
@@ -121,7 +124,6 @@ name = \"TestCtx\"
 [[context.actions]]
 name = \"do_thing\"
 crate = \"some_crate\"
-kind = \"{{KIND}}\"
 
 [event]
 name = \"TestEvent\"
@@ -159,42 +161,34 @@ children = [\"test\"]
 ";
 
 #[test]
-fn entry_action_in_transition_slot_fails_system_codegen() {
+fn action_without_kind_generates_cleanly_in_transition_slot() {
     let dir = TempDir::new().expect("create temp dir");
-    write_blox(
-        &dir,
-        "test-blox",
-        &BLOX_KIND_FIXTURE.replace("{{KIND}}", "entry"),
-    );
-    let system_path = write_system(&dir, "test-app", SYSTEM_FIXTURE);
-
-    let err = bloxide_codegen::generate_system_wiring_from_toml(&system_path, dir.path())
-        .expect_err("kind mismatch should fail system codegen");
-    let msg = format!("{err:#}");
-    assert!(
-        msg.contains("do_thing") && msg.contains("kind = \"entry\""),
-        "error should name the action and its kind: {msg}"
-    );
-    assert!(
-        msg.contains("transition slot"),
-        "error should name the use site: {msg}"
-    );
-}
-
-/// Control: the same fixture with the correct kind generates cleanly,
-/// proving the failure above is the kind validation and not the fixture.
-#[test]
-fn transition_action_in_transition_slot_accepted() {
-    let dir = TempDir::new().expect("create temp dir");
-    write_blox(
-        &dir,
-        "test-blox",
-        &BLOX_KIND_FIXTURE.replace("{{KIND}}", "transition"),
-    );
+    write_blox(&dir, "test-blox", BLOX_NO_KIND_FIXTURE);
     let system_path = write_system(&dir, "test-app", SYSTEM_FIXTURE);
 
     bloxide_codegen::generate_system_wiring_from_toml(&system_path, dir.path())
-        .expect("kind = \"transition\" should generate cleanly");
+        .expect("action without kind should generate cleanly in a transition slot");
+}
+
+#[test]
+fn stale_kind_key_fails_parsing() {
+    let dir = TempDir::new().expect("create temp dir");
+    write_blox(
+        &dir,
+        "test-blox",
+        &BLOX_NO_KIND_FIXTURE.replace(
+            "crate = \"some_crate\"",
+            "crate = \"some_crate\"\nkind = \"transition\"",
+        ),
+    );
+
+    let err = bloxide_codegen::generate_from_toml(&blox_toml_path(&dir, "test-blox"))
+        .expect_err("stale kind key should fail parsing");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("unknown field") && msg.contains("kind"),
+        "error should report the stale kind key: {msg}"
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -181,18 +181,15 @@ name = "round"
 type = "u32"
 
 # Action declarations — what actions the blox calls, not what they do.
-# `kind` is required and validated against the use site ("entry"/"exit"/"transition").
 [[context.actions]]
 name = "increment_round"
 crate = "blox_ctx_rounds"
-kind = "transition"
 fields = ["round:mut"]
 impl_required = false
 
 [[context.actions]]
 name = "send_initial_ping"
 crate = "blox_ctx_ping_pong"
-kind = "entry"
 fields = ["self_id", "peer_ref:ref", "round:mut"]
 impl_required = false
 ```

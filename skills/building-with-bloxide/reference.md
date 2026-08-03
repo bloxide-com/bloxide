@@ -126,13 +126,11 @@ Guards are evaluated in order; if none matches, the outcome is `Decision::Stay`.
 [[context.actions]]
 name = "increment_round"
 crate = "blox_ctx_rounds"
-kind = "transition"
 fields = ["round:mut"]
 impl_required = false
 
 [[context.actions]]
 name = "process_work"
-kind = "transition"
 fields = ["task_id:mut", "result:mut"]
 event_payload = "do_work"
 impl_required = true
@@ -146,15 +144,7 @@ impl_required = true
 | `:ref` | Immutable borrow | `&ctx.field` |
 | (none) | Copy/move | `ctx.field` |
 
-**`kind` values:**
-
-| `kind` | Closure signature |
-|--------|-------------------|
-| `"entry"` | `fn(&mut Ctx) -> ()` |
-| `"exit"` | `fn(&mut Ctx) -> ()` |
-| `"transition"` | `fn(&mut Ctx, &Event) -> ActionResult` |
-
-`kind` is **required** and validated against the use site — an action wired in `[[topology.entry]]` must be `kind = "entry"`, and so on. `crate` is optional and informational. Unknown TOML keys are hard errors (`deny_unknown_fields`).
+The use site — transition vs entry/exit — determines the closure signature. Transition action functions return `ActionResult`, `Result<(), E>`, or `()`; the generated wrapper normalizes the result via `::bloxide_core::transition::ActionResult::from(...)`. Entry/exit closures are `fn(&mut Ctx)` and discard any return value. `crate` is optional and informational. Unknown TOML keys are hard errors (`deny_unknown_fields`) — a stale `kind` key is rejected the same way.
 
 ## StateFns Structure
 

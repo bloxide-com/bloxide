@@ -389,8 +389,6 @@ enum BloxSubcommand {
         #[arg(long)]
         name: String,
         #[arg(long)]
-        kind: String,
-        #[arg(long)]
         field: Vec<String>,
         #[arg(long)]
         crate_name: Option<String>,
@@ -632,7 +630,6 @@ fn dispatch() -> anyhow::Result<()> {
             BloxSubcommand::AddAction {
                 blox_name,
                 name,
-                kind,
                 field,
                 crate_name,
                 module,
@@ -644,7 +641,6 @@ fn dispatch() -> anyhow::Result<()> {
             } => context_cmd::add_action(
                 &blox_name,
                 &name,
-                &kind,
                 field,
                 crate_name.as_deref(),
                 module.as_deref(),

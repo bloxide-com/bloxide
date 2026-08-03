@@ -94,7 +94,7 @@ All scaffolding commands register new crates in the workspace `Cargo.toml` (memb
 | `cargo blox remove-use <blox> --field <f>` | Remove a `[[context.uses]]` entry |
 | `cargo blox add-field <blox> --name <n> --ty <ty> [--default <expr>] [--if-not-exists]` | Add a `[[context.fields]]` state field |
 | `cargo blox remove-field <blox> --name <n>` | Remove a context field (from `fields`, `uses`, or `uses.fields`) |
-| `cargo blox add-action <blox> --name <n> --kind <entry\|exit\|transition> [--field <f>]... [--crate-name <c>] [--module <m>] [--fn-name <f>] [--event-payload <ty>] [--impl-required] [--feature <f>] [--if-not-exists]` | Add a `[[context.actions]]` entry |
+| `cargo blox add-action <blox> --name <n> [--field <f>]... [--crate-name <c>] [--module <m>] [--fn-name <f>] [--event-payload <ty>] [--impl-required] [--feature <f>] [--if-not-exists]` | Add a `[[context.actions]]` entry |
 | `cargo blox remove-action <blox> --name <n>` | Remove a `[[context.actions]]` entry |
 
 #### System wiring edits (`apps/<app>/system.toml`)
@@ -318,7 +318,7 @@ Fields are trailing positional arguments in `name:ty` form (e.g. `round:u32 payl
 - **`remove-use`** — removes all `[[context.uses]]` entries whose `field` matches `--field`. No match → exit 3.
 - **`add-field`** — dedup key: `name`. Writes `name`, `type`, and optional `default`.
 - **`remove-field`** — removes the name from `[[context.fields]]`, from single-field `[[context.uses]]` entries, and from nested `[[context.uses.fields]]` sub-tables — whichever matches. No match anywhere → exit 3.
-- **`add-action`** — `--kind` must be exactly `entry`, `exit`, or `transition` (anything else → exit 1). Dedup key: `name`. Writes `name`, `kind`, plus any of `--fn-name`, `--crate-name`, `--module`, `--field` (repeatable, stored as a string array), `--event-payload`, `--impl-required`, `--feature`.
+- **`add-action`** — Dedup key: `name`. Writes `name`, plus any of `--fn-name`, `--crate-name`, `--module`, `--field` (repeatable, stored as a string array), `--event-payload`, `--impl-required`, `--feature`.
 - **`remove-action`** — removes by `--name`. No match → exit 3.
 
 All three add commands support `--if-not-exists` (exit 0 silently on duplicate).

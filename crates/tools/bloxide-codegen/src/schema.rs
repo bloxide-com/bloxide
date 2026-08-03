@@ -277,8 +277,6 @@ pub struct ContextActionConfig {
     /// e.g. `"blox_ctx_rounds"`. Omitted when `impl_required = true`.
     #[serde(default, rename = "crate")]
     pub crate_name: Option<String>,
-    /// Action kind: `"entry"`, `"exit"`, or `"transition"`.
-    pub kind: String,
     /// Context fields the action needs, with access mode suffix:
     /// `"field:mut"` (mutable ref), `"field:ref"` (shared ref),
     /// `"field"` (copy/owned).

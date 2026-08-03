@@ -484,10 +484,7 @@ fn generate_lib_rs(
         }
 
         // Doc comment
-        out.push_str(&format!(
-            "/// `{}` — {} action (impl_required).\n",
-            action.name, action.kind
-        ));
+        out.push_str(&format!("/// `{}` — impl_required action.\n", action.name));
         out.push_str("/// TODO: Implement this function.\n");
 
         // Determine if the function needs a generic <R: BloxRuntime>.

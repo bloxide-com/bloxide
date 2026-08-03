@@ -195,7 +195,6 @@ maps the generic `apply_peer_control` platform function onto its `peers` field:
 name = "handle_ctrl"
 crate = "bloxide_peers"
 fn_name = "apply_peer_control"
-kind = "transition"
 fields = ["peers:mut"]
 event_payload = "ctrl"
 impl_required = false
