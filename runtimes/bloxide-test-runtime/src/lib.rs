@@ -31,7 +31,9 @@
 
 extern crate alloc;
 
-use bloxide_core::capability::{BloxRuntime, DynamicChannelCap, DYNAMIC_ACTOR_ID_BASE};
+use bloxide_core::capability::{
+    BloxRuntime, DynamicChannelCap, GroupChannelCap, DYNAMIC_ACTOR_ID_BASE,
+};
 use bloxide_core::messaging::{ActorId, ActorRef, Envelope};
 use bloxide_spawn::{Kill, SpawnCap};
 
@@ -247,6 +249,20 @@ impl DynamicChannelCap for TestRuntime {
         };
         let receiver = TestReceiver { shared };
         (ActorRef::new(id, sender), receiver)
+    }
+}
+
+// ── GroupChannelCap ──────────────────────────────────────────────────────
+
+impl GroupChannelCap for TestRuntime {
+    fn alloc_group_id() -> ActorId {
+        alloc_test_id()
+    }
+
+    fn group_channel<M: Send + 'static, const N: usize>(
+        id: ActorId,
+    ) -> (ActorRef<M, Self>, Self::Receiver<M>) {
+        <Self as DynamicChannelCap>::channel::<M>(id, N)
     }
 }
 

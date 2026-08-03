@@ -134,9 +134,10 @@ bloxide-embassy (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-
   impl BloxRuntime + StaticChannelCap + TimerService
   macros: channels!, next_actor_id!, actor_task!, actor_task_supervised!, root_task!,
           timer_task!, spawn_child!, spawn_timer!
-  Note: StaticChannelCap only (no DynamicChannelCap, no SpawnCap). Its static
-  ChildGroupBuilder intentionally keeps the same name as the generic one in
-  bloxide-child-management, so generated wiring is identical across runtimes.
+  Note: StaticChannelCap only (no DynamicChannelCap, no SpawnCap). Re-exports
+  the shared ChildGroupBuilder from bloxide-child-management (crate root and
+  prelude), reaching static channels via the GroupChannelCap impl in
+  mailbox.rs, so generated wiring is identical across runtimes.
 
 bloxide-tokio (runtime crate; depends on bloxide-core, bloxide-timer, bloxide-child-management, bloxide-spawn)
   impl BloxRuntime + DynamicChannelCap + TimerService + SpawnCap + KillCapability
@@ -182,7 +183,7 @@ runtime-integration behavior.
 | Suffix | When to Use | Examples |
 |--------|-------------|----------|
 | `*Service` | Async bridge traits that run a background task | `TimerService` |
-| `*Cap` (Capability) | Traits that provide runtime capabilities for injection | `SpawnCap`, `StaticChannelCap`, `DynamicChannelCap` |
+| `*Cap` (Capability) | Traits that provide runtime capabilities for injection | `SpawnCap`, `StaticChannelCap`, `DynamicChannelCap`, `GroupChannelCap` |
 
 **Why different suffixes?**
 - `*Service` traits are async services (like timer management)
@@ -213,7 +214,7 @@ Runtime internals never appear in blox code.
 | Messages crates | Plain data enums/structs | Runtime types, `ActorRef` |
 | Context crates (`blox-ctx-*`, `blox-ctx-ping-pong`) | Free action functions taking concrete params | Runtime imports, file I/O |
 | Blox crates | `blox.toml` + generated `MachineSpec` impl, `Ctx`, `Event` enum | Runtime imports, executor types, Rust logic |
-| `bloxide-core` | `MachineSpec`, `StateMachine`, `ActorRef`, `BloxRuntime`, `StaticChannelCap`, `DynamicChannelCap`, `Mailboxes`, `run`/`RunConfig` | Tokio, Embassy, OS imports |
+| `bloxide-core` | `MachineSpec`, `StateMachine`, `ActorRef`, `BloxRuntime`, `StaticChannelCap`, `DynamicChannelCap`, `GroupChannelCap`, `Mailboxes`, `run`/`RunConfig` | Tokio, Embassy, OS imports |
 | `bloxide-timer` | `TimerCommand`, `TimerId`, `TimerQueue`, `set_timer`, `cancel_timer`, `TimerService` trait | Runtime imports, executor types |
 | `bloxide-supervisor` | `SupervisorSpec`, `SupervisorCtx` (blox.toml + generated + `concrete_spec.rs` test fixture + tests only) | Runtime imports, executor types |
 | `bloxide-child-management` | `ChildGroup`, `ChildEntry`, `ChildPhase`, `ChildGroupBuilder`, `ChildPolicy`, `GroupShutdown`, `ChildCtrl`/`RegisterChild`/`RegisterDynamicChild`, action functions | Runtime imports, executor types |

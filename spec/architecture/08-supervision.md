@@ -23,9 +23,8 @@ Supervision is split across a core engine layer, a platform child-management lay
 | `ChildGroup`, `ChildPolicy`, `GroupShutdown`, `ChildAction`, `ChildPhase` | `bloxide-child-management` |
 | Action fns (`start_children`, `stop_all_children`, `handle_done_or_failed`, `record_*`, `deregister_done`, `register_child`, `handle_register_dynamic_child`, `handle_health_check`) | `bloxide-child-management::actions` |
 | `ChildCtrl`, `RegisterChild`, `RegisterDynamicChild` | `bloxide-child-management::control` |
-| Generic `ChildGroupBuilder` (dynamic channels, `DynamicChannelCap`) | `bloxide-child-management::builder` |
+| `ChildGroupBuilder<R, Ctrl>` (group channels via `GroupChannelCap`) | `bloxide-child-management::builder` |
 | `SpawnCap`, `Kill`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `ChildCtrlRegistrar`, `spawn_child` | `bloxide-spawn` |
-| Static `ChildGroupBuilder` (static channels, `StaticChannelCap`) | `bloxide-embassy::supervision` |
 | Supervisor topology: `blox.toml`, generated code, `concrete_spec.rs` (test fixture), tests | `bloxide-supervisor` |
 
 `bloxide-supervisor` owns **only** the supervisor state machine: its `blox.toml` topology, the generated `SupervisorSpec`/`SupervisorCtx`/`SupervisorEvent`/`SupervisorState`, an in-crate `concrete_spec.rs` used by its tests, and the tests themselves. All policy/shutdown logic lives in `bloxide-child-management` (a reusable platform primitive — any managing blox can use `ChildGroup`, not just the supervisor), and the spawn-registration bridge lives in `bloxide-spawn`.
@@ -786,18 +785,13 @@ Important details:
 
 - The spec type is the **system-generated concrete spec** (`crate::generated::bloxide_supervisor_spec_skeleton::SupervisorSpec`) — the system-level codegen emits it with real action closures wired to `bloxide-child-management::actions`. Apps never use the blox-crate-level stub spec.
 - `SupervisorCtx::new` takes three args: `(sup_id, children, sup_notify_ref)`.
-- Embassy wiring is identical in shape (`apps/embassy-demo/src/main.rs`): the same `ChildGroupBuilder::new(...)` call resolves to `bloxide-embassy::supervision::ChildGroupBuilder`, and `spawn_child!` additionally takes the Embassy `spawner`.
+- Embassy wiring is identical in shape (`apps/embassy-demo/src/main.rs`): the same `ChildGroupBuilder::new(...)` call resolves to the shared `bloxide_child_management::ChildGroupBuilder` (re-exported by `bloxide-embassy`), which reaches Embassy channels via `GroupChannelCap`; `spawn_child!` additionally takes the Embassy `spawner`.
 
-### Two `ChildGroupBuilder`s — Same Name on Purpose
+### One `ChildGroupBuilder` Across Runtimes
 
-There are two `ChildGroupBuilder` types with the same name and API shape (`new` / `add_child` / `control_ref` / `notify_ref` / `notify_sender` / `finish`):
+A single `ChildGroupBuilder<R: GroupChannelCap, Ctrl>` in `bloxide-child-management::builder` serves every runtime, with one API shape (`new` / `add_child` / `control_ref` / `notify_ref` / `notify_sender` / `finish`). The runtime supplies the group channels through the `GroupChannelCap` capability trait (`alloc_group_id()` + `group_channel::<M, N>(id)`): Tokio and TestRuntime forward to `DynamicChannelCap`, while Embassy forwards to `StaticChannelCap`. On Embassy, `alloc_group_id()` expands the compile-time counter once, so the notify and control channels share one baked ID — they are both mailboxes of the one logical group actor.
 
-| Builder | Channel primitive | Location |
-|---|---|---|
-| Generic `ChildGroupBuilder<R, Ctrl>` | `DynamicChannelCap` | `bloxide-child-management::builder` |
-| Static `ChildGroupBuilder<Ctrl>` (concrete over `EmbassyRuntime`) | `StaticChannelCap` | `bloxide-embassy::supervision` |
-
-The shared name is deliberate: generated wiring (`ChildGroupBuilder::new(...)`) is identical across runtimes — each runtime's prelude brings the right one into scope. (The old `GenericChildGroupBuilder` alias was deleted; the generic builder is just `ChildGroupBuilder`.) Both are generic over the control message type `Ctrl` — the runtime never names `ChildCtrl`; the app chooses it.
+Generated wiring (`ChildGroupBuilder::new(...)`) is identical across runtimes because it is literally the same type — `bloxide-tokio` and `bloxide-embassy` both re-export it at the crate root and in their preludes. The builder is generic over the control message type `Ctrl` — the runtime never names `ChildCtrl`; the app chooses it.
 
 ### Supervision in `system.toml`
 

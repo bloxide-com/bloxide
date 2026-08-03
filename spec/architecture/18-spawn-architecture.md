@@ -114,7 +114,7 @@ never sees the application's concrete spawn request type.
 bloxide-core              ← engine + runtime capabilities
   BloxRuntime, MachineSpec, lifecycle types
   lifecycle module: LifecycleCommand, ChildLifecycleEvent, AbortCommand
-  capability module: DynamicChannelCap, StaticChannelCap,
+  capability module: DynamicChannelCap, StaticChannelCap, GroupChannelCap,
     KillCapability<R> trait + NoKill, DYNAMIC_ACTOR_ID_BASE
   runloop module: run() + RunConfig (re-exported by the runtimes)
 
@@ -128,7 +128,7 @@ bloxide-child-management/ ← reusable child tracking (separate crate)
   ChildGroup<R>             ← per-child tracking, policy application, phase management
   ChildEntry<R>, ChildPhase, ChildAction
   ChildPolicy, GroupShutdown
-  ChildGroupBuilder (dynamic-channel variant)
+  ChildGroupBuilder (via GroupChannelCap)
   control module: ChildCtrl, RegisterChild, RegisterDynamicChild
   actions module: start_children, stop_all_children, handle_done_or_failed,
     record_started, record_stopped, record_aborted, record_killed, record_alive,
@@ -154,7 +154,8 @@ bloxide-tokio/            ← Tokio runtime
 
 bloxide-embassy/          ← Embassy runtime (no dynamic spawning)
   run() + RunConfig re-exports (static children only)
-  ChildGroupBuilder (static-channel variant, in supervision module)
+  ChildGroupBuilder re-export (from bloxide-child-management; channels via the
+    GroupChannelCap impl in mailbox.rs)
   KillCapability impl: type Kill = NoKill
 
 bloxide-test-runtime/     ← in-memory test runtime

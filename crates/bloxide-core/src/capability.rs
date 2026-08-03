@@ -149,6 +149,31 @@ pub trait DynamicChannelCap: BloxRuntime {
     ) -> (ActorRef<M, Self>, Self::Receiver<M>);
 }
 
+/// Channel creation for supervision child groups, uniform across runtimes.
+///
+/// Lets a single `ChildGroupBuilder` (bloxide-child-management) serve every
+/// runtime: dynamic-channel runtimes (Tokio, TestRuntime) forward to
+/// [`DynamicChannelCap`]; static runtimes (Embassy) forward to
+/// [`StaticChannelCap`]. Only the wiring layer (the group builder) calls
+/// this trait. Blox crates are never generic over `GroupChannelCap`.
+pub trait GroupChannelCap: BloxRuntime {
+    /// Allocate an actor ID for a group channel (notify/control).
+    ///
+    /// Dynamic runtimes forward to their runtime counter (distinct ID per
+    /// call). Static runtimes bake a compile-time ID per expansion site —
+    /// the notify and control channels are both mailboxes of the one
+    /// logical group actor.
+    fn alloc_group_id() -> ActorId;
+
+    /// Create a group channel with capacity `N` and the given `id`.
+    /// Dynamic runtimes pass `N` as the runtime capacity; static runtimes
+    /// bake it as a const generic. Returns an `ActorRef` (send handle) and
+    /// a `Receiver` (stream source).
+    fn group_channel<M: Send + 'static, const N: usize>(
+        id: ActorId,
+    ) -> (ActorRef<M, Self>, Self::Receiver<M>);
+}
+
 /// Type-level kill capability for a runtime.
 ///
 /// `NoKill` — no external task kill (Embassy, static-only). `Handle = ()` (ZST).

@@ -17,10 +17,10 @@ pub mod prelude;
 pub mod supervision;
 pub mod timer;
 
+pub use bloxide_child_management::ChildGroupBuilder;
 pub use bloxide_core::{run, RunConfig};
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{EmbassySender, EmbassyStream, EmbassyTrySendError};
-pub use supervision::ChildGroupBuilder;
 
 // ── EmbassyRuntime ────────────────────────────────────────────────────────────
 

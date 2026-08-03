@@ -1,94 +1,11 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Embassy runtime supervision support.
 //!
-//! The run loop itself lives in `bloxide_core::runloop`. This module provides
-//! the Embassy-specific `ChildGroupBuilder` and integration tests.
-
-use bloxide_core::{
-    lifecycle::{ChildLifecycleEvent, LifecycleCommand},
-    messaging::ActorId,
-};
-
-use crate::{EmbassyRuntime, EmbassySender, EmbassyStream};
-
-// ── ChildGroupBuilder ─────────────────────────────────────────────────────────
-//
-// Static-channel builder for Embassy — the `StaticChannelCap` counterpart of
-// `bloxide_child_management::ChildGroupBuilder` (which builds on
-// `DynamicChannelCap`). Same name and API shape on purpose: generated wiring
-// (`ChildGroupBuilder::new(...)`) is identical across runtimes. Generic over
-// the control message type `Ctrl` — the runtime does NOT know about
-// `ChildCtrl`. The app chooses `Ctrl`.
-
-pub struct ChildGroupBuilder<Ctrl: Send + 'static> {
-    group: bloxide_child_management::ChildGroup<EmbassyRuntime>,
-    notify_ref: bloxide_core::messaging::ActorRef<ChildLifecycleEvent, EmbassyRuntime>,
-    notify_rx: EmbassyStream<ChildLifecycleEvent>,
-    control_ref: bloxide_core::messaging::ActorRef<Ctrl, EmbassyRuntime>,
-    control_rx: EmbassyStream<Ctrl>,
-}
-
-impl<Ctrl: Send + 'static> ChildGroupBuilder<Ctrl> {
-    pub fn new(shutdown: bloxide_child_management::GroupShutdown) -> Self {
-        let (notify_ref, notify_rx) =
-            <EmbassyRuntime as bloxide_core::capability::StaticChannelCap>::channel::<
-                ChildLifecycleEvent,
-                32,
-            >(bloxide_macros::next_actor_id!());
-        let (control_ref, control_rx) =
-            <EmbassyRuntime as bloxide_core::capability::StaticChannelCap>::channel::<Ctrl, 16>(
-                bloxide_macros::next_actor_id!(),
-            );
-        Self {
-            group: bloxide_child_management::ChildGroup::new(shutdown),
-            notify_ref,
-            notify_rx,
-            control_ref,
-            control_rx,
-        }
-    }
-
-    pub fn add_child(
-        &mut self,
-        id: ActorId,
-        policy: bloxide_child_management::ChildPolicy,
-    ) -> (
-        EmbassyStream<LifecycleCommand>,
-        EmbassySender<ChildLifecycleEvent>,
-    ) {
-        let (lifecycle_ref, cmd_rx) =
-            <EmbassyRuntime as bloxide_core::capability::StaticChannelCap>::channel::<
-                LifecycleCommand,
-                4,
-            >(id);
-        self.group.add(id, lifecycle_ref, policy);
-        (cmd_rx, self.notify_ref.sender())
-    }
-
-    pub fn control_ref(&self) -> bloxide_core::messaging::ActorRef<Ctrl, EmbassyRuntime> {
-        self.control_ref.clone()
-    }
-
-    pub fn notify_sender(&self) -> EmbassySender<ChildLifecycleEvent> {
-        self.notify_ref.sender()
-    }
-
-    pub fn notify_ref(
-        &self,
-    ) -> bloxide_core::messaging::ActorRef<ChildLifecycleEvent, EmbassyRuntime> {
-        self.notify_ref.clone()
-    }
-
-    pub fn finish(
-        self,
-    ) -> (
-        bloxide_child_management::ChildGroup<EmbassyRuntime>,
-        EmbassyStream<ChildLifecycleEvent>,
-        EmbassyStream<Ctrl>,
-    ) {
-        (self.group, self.notify_rx, self.control_rx)
-    }
-}
+//! The run loop itself lives in `bloxide_core::runloop`. The `ChildGroupBuilder`
+//! is shared across all runtimes: it lives in `bloxide-child-management` and
+//! reaches Embassy channels through the `GroupChannelCap` impl in `mailbox.rs`
+//! (re-exported at the crate root). This module holds the supervision
+//! integration tests.
 
 #[cfg(all(test, feature = "std"))]
 mod tests {

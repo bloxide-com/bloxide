@@ -195,9 +195,10 @@ registration for static children (`ChildGroup::add` asserts — they need
 abort/kill handles that only dynamic registration provides); use `Reset` or
 `Stop`.
 
-The static builder deliberately keeps the same name and API shape as the
-generic dynamic `ChildGroupBuilder` (in `bloxide-child-management`), so
-generated wiring is identical across runtimes.
+`bloxide-embassy` re-exports this shared `ChildGroupBuilder` (from
+`bloxide-child-management`) at the crate root and prelude; the `GroupChannelCap`
+impl in `mailbox.rs` supplies the static channels, so generated wiring is
+identical across runtimes.
 
 ## Full Wiring Example
 

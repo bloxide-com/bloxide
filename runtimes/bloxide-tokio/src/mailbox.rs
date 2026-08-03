@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bloxide_core::{
-    capability::{BloxRuntime, DynamicChannelCap, DYNAMIC_ACTOR_ID_BASE},
+    capability::{BloxRuntime, DynamicChannelCap, GroupChannelCap, DYNAMIC_ACTOR_ID_BASE},
     messaging::{ActorId, ActorRef, Envelope},
 };
 use bloxide_spawn::Kill;
@@ -82,5 +82,19 @@ impl DynamicChannelCap for TokioRuntime {
         };
         let stream = TokioStream { inner: rx };
         (ActorRef::new(id, sender), stream)
+    }
+}
+
+// ── GroupChannelCap impl ──────────────────────────────────────────────────────
+
+impl GroupChannelCap for TokioRuntime {
+    fn alloc_group_id() -> ActorId {
+        alloc_tokio_id()
+    }
+
+    fn group_channel<M: Send + 'static, const N: usize>(
+        id: ActorId,
+    ) -> (ActorRef<M, Self>, Self::Receiver<M>) {
+        <Self as DynamicChannelCap>::channel::<M>(id, N)
     }
 }

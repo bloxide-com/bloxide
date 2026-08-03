@@ -3,7 +3,7 @@ use crate::channel::{EmbassySender, EmbassyStream, EmbassyTrySendError};
 use crate::EmbassyRuntime;
 use alloc::boxed::Box;
 use bloxide_core::{
-    capability::{BloxRuntime, NoKill, StaticChannelCap},
+    capability::{BloxRuntime, GroupChannelCap, NoKill, StaticChannelCap},
     messaging::{ActorId, ActorRef, Envelope},
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -68,5 +68,22 @@ impl StaticChannelCap for EmbassyRuntime {
             inner: ch.dyn_receiver(),
         };
         (ActorRef::new(id, sender), stream)
+    }
+}
+
+// ── GroupChannelCap impl ──────────────────────────────────────────────────────
+
+impl GroupChannelCap for EmbassyRuntime {
+    fn alloc_group_id() -> ActorId {
+        // Compile-time counter: the macro expands once at this site, so every
+        // call returns the same baked ID — the notify and control channels
+        // are both mailboxes of the one logical group actor.
+        bloxide_macros::next_actor_id!()
+    }
+
+    fn group_channel<M: Send + 'static, const N: usize>(
+        id: ActorId,
+    ) -> (ActorRef<M, Self>, Self::Receiver<M>) {
+        <Self as StaticChannelCap>::channel::<M, N>(id)
     }
 }

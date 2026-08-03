@@ -117,7 +117,7 @@ Use this model when you are creating or reviewing a real app that uses Bloxide.
 This is the trait boundary that keeps blox code runtime-agnostic.
 
 - Tier 1: blox-facing traits such as `BloxRuntime`
-- Tier 2: runtime-facing capabilities such as `StaticChannelCap`, `DynamicChannelCap`, `TimerService`, `SpawnCap`, `KillCapability` (the actor run loop is the unified `run()` + `RunConfig` in `bloxide-core`, not a trait)
+- Tier 2: runtime-facing capabilities such as `StaticChannelCap`, `DynamicChannelCap`, `GroupChannelCap`, `TimerService`, `SpawnCap`, `KillCapability` (the actor run loop is the unified `run()` + `RunConfig` in `bloxide-core`, not a trait)
 
 With the elimination of accessor traits and the `B` generic,
 context structs are plain structs with plain fields. Action functions
