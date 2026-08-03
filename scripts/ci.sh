@@ -82,6 +82,9 @@ run_tests() {
     run_step "Cargo Test (bloxide-core std)" \
         cargo test -p bloxide-core --features std
 
+    run_step "Cargo Test (bloxide-embassy std)" \
+        cargo test -p bloxide-embassy --features std
+
     run_step "Cargo Test (workspace default)" \
         cargo test
 }

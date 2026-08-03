@@ -21,3 +21,9 @@ futures-core = { version = "0.3", default-features = false }
 
 [features]
 std = ["bloxide-core/std", "bloxide-child-management/std", "bloxide-timer/std"]
+
+# Host test builds link embassy crates that call critical-section. The library
+# itself deliberately ships no impl (that choice belongs to the final binary),
+# so provide the std impl for this crate's tests only.
+[dev-dependencies]
+critical-section = { version = "1.2", features = ["std"] }
