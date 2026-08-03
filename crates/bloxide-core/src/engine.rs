@@ -197,7 +197,10 @@ impl<S: MachineSpec> StateMachine<S> {
     /// setting the initial state. `on_init_entry` only fires when entering
     /// Init due to Stop. `on_init_exit` only fires when leaving Init via Start.
     pub fn new(ctx: S::Ctx) -> Self {
-        debug_assert!(
+        // Asserted in every profile (not debug-only): codegen derives table
+        // and enum from the same TOML, but hand-written specs can drift, and
+        // a short table makes per-dispatch indexing UB in release builds.
+        assert!(
             S::HANDLER_TABLE.len() == S::State::STATE_COUNT,
             "HANDLER_TABLE len {} must equal State::STATE_COUNT {}",
             S::HANDLER_TABLE.len(),

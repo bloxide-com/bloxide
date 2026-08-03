@@ -264,9 +264,10 @@ impl<R: BloxRuntime> MachineSpec for CounterSpec<R> {
 `state.as_index()` is used to index `HANDLER_TABLE`. The generated
 `*_state_handler_table!(Self)` macro derives the table order mechanically from
 the same `[[topology.states]]` list as the enum itself, so variant order and
-handler-table order cannot drift. Construction `debug_assert!`s
-`HANDLER_TABLE.len() == State::STATE_COUNT` (engine.rs `StateMachine::new`),
-and lookups are bounds-checked in debug builds. See the API docs in
+handler-table order cannot drift. Construction asserts
+`HANDLER_TABLE.len() == State::STATE_COUNT` in every build profile (engine.rs
+`StateMachine::new`) — hand-written specs get no codegen guarantee — and
+per-dispatch lookups are bounds-checked in debug builds. See the API docs in
 `crates/bloxide-core/src/spec.rs` (`MachineSpec::HANDLER_TABLE`) for details.
 
 ### `StateMachine` — runtime-facing methods
@@ -274,8 +275,9 @@ and lookups are bounds-checked in debug builds. See the API docs in
 ```rust
 impl<S: MachineSpec> StateMachine<S> {
     /// Construct silently in Init. No callbacks fire.
-    /// Debug-asserts HANDLER_TABLE length matches STATE_COUNT, and that
-    /// initial_state() (and error_state() when Some) are leaf states.
+    /// Asserts HANDLER_TABLE length matches STATE_COUNT (all profiles), and
+    /// debug-asserts that initial_state() (and error_state() when Some) are
+    /// leaf states.
     pub fn new(ctx: S::Ctx) -> Self;
 
     /// Dispatch an event (domain or lifecycle). All events flow through this

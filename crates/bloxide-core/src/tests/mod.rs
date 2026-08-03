@@ -407,6 +407,14 @@ mod hsm_engine {
         let _m = StateMachine::<BadESpec>::new(ECtx);
     }
 
+    #[test]
+    #[should_panic]
+    fn handler_table_length_mismatch_panics_on_construction() {
+        // HANDLER_TABLE.len() (2) != EState::STATE_COUNT (3) — asserted in
+        // every profile, not just debug builds.
+        let _m = StateMachine::<BadTableSpec>::new(ECtx);
+    }
+
     // ── ActionResult::Err path through guard ────────────────────────────────
 
     #[test]

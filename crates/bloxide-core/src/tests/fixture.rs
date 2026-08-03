@@ -475,6 +475,31 @@ pub static BAD_E_FNS: StateFns<BadESpec> = StateFns {
     transitions: &[],
 };
 
+/// Spec whose `HANDLER_TABLE` length disagrees with `State::STATE_COUNT`
+/// (2 entries vs 3 states) — `StateMachine::new` asserts the match in every
+/// build profile, since hand-written specs get no codegen guarantee.
+pub struct BadTableSpec;
+
+impl MachineSpec for BadTableSpec {
+    type State = EState;
+    type Event = EEvent;
+    type Ctx = ECtx;
+    type Mailboxes<R: crate::capability::BloxRuntime> = crate::mailboxes::NoMailboxes;
+
+    const HANDLER_TABLE: &'static [&'static crate::spec::StateFns<Self>] =
+        &[&BAD_TABLE_FNS, &BAD_TABLE_FNS];
+
+    fn initial_state() -> EState {
+        EState::A
+    }
+}
+
+pub static BAD_TABLE_FNS: StateFns<BadTableSpec> = StateFns {
+    on_entry: &[],
+    on_exit: &[],
+    transitions: &[],
+};
+
 pub fn machine_in_ea() -> StateMachine<ESpec> {
     let mut m = StateMachine::<ESpec>::new(ECtx);
     m.dispatch(EEvent::Lifecycle(LifecycleCommand::Start));
