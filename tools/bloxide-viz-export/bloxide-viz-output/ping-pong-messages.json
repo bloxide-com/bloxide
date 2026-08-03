@@ -1,0 +1,61 @@
+{
+  "name": "Ping-pong-messages",
+  "crate_path": "./crates/messages/ping-pong-messages",
+  "states": [],
+  "events": [
+    {
+      "message_set": "PingPongMsg",
+      "variant": "Ping",
+      "full_name": "PingPongMsg::Ping"
+    },
+    {
+      "message_set": "PingPongMsg",
+      "variant": "Pong",
+      "full_name": "PingPongMsg::Pong"
+    },
+    {
+      "message_set": "PingPongMsg",
+      "variant": "Resume",
+      "full_name": "PingPongMsg::Resume"
+    }
+  ],
+  "handlers": [],
+  "entry_exit": {},
+  "message_sets": [
+    {
+      "name": "PingPongMsg",
+      "variants": [
+        "Ping",
+        "Pong",
+        "Resume"
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "crate_name": "ping-pong-messages",
+      "enum_name": "PingPongMsg",
+      "variants": [
+        {
+          "name": "Ping",
+          "fields": [
+            "round: u32"
+          ]
+        },
+        {
+          "name": "Pong",
+          "fields": [
+            "round: u32"
+          ]
+        },
+        {
+          "name": "Resume",
+          "fields": []
+        }
+      ]
+    }
+  ],
+  "actions": [],
+  "context": null,
+  "wiring": null
+}

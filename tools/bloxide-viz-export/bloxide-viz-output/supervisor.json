@@ -1,0 +1,492 @@
+{
+  "name": "Supervisor",
+  "crate_path": "./crates/bloxide-supervisor",
+  "states": [
+    {
+      "name": "Running",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    },
+    {
+      "name": "ShuttingDown",
+      "kind": "Leaf",
+      "parent": null,
+      "description": "",
+      "depth": 0
+    }
+  ],
+  "events": [
+    {
+      "message_set": "SupervisorEvent",
+      "variant": "Child",
+      "full_name": "SupervisorEvent::Child"
+    },
+    {
+      "message_set": "SupervisorEvent",
+      "variant": "Control",
+      "full_name": "SupervisorEvent::Control"
+    }
+  ],
+  "handlers": [
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Child",
+      "label": "Self::handle_done_or_failed → stay",
+      "pattern": "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))",
+      "feature": null,
+      "actions": [
+        "Self::handle_done_or_failed"
+      ],
+      "guard": {
+        "description": "ctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
+        "raw": "if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "target": {
+              "Transition": "ShuttingDown"
+            }
+          }
+        ]
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Child",
+      "label": "Self::handle_done_or_failed → stay",
+      "pattern": "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { .. }))",
+      "feature": null,
+      "actions": [
+        "Self::handle_done_or_failed"
+      ],
+      "guard": {
+        "description": "ctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
+        "raw": "if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "target": {
+              "Transition": "ShuttingDown"
+            }
+          }
+        ]
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Child",
+      "label": "Self::record_started → stay",
+      "pattern": "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Started { .. }))",
+      "feature": null,
+      "actions": [
+        "Self::record_started"
+      ],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Child",
+      "label": "Self::record_aborted → stay",
+      "pattern": "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { .. }))",
+      "feature": null,
+      "actions": [
+        "Self::record_aborted"
+      ],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Child",
+      "label": "Self::record_killed → stay",
+      "pattern": "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))",
+      "feature": null,
+      "actions": [
+        "Self::record_killed"
+      ],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Child",
+      "label": "Self::record_alive → stay",
+      "pattern": "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Alive { .. }))",
+      "feature": null,
+      "actions": [
+        "Self::record_alive"
+      ],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Child",
+      "label": "Self::deregister_done → stay",
+      "pattern": "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))",
+      "feature": null,
+      "actions": [
+        "Self::deregister_done"
+      ],
+      "guard": {
+        "description": "ctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
+        "raw": "if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "target": {
+              "Transition": "ShuttingDown"
+            }
+          }
+        ]
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Control",
+      "label": "Self::register_child → stay",
+      "pattern": "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterChild(_)))",
+      "feature": null,
+      "actions": [
+        "Self::register_child"
+      ],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Control",
+      "label": "Self::handle_register_dynamic_child → stay",
+      "pattern": "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterDynamicChild(_)))",
+      "feature": null,
+      "actions": [
+        "Self::handle_register_dynamic_child"
+      ],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Control",
+      "label": "Self::handle_health_check → stay",
+      "pattern": "SupervisorEvent::Control(Envelope(_, ChildCtrl::HealthCheckTick))",
+      "feature": null,
+      "actions": [
+        "Self::handle_health_check"
+      ],
+      "guard": {
+        "description": "ctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
+        "raw": "if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "target": {
+              "Transition": "ShuttingDown"
+            }
+          }
+        ]
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Child",
+      "label": "stay",
+      "pattern": "SupervisorEvent::Child(_)",
+      "feature": null,
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Running",
+      "event": "SupervisorEvent::Control",
+      "label": "stay",
+      "pattern": "SupervisorEvent::Control(_)",
+      "feature": null,
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "ShuttingDown",
+      "event": "SupervisorEvent::Child",
+      "label": "Self::record_stopped → stay",
+      "pattern": "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))",
+      "feature": null,
+      "actions": [
+        "Self::record_stopped"
+      ],
+      "guard": {
+        "description": "ctx.all_children_stopped() => stop\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.all_children_stopped()",
+            "target": "Stop"
+          }
+        ]
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "ShuttingDown",
+      "event": "SupervisorEvent::Child",
+      "label": "Self::deregister_done → stay",
+      "pattern": "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))",
+      "feature": null,
+      "actions": [
+        "Self::deregister_done"
+      ],
+      "guard": {
+        "description": "ctx.all_children_stopped() => stop\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.all_children_stopped()",
+            "target": "Stop"
+          }
+        ]
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "ShuttingDown",
+      "event": "SupervisorEvent::Child",
+      "label": "stay",
+      "pattern": "SupervisorEvent::Child(_)",
+      "feature": null,
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "ShuttingDown",
+      "event": "SupervisorEvent::Control",
+      "label": "stay",
+      "pattern": "SupervisorEvent::Control(_)",
+      "feature": null,
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    }
+  ],
+  "entry_exit": {
+    "Running": {
+      "on_entry": [
+        "Self::start_children"
+      ],
+      "on_exit": []
+    },
+    "ShuttingDown": {
+      "on_entry": [
+        "Self::stop_all_children"
+      ],
+      "on_exit": []
+    }
+  },
+  "message_sets": [
+    {
+      "name": "SupervisorEvent",
+      "variants": [
+        "Child",
+        "Control"
+      ]
+    }
+  ],
+  "messages": [],
+  "actions": [
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "start_children",
+      "signature": "fn start_children(self_id: ActorId, children: &mut ChildGroup<R>, pending: &mut ChildAction)"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "stop_all_children",
+      "signature": "fn stop_all_children(self_id: ActorId, children: &ChildGroup<R>)"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "handle_done_or_failed",
+      "signature": "fn handle_done_or_failed(self_id: ActorId, children: &mut ChildGroup<R>, child_notify: &ActorRef<ChildLifecycleEvent, R>, pending: &mut ChildAction, ev: &_) -> ActionResult"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "record_started",
+      "signature": "fn record_started(children: &mut ChildGroup<R>, ev: &_) -> ActionResult"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "record_stopped",
+      "signature": "fn record_stopped(children: &mut ChildGroup<R>, ev: &_) -> ActionResult"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "record_aborted",
+      "signature": "fn record_aborted(children: &mut ChildGroup<R>, ev: &_) -> ActionResult"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "record_killed",
+      "signature": "fn record_killed(children: &mut ChildGroup<R>, ev: &_) -> ActionResult"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "record_alive",
+      "signature": "fn record_alive(children: &mut ChildGroup<R>, ev: &_) -> ActionResult"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "deregister_done",
+      "signature": "fn deregister_done(children: &mut ChildGroup<R>, pending: &mut ChildAction, ev: &_) -> ActionResult"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "register_child",
+      "signature": "fn register_child(self_id: ActorId, children: &mut ChildGroup<R>, ctrl: &_) -> ActionResult"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "handle_register_dynamic_child",
+      "signature": "fn handle_register_dynamic_child(self_id: ActorId, children: &mut ChildGroup<R>, ctrl: &_) -> ActionResult"
+    },
+    {
+      "crate_name": "bloxide_child_management",
+      "function_name": "handle_health_check",
+      "signature": "fn handle_health_check(self_id: ActorId, children: &mut ChildGroup<R>, child_notify: &ActorRef<ChildLifecycleEvent, R>, pending: &mut ChildAction, ctrl: &_) -> ActionResult"
+    }
+  ],
+  "context": {
+    "struct_name": "SupervisorCtx",
+    "fields": [
+      {
+        "name": "self_id",
+        "ty": "ActorId",
+        "annotations": []
+      },
+      {
+        "name": "children",
+        "ty": "ChildGroup<R>",
+        "annotations": []
+      },
+      {
+        "name": "child_notify",
+        "ty": "ActorRef<ChildLifecycleEvent, R>",
+        "annotations": []
+      }
+    ],
+    "uses": [
+      {
+        "name": "children",
+        "ty": "ChildGroup<R>",
+        "annotations": []
+      },
+      {
+        "name": "child_notify",
+        "ty": "ActorRef<ChildLifecycleEvent, R>",
+        "annotations": []
+      },
+      {
+        "name": "pending",
+        "ty": "ChildAction",
+        "annotations": []
+      }
+    ]
+  },
+  "wiring": null
+}

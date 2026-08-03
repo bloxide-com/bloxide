@@ -1,0 +1,37 @@
+{
+  "name": "Counter-messages",
+  "crate_path": "./crates/messages/counter-messages",
+  "states": [],
+  "events": [
+    {
+      "message_set": "CounterMsg",
+      "variant": "Tick",
+      "full_name": "CounterMsg::Tick"
+    }
+  ],
+  "handlers": [],
+  "entry_exit": {},
+  "message_sets": [
+    {
+      "name": "CounterMsg",
+      "variants": [
+        "Tick"
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "crate_name": "counter-messages",
+      "enum_name": "CounterMsg",
+      "variants": [
+        {
+          "name": "Tick",
+          "fields": []
+        }
+      ]
+    }
+  ],
+  "actions": [],
+  "context": null,
+  "wiring": null
+}

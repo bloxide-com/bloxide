@@ -180,14 +180,16 @@ fn test_json_round_trip_all_specs() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_all_specs_have_states() {
+fn test_all_specs_have_content() {
     let ws = workspace_root();
     let specs = export_workspace(&ws).expect("export should succeed");
 
+    // Actor/topology crates have states; message-definition crates have
+    // messages (#124); system specs carry a wiring graph (#123, #128).
     for spec in &specs {
         assert!(
-            !spec.states.is_empty(),
-            "spec '{}' has no states",
+            !spec.states.is_empty() || !spec.messages.is_empty() || spec.wiring.is_some(),
+            "spec '{}' has neither states, messages, nor a wiring graph",
             spec.name
         );
     }

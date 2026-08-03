@@ -1,0 +1,52 @@
+{
+  "name": "tokio-pool-demo",
+  "crate_path": "./apps/tokio-pool-demo",
+  "states": [],
+  "events": [],
+  "handlers": [],
+  "entry_exit": {},
+  "message_sets": [],
+  "messages": [],
+  "actions": [],
+  "context": null,
+  "wiring": {
+    "runtime": "tokio",
+    "actors": [
+      {
+        "blox": "pool-blox",
+        "name": "pool"
+      },
+      {
+        "blox": "worker-blox",
+        "name": "worker"
+      }
+    ],
+    "connections": [
+      {
+        "from": "supervisor",
+        "to": "pool",
+        "message": "notify_ref",
+        "channel_capacity": null
+      },
+      {
+        "from": "supervisor",
+        "to": "pool",
+        "message": "spawn_ref",
+        "channel_capacity": null
+      }
+    ],
+    "supervisors": [
+      {
+        "name": "bloxide-supervisor",
+        "strategy": "when_all_done",
+        "children": [
+          {
+            "actor": "pool",
+            "restart_max": null,
+            "stop": true
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "Ping",
-  "crate_path": "/home/bboganware/repos/bloxide/crates/bloxes/ping",
+  "crate_path": "./crates/bloxes/ping",
   "states": [
     {
       "name": "Operating",
@@ -24,15 +24,8 @@
       "depth": 1
     },
     {
-      "name": "Done",
-      "kind": "Leaf",
-      "parent": null,
-      "description": "",
-      "depth": 0
-    },
-    {
       "name": "Error",
-      "kind": "Leaf",
+      "kind": "Error",
       "parent": null,
       "description": "",
       "depth": 0
@@ -42,29 +35,26 @@
     {
       "message_set": "PingPongMsg",
       "variant": "Pong",
-      "full_name": "PingPongMsg :: Pong (_)"
+      "full_name": "PingPongMsg::Pong"
     },
     {
       "message_set": "PingPongMsg",
       "variant": "Resume",
-      "full_name": "PingPongMsg :: Resume (_resume)"
+      "full_name": "PingPongMsg::Resume"
     }
   ],
   "handlers": [
     {
       "state": "Operating",
-      "event": "PingPongMsg :: Pong (_)",
+      "event": "PingPongMsg::Pong",
       "label": "stay",
+      "pattern": "PingPongMsg::Pong(_)",
+      "feature": null,
       "actions": [],
       "guard": {
-        "description": "Stay",
-        "raw": "stay",
-        "branches": [
-          {
-            "condition": "_",
-            "target": "Stay"
-          }
-        ]
+        "description": "stay",
+        "raw": "",
+        "branches": []
       },
       "target": "Stay",
       "source": "Explicit",
@@ -73,48 +63,74 @@
     },
     {
       "state": "Active",
-      "event": "PingPongMsg :: Pong (_)",
-      "label": "stay",
-      "actions": [],
+      "event": "PingPongMsg::Pong",
+      "label": "2 actions → stay",
+      "pattern": "PingPongMsg::Pong(_)",
+      "feature": null,
+      "actions": [
+        "Self::increment_round",
+        "Self::forward_ping"
+      ],
       "guard": {
-        "description": "stay",
-        "raw": "{ actions [Self :: log_pong_received , Self :: forward_ping] guard (ctx , results) { results . any_failed () => PingState :: Error , ctx . round () >= B :: Round :: from (MAX_ROUNDS) => PingState :: Done , ctx . round () == B :: Round :: from (PAUSE_AT_ROUND) => PingState :: Paused , _ => PingState :: Active , } }",
-        "branches": []
-      },
-      "target": "Stay",
-      "source": "Explicit",
-      "on_entry": [],
-      "on_exit": []
-    },
-    {
-      "state": "Paused",
-      "event": "PingPongMsg :: Resume (_resume)",
-      "label": "stay",
-      "actions": [],
-      "guard": {
-        "description": "stay",
-        "raw": "{ actions [Self :: forward_ping] transition PingState :: Active }",
-        "branches": []
-      },
-      "target": "Stay",
-      "source": "Explicit",
-      "on_entry": [],
-      "on_exit": []
-    },
-    {
-      "state": "Paused",
-      "event": "PingPongMsg :: Pong (_)",
-      "label": "⬇️ stay (Operating)",
-      "actions": [],
-      "guard": {
-        "description": "Stay",
-        "raw": "stay",
+        "description": "results.any_failed() => Error\nctx.round >= MAX_ROUNDS as u32 => stop\nctx.round == PAUSE_AT_ROUND as u32 => Paused\n_ => stay",
+        "raw": "if results.any_failed() { Error } else if ctx.round >= MAX_ROUNDS as u32 { stop } else if ctx.round == PAUSE_AT_ROUND as u32 { Paused } else { stay }",
         "branches": [
           {
-            "condition": "_",
-            "target": "Stay"
+            "condition": "results.any_failed()",
+            "target": {
+              "Transition": "Error"
+            }
+          },
+          {
+            "condition": "ctx.round >= MAX_ROUNDS as u32",
+            "target": "Stop"
+          },
+          {
+            "condition": "ctx.round == PAUSE_AT_ROUND as u32",
+            "target": {
+              "Transition": "Paused"
+            }
           }
         ]
+      },
+      "target": "Stay",
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Paused",
+      "event": "PingPongMsg::Resume",
+      "label": "2 actions → Active",
+      "pattern": "PingPongMsg::Resume(_)",
+      "feature": null,
+      "actions": [
+        "Self::increment_round",
+        "Self::forward_ping"
+      ],
+      "guard": {
+        "description": "Active",
+        "raw": "",
+        "branches": []
+      },
+      "target": {
+        "Transition": "Active"
+      },
+      "source": "Explicit",
+      "on_entry": [],
+      "on_exit": []
+    },
+    {
+      "state": "Paused",
+      "event": "PingPongMsg::Pong",
+      "label": "⬇️ stay (Operating)",
+      "pattern": "PingPongMsg::Pong(_)",
+      "feature": null,
+      "actions": [],
+      "guard": {
+        "description": "stay",
+        "raw": "",
+        "branches": []
       },
       "target": "Stay",
       "source": {
@@ -125,38 +141,10 @@
     },
     {
       "state": "Active",
-      "event": "PingPongMsg :: Resume (_resume)",
+      "event": "PingPongMsg::Resume",
       "label": "∅",
-      "actions": [],
-      "guard": {
-        "description": "No handler — dropped",
-        "raw": "",
-        "branches": []
-      },
-      "target": "Stay",
-      "source": "Dropped",
-      "on_entry": [],
-      "on_exit": []
-    },
-    {
-      "state": "Done",
-      "event": "PingPongMsg :: Pong (_)",
-      "label": "∅",
-      "actions": [],
-      "guard": {
-        "description": "No handler — dropped",
-        "raw": "",
-        "branches": []
-      },
-      "target": "Stay",
-      "source": "Dropped",
-      "on_entry": [],
-      "on_exit": []
-    },
-    {
-      "state": "Done",
-      "event": "PingPongMsg :: Resume (_resume)",
-      "label": "∅",
+      "pattern": "",
+      "feature": null,
       "actions": [],
       "guard": {
         "description": "No handler — dropped",
@@ -170,8 +158,10 @@
     },
     {
       "state": "Error",
-      "event": "PingPongMsg :: Pong (_)",
+      "event": "PingPongMsg::Pong",
       "label": "∅",
+      "pattern": "",
+      "feature": null,
       "actions": [],
       "guard": {
         "description": "No handler — dropped",
@@ -185,8 +175,10 @@
     },
     {
       "state": "Error",
-      "event": "PingPongMsg :: Resume (_resume)",
+      "event": "PingPongMsg::Resume",
       "label": "∅",
+      "pattern": "",
+      "feature": null,
       "actions": [],
       "guard": {
         "description": "No handler — dropped",
@@ -200,35 +192,21 @@
     }
   ],
   "entry_exit": {
-    "Done": {
+    "Paused": {
       "on_entry": [
-        "log_done"
+        "Self::schedule_pause_timer"
       ],
-      "on_exit": []
+      "on_exit": [
+        "Self::cancel_pause_timer"
+      ]
     },
     "Active": {
       "on_entry": [
-        "increment_round",
-        "log_round",
-        "send_initial_ping"
+        "Self::send_initial_ping"
       ],
       "on_exit": []
     },
     "Error": {
-      "on_entry": [
-        "log_error"
-      ],
-      "on_exit": []
-    },
-    "Paused": {
-      "on_entry": [
-        "schedule_pause_timer"
-      ],
-      "on_exit": [
-        "cancel_pause_timer"
-      ]
-    },
-    "Operating": {
       "on_entry": [],
       "on_exit": []
     }
@@ -243,7 +221,33 @@
     }
   ],
   "messages": [],
-  "actions": [],
+  "actions": [
+    {
+      "crate_name": "blox_ctx_rounds",
+      "function_name": "increment_round",
+      "signature": "fn increment_round(round: &mut u32) -> ActionResult"
+    },
+    {
+      "crate_name": "blox_ctx_ping_pong",
+      "function_name": "send_initial_ping",
+      "signature": "fn send_initial_ping(self_id: ActorId, peer_ref: &ActorRef<PingPongMsg, R>, round: &mut u32)"
+    },
+    {
+      "crate_name": "blox_ctx_ping_pong",
+      "function_name": "send_ping",
+      "signature": "fn send_ping(self_id: ActorId, peer_ref: &ActorRef<PingPongMsg, R>, round: u32) -> ActionResult"
+    },
+    {
+      "crate_name": "blox_ctx_ping_pong",
+      "function_name": "schedule_resume",
+      "signature": "fn schedule_resume(self_id: ActorId, self_ref: &ActorRef<PingPongMsg, R>, timer_ref: &ActorRef<TimerCommand, R>, round: u32, current_timer: &mut Option<TimerId>)"
+    },
+    {
+      "crate_name": "bloxide_timer",
+      "function_name": "cancel_timer_by_id",
+      "signature": "fn cancel_timer_by_id(self_id: ActorId, timer_ref: &ActorRef<TimerCommand, R>, current_timer: &mut Option<TimerId>)"
+    }
+  ],
   "context": {
     "struct_name": "PingCtx",
     "fields": [
@@ -254,26 +258,47 @@
       },
       {
         "name": "peer_ref",
-        "ty": "ActorRef < PingPongMsg , R >",
+        "ty": "ActorRef<PingPongMsg, R>",
         "annotations": []
       },
       {
         "name": "self_ref",
-        "ty": "ActorRef < PingPongMsg , R >",
+        "ty": "ActorRef<PingPongMsg, R>",
         "annotations": []
       },
       {
         "name": "timer_ref",
-        "ty": "ActorRef < TimerCommand , R >",
+        "ty": "ActorRef<TimerCommand, R>",
         "annotations": []
       },
       {
-        "name": "behavior",
-        "ty": "B",
-        "annotations": [
-          "# [delegates (HasCurrentTimer , CountsRounds)]"
-        ]
+        "name": "current_timer",
+        "ty": "Option<TimerId>",
+        "annotations": []
+      },
+      {
+        "name": "round",
+        "ty": "u32",
+        "annotations": []
+      }
+    ],
+    "uses": [
+      {
+        "name": "peer_ref",
+        "ty": "ActorRef<PingPongMsg, R>",
+        "annotations": []
+      },
+      {
+        "name": "self_ref",
+        "ty": "ActorRef<PingPongMsg, R>",
+        "annotations": []
+      },
+      {
+        "name": "timer_ref",
+        "ty": "ActorRef<TimerCommand, R>",
+        "annotations": []
       }
     ]
-  }
+  },
+  "wiring": null
 }

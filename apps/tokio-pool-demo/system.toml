@@ -31,7 +31,7 @@ features = ["dynamic"]
 
 [[supervision]]
 supervisor = "bloxide-supervisor"
-strategy = "all_for_one"
+strategy = "when_all_done"
 children = ["pool"]
 
   [supervision.policies]

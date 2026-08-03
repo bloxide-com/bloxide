@@ -817,11 +817,13 @@ mod tests {
             specs.len()
         );
 
-        // Verify each spec has states
+        // Verify each spec has content: actor/topology crates have states,
+        // message-definition crates have messages (#124), system specs have
+        // a wiring graph (#123, #128).
         for spec in &specs {
             assert!(
-                !spec.states.is_empty(),
-                "spec '{}' has no states",
+                !spec.states.is_empty() || !spec.messages.is_empty() || spec.wiring.is_some(),
+                "spec '{}' has neither states, messages, nor a wiring graph",
                 spec.name
             );
         }

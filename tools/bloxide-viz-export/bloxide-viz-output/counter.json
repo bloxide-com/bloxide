@@ -1,16 +1,9 @@
 {
   "name": "Counter",
-  "crate_path": "/home/bboganware/repos/bloxide/crates/bloxes/counter",
+  "crate_path": "./crates/bloxes/counter",
   "states": [
     {
       "name": "Ready",
-      "kind": "Leaf",
-      "parent": null,
-      "description": "",
-      "depth": 0
-    },
-    {
-      "name": "Done",
       "kind": "Leaf",
       "parent": null,
       "description": "",
@@ -21,51 +14,40 @@
     {
       "message_set": "CounterMsg",
       "variant": "Tick",
-      "full_name": "CounterMsg :: Tick (_tick)"
+      "full_name": "CounterMsg::Tick"
     }
   ],
   "handlers": [
     {
       "state": "Ready",
-      "event": "CounterMsg :: Tick (_tick)",
-      "label": "stay",
-      "actions": [],
+      "event": "CounterMsg::Tick",
+      "label": "Self::count_tick → stay",
+      "pattern": "CounterMsg::Tick(_)",
+      "feature": null,
+      "actions": [
+        "Self::count_tick"
+      ],
       "guard": {
-        "description": "stay",
-        "raw": "{ actions [Self :: count_tick] guard (ctx , _results) { ctx . count () >= B :: Count :: from (DONE_AT_COUNT) => CounterState :: Done , _ => stay , } }",
-        "branches": []
+        "description": "ctx.count >= DONE_AT_COUNT => done\n_ => stay\n_ => stay",
+        "raw": "if ctx.count >= DONE_AT_COUNT { done } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.count >= DONE_AT_COUNT",
+            "target": "Done"
+          },
+          {
+            "condition": "_",
+            "target": "Stay"
+          }
+        ]
       },
       "target": "Stay",
       "source": "Explicit",
       "on_entry": [],
       "on_exit": []
-    },
-    {
-      "state": "Done",
-      "event": "CounterMsg :: Tick (_tick)",
-      "label": "∅",
-      "actions": [],
-      "guard": {
-        "description": "No handler — dropped",
-        "raw": "",
-        "branches": []
-      },
-      "target": "Stay",
-      "source": "Dropped",
-      "on_entry": [],
-      "on_exit": []
     }
   ],
-  "entry_exit": {
-    "Ready": {
-      "on_entry": [],
-      "on_exit": []
-    },
-    "Done": {
-      "on_entry": [],
-      "on_exit": []
-    }
-  },
+  "entry_exit": {},
   "message_sets": [
     {
       "name": "CounterMsg",
@@ -75,7 +57,13 @@
     }
   ],
   "messages": [],
-  "actions": [],
+  "actions": [
+    {
+      "crate_name": "blox_ctx_ticks",
+      "function_name": "increment_count",
+      "signature": "fn increment_count(count: &mut u32) -> ActionResult"
+    }
+  ],
   "context": {
     "struct_name": "CounterCtx",
     "fields": [
@@ -85,12 +73,12 @@
         "annotations": []
       },
       {
-        "name": "behavior",
-        "ty": "B",
-        "annotations": [
-          "# [delegates (CountsTicks)]"
-        ]
+        "name": "count",
+        "ty": "u32",
+        "annotations": []
       }
-    ]
-  }
+    ],
+    "uses": []
+  },
+  "wiring": null
 }
