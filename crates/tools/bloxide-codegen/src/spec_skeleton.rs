@@ -114,14 +114,19 @@ pub(crate) fn generate_state_fns_impl(
     strip_feature_cfg: bool,
     action_resolver: crate::ActionResolver<'_>,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
-    use crate::schema::{EntryExitConfig, TransitionConfig};
+    use crate::schema::{EntryExitConfig, TransitionConfig, ROOT_STATE_KEYWORD};
     use crate::topology::generate_state_rule;
     use std::collections::HashMap;
 
+    // Partition transitions: state rules (owned by a user state) vs root rules
+    // (state = "root" — VirtualRoot fallback, emitted as ROOT_RULES below).
     // Build lookup maps, filtering by feature
     let trans_by_state: HashMap<String, Vec<&TransitionConfig>> = {
         let mut map: HashMap<String, Vec<&TransitionConfig>> = HashMap::new();
         for t in &topology.transitions {
+            if t.state == ROOT_STATE_KEYWORD {
+                continue;
+            }
             // Non-feature variant: include transitions with no `feature` attribute.
             // Feature variant: include ALL transitions (both gated and non-gated).
             if match feature_filter {
@@ -133,6 +138,16 @@ pub(crate) fn generate_state_fns_impl(
         }
         map
     };
+    // Root rules for this variant, with the same feature filtering.
+    let root_trans: Vec<&TransitionConfig> = topology
+        .transitions
+        .iter()
+        .filter(|t| t.state == ROOT_STATE_KEYWORD)
+        .filter(|t| match feature_filter {
+            None => t.feature.is_none(),
+            Some(_) => true,
+        })
+        .collect();
     let entry_by_state: HashMap<String, Vec<&EntryExitConfig>> = {
         let mut map: HashMap<String, Vec<&EntryExitConfig>> = HashMap::new();
         for e in &topology.entry {
@@ -229,6 +244,31 @@ pub(crate) fn generate_state_fns_impl(
                 on_exit: &[#(#exit_tokens),*],
                 transitions: #trans_tokens,
             };
+        });
+    }
+
+    // Root-level transition rules (VirtualRoot fallback for domain events).
+    // One associated const per spec (not per state), holding this variant's
+    // root partition. Referenced by the generated `root_transitions()`
+    // override when non-empty.
+    if !root_trans.is_empty() {
+        let root_rules: Vec<proc_macro2::TokenStream> = root_trans
+            .iter()
+            .map(|t| {
+                generate_state_rule(
+                    t,
+                    state_enum_ident,
+                    ctx_type_str,
+                    event_type_str,
+                    type_params,
+                    action_resolver,
+                    strip_feature_cfg,
+                )
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        consts.push(quote! {
+            #[allow(unused_variables)]
+            const ROOT_RULES: &'static [::bloxide_core::transition::StateRule<Self>] = &[#(#root_rules),*];
         });
     }
 
@@ -806,6 +846,20 @@ pub fn generate(
     };
 
     // ── Generate each variant ─────────────────────────────────────────────────
+    // Root-level transitions (state = "root"): a variant emits the
+    // `root_transitions()` override only when its feature-filtered partition
+    // contains at least one root rule. The rules live in the `ROOT_RULES`
+    // associated const emitted by `generate_state_fns_impl`.
+    let has_root_rules = |feature_filter: Option<&str>| {
+        topology.transitions.iter().any(|t| {
+            t.state == crate::schema::ROOT_STATE_KEYWORD
+                && match feature_filter {
+                    None => t.feature.is_none(),
+                    Some(_) => true,
+                }
+        })
+    };
+
     let mut variant_tokens = Vec::new();
 
     for var in &variants {
@@ -873,6 +927,15 @@ pub fn generate(
         )?;
 
         // MachineSpec impl
+        let root_transitions_fn = if has_root_rules(var.feature_filter.as_deref()) {
+            quote! {
+                fn root_transitions() -> &'static [::bloxide_core::transition::StateRule<Self>] {
+                    Self::ROOT_RULES
+                }
+            }
+        } else {
+            quote! {}
+        };
         let var_event_ty = &var.event_ty;
         let var_ctx_ty = &var.ctx_ty;
         let var_mailboxes_ty = &var.mailboxes_ty;
@@ -894,6 +957,8 @@ pub fn generate(
                 }
 
                 #on_init_fn
+
+                #root_transitions_fn
             }
         };
 
@@ -968,4 +1033,203 @@ pub fn generate(
     let formatted = prettyplease::unparse(&file);
 
     Ok(format!("{}{}", HEADER, formatted))
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::BloxConfig;
+
+    /// Counter blox without root transitions (mirrors crates/bloxes/counter/blox.toml).
+    const COUNTER_TOML: &str = r#"
+[actor]
+name = "Counter"
+
+[context]
+name = "CounterCtx"
+on_init = "ctx.count = 0;"
+
+[[context.fields]]
+name = "count"
+type = "u32"
+
+[[context.actions]]
+name = "count_tick"
+fn_name = "increment_count"
+crate = "blox_ctx_ticks"
+fields = ["count:mut"]
+impl_required = false
+
+[event]
+name = "CounterEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "CounterMsg"
+message_path = "counter_messages::CounterMsg"
+
+[topology]
+spec_imports = ["crate::DONE_AT_COUNT"]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.transitions]]
+state = "Ready"
+event = "CounterMsg::Tick(_)"
+target = "stay"
+actions = ["Self::count_tick"]
+
+[[topology.transitions.guards]]
+condition = "ctx.count >= DONE_AT_COUNT"
+target = "done"
+"#;
+
+    /// Same blox plus a root-level rule (`state = "root"` — VirtualRoot
+    /// fallback for domain events).
+    const COUNTER_ROOT_TOML: &str = r#"
+[actor]
+name = "Counter"
+
+[context]
+name = "CounterCtx"
+on_init = "ctx.count = 0;"
+
+[[context.fields]]
+name = "count"
+type = "u32"
+
+[[context.actions]]
+name = "count_tick"
+fn_name = "increment_count"
+crate = "blox_ctx_ticks"
+fields = ["count:mut"]
+impl_required = false
+
+[[context.actions]]
+name = "note_unhandled"
+crate = "blox_ctx_ticks"
+fields = ["count"]
+impl_required = false
+
+[event]
+name = "CounterEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "CounterMsg"
+message_path = "counter_messages::CounterMsg"
+
+[topology]
+spec_imports = ["crate::DONE_AT_COUNT"]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.transitions]]
+state = "Ready"
+event = "CounterMsg::Tick(_)"
+target = "stay"
+actions = ["Self::count_tick"]
+
+[[topology.transitions.guards]]
+condition = "ctx.count >= DONE_AT_COUNT"
+target = "done"
+
+[[topology.transitions]]
+state = "root"
+event = "CounterMsg::PoisonPill(_)"
+target = "reset"
+actions = ["Self::note_unhandled"]
+"#;
+
+    fn parse(toml_str: &str) -> BloxConfig {
+        toml::from_str(toml_str).expect("test blox.toml must parse")
+    }
+
+    fn generate_stub(config: &BloxConfig) -> String {
+        generate(
+            config.actor.as_ref().unwrap(),
+            config.topology.as_ref().unwrap(),
+            config.context.as_ref().unwrap(),
+            config.event.as_ref(),
+            "counter-blox",
+            "crate",
+            &resolve_action,
+            None,
+        )
+        .expect("stub generation must succeed")
+    }
+
+    #[test]
+    fn root_rules_parse_as_plain_transitions() {
+        let config = parse(COUNTER_ROOT_TOML);
+        let transitions = &config.topology.as_ref().unwrap().transitions;
+        let root: Vec<_> = transitions.iter().filter(|t| t.state == "root").collect();
+        assert_eq!(root.len(), 1);
+        assert_eq!(root[0].event, "CounterMsg::PoisonPill(_)");
+        assert_eq!(root[0].target, "reset");
+        assert_eq!(root[0].actions, vec!["Self::note_unhandled".to_string()]);
+        // Defaults to none when no state = "root" rule is present.
+        let config = parse(COUNTER_TOML);
+        assert!(!config
+            .topology
+            .as_ref()
+            .unwrap()
+            .transitions
+            .iter()
+            .any(|t| t.state == "root"));
+    }
+
+    #[test]
+    fn no_root_transitions_emits_no_override() {
+        let out = generate_stub(&parse(COUNTER_TOML));
+        assert!(!out.contains("root_transitions"));
+        assert!(!out.contains("ROOT_RULES"));
+    }
+
+    #[test]
+    fn stub_generation_emits_root_rules() {
+        let out = generate_stub(&parse(COUNTER_ROOT_TOML));
+        assert!(
+            out.contains("fn root_transitions()"),
+            "missing override:\n{out}"
+        );
+        assert!(out.contains("ROOT_RULES"), "missing rules const:\n{out}");
+        assert!(
+            out.contains("Self::ROOT_RULES"),
+            "override must reference the const:\n{out}"
+        );
+        // Msg-shorthand pattern: wildcard tag + msg_payload match.
+        assert!(out.contains("WILDCARD_TAG"));
+        assert!(out.contains("msg_payload"));
+        assert!(out.contains("CounterMsg::PoisonPill(_)"));
+        // Stub action closure and target decision.
+        assert!(out.contains("let _stub = \"note_unhandled\""));
+        assert!(out.contains("Decision::Reset"));
+    }
+
+    #[test]
+    fn concrete_generation_emits_real_actions_in_root_rules() {
+        let config = parse(COUNTER_ROOT_TOML);
+        let out = crate::system_spec::generate_concrete_spec_skeleton(
+            &config,
+            None,
+            "counter-blox",
+            "crate",
+            None,
+        )
+        .expect("concrete generation must succeed");
+        assert!(out.contains("fn root_transitions()"));
+        assert!(out.contains("ROOT_RULES"));
+        // The Self:: action is resolved to the context-crate function —
+        // no stub markers anywhere in a concrete spec.
+        assert!(out.contains("blox_ctx_ticks"));
+        assert!(out.contains("note_unhandled"));
+        assert!(!out.contains("_stub"));
+    }
 }

@@ -88,6 +88,12 @@ pub struct TopologyConfig {
     /// Declarative transitions grouped by state. When present, the codegen
     /// emits complete `StateFns` constants with raw `StateRule` struct literals
     /// directly from TOML — no hand-written actions needed.
+    ///
+    /// `state = "root"` marks a root-level rule: evaluated when a domain event
+    /// bubbles past all user-declared states to the engine-implicit VirtualRoot.
+    /// Root rules are emitted as the `ROOT_RULES` constant plus a
+    /// `root_transitions()` override in the generated `MachineSpec` impl.
+    /// `"root"` is a reserved keyword and cannot name a user state.
     #[serde(default)]
     pub transitions: Vec<TransitionConfig>,
     /// Entry actions per state.
@@ -110,7 +116,9 @@ pub struct TopologyConfig {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct TransitionConfig {
-    /// Which state handles this transition.
+    /// Which state handles this transition. The reserved keyword `"root"`
+    /// marks a root-level rule (VirtualRoot fallback for domain events that
+    /// bubble past all user states); it cannot name a user state.
     pub state: String,
     /// Event pattern, e.g. "PingPongMsg::Ping(_)" or "PingPongMsg::A(_) | PingPongMsg::B(_)".
     pub event: String,
@@ -129,6 +137,14 @@ pub struct TransitionConfig {
     pub feature: Option<String>,
 }
 
+/// Reserved `state` value marking a root-level transition rule. Root rules
+/// have no owning user state — they live at the engine-implicit VirtualRoot
+/// and are evaluated when a domain event bubbles past every user-declared
+/// state. Lifecycle commands are intercepted by the engine before user
+/// states, so root rules are for domain events only. `"root"` cannot name a
+/// user state.
+pub const ROOT_STATE_KEYWORD: &str = "root";
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct GuardConfig {
@@ -139,7 +155,6 @@ pub struct GuardConfig {
     /// Target when guard passes: a state name, or "stay", "reset", "stop", "done", "fail".
     pub target: String,
 }
-
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct EntryExitConfig {

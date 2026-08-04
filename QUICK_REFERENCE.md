@@ -338,6 +338,16 @@ actions = ["Self::forward_ping"]
 # [[topology.transitions]] entries with the same `state`.
 ```
 
+**Root-level fallback rules** are ordinary `[[topology.transitions]]` entries with the reserved keyword `state = "root"` (`"root"` cannot name a user state). They fire when a domain event bubbles past all user states. `event = "_"` is a catch-all (`WILDCARD_TAG`). `guards` and `feature` gates work as for state-level rules. The codegen emits a `ROOT_RULES` constant plus a `root_transitions()` override in the `MachineSpec` impl.
+
+```toml
+[[topology.transitions]]
+state = "root"
+event = "WorkerMsg::PoisonPill(_)"   # or "_" for a catch-all
+target = "reset"
+actions = ["Self::log_unhandled"]
+```
+
 **Guard expressions** use direct field access (no trait methods, no `B::Type::from()`):
 - `ctx.round >= MAX_ROUNDS as u32` — direct field comparison
 - `ctx.pending == 0` — direct field comparison

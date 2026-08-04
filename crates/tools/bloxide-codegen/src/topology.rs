@@ -6,7 +6,7 @@
 use quote::{format_ident, quote};
 use std::collections::HashMap;
 
-use crate::schema::{TopologyConfig, TransitionConfig};
+use crate::schema::{TopologyConfig, TransitionConfig, ROOT_STATE_KEYWORD};
 use crate::util::{to_snake_case, to_upper_snake_case, HEADER};
 
 /// Capitalize the first letter of a string.
@@ -407,6 +407,18 @@ pub fn generate(
         .map(|(i, s)| (s.name.clone(), i))
         .collect();
 
+    // "root" is a reserved keyword: root-level fallback rules are written as
+    // state = "root" in [[topology.transitions]], so no user state may take
+    // the name.
+    for state in &config.states {
+        if state.name == ROOT_STATE_KEYWORD {
+            anyhow::bail!(
+                "state name '{}' is reserved (root-level rules use state = \"root\")",
+                ROOT_STATE_KEYWORD
+            );
+        }
+    }
+
     // Validate parents exist
     for state in &config.states {
         if let Some(ref parent) = state.parent {
@@ -433,10 +445,11 @@ pub fn generate(
         }
     }
 
-    // Validate transition targets reference valid states
+    // Validate transition targets reference valid states.
+    // state = "root" is the VirtualRoot keyword, not a user-state reference.
     let valid_targets = ["stay", "reset", "stop", "done", "fail"];
     for trans in &config.transitions {
-        if !name_to_index.contains_key(&trans.state) {
+        if trans.state != ROOT_STATE_KEYWORD && !name_to_index.contains_key(&trans.state) {
             anyhow::bail!("transition references unknown state '{}'", trans.state);
         }
         // Validate main target
@@ -638,4 +651,103 @@ pub fn generate(
     let formatted = prettyplease::unparse(&file);
 
     Ok(format!("{}{}", HEADER, formatted))
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use crate::schema::TopologyConfig;
+
+    fn parse_topology(toml_str: &str) -> TopologyConfig {
+        toml::from_str(toml_str).expect("test topology must parse")
+    }
+
+    #[test]
+    fn root_transition_unknown_target_errors() {
+        let topology = parse_topology(
+            r#"
+[[states]]
+name = "Ready"
+initial = true
+
+[[transitions]]
+state = "root"
+event = "CounterMsg::PoisonPill(_)"
+target = "Nowhere"
+"#,
+        );
+        let err = super::generate(&topology, Some("Counter"), "counter-blox", false)
+            .expect_err("unknown root target must fail");
+        assert!(
+            err.to_string()
+                .contains("transition in state 'root' references unknown target state 'Nowhere'"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn root_transition_unknown_guard_target_errors() {
+        let topology = parse_topology(
+            r#"
+[[states]]
+name = "Ready"
+initial = true
+
+[[transitions]]
+state = "root"
+event = "CounterMsg::PoisonPill(_)"
+target = "reset"
+
+[[transitions.guards]]
+condition = "ctx.count > 3"
+target = "Nowhere"
+"#,
+        );
+        let err = super::generate(&topology, Some("Counter"), "counter-blox", false)
+            .expect_err("unknown root guard target must fail");
+        assert!(
+            err.to_string()
+                .contains("guard in state 'root' references unknown target state 'Nowhere'"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn root_transition_valid_targets_accepted() {
+        for target in ["stay", "reset", "stop", "done", "fail", "Ready"] {
+            let toml_str = format!(
+                r#"
+[[states]]
+name = "Ready"
+initial = true
+
+[[transitions]]
+state = "root"
+event = "CounterMsg::PoisonPill(_)"
+target = "{target}"
+"#
+            );
+            let topology = parse_topology(&toml_str);
+            super::generate(&topology, Some("Counter"), "counter-blox", false)
+                .unwrap_or_else(|e| panic!("target '{target}' must be accepted: {e}"));
+        }
+    }
+
+    #[test]
+    fn state_named_root_is_reserved() {
+        let topology = parse_topology(
+            r#"
+[[states]]
+name = "root"
+initial = true
+"#,
+        );
+        let err = super::generate(&topology, Some("Counter"), "counter-blox", false)
+            .expect_err("a user state named 'root' must fail");
+        assert!(
+            err.to_string().contains("'root' is reserved"),
+            "unexpected error: {err}"
+        );
+    }
 }

@@ -9,7 +9,8 @@
 //!
 //! Checks (errors):
 //! - transition `state` / `target` / guard `target` / entry / exit / parent
-//!   referencing undeclared states
+//!   referencing undeclared states (`state = "root"` is the VirtualRoot
+//!   keyword, not a state reference; no user state may be named `root`)
 //! - duplicate state names and duplicate transitions (same state + event)
 //! - event patterns referencing unknown variants of KNOWN enums (the blox's
 //!   own event enum, workspace message enums, framework enums)
@@ -29,7 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use bloxide_codegen::schema::{BloxConfig, TopologyConfig};
+use bloxide_codegen::schema::{BloxConfig, TopologyConfig, ROOT_STATE_KEYWORD};
 use walkdir::WalkDir;
 
 const TARGET_KEYWORDS: [&str; 5] = ["stay", "reset", "stop", "done", "fail"];
@@ -183,13 +184,22 @@ fn lint_topology(
 ) {
     let state_names: BTreeSet<String> = topology.states.iter().map(|s| s.name.clone()).collect();
 
-    // Duplicate state names.
+    // Duplicate state names + the reserved VirtualRoot keyword.
     let mut seen = BTreeSet::new();
     for s in &topology.states {
         if !seen.insert(&s.name) {
             diags.push(Diagnostic::error(
                 path,
                 format!("duplicate state name \"{}\"", s.name),
+            ));
+        }
+        if s.name == ROOT_STATE_KEYWORD {
+            diags.push(Diagnostic::error(
+                path,
+                format!(
+                    "state name \"{}\" is reserved (root-level rules use state = \"root\")",
+                    ROOT_STATE_KEYWORD
+                ),
             ));
         }
     }
@@ -230,10 +240,11 @@ fn lint_topology(
         .map(|c| c.actions.iter().map(|a| a.name.clone()).collect())
         .unwrap_or_default();
 
-    // Transitions.
+    // Transitions. `state = "root"` is the VirtualRoot keyword: the rule is a
+    // root-level fallback for domain events, not a user-state reference.
     let mut transition_keys = BTreeSet::new();
     for t in &topology.transitions {
-        if !state_names.contains(&t.state) {
+        if t.state != ROOT_STATE_KEYWORD && !state_names.contains(&t.state) {
             diags.push(Diagnostic::error(
                 path,
                 format!(
