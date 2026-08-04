@@ -6,7 +6,7 @@
 
 use bloxide_codegen::generate_from_toml;
 use bloxide_codegen::schema::BloxConfig;
-use bloxide_viz_export::{export_workspace, model::BloxSpec};
+use bloxide_viz_export::{export_workspace, model::BloxSpec, parse_event_pattern};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -205,7 +205,7 @@ pub fn verify(workspace: Option<PathBuf>) -> anyhow::Result<()> {
 
 fn find_blox_tomls(root: &Path) -> Vec<PathBuf> {
     WalkDir::new(root)
-        .max_depth(8)
+        .max_depth(crate::utils::DISCOVERY_MAX_DEPTH)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
@@ -220,20 +220,4 @@ fn find_blox_tomls(root: &Path) -> Vec<PathBuf> {
         })
         .map(|e| e.path().to_path_buf())
         .collect()
-}
-
-fn parse_event_pattern(pattern: &str) -> (String, String) {
-    let pattern = pattern.trim();
-    let clean = if let Some(pos) = pattern.find('(') {
-        &pattern[..pos]
-    } else {
-        pattern
-    };
-    if let Some(pos) = clean.find("::") {
-        let message_set = clean[..pos].trim().to_string();
-        let variant = clean[pos + 2..].trim().to_string();
-        (message_set, variant)
-    } else {
-        ("Unknown".to_string(), clean.to_string())
-    }
 }

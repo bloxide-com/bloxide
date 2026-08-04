@@ -1,0 +1,11 @@
+# Copyright 2025 Bloxide, all rights reserved
+[package]
+name = "blox-ctx-noop"
+version.workspace = true
+edition.workspace = true
+description = "Shared no-op action functions for demo and test bloxes (composable context-crate example)"
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bloxide-core = { workspace = true }

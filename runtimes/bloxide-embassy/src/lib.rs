@@ -206,15 +206,15 @@ macro_rules! spawn_timer {
     }};
 }
 
-// ── spawn_child! macro ────────────────────────────────────────────────────────
+// ── spawn_static_child! macro ─────────────────────────────────────────────────
 
-/// Spawn a supervised child actor task.
+/// Spawn a supervised static child actor task.
 ///
 /// Creates the per-child lifecycle channel, registers the child in the
-/// `ChildGroupBuilder`, and spawns the Embassy task with the lifecycle
-/// arguments injected automatically.
+/// `ChildGroupBuilder` with its `ChildPolicy`, and spawns the Embassy task
+/// with the lifecycle arguments injected automatically.
 #[macro_export]
-macro_rules! spawn_child {
+macro_rules! spawn_static_child {
     ($spawner:expr, $builder:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
         let (lc_rx, sup_notify) = $builder.add_child($id, $policy);
         $spawner.must_spawn($task_fn($machine, $mbox, lc_rx, $id, sup_notify));

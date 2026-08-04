@@ -79,7 +79,7 @@ pub struct SpawnOutput<R: BloxRuntime> {
 }
 ```
 
-`SpawnOutput` is deliberately **not** app-specific: it carries only the lifecycle and capability refs the managing blox (supervisor) needs. The app-specific handles go back via the request's reply channel (Layer 2). `bloxide-spawn` also provides `spawn_child()` (calls the factory, then sends the registration message on the managing blox's control mailbox) and `ChildCtrlRegistrar` (wraps `SpawnOutput` into `ChildCtrl::RegisterDynamicChild`).
+`SpawnOutput` is deliberately **not** app-specific: it carries only the lifecycle and capability refs the managing blox (supervisor) needs. The app-specific handles go back via the request's reply channel (Layer 2). `bloxide-spawn` also provides `spawn_dynamic_child()` (calls the factory, then sends the registration message on the managing blox's control mailbox) and `ChildCtrlRegistrar` (wraps `SpawnOutput` into `ChildCtrl::RegisterDynamicChild`).
 
 **Layer 4 (blox)**: `crates/bloxes/pool/blox.toml` declares the injected fields as `[[context.uses]]` entries with `role = "ctor"` (gated by the Pool's `dynamic` feature):
 
@@ -99,7 +99,7 @@ fields = [
 
 The codegen emits these as **plain struct fields** on `PoolCtx<R>` — the four `role = "ctor"` fields become `PoolCtx::new(...)` params; the `role = "state"` fields are `Default`-initialized. There are no accessor traits and no name-suffix conventions: the codegen keys off `role`.
 
-The Pool's action function (in the impl crate) invokes the factory through the `spawn_child` helper — the Pool never calls `spawn_fn` directly and never touches registration itself:
+The Pool's action function (in the impl crate) invokes the factory through the `spawn_dynamic_child` helper — the Pool never calls `spawn_fn` directly and never touches registration itself:
 
 ```rust
 // crates/impl/tokio-pool-demo-impl/src/lib.rs
@@ -118,13 +118,13 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
         reply_to: spawn_reply_ref.clone(),
         pool_ref: self_ref.clone(),
     };
-    ActionResult::from(bloxide_spawn::spawn_child::<_, _, ChildCtrlRegistrar>(
+    ActionResult::from(bloxide_spawn::spawn_dynamic_child::<_, _, ChildCtrlRegistrar>(
         *spawn_fn, req, spawn_ref, notify_ref, self_id,
     ))
 }
 ```
 
-`spawn_child` calls `spawn_fn(req, notify_ref.clone())`, wraps the returned `SpawnOutput` into `ChildCtrl::RegisterDynamicChild` via `ChildCtrlRegistrar`, and sends it on `spawn_ref` — the supervisor's control mailbox. The supervisor registers the child (`ChildGroup::try_add_dynamic`) and starts it.
+`spawn_dynamic_child` calls `spawn_fn(req, notify_ref.clone())`, wraps the returned `SpawnOutput` into `ChildCtrl::RegisterDynamicChild` via `ChildCtrlRegistrar`, and sends it on `spawn_ref` — the supervisor's control mailbox. The supervisor registers the child (`ChildGroup::try_add_dynamic`) and starts it.
 
 **Layer 5 (impl crate)**: `crates/impl/tokio-pool-demo-impl/src/lib.rs` provides the concrete factory function:
 
@@ -232,7 +232,7 @@ The factory injection pattern **does not require the blox to have `R: SpawnCap`*
    - Uses `embassy_executor::Spawner` obtained from the binary's executor
    - The binary passes the spawner to a setup function that registers tasks statically
 
-2. The Pool blox remains `R: BloxRuntime` only — it passes the factory to `spawn_child` unaware of whether the runtime is Tokio (spawn cap) or Embassy (static task registration). The `spawn_fn`/`spawn_ref`/`notify_ref` fields are feature-gated (`feature = "dynamic"`), so the non-dynamic Pool variant compiles without them entirely.
+2. The Pool blox remains `R: BloxRuntime` only — it passes the factory to `spawn_dynamic_child` unaware of whether the runtime is Tokio (spawn cap) or Embassy (static task registration). The `spawn_fn`/`spawn_ref`/`notify_ref` fields are feature-gated (`feature = "dynamic"`), so the non-dynamic Pool variant compiles without them entirely.
 
 ### Summary: Constructor Injection and `system.toml` Sources
 
@@ -378,11 +378,11 @@ Should the wiring layer provide this value at construction time?
 │             │   system-generated spec         │                  │
 └─────────────┘                                 └──────────────────┘
        │
-       ▼  action calls spawn_child(*spawn_fn, req, spawn_ref, notify_ref, ...)
+       ▼  action calls spawn_dynamic_child(*spawn_fn, req, spawn_ref, notify_ref, ...)
 ┌─────────────┐         ┌─────────────┐
 │ bloxide-    │         │ supervisor  │
 │ spawn       │────────►│ control     │
-│ spawn_child │ RegisterDynamicChild  │
+│ spawn_dynamic_child │ RegisterDynamicChild  │
 └─────────────┘         └─────────────┘
 ```
 

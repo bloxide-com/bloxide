@@ -3,14 +3,13 @@
 name = "bloxide-spawn"
 version.workspace = true
 edition.workspace = true
-description = "Spawn capability for bloxide — SpawnCap, Kill, spawn_child helper"
+description = "Spawn capability for bloxide — SpawnCap, Kill, spawn_dynamic_child helper"
 repository.workspace = true
 license.workspace = true
 
 [features]
-default = ["alloc"]
-alloc = ["bloxide-core/alloc"]
-std = ["bloxide-core/std", "alloc"]
+default = []
+std = ["bloxide-core/std"]
 
 [dependencies]
 bloxide-child-management = { workspace = true }

@@ -90,11 +90,12 @@ All scaffolding commands register new crates in the workspace `Cargo.toml` (memb
 
 | Command | Purpose |
 |---------|---------|
-| `cargo blox add-use <blox> --field <f> --field-type <ty> --role <ctor\|state> [--feature <f>] [--if-not-exists]` | Add a `[[context.uses]]` entry |
-| `cargo blox remove-use <blox> --field <f>` | Remove a `[[context.uses]]` entry |
+| `cargo blox add-use <blox> --field <f> --field-type <ty> --role <ctor\|state> [--feature <f>] [--if-not-exists]` | Add a single-field `[[context.uses]]` entry |
+| `cargo blox add-use <blox> --sub-field <name:ty:role>... [--feature <f>] [--if-not-exists]` | Add a multi-field `[[context.uses]]` entry |
+| `cargo blox remove-use <blox> --field <f>` | Remove a `[[context.uses]]` entry (or a sub-field from a multi-field entry) |
 | `cargo blox add-field <blox> --name <n> --ty <ty> [--default <expr>] [--if-not-exists]` | Add a `[[context.fields]]` state field |
 | `cargo blox remove-field <blox> --name <n>` | Remove a context field (from `fields`, `uses`, or `uses.fields`) |
-| `cargo blox add-action <blox> --name <n> [--field <f>]... [--crate-name <c>] [--module <m>] [--fn-name <f>] [--event-payload <ty>] [--impl-required] [--feature <f>] [--if-not-exists]` | Add a `[[context.actions]]` entry |
+| `cargo blox add-action <blox> --name <n> [--field <f>]... [--crate-name <c>] [--module <m>] [--fn-name <f>] [--event-payload <ty>] [--impl-required] [--returns ActionResult] [--feature <f>] [--if-not-exists]` | Add a `[[context.actions]]` entry |
 | `cargo blox remove-action <blox> --name <n>` | Remove a `[[context.actions]]` entry |
 
 #### System wiring edits (`apps/<app>/system.toml`)
@@ -145,7 +146,7 @@ Then, for every `system.toml` in the workspace, it regenerates the app's `src/ma
 
 #### `cargo blox watch`
 
-Watches the workspace recursively (ignoring `target/`) for `blox.toml` and `system.toml` changes, debounced at 500 ms. On each change it regenerates and runs `cargo check` with the given feature flags.
+Watches the workspace recursively (ignoring `target/`) for `blox.toml` and `system.toml` changes, debounced at 500 ms. On each change it regenerates and runs `cargo check` with the given feature flags. The watched root is found by walking up from the current directory (falling back to the current directory outside a workspace) — never `CARGO_MANIFEST_DIR`, which points at the cargo-blox crate when the binary runs under `cargo run`.
 
 #### Scaffolding commands
 
@@ -314,11 +315,11 @@ Fields are trailing positional arguments in `name:ty` form (e.g. `round:u32 payl
 
 `add-use`, `add-field`, and `add-action` append to `[[context.uses]]`, `[[context.fields]]`, and `[[context.actions]]` respectively in the blox's blox.toml, creating the `[context]` section when missing.
 
-- **`add-use`** — `--role` must be exactly `ctor` or `state` (anything else → exit 1). Dedup key: `field`. Writes `field`, `field_type`, `role`, and optional `feature`.
-- **`remove-use`** — removes all `[[context.uses]]` entries whose `field` matches `--field`. No match → exit 3.
+- **`add-use`** — two mutually exclusive shapes: single-field (`--field` + `--field-type` + `--role`, given together) or multi-field (`--sub-field name:ty:role`, repeatable; the type may contain `::` paths). `--role` and each sub-field role must be exactly `ctor` or `state` (anything else → exit 1). Dedup key: any field name the entry would contribute — top-level `field` or a sub-field `name` (multi-field entries have no top-level `field`). Single-field writes `field`, `field_type`, `role`, and optional `feature`; multi-field writes optional `feature` plus an inline `fields = [ { name, ty, role }, ... ]` array.
+- **`remove-use`** — removes all single-field `[[context.uses]]` entries whose `field` matches `--field`, and removes the matching sub-field from multi-field entries (inline `fields = [...]` or nested `[[context.uses.fields]]`); an entry left with no sub-fields is removed. No match → exit 3.
 - **`add-field`** — dedup key: `name`. Writes `name`, `type`, and optional `default`.
-- **`remove-field`** — removes the name from `[[context.fields]]`, from single-field `[[context.uses]]` entries, and from nested `[[context.uses.fields]]` sub-tables — whichever matches. No match anywhere → exit 3.
-- **`add-action`** — Dedup key: `name`. Writes `name`, plus any of `--fn-name`, `--crate-name`, `--module`, `--field` (repeatable, stored as a string array), `--event-payload`, `--impl-required`, `--feature`.
+- **`remove-field`** — removes the name from `[[context.fields]]`, from single-field `[[context.uses]]` entries, and from multi-field entries (inline `fields = [...]` or nested `[[context.uses.fields]]`) — whichever matches; an entry left with no sub-fields is removed. No match anywhere → exit 3.
+- **`add-action`** — Dedup key: `name`. Writes `name`, plus any of `--fn-name`, `--crate-name`, `--module`, `--field` (repeatable, stored as a string array), `--event-payload`, `--impl-required`, `--returns` (only `"ActionResult"` is recognized — anything else → exit 1, mirroring the codegen/lint hard rule), `--feature`.
 - **`remove-action`** — removes by `--name`. No match → exit 3.
 
 All three add commands support `--if-not-exists` (exit 0 silently on duplicate).
@@ -366,21 +367,22 @@ cargo blox list-bloxes [--json]
 
 ```
 NAME        STATES  TRANSITIONS  MESSAGES
-counter     3       3            2
-ping        2       6            3
-pong        2       1            3
+counter     1       1            1
+ping        4       3            3
+pong        1       1            3
 ```
 
 **JSON output (`--json`):**
 
 ```json
 [
-  {"name": "ping", "states": 2, "transitions": 6, "messages": 3},
-  {"name": "pong", "states": 2, "transitions": 1, "messages": 3}
+  {"name": "counter", "states": 1, "transitions": 1, "messages": 1},
+  {"name": "ping", "states": 4, "transitions": 3, "messages": 3},
+  {"name": "pong", "states": 1, "transitions": 1, "messages": 3}
 ]
 ```
 
-`messages` counts the total variants across all `[[messages]]` entries in the blox.toml. Note: unlike the other commands, the `crates/bloxes/` scan is relative to the current directory — run `list-bloxes` from the workspace root.
+`messages` counts the total variants across the `crates/messages/*` crates referenced by the blox's `[[event.mailboxes]]` `message_path` entries (message enums live in dedicated messages crates, not in the blox's own blox.toml); each messages crate is counted at most once. Note: unlike the other commands, the `crates/bloxes/` scan (and the `crates/messages/` lookup) is relative to the current directory — run `list-bloxes` from the workspace root.
 
 #### `cargo blox list-states <blox>`
 
@@ -568,7 +570,7 @@ Errors print to stderr as `Error: <message>`; confirmations and all `list-*` out
 
 Commands resolve their paths from the **workspace root**, not the current directory: `toml_helpers` walks up from the current directory to the first `Cargo.toml` containing a `[workspace]` section (`find_workspace_root`), falling back to the current directory outside a workspace. All `blox.toml` / `system.toml` paths are built from that root (`crates/bloxes/<name>/blox.toml`, `crates/messages/<name>/blox.toml`, `apps/<name>/system.toml`), so the `add-*` / `remove-*` / `list-states` / `list-transitions` / `list-messages` commands work from any subdirectory.
 
-`generate`, `verify`, and `viz` anchor differently: they start from `CARGO_MANIFEST_DIR` and likewise walk up to the workspace root (overridable with `--workspace` on `generate` / `verify`). `wire` resolves the workspace root from the current directory and defaults `--system` to `<workspace>/system.toml`. `list-bloxes` is the one exception: its `crates/bloxes/` scan is relative to the current directory.
+`generate`, `verify`, and `viz` anchor differently: they start from `CARGO_MANIFEST_DIR` and likewise walk up to the workspace root (overridable with `--workspace` on `generate` / `verify`). `wire`, `watch`, and the `new-*` scaffolding commands resolve the workspace root from the current directory; `wire` defaults `--system` to `<workspace>/system.toml`. `new-all` resolves the root once and threads it through every layer (including its internal `generate` call), so a `new-all` from a subdirectory never mixes roots; `init` creates the target workspace first, then scaffolds inside it. `list-bloxes` is the one exception: its `crates/bloxes/` scan is relative to the current directory.
 
 ### TOML Manipulation Convention
 

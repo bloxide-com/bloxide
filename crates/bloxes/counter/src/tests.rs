@@ -87,10 +87,35 @@ mod counter_tests {
             MachineState::State(CounterState::Ready)
         ));
 
-        // ACTUAL behavior: count is NOT reset. Reset skips Init entirely, so
+        // count is NOT reset: Reset skips Init entirely, so
         // on_init_entry (count = 0) never fires, and Ready has no on_entry.
-        // The spec AC in spec/bloxes/counter.md was corrected to match this.
         assert_eq!(machine.ctx().count, 1);
+    }
+
+    #[test]
+    fn test_unhandled_event_in_init_is_dropped() {
+        // CounterMsg has a single variant (Tick) and Ready handles it, so the
+        // only state with no matching rule is Init. Domain events dispatched
+        // while in Init are caught by Init's engine-generated catch-all and
+        // silently dropped — no transition, no count change.
+        let mut machine = make_machine();
+        assert!(matches!(machine.current_state(), MachineState::Init));
+
+        let outcome = machine.dispatch(CounterEvent::Msg(Envelope(0, CounterMsg::Tick(Tick {}))));
+        assert!(matches!(
+            outcome,
+            bloxide_core::engine::DispatchOutcome::HandledNoTransition
+        ));
+        assert!(matches!(machine.current_state(), MachineState::Init));
+        assert_eq!(machine.ctx().count, 0);
+
+        // The machine still starts and processes subsequent valid events.
+        machine.dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start));
+        machine.dispatch(CounterEvent::Msg(Envelope(0, CounterMsg::Tick(Tick {}))));
+        assert!(matches!(
+            machine.current_state(),
+            MachineState::State(CounterState::Ready)
+        ));
     }
 
     #[test]

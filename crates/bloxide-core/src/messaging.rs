@@ -10,13 +10,30 @@ pub type ActorId = usize;
 ///
 /// # Pattern matching
 ///
-/// ```ignore
-/// // Doc test ignored: imports not resolvable in rustdoc compilation context
+/// ```
+/// use bloxide_core::messaging::Envelope;
+/// # struct Pong {
+/// #     round: u32,
+/// # }
+/// # enum PingMsg {
+/// #     Pong(Pong),
+/// # }
+/// # enum PingEvent {
+/// #     Msg(Envelope<PingMsg>),
+/// # }
+///
 /// // Ignore the sender (common case):
-/// PingEvent::Msg(Envelope(_, PingMsg::Pong(Pong { round }))) => { ... }
+/// match PingEvent::Msg(Envelope(1, PingMsg::Pong(Pong { round: 7 }))) {
+///     PingEvent::Msg(Envelope(_, PingMsg::Pong(Pong { round }))) => assert_eq!(round, 7),
+/// }
 ///
 /// // Match on sender when needed:
-/// PingEvent::Msg(Envelope(from, PingMsg::Pong(Pong { round }))) => { ... }
+/// match PingEvent::Msg(Envelope(2, PingMsg::Pong(Pong { round: 8 }))) {
+///     PingEvent::Msg(Envelope(from, PingMsg::Pong(Pong { round }))) => {
+///         assert_eq!(from, 2);
+///         assert_eq!(round, 8);
+///     }
+/// }
 /// ```
 #[derive(Debug, Clone)]
 pub struct Envelope<M>(pub ActorId, pub M);

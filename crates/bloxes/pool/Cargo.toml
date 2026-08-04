@@ -18,9 +18,9 @@ std = [
 dynamic = []
 
 [dependencies]
-bloxide-core    = { workspace = true, features = ["alloc"] }
+bloxide-core    = { workspace = true }
 bloxide-child-management = { workspace = true }
-bloxide-spawn   = { workspace = true, features = ["alloc"] }
+bloxide-spawn   = { workspace = true }
 bloxide-peers   = { workspace = true }
 blox-ctx-pool-ref = { workspace = true }
 pool-messages   = { workspace = true }

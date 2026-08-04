@@ -84,11 +84,6 @@ fn field_access(field_spec: &str) -> String {
     }
 }
 
-/// Check whether an action config represents a no-op (empty fields, no payload).
-fn is_noop_action(config: &ContextActionConfig) -> bool {
-    config.fields.is_empty() && config.event_payload.is_none()
-}
-
 /// Generate a concrete action closure for a `Self::` prefixed action.
 ///
 /// The closure calls the real function from the context crate or impl crate,
@@ -117,7 +112,7 @@ pub fn resolve_concrete_action(
     // Find the action declaration by name.
     let config = actions.iter().find(|a| a.name == name)?;
 
-    // Validate the declared return type first (before the no-op shortcut).
+    // Validate the declared return type first.
     // Only "ActionResult" is recognized; anything else is a hard error
     // (stale or misspelled value).
     let skip_wrap = match config.returns.as_deref() {
@@ -128,20 +123,6 @@ pub fn resolve_concrete_action(
             config.name, other
         ),
     };
-
-    // No-op actions: empty fields and no event_payload.
-    // Generate minimal no-op closures.
-    if is_noop_action(config) {
-        if is_transition {
-            return Some(quote::quote! {
-                |_ctx, _ev| { ::bloxide_core::transition::ActionResult::Ok }
-            });
-        } else {
-            return Some(quote::quote! {
-                |_ctx| {}
-            });
-        }
-    }
 
     // Determine the function path.
     let fn_path = if config.impl_required {
@@ -602,8 +583,8 @@ mod tests {
             resolve_concrete_action("Self::s_entry", &actions, None, "TestEvent", None, false);
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
-        // No-op entry action (empty fields, no payload)
-        assert!(tokens.contains("_ctx"));
+        // Entry action: bare call to the declared crate fn, return discarded.
+        assert!(tokens.contains(":: bloxide_core :: s_entry ()"));
     }
 
     #[test]
@@ -741,8 +722,10 @@ mod tests {
     }
 
     #[test]
-    fn test_noop_entry_action() {
-        // bhsm-tst style: empty fields, no event_payload
+    fn test_empty_fields_entry_action_calls_declared_fn() {
+        // bhsm-tst style: empty fields, no event_payload — the action still
+        // resolves to the declared crate fn (no stub shortcut): a bogus
+        // crate/fn_name is a compile error wherever the spec is compiled.
         let actions = vec![make_action(
             "s_entry",
             Some("bloxide_core"),
@@ -754,14 +737,12 @@ mod tests {
             resolve_concrete_action("Self::s_entry", &actions, None, "TestEvent", None, false);
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
-        // Should be a no-op: |_ctx| {}
-        assert!(tokens.contains("_ctx"));
-        // Should NOT contain a function call
-        assert!(!tokens.contains("s_entry"));
+        // Should call the declared function: |ctx| { ::bloxide_core::s_entry(); }
+        assert!(tokens.contains(":: bloxide_core :: s_entry ()"));
     }
 
     #[test]
-    fn test_noop_transition_action() {
+    fn test_empty_fields_transition_action_calls_declared_fn() {
         let actions = vec![make_action(
             "s_i",
             Some("bloxide_core"),
@@ -772,12 +753,10 @@ mod tests {
         let result = resolve_concrete_action("Self::s_i", &actions, None, "TestEvent", None, true);
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
-        // Should be a no-op transition: |_ctx, _ev| { ActionResult::Ok }
-        assert!(tokens.contains("_ctx"));
+        // Should call the declared function, normalized via ActionResult::from:
+        // |ctx, _ev| { ActionResult::from(::bloxide_core::s_i()) }
         assert!(tokens.contains("_ev"));
-        assert!(tokens.contains("ActionResult"));
-        // Should NOT contain a function call
-        assert!(!tokens.contains("s_i"));
+        assert!(tokens.contains("ActionResult :: from (:: bloxide_core :: s_i ())"));
     }
 
     // ── Integration test: ping blox ──────────────────────────────────────────
@@ -910,6 +889,49 @@ mod tests {
         assert!(
             generated.contains("ping_state_handler_table"),
             "should have handler table macro invocation"
+        );
+    }
+
+    // ── Integration test: bhsm-tst blox (shared no-op context crate) ─────────
+
+    #[test]
+    fn test_generate_concrete_spec_skeleton_bhsm_tst() {
+        // Parse the actual bhsm-tst blox.toml — every declared action routes to
+        // the shared blox-ctx-noop crate (fn_name = "noop").
+        let bhsm_toml = include_str!("../../../bloxes/bhsm-tst/blox.toml");
+        let blox_config: BloxConfig = toml::from_str(bhsm_toml).expect("parse bhsm-tst blox.toml");
+
+        let generated = generate_concrete_spec_skeleton(
+            &blox_config,
+            None,
+            "bhsm-tst-blox",
+            "::bhsm_tst_blox",
+            None,
+        )
+        .expect("generate");
+
+        // ── Verify the generated code is valid Rust (parses with syn) ────────
+        syn::parse_str::<syn::File>(&generated).expect("generated code should parse as valid Rust");
+
+        // ── Verify every action calls blox_ctx_noop::noop() ──────────────────
+        // 14 entry/exit slots + 3 transition actions (s_i, s11_a, s11_b).
+        assert_eq!(
+            generated.matches("::blox_ctx_noop::noop()").count(),
+            17,
+            "all 17 actions should call blox_ctx_noop::noop()\n{generated}"
+        );
+        // All 17 declare returns = "ActionResult", so the transition closures
+        // emit the call bare — no ActionResult::from(...) normalization wrapper
+        // (which clippy would flag for a same-type conversion).
+        assert!(
+            !generated.contains("ActionResult::from("),
+            "returns = \"ActionResult\" skips the normalization wrapper\n{generated}"
+        );
+
+        // ── Verify NO stub closures remain for Self:: actions ─────────────────
+        assert!(
+            !generated.contains("_stub"),
+            "no stub closures should remain in concrete spec"
         );
     }
 }

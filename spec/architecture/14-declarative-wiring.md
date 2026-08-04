@@ -182,8 +182,8 @@ async fn main() {
 
     // Wire supervisor
     let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-    bloxide_tokio::spawn_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
-    bloxide_tokio::spawn_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
+    bloxide_tokio::spawn_static_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
+    bloxide_tokio::spawn_static_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
     // ... finish group, construct SupervisorCtx, start supervisor
 }
 ```
@@ -237,7 +237,7 @@ added **after** the machines exist. So `ChildGroupBuilder` is used in two phases
 
 - **Phase 1** (before context construction): create the builder, extract
   `control_ref()` / `notify_ref()`, register them in the symbol table.
-- **Phase 2** (after machine construction): add children via `spawn_child!`, call
+- **Phase 2** (after machine construction): add children via `spawn_static_child!`, call
   `finish()`, construct `SupervisorCtx`.
 
 The generated `main` body is ordered accordingly:
@@ -248,7 +248,7 @@ The generated `main` body is ordered accordingly:
 #(#supervisor_setup_stmts)*     // 2. Builder + control_ref + notify_ref (symbol table)
 #(#ctx_stmts)*                  // 3. PoolCtx injects supervisor refs from symbol table
 #(#machine_stmts)*              // 4. Machines constructed
-#(#supervisor_finish_stmts)*    // 5. spawn_child! + finish() + SupervisorCtx
+#(#supervisor_finish_stmts)*    // 5. spawn_static_child! + finish() + SupervisorCtx
 #(#bootstrap_send_stmts)*       // 6. Bootstrap messages
 #(#supervisor_run_stmts)*       // 7. Spawn supervisor + actor tasks
 ```
@@ -259,7 +259,7 @@ extracts refs; phase 2 adds children and consumes the builder.
 ### Wiring for different runtimes
 
 The wiring manifest is runtime-agnostic. The codegen produces runtime-specific binaries:
-- **Tokio** — uses `bloxide_tokio::channels!`, `tokio::spawn`, `bloxide_tokio::spawn_child!`
+- **Tokio** — uses `bloxide_tokio::channels!`, `tokio::spawn`, `bloxide_tokio::spawn_static_child!`
 - **Embassy** — uses `bloxide_embassy::channels!`, `embassy::spawn`
 
 The runtime is selected via a `runtime` field in the wiring manifest:
@@ -296,7 +296,7 @@ cfg'd out together with the field).
 The supervisor already handles child registration and lifecycle. The wiring manifest extends this:
 
 1. **Static children** — declared in `[[supervision]]` with policies. The supervisor starts them on `Start`.
-2. **Dynamic children** — spawned at runtime via the injected spawn function (`source = "factory"`). The supervisor registers them dynamically via `ChildCtrl::RegisterDynamicChild` (from `bloxide-child-management::control`, sent by the `spawn_child` helper in `bloxide-spawn`).
+2. **Dynamic children** — spawned at runtime via the injected spawn function (`source = "factory"`). The supervisor registers them dynamically via `ChildCtrl::RegisterDynamicChild` (from `bloxide-child-management::control`, sent by the `spawn_dynamic_child` helper in `bloxide-spawn`).
 
 ### Visual Editor Integration
 

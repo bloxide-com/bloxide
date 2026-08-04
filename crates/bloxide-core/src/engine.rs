@@ -214,7 +214,6 @@ impl<S: MachineSpec> StateMachine<S> {
             S::error_state().is_none_or(|s| s.is_leaf()),
             "error_state() must return a leaf state when it returns Some"
         );
-        trace_init_entry!();
         Self {
             current: MachineState::Init,
             ctx,

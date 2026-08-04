@@ -762,8 +762,9 @@ Codegen emits for each blox event enum (e.g. `PingEvent`):
 - A `Lifecycle(LifecycleCommand)` variant with tag `LIFECYCLE_TAG` (254)
 - Constructors `start()` / `reset()` / `stop()` / `ping()`
 - A `LifecycleEvent` impl so `dispatch()` can intercept commands at VirtualRoot
-- A `_Phantom` marker variant when the event type has unused generic parameters;
-  its `event_tag` is `WILDCARD_TAG` (255), never a domain tag
+- A `#[doc(hidden)]` `_Phantom` marker variant when the event type has unused
+  generic parameters; its `event_tag` is `WILDCARD_TAG` (255), never a domain
+  tag
 
 Domain variants are tagged 0..=253 by declaration order; `WILDCARD_TAG` (255) is
 the rule-level sentinel.

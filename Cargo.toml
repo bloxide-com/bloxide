@@ -19,6 +19,7 @@ members = [
     "runtimes/bloxide-embassy",
     "runtimes/bloxide-tokio",
     "runtimes/bloxide-test-runtime",
+    "crates/context/blox-ctx-noop",
     "crates/context/blox-ctx-ping-pong",
     "crates/context/blox-ctx-pool-ref",
     "crates/context/blox-ctx-rounds",
@@ -84,6 +85,7 @@ bloxide-timer = { path = "crates/bloxide-timer" }
 bloxide-embassy = { path = "runtimes/bloxide-embassy" }
 bloxide-tokio = { path = "runtimes/bloxide-tokio" }
 bloxide-test-runtime = { path = "runtimes/bloxide-test-runtime" }
+blox-ctx-noop = { path = "crates/context/blox-ctx-noop" }
 blox-ctx-ping-pong = { path = "crates/context/blox-ctx-ping-pong" }
 blox-ctx-pool-ref = { path = "crates/context/blox-ctx-pool-ref" }
 blox-ctx-rounds = { path = "crates/context/blox-ctx-rounds" }

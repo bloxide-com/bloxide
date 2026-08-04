@@ -83,6 +83,7 @@ None — Counter is a sink actor.
 - [x] `CounterMsg::Tick` in `Ready` with `count < DONE_AT_COUNT` stays in `Ready`
 - [x] `CounterMsg::Tick` in `Ready` with `count >= DONE_AT_COUNT` triggers `Decision::Done` (clean self-termination: exit chain + on_init_entry, then the task ends)
 - [x] `dispatch(CounterEvent::Lifecycle(LifecycleCommand::Reset))` from any state goes directly to `initial_state()` (Ready); `on_init_entry` does NOT fire and `Ready` has no `on_entry`, so `count` is **not** reset
+- [x] Unhandled events are dropped — `CounterMsg` has only `Tick`, which `Ready` handles, so the only state with no matching rule is Init; a domain event in Init is silently dropped by the engine's Init catch-all (no transition, `count` unchanged)
 
 ## Acceptance Criteria → Test Mapping
 
@@ -92,6 +93,7 @@ None — Counter is a sink actor.
 | Tick stays in Ready when count < threshold | `test_tick_in_ready_stays()` |
 | Tick triggers Decision::Done at threshold | `test_tick_reaches_done()` |
 | Reset returns to Ready without resetting count | `test_reset_returns_to_ready_without_resetting_count()` |
+| Unhandled event in Init is dropped (no transition, count unchanged) | `test_unhandled_event_in_init_is_dropped()` |
 
 `test_increment_count_function()` additionally covers the `increment_count` action function directly (no codegen needed).
 

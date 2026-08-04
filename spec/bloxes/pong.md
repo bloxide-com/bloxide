@@ -91,7 +91,7 @@ they verify topology and lifecycle semantics, not action side effects.
 - [x] Multiple pings in sequence all stay in `Ready`
 - [x] `Ready::on_entry` does NOT fire on `PingPongMsg::Ping` (it is `Stay`, not a self-transition)
 - [x] `dispatch(PongEvent::Lifecycle(LifecycleCommand::Reset))` goes directly to `initial_state()` (Ready); `on_init_entry` does NOT fire
-- [ ] Unknown events bubble to root (no root rules) and are silently dropped — not covered by a unit test yet
+- [x] Unknown events bubble to root (no root rules) and are silently dropped
 - [x] Pong has no round counter — it is stateless with respect to round tracking
 - [x] Pong has no `Decision::Stop` condition — it responds indefinitely until the supervisor stops it
 
@@ -114,6 +114,7 @@ All tests live in `crates/bloxes/pong/src/tests.rs` and use `TestRuntime`:
 | Ping in Ready → Stay | `ping_in_ready_stays_in_ready` |
 | Repeated pings stay in Ready | `multiple_pings_stay_in_ready` |
 | Reset → initial_state() directly | `terminate_resets_to_initial_state` |
+| Unknown event bubbles to root (no root rules), silently dropped | `unhandled_event_bubbles_to_root_and_is_dropped` |
 
 ## blox.toml
 

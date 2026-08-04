@@ -54,8 +54,8 @@ bloxide_tokio::root_task!(supervisor_task, SupervisorSpec<TokioRuntime>);
 // Supervise both actors
 let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
 let sup_notify_ref = group.notify_ref();
-bloxide_tokio::spawn_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
-bloxide_tokio::spawn_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
+bloxide_tokio::spawn_static_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
+bloxide_tokio::spawn_static_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
 
 // Build and start the supervisor
 let (children, sup_notify_rx, sup_control_rx) = group.finish();
@@ -86,7 +86,7 @@ bloxide/
 │   ├── bloxide-child-management/ # reusable child tracking: ChildGroup, ChildEntry, ChildPhase,
 │   │                         #   ChildCtrl/RegisterChild/RegisterDynamicChild, ChildPolicy, GroupShutdown, action functions
 │   ├── bloxide-supervisor/ # supervisor blox (reference consumer): blox.toml + generated + concrete_spec.rs + tests
-│   ├── bloxide-spawn/     # spawn capability: SpawnCap, SpawnFn, SpawnOutput, ChildCtrlRegistrar, spawn_child
+│   ├── bloxide-spawn/     # spawn capability: SpawnCap, SpawnFn, SpawnOutput, ChildCtrlRegistrar, spawn_dynamic_child
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer / cancel_timer_by_id
 │   ├── messages/          # shared message crates (ping-pong, pool, counter, bhsm-tst)
 │   ├── context/           # composable context crates (blox-ctx-ping-pong, -pool-ref, -rounds, -ticks)
@@ -174,14 +174,14 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `cancel_timer_by_id`, `VirtualClock` |
 | `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase`, `ChildGroupBuilder`, `ChildPolicy`, `GroupShutdown`, `ChildCtrl`/`RegisterChild`/`RegisterDynamicChild`, action functions |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | Supervisor blox (reference consumer): `SupervisorSpec`, `SupervisorCtx`; `blox.toml` + generated + `concrete_spec.rs` test fixture + tests only |
-| `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildCtrlRegistrar`, `spawn_child` |
+| `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildCtrlRegistrar`, `spawn_dynamic_child` |
 | `bloxide-peers` | `crates/bloxide-peers` | ✅ | `PeerCtrl`, `AddPeer`, `RemovePeer`, `introduce_peers`, `broadcast_to_peers`, `apply_peer_control` |
 | `blox-ctx-ping-pong` | `crates/context/blox-ctx-ping-pong` | ✅ | `send_ping`, `send_pong`, `send_initial_ping`, `schedule_resume` action functions |
 | `blox-ctx-pool-ref` | `crates/context/blox-ctx-pool-ref` | ✅ | `SpawnRequest`/`SpawnedWorker`, `notify_pool_done`, `broadcast_result` action functions |
 | `blox-ctx-rounds` | `crates/context/blox-ctx-rounds` | ✅ | `increment_round` action function |
 | `blox-ctx-ticks` | `crates/context/blox-ctx-ticks` | ✅ | `increment_count` action function |
-| `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, task macros |
-| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_child!`, `spawn_timer!`, `SpawnCap`, `KillCapability`, task macros |
+| `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `spawn_static_child!`, `spawn_timer!`, task macros |
+| `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_static_child!`, `spawn_timer!`, `SpawnCap`, `KillCapability`, task macros |
 | `bloxide-test-runtime` | `runtimes/bloxide-test-runtime` | — | `TestRuntime`: executor-free unit testing; implements `DynamicChannelCap` + `SpawnCap` (kill is a documented no-op) |
 
 ¹ Proc-macro crates compile for the host; they have no `no_std` impact on the target binary.

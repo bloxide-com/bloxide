@@ -160,17 +160,18 @@ macro_rules! spawn_timer {
     }};
 }
 
-// ── spawn_child! macro ────────────────────────────────────────────────────────
+// ── spawn_static_child! macro ─────────────────────────────────────────────────
 
-/// Spawn a supervised child actor task using Tokio.
+/// Spawn a supervised static child actor task using Tokio.
 ///
 /// Creates the per-child lifecycle channel, registers the child in the
-/// `ChildGroupBuilder`, and spawns the task with lifecycle arguments injected.
+/// `ChildGroupBuilder` with its `ChildPolicy`, and spawns the task with
+/// lifecycle arguments injected.
 ///
 /// Unlike the Embassy version, there is no `spawner` parameter — Tokio tasks
 /// are spawned through the runtime's `SpawnCap` implementation.
 #[macro_export]
-macro_rules! spawn_child {
+macro_rules! spawn_static_child {
     ($builder:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
         let (lc_rx, sup_notify) = $builder.add_child($id, $policy);
         let _handle = <$crate::TokioRuntime as $crate::SpawnCap>::spawn($task_fn(

@@ -38,7 +38,7 @@ A **platform feature crate** provides some subset of:
    generated transition wrapper returns the result verbatim).
 4. **Tier 2 capability trait** — where runtime support is required
    (`TimerService`, `SpawnCap`, `KillCapability`).
-5. **Wiring helpers** — e.g. `ChildGroupBuilder`, `spawn_child`.
+5. **Wiring helpers** — e.g. `ChildGroupBuilder`, `spawn_dynamic_child`.
 
 A **blox** consumes features only through:
 
@@ -82,7 +82,7 @@ No feature logic and no feature message sets in a blox crate.
 | `bloxide-core` | `LifecycleCommand`, `ChildLifecycleEvent`, `AbortCommand` | — | run loop, `report_outcome` | `StaticChannelCap`, `DynamicChannelCap`, `KillCapability` |
 | `bloxide-timer` | `TimerCommand` | `timer_ref`, `current_timer` | `set_timer`, `cancel_timer`, `cancel_timer_by_id` (in `bloxide_timer::actions`, re-exported at the crate root and prelude) | `TimerService` |
 | `bloxide-peers` | `PeerCtrl<M, R>` | `peers` | `introduce_peers`, `apply_peer_control`, `broadcast_to_peers` (all domain-agnostic — no pool-messages dependency) | — |
-| `bloxide-spawn` | — (exception) | `spawn_fn` (ctor) | `spawn_child`, `ChildRegistrar` / `ChildCtrlRegistrar` | `SpawnCap` |
+| `bloxide-spawn` | — (exception) | `spawn_fn` (ctor) | `spawn_dynamic_child`, `ChildRegistrar` / `ChildCtrlRegistrar` | `SpawnCap` |
 | `bloxide-child-management` | `ChildCtrl<R>` (`RegisterChild`, `RegisterDynamicChild`, `WatchdogTick`) | `children`, `child_notify`, `pending` | supervision action functions (moved from `bloxide-supervisor`) | — |
 
 Reference consumer: `bloxide-supervisor` — `blox.toml`, generated spec, tests.

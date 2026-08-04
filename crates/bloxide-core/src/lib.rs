@@ -1,9 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
 #![no_std]
 
-#[cfg(feature = "alloc")]
-extern crate alloc;
-
 #[cfg(feature = "std")]
 extern crate std;
 
@@ -26,7 +23,9 @@ pub mod transition;
 #[cfg(test)]
 mod tests;
 
-pub use capability::{BloxRuntime, DynamicChannelCap, KillCapability, NoKill, StaticChannelCap};
+pub use capability::{
+    BloxRuntime, DynamicChannelCap, GroupChannelCap, KillCapability, NoKill, StaticChannelCap,
+};
 pub use engine::{DispatchOutcome, MachineState, StateMachine};
 pub use event_tag::{EventTag, LifecycleEvent, LIFECYCLE_TAG, WILDCARD_TAG};
 pub use lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand};

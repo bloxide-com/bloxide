@@ -454,7 +454,7 @@ pub fn kill_count() -> usize {
 
 // ── Spawn helper tests ─────────────────────────────────────────────────────
 //
-// `spawn_child` (bloxide-spawn) tests live here rather than in bloxide-spawn:
+// `spawn_dynamic_child` (bloxide-spawn) tests live here rather than in bloxide-spawn:
 // a bloxide-spawn dev-dependency on this crate would be a dev-dependency
 // cycle (two non-unifying `bloxide-spawn` instances in the graph).
 

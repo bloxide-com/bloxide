@@ -24,7 +24,7 @@ Supervision is split across a core engine layer, a platform child-management lay
 | Action fns (`start_children`, `stop_all_children`, `handle_done_or_failed`, `record_*`, `deregister_done`, `register_child`, `handle_register_dynamic_child`, `handle_watchdog_tick`) | `bloxide-child-management::actions` |
 | `ChildCtrl`, `RegisterChild`, `RegisterDynamicChild` | `bloxide-child-management::control` |
 | `ChildGroupBuilder<R, Ctrl>` (group channels via `GroupChannelCap`) | `bloxide-child-management::builder` |
-| `SpawnCap`, `Kill`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `ChildCtrlRegistrar`, `spawn_child` | `bloxide-spawn` |
+| `SpawnCap`, `Kill`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `ChildCtrlRegistrar`, `spawn_dynamic_child` | `bloxide-spawn` |
 | Supervisor topology: `blox.toml`, generated code, `concrete_spec.rs` (test fixture), tests | `bloxide-supervisor` |
 
 `bloxide-supervisor` owns **only** the supervisor state machine: its `blox.toml` topology, the generated `SupervisorSpec`/`SupervisorCtx`/`SupervisorEvent`/`SupervisorState`, an in-crate `concrete_spec.rs` used by its tests, and the tests themselves. All policy/shutdown logic lives in `bloxide-child-management` (a reusable platform primitive — any managing blox can use `ChildGroup`, not just the supervisor), and the spawn-registration bridge lives in `bloxide-spawn`.
@@ -233,7 +233,7 @@ The supervisor handles all seven `ChildLifecycleEvent` variants, plus the synthe
 | **Started** | `Started { child_id }` | Child exited Init or was Reset — now operational | `record_started` (clears `ResetPending`, does not reset the restart counter) |
 | **Stopped** | `Stopped { child_id }` | Child returned to Init via `Decision::Stop` or `LifecycleCommand::Stop` (suspended) | `handle_done_or_failed` (Running) / `record_stopped` (ShuttingDown) |
 | **Done** | `Done { child_id }` | Child self-terminated cleanly via `Decision::Done` — task ended | `deregister_done` (no restart policy; unknown child ignored) |
-| **Failed** | `Failed { child_id }` | Child entered an error state (`is_error()` returned `true`), returned `Decision::Fail`, **or its run loop exited without a lifecycle decision** (stream-closed / all-streams-close) | `handle_done_or_failed` (Running) / `record_failed` (ShuttingDown) |
+| **Failed** | `Failed { child_id }` | Child entered an error state (`is_error()` returned `true`), returned `Decision::Fail`, **or all its domain streams closed while operational** (all-streams-close, issue #134 — the actor became unreachable while the supervisor lives; all-streams-close in Init and lifecycle/abort stream closure are the expected supervisor-teardown cascade and stay silent) | `handle_done_or_failed` (Running) / `record_failed` (ShuttingDown) |
 | **Aborted** | `Aborted { child_id }` | Child's task self-terminated via `AbortCommand` | `record_aborted` — participates in group shutdown |
 | **Killed** | `Killed { child_id }` | Child was killed via the ripcord (synthesized by `ChildGroup`, not the child's run loop) | `record_killed` — participates in group shutdown |
 | **Alive** | `Alive { child_id }` | Child responded to `Ping` from an operational, non-error state | `record_alive` (clears misses, heals lost `Started`, resets restart counter) |
@@ -686,7 +686,7 @@ Defined in `bloxide-core::lifecycle`. The runtime generates these automatically 
 ```rust
 pub enum ChildLifecycleEvent {
     Started { child_id: ActorId },  // child exited Init or was Reset (now operational)
-    Failed  { child_id: ActorId },  // child entered an error state / Decision::Fail, OR its run loop exited without a lifecycle decision (stream-closed)
+    Failed  { child_id: ActorId },  // child entered an error state / Decision::Fail, OR all its domain streams closed while operational (all-streams-close in Init and lifecycle/abort closure stay silent)
     Stopped { child_id: ActorId },  // child was Stopped (Decision::Stop or LifecycleCommand::Stop), now in Init (suspended)
     Done    { child_id: ActorId },  // child self-terminated cleanly via Decision::Done (task ended — deregister, no restart)
     Aborted { child_id: ActorId },  // child was Aborted, task has ended (cooperative)
@@ -783,12 +783,12 @@ pub enum ChildCtrl<R: BloxRuntime> {
 
 `Child` variants arrive from the runtime's supervised run loop. `Control` variants come from supervisor wiring/control-plane senders and enable:
 - static registration of supervised children (`RegisterChild`)
-- dynamic registration of supervised children with abort/kill capability (`RegisterDynamicChild` — carries the `abort_ref` and `kill_handle` needed by `ChildPolicy::Abort` and `ChildPolicy::Kill`; sent by the `spawn_child` helper after a dynamic spawn)
+- dynamic registration of supervised children with abort/kill capability (`RegisterDynamicChild` — carries the `abort_ref` and `kill_handle` needed by `ChildPolicy::Abort` and `ChildPolicy::Kill`; sent by the `spawn_dynamic_child` helper after a dynamic spawn)
 - periodic health checks (`WatchdogTick`)
 
 ## Dynamic Spawning and Registration
 
-Dynamic children are created by the **requesting** blox (e.g. a pool), not by the supervisor. The `spawn_child` helper in `bloxide-spawn` ties the pieces together:
+Dynamic children are created by the **requesting** blox (e.g. a pool), not by the supervisor. The `spawn_dynamic_child` helper in `bloxide-spawn` ties the pieces together:
 
 ```rust
 // In bloxide-spawn
@@ -802,7 +802,7 @@ pub struct SpawnOutput<R: BloxRuntime> {
     pub policy: ChildPolicy,
 }
 
-pub fn spawn_child<R, Req, C>(
+pub fn spawn_dynamic_child<R, Req, C>(
     spawn_fn: SpawnFn<R, Req>,
     req: Req,
     control_ref: &ActorRef<C::RegisterMsg, R>,
@@ -811,13 +811,13 @@ pub fn spawn_child<R, Req, C>(
 ) -> Result<(), R::TrySendError>;
 ```
 
-`spawn_child` calls the application-provided spawn function (which allocates channels, builds the child, spawns the task with `RunConfig::supervised_with_abort`, and converts the `TaskHandle` into a cloneable `KillHandle` via `SpawnCap::kill_handle`), then wraps the returned `SpawnOutput` into the managing blox's registration message via a `ChildRegistrar` and sends it on the control mailbox. `ChildCtrlRegistrar` is the registrar for the standard control plane — it wraps `SpawnOutput` into `ChildCtrl::RegisterDynamicChild`. **If the registration send fails, `spawn_child` kills the freshly spawned task via its kill handle before returning the error** — a live task no supervisor knows about would be an unmanaged orphan. The supervisor's `handle_register_dynamic_child` action then calls `ChildGroup::try_add_dynamic` (warn-and-drop on `RegistrationError`) and starts the child.
+`spawn_dynamic_child` calls the application-provided spawn function (which allocates channels, builds the child, spawns the task with `RunConfig::supervised_with_abort`, and converts the `TaskHandle` into a cloneable `KillHandle` via `SpawnCap::kill_handle`), then wraps the returned `SpawnOutput` into the managing blox's registration message via a `ChildRegistrar` and sends it on the control mailbox. `ChildCtrlRegistrar` is the registrar for the standard control plane — it wraps `SpawnOutput` into `ChildCtrl::RegisterDynamicChild`. **If the registration send fails, `spawn_dynamic_child` kills the freshly spawned task via its kill handle before returning the error** — a live task no supervisor knows about would be an unmanaged orphan. The supervisor's `handle_register_dynamic_child` action then calls `ChildGroup::try_add_dynamic` (warn-and-drop on `RegistrationError`) and starts the child.
 
 See `12-factory-injection-and-supervision.md` for the full factory-injection walkthrough.
 
 ## Wiring a Supervised Group
 
-The wiring layer uses `ChildGroupBuilder` and the runtime's `spawn_child!` macro — no custom blox is needed. This example mirrors the generated `apps/tokio-demo/src/main.rs`:
+The wiring layer uses `ChildGroupBuilder` and the runtime's `spawn_static_child!` macro — no custom blox is needed. This example mirrors the generated `apps/tokio-demo/src/main.rs`:
 
 ```rust
 use bloxide_tokio::prelude::*;  // ChildGroupBuilder, GroupShutdown, ChildPolicy, ...
@@ -844,13 +844,13 @@ let pong_ctx = PongCtx::new(pong_id, ping_ref.clone());
 let ping_machine = ::bloxide_core::StateMachine::new(ping_ctx);
 let pong_machine = ::bloxide_core::StateMachine::new(pong_ctx);
 
-// spawn_child! registers each child with the group and spawns its task
-::bloxide_tokio::spawn_child!(
+// spawn_static_child! registers each child with the group and spawns its task
+::bloxide_tokio::spawn_static_child!(
     group,
     ping_task(ping_machine, ping_mbox, ping_id),
     ChildPolicy::Stop
 );
-::bloxide_tokio::spawn_child!(
+::bloxide_tokio::spawn_static_child!(
     group,
     pong_task(pong_machine, pong_mbox, pong_id),
     ChildPolicy::Stop
@@ -879,7 +879,7 @@ Important details:
 
 - The spec type is the **system-generated concrete spec** (`crate::generated::bloxide_supervisor_spec_skeleton::SupervisorSpec`) — the system-level codegen emits it with real action closures wired to `bloxide-child-management::actions`. Apps never use the blox-crate-level stub spec.
 - `SupervisorCtx::new` takes three args: `(sup_id, children, sup_notify_ref)`.
-- Embassy wiring is identical in shape (`apps/embassy-demo/src/main.rs`): the same `ChildGroupBuilder::new(...)` call resolves to the shared `bloxide_child_management::ChildGroupBuilder` (re-exported by `bloxide-embassy`), which reaches Embassy channels via `GroupChannelCap`; `spawn_child!` additionally takes the Embassy `spawner`.
+- Embassy wiring is identical in shape (`apps/embassy-demo/src/main.rs`): the same `ChildGroupBuilder::new(...)` call resolves to the shared `bloxide_child_management::ChildGroupBuilder` (re-exported by `bloxide-embassy`), which reaches Embassy channels via `GroupChannelCap`; `spawn_static_child!` additionally takes the Embassy `spawner`.
 
 ### One `ChildGroupBuilder` Across Runtimes
 
@@ -949,8 +949,8 @@ Supervision-specific invariants:
 - Per-child `ChildPolicy` (four variants: `Reset { max }`, `Stop`, `Abort`, `Kill`) gives each child its own lifecycle policy. `Reset { max }` caps **consecutive** restarts (counter resets only on an `Alive` after `Started`; without watchdog ticks it degrades to a lifetime cap). `Abort`/`Kill` require dynamically spawned children with abort/kill handles; `Kill` additionally requires `KillCapability::CAN_KILL`.
 - `GroupShutdown` controls when the supervisor enters shutdown, not which children are affected. Every terminal signal counts toward it — including externally-originated `Aborted`/`Killed` — and it is only evaluated on real state changes (unknown-child events never trigger it).
 - `ChildPhase` tracks each child's state: `Init`, `Running`, `ResetPending` (Reset delivered, awaiting `Started`), `Aborting` (AbortCommand delivered, awaiting `Aborted`), `Stopped` (task alive — self-stopped, failed-parked, restart-capped, or Stop-policy; terminal for the epoch), `Aborted`/`Killed`/`Gone` (task gone — mailboxes are dead, so lifecycle commands must not be sent). `is_terminal()` (`Stopped`/`Aborted`/`Killed`/`Gone`) drives group-shutdown evaluation; `is_task_gone()` (`Aborted`/`Killed`/`Gone`) excludes children from `stop_all`. Health checks monitor `Init`/`Running`/`ResetPending` children.
-- `Ping` is answered with `Alive` only from an operational, non-error state (silent in Init and parked error states) — a lost `Start` or lost `Failed` report goes rogue and is healed by the child policy. Redundant `Start` is acknowledged with `Started` (mirroring `Stop`-in-Init). `Started(error)` is normalized to `Failed` at the source. A run loop that exits without a lifecycle decision reports `Failed` (never exits silently).
-- `LifecycleCommand`, `ChildLifecycleEvent`, and `AbortCommand` are defined in `bloxide-core::lifecycle`. `ChildPolicy`, `ChildAction`, `GroupShutdown`, `ChildGroup`, and the supervision action functions are defined in `bloxide-child-management`. `ChildCtrl`, `RegisterChild`, and `RegisterDynamicChild` are defined in `bloxide-child-management::control`; `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildCtrlRegistrar`, and `spawn_child` are defined in `bloxide-spawn` (spec 18: Platform Feature Pattern). `spawn_child` kills the orphaned task when the registration send fails.
+- `Ping` is answered with `Alive` only from an operational, non-error state (silent in Init and parked error states) — a lost `Start` or lost `Failed` report goes rogue and is healed by the child policy. Redundant `Start` is acknowledged with `Started` (mirroring `Stop`-in-Init). `Started(error)` is normalized to `Failed` at the source. A run loop whose domain streams ALL close while operational reports `Failed` before exiting; all-streams-close in Init and lifecycle/abort stream closure are the expected supervisor-teardown cascade and exit silently.
+- `LifecycleCommand`, `ChildLifecycleEvent`, and `AbortCommand` are defined in `bloxide-core::lifecycle`. `ChildPolicy`, `ChildAction`, `GroupShutdown`, `ChildGroup`, and the supervision action functions are defined in `bloxide-child-management`. `ChildCtrl`, `RegisterChild`, and `RegisterDynamicChild` are defined in `bloxide-child-management::control`; `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildCtrlRegistrar`, and `spawn_dynamic_child` are defined in `bloxide-spawn` (spec 18: Platform Feature Pattern). `spawn_dynamic_child` kills the orphaned task when the registration send fails.
 - No custom supervisor implementation is needed — `SupervisorSpec<R>` is a generic, reusable `MachineSpec`.
 
 ## Related Docs

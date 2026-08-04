@@ -220,7 +220,7 @@ behavior is covered by the runnable demos (`apps/tokio-demo`).
 - [x] `is_error(&PingState::Error)` returns `true`; other states return `false`
 - [x] With stub actions (all `Ok`), a full peer channel does NOT trigger the `Error` guard (`results.any_failed()` is false)
 - [x] `dispatch(PingEvent::Lifecycle(LifecycleCommand::Reset))` from Init goes directly to `initial_state()` (Active); `on_init_entry` does NOT fire
-- [ ] Unknown events bubble to root (no root rules) and are silently dropped — not covered by a unit test yet
+- [x] Unknown events bubble to root (no root rules) and are silently dropped
 
 ## Implementation Notes
 
@@ -249,6 +249,7 @@ All tests live in `crates/bloxes/ping/src/tests.rs` and use `TestRuntime`:
 | Reset → initial_state() directly | `terminate_resets_to_initial_state` |
 | Stray Pong in Paused absorbed by Operating | `stray_pong_in_paused_is_absorbed_by_operating` |
 | Stub actions never fail → no Error transition | `pong_with_stub_actions_does_not_transition_to_error` |
+| Unknown event bubbles to root (no root rules), silently dropped | `unhandled_event_bubbles_to_root_and_is_dropped` |
 
 The `Error` path has a two-level story: at the **blox level** the stub actions always return `ActionResult::Ok`, so `results.any_failed()` is never true and `Error` is unreachable in blox-crate tests (`pong_with_stub_actions_does_not_transition_to_error` pins this). At the **system level** the generated concrete closures return the action function's `ActionResult` verbatim, so a failed `send_ping` (e.g. a full peer channel) makes `results.any_failed()` true and the guard transitions to `Error`.
 

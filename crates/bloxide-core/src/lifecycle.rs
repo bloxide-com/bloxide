@@ -13,6 +13,13 @@ use crate::messaging::ActorId;
 pub enum AbortCommand {
     /// Abort the child cooperatively. No callbacks, no graceful shutdown.
     /// The child's task self-terminates on receipt.
+    ///
+    /// Abort mailboxes are per-child, so any Abort arriving on a child's abort
+    /// stream is definitionally addressed to that child — the run loop
+    /// `debug_assert`s that `child_id` matches the receiving actor, catching
+    /// supervisor misrouting in debug builds. The field mirrors the
+    /// `ChildLifecycleEvent` protocol shape and lets senders and tests assert
+    /// routing.
     Abort { child_id: ActorId },
 }
 

@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::utils::find_workspace_root_from;
+use crate::utils::{find_workspace_root_from, DISCOVERY_MAX_DEPTH};
 
 pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
     let root = workspace.unwrap_or_else(|| {
@@ -20,7 +20,7 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
 
     let mut count = 0;
     for entry in WalkDir::new(&root)
-        .max_depth(4)
+        .max_depth(DISCOVERY_MAX_DEPTH)
         .into_iter()
         .filter_entry(|e| e.file_name() != "target")
         .filter_map(|e| e.ok())
@@ -85,7 +85,7 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
     // step needed.
     let mut wire_count = 0;
     for entry in WalkDir::new(&root)
-        .max_depth(4)
+        .max_depth(DISCOVERY_MAX_DEPTH)
         .into_iter()
         .filter_entry(|e| e.file_name() != "target")
         .filter_map(|e| e.ok())

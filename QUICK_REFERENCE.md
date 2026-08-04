@@ -465,7 +465,7 @@ checkout of this repo, run the CLI as `cargo run -p cargo-blox -- blox ...` — 
 | `new-context <name>` | Scaffold a new context (action-functions) crate |
 | `new-impl <name> --blox <blox>` | Scaffold a new impl crate for a blox |
 | `new-binary <name> [--runtime tokio\|embassy]` | Scaffold a new wiring binary crate |
-| `new-all <name> [--runtime ...]` | Scaffold all layers (messages, context, blox, binary) |
+| `new-all <name> [--runtime ...]` | Scaffold all layers (messages, context, blox, impl, binary) |
 | `list-bloxes [--json]` | List all blox crates in the workspace |
 | `list-states <blox> [--json]` | List states in a blox |
 | `list-transitions <blox> [--json]` | List transitions in a blox |
@@ -480,11 +480,12 @@ checkout of this repo, run the CLI as `cargo run -p cargo-blox -- blox ...` — 
 | `remove-exit <blox> --state S` | Remove an exit hook |
 | `add-message <crate> <Variant> [field:ty ...]` | Add a message variant |
 | `remove-message <crate> <Variant>` | Remove a message variant |
-| `add-use <blox> --field F --field-type T --role ctor\|state` | Add a `[[context.uses]]` entry |
-| `remove-use <blox> --field F` | Remove a `[[context.uses]]` entry |
+| `add-use <blox> --field F --field-type T --role ctor\|state` | Add a single-field `[[context.uses]]` entry |
+| `add-use <blox> --sub-field N:T:ctor\|state ...` | Add a multi-field `[[context.uses]]` entry |
+| `remove-use <blox> --field F` | Remove a use entry (or a sub-field from a multi-field entry) |
 | `add-field <blox> --name N --ty T [--default D]` | Add a `[[context.fields]]` state field |
 | `remove-field <blox> --name N` | Remove a context field (fields, uses, or uses sub-fields) |
-| `add-action <blox> --name N [--field ...] [--crate-name C] [--fn-name F] ...` | Add a `[[context.actions]]` entry |
+| `add-action <blox> --name N [--field ...] [--crate-name C] [--fn-name F] [--returns ActionResult] ...` | Add a `[[context.actions]]` entry |
 | `remove-action <blox> --name N` | Remove a `[[context.actions]]` entry |
 | `add-actor <app> --name N --blox B [--impl-crate C] [--kind dynamic\|timer] [--feature F ...]` | Add an actor to a system.toml (no `kind` = static) |
 | `remove-actor <app> --name N` | Remove an actor (also cleans supervision refs) |

@@ -264,6 +264,121 @@ message_path = "pool_messages::WorkerMsg"
 }
 
 #[test]
+fn test_generate_event_generic_used_after_comma_no_phantom() {
+    // R appears as a type argument after a comma (PeerCtrl<WorkerMsg, R>) —
+    // the enum genuinely uses its generic, so no _Phantom marker is emitted.
+    let toml = r#"
+[actor]
+name = "Worker"
+
+[event]
+name = "WorkerEvent"
+generics = "<R: BloxRuntime>"
+derives = []
+
+[[event.mailboxes]]
+variant = "Ctrl"
+message = "PeerCtrl<WorkerMsg>"
+message_path = "bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "WorkerMsg"
+message_path = "pool_messages::WorkerMsg"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "worker-blox").expect("generate failed");
+
+    let events_file = files
+        .iter()
+        .find(|(n, _)| n == "events.rs")
+        .expect("events.rs missing");
+    let content = &events_file.1;
+
+    assert!(!content.contains("_Phantom"));
+}
+
+#[test]
+fn test_generate_event_generic_unused_emits_phantom() {
+    // R is declared but no mailbox payload mentions it — the phantom marker
+    // is required to consume the generic parameter.
+    let toml = r#"
+[actor]
+name = "Pool"
+
+[event]
+name = "PoolEvent"
+generics = "<R: BloxRuntime>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PoolMsg"
+message_path = "pool_messages::PoolMsg"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "pool-blox").expect("generate failed");
+
+    let events_file = files
+        .iter()
+        .find(|(n, _)| n == "events.rs")
+        .expect("events.rs missing");
+    let content = &events_file.1;
+
+    assert!(content.contains("#[doc(hidden)]"));
+    assert!(content.contains("_Phantom(::core::marker::PhantomData<R>)"));
+    assert!(content.contains("Self::_Phantom(..) => ::bloxide_core::event_tag::WILDCARD_TAG"));
+}
+
+#[test]
+fn test_generate_event_feature_pair_phantom_only_in_non_feature_variant() {
+    // Paired #[cfg] generation: the non-dynamic variant has only the
+    // non-generic Msg mailbox (phantom required); the dynamic variant's
+    // SpawnReply payload uses R in nested generics after commas
+    // (SpawnedWorker<PeerCtrl<WorkerMsg, R>, R>), so it gets no phantom.
+    let toml = r#"
+[actor]
+name = "Pool"
+
+[event]
+name = "PoolEvent"
+generics = "<R: BloxRuntime>"
+feature = "dynamic"
+feature_generics = "<R: BloxRuntime>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PoolMsg"
+message_path = "pool_messages::PoolMsg"
+
+[[event.mailboxes]]
+variant = "SpawnReply"
+message = "SpawnedWorker"
+message_path = "blox_ctx_pool_ref::SpawnedWorker<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>, R>"
+feature = "dynamic"
+"#;
+
+    let config: BloxConfig = toml::from_str(toml).expect("parse failed");
+    let files = generate_all(&config, "pool-blox").expect("generate failed");
+
+    let events_file = files
+        .iter()
+        .find(|(n, _)| n == "events.rs")
+        .expect("events.rs missing");
+    let content = &events_file.1;
+
+    // Exactly one variant carries the marker: the enum variant plus its
+    // EventTag wildcard arm.
+    assert_eq!(content.matches("_Phantom").count(), 2);
+    let non_feature = content
+        .split("#[cfg(feature = \"dynamic\")]")
+        .next()
+        .expect("non-feature section missing");
+    assert!(non_feature.contains("_Phantom(::core::marker::PhantomData<R>)"));
+}
+
+#[test]
 fn test_generate_counter_topology() {
     let toml = r#"
 [actor]

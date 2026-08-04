@@ -35,6 +35,7 @@ service crates        ← infrastructure capabilities (optional)
   bloxide-timer        ← set_timer, cancel_timer, cancel_timer_by_id (action functions)
 
 domain context crates ← domain-specific data composition (optional)
+  blox-ctx-noop        ← noop action function (shared no-op for demo/test bloxes)
   blox-ctx-ping-pong   ← send_ping, send_pong, send_initial_ping, schedule_resume
   blox-ctx-pool-ref    ← notify_pool_done, broadcast_result action functions;
                          SpawnRequest/SpawnedWorker spawn protocol types

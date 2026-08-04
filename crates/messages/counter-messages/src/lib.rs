@@ -2,9 +2,6 @@
 #![no_std]
 
 pub mod generated;
-
-pub mod prelude {
-    pub use crate::*;
-}
+pub mod prelude;
 
 pub use generated::*;

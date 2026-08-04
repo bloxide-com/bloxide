@@ -9,13 +9,23 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
-use crate::utils::{to_camel_case, update_workspace_cargo_toml, WorkspaceAddition};
+use crate::utils::{
+    to_camel_case, update_workspace_cargo_toml, validate_runtime, workspace_root_or_cwd,
+    WorkspaceAddition,
+};
 
 pub fn new_binary(name: &str, runtime: &str) -> Result<()> {
+    let root = workspace_root_or_cwd()?;
+    new_binary_in(&root, name, runtime)
+}
+
+pub(crate) fn new_binary_in(root: &Path, name: &str, runtime: &str) -> Result<()> {
+    validate_runtime(runtime)?;
+
     let name_snake = name.to_lowercase().replace("-", "_");
     let name_camel = to_camel_case(name);
 
-    let apps_dir = Path::new("apps");
+    let apps_dir = root.join("apps");
     let crate_dir = apps_dir.join(&name_snake);
     fs::create_dir_all(&crate_dir)?;
 
@@ -48,7 +58,7 @@ children = ["{name_snake}"]
     fs::write(&system_path, system_toml)?;
 
     let member_path = format!("apps/{}", name_snake);
-    update_workspace_cargo_toml(&[WorkspaceAddition::Member(member_path)])?;
+    update_workspace_cargo_toml(root, &[WorkspaceAddition::Member(member_path)])?;
 
     println!("Created: {}", system_path.display());
     Ok(())

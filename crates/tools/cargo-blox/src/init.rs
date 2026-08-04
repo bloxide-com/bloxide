@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 use crate::new_all::new_all;
-use crate::utils::find_workspace_root_from;
+use crate::utils::{find_workspace_root_from, validate_runtime};
 
 /// Bloxide workspace crates a fresh app workspace depends on (path deps).
 const BLOXIDE_CRATES: [(&str, &str); 8] = [
@@ -39,9 +39,7 @@ const RUNTIME_CRATES: [(&str, &str); 3] = [
 ];
 
 pub fn init(dir: &str, runtime: &str) -> Result<()> {
-    if runtime != "tokio" && runtime != "embassy" {
-        bail!("unknown runtime '{}' — expected tokio or embassy", runtime);
-    }
+    validate_runtime(runtime)?;
 
     let target = Path::new(dir);
     if target.exists() && target.read_dir()?.next().is_some() {

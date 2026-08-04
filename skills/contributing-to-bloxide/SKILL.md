@@ -25,7 +25,7 @@ bloxide-codegen     TOML-driven code generator library                        (h
 cargo-blox          CLI: see QUICK_REFERENCE.md → "cargo blox Command Reference"  (host-compiled)
 bloxide-log         Feature-gated logging macros                              (no_std)
 bloxide-timer       Timer service: commands, queue, timer action functions     (no_std)
-bloxide-spawn       Spawn capability: SpawnCap, ChildRegistrar, spawn_child   (no_std)
+bloxide-spawn       Spawn capability: SpawnCap, ChildRegistrar, spawn_dynamic_child   (no_std)
 bloxide-child-management  Child tracking: ChildGroup, ChildGroupBuilder, ChildPolicy, GroupShutdown  (no_std)
 bloxide-supervisor  Supervisor blox: SupervisorSpec, ChildCtrl, actions  (no_std)
 bloxide-peers       Peer introduction: PeerCtrl, AddPeer, RemovePeer, introduce_peers, apply_peer_control, broadcast_to_peers  (no_std)
@@ -178,7 +178,7 @@ macro_rules! spawn_timer {
 pub mod prelude {
     pub use bloxide_core::prelude::*;
     pub use bloxide_core::{BloxRuntime, StaticChannelCap, DynamicChannelCap};
-    pub use crate::{channels, spawn_child, actor_task_supervised, ...};
+    pub use crate::{channels, spawn_static_child, actor_task_supervised, ...};
 }
 ```
 

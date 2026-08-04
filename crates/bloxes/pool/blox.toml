@@ -32,6 +32,10 @@ generics = "<R: BloxRuntime>"
 feature = "dynamic"
 feature_generics = "<R: BloxRuntime>"
 on_init = "ctx.worker_refs.clear(); ctx.worker_ctrls.clear(); ctx.pending = 0;"
+# The dynamic variant also resets the dynamic spawn state — a restart after
+# Stop must not leak stale spawn bookkeeping into the next run. (These fields
+# only exist under feature = "dynamic", so they need a feature-gated on_init.)
+feature_on_init = "ctx.worker_refs.clear(); ctx.worker_ctrls.clear(); ctx.pending = 0; ctx.pending_task_id = 0; ctx.spawn_in_flight = false; ctx.spawn_queue.clear();"
 imports = [
     "pool_messages::{PoolMsg, WorkerMsg}",
     "bloxide_peers::PeerCtrl",

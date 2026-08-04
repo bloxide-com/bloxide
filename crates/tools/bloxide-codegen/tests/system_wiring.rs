@@ -353,8 +353,8 @@ fn wiring_emits_watchdog_driver_for_embassy() {
     assert_parses_rust("watchdog-embassy", &main_rs);
     assert!(
         main_rs.contains("#[embassy_executor::task]")
-        && main_rs.contains("async fn watchdog_task")
-        && main_rs.contains("embassy_time::Timer::after_millis"),
+            && main_rs.contains("async fn watchdog_task")
+            && main_rs.contains("embassy_time::Timer::after_millis"),
         "embassy watchdog driver must be a task using embassy_time::Timer, got:\n{}",
         main_rs
     );
@@ -372,8 +372,7 @@ fn wiring_emits_watchdog_driver_for_embassy() {
 
 #[test]
 fn wiring_rejects_zero_watchdog_interval() {
-    let manifest = tokio_demo_manifest()
-        + "\n  [supervision.watchdog]\n  interval_ms = 0\n";
+    let manifest = tokio_demo_manifest() + "\n  [supervision.watchdog]\n  interval_ms = 0\n";
     let err = wiring_from_manifest(&manifest, "watchdog-zero")
         .expect_err("watchdog interval_ms = 0 must be a hard error");
     let msg = format!("{:#}", err);
@@ -386,8 +385,8 @@ fn wiring_rejects_zero_watchdog_interval() {
 
 #[test]
 fn wiring_rejects_stop_false() {
-    let manifest = tokio_demo_manifest()
-        .replace("ping = { stop = true }", "ping = { stop = false }");
+    let manifest =
+        tokio_demo_manifest().replace("ping = { stop = true }", "ping = { stop = false }");
     let err = wiring_from_manifest(&manifest, "stop-false")
         .expect_err("stop = false must be a hard error");
     let msg = format!("{:#}", err);

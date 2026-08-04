@@ -3,8 +3,9 @@
 
 use clap_cargo::Features;
 use notify::{RecursiveMode, Watcher};
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
+
+use crate::utils::find_workspace_root_from;
 
 pub fn watch(cargo: Features) -> anyhow::Result<()> {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -12,9 +13,12 @@ pub fn watch(cargo: Features) -> anyhow::Result<()> {
         let _ = tx.send(res);
     })?;
 
-    let root = std::env::var("CARGO_MANIFEST_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("."));
+    // Watch the user's project: the workspace root found by walking up from
+    // the invocation directory. CARGO_MANIFEST_DIR is not usable here — it
+    // points at the cargo-blox crate when the binary runs under `cargo run`,
+    // not at the project being watched.
+    let cwd = std::env::current_dir()?;
+    let root = find_workspace_root_from(&cwd).unwrap_or(cwd);
 
     watcher.watch(&root, RecursiveMode::Recursive)?;
 

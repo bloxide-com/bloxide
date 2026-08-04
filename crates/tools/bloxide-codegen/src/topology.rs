@@ -317,6 +317,9 @@ fn generate_guard_closure(
 }
 
 /// Generate a single `StateRule { ... }` struct literal from a TransitionConfig.
+///
+/// `variant_feature` is the enclosing variant's feature gate (Some(feat) for
+/// the feature variant of a paired emission, None otherwise).
 pub(crate) fn generate_state_rule(
     trans: &TransitionConfig,
     state_enum_ident: &syn::Ident,
@@ -325,6 +328,7 @@ pub(crate) fn generate_state_rule(
     type_params: &[String],
     action_resolver: crate::ActionResolver<'_>,
     strip_feature_cfg: bool,
+    variant_feature: Option<&str>,
 ) -> anyhow::Result<proc_macro2::TokenStream> {
     let kind = classify_pattern_str(&trans.event);
     let event_tag_ts = extract_event_tag_str(&trans.event, kind, type_params);
@@ -366,9 +370,10 @@ pub(crate) fn generate_state_rule(
 
     // Emit #[cfg(feature = "...")] on the individual StateRule literal,
     // unless strip_feature_cfg is true (system-level codegen where the
-    // feature is already selected via Cargo.toml).
+    // feature is already selected via Cargo.toml) or the rule's gate
+    // duplicates the enclosing variant's #[cfg(feature = "...")] gate.
     Ok(if let Some(ref feat) = trans.feature {
-        if strip_feature_cfg {
+        if strip_feature_cfg || variant_feature == Some(feat.as_str()) {
             rule
         } else {
             quote! {

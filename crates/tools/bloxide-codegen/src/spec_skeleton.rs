@@ -231,6 +231,7 @@ pub(crate) fn generate_state_fns_impl(
                         type_params,
                         action_resolver,
                         strip_feature_cfg,
+                        feature_filter,
                     )
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
@@ -263,6 +264,7 @@ pub(crate) fn generate_state_fns_impl(
                     type_params,
                     action_resolver,
                     strip_feature_cfg,
+                    feature_filter,
                 )
             })
             .collect::<anyhow::Result<Vec<_>>>()?;
@@ -362,23 +364,6 @@ pub fn generate(
             quote! { state },
             quote! { ::core::matches!(state, #state_ident::#(#error_states)|*) },
         )
-    };
-
-    // on_init body
-    let on_init_body: proc_macro2::TokenStream = if let Some(ref body) = context.on_init {
-        body.parse::<proc_macro2::TokenStream>()
-            .map_err(|e| anyhow::anyhow!("invalid on_init body '{}': {}", body, e))?
-    } else {
-        quote! {}
-    };
-    let on_init_fn = if on_init_body.is_empty() {
-        quote! { fn on_init_entry(_ctx: &mut Self::Ctx) {} }
-    } else {
-        quote! {
-            fn on_init_entry(ctx: &mut Self::Ctx) {
-                #on_init_body
-            }
-        }
     };
 
     // ── Build imports ─────────────────────────────────────────────────────────
@@ -936,6 +921,32 @@ pub fn generate(
         } else {
             quote! {}
         };
+        // on_init body — per-variant: the feature variant resets feature-gated
+        // state fields via `feature_on_init` (falling back to `on_init`).
+        let on_init_src = if var.feature_filter.is_some() {
+            context
+                .feature_on_init
+                .as_ref()
+                .or(context.on_init.as_ref())
+        } else {
+            context.on_init.as_ref()
+        };
+        let on_init_body: proc_macro2::TokenStream = if let Some(body) = on_init_src {
+            body.parse::<proc_macro2::TokenStream>()
+                .map_err(|e| anyhow::anyhow!("invalid on_init body '{}': {}", body, e))?
+        } else {
+            quote! {}
+        };
+        let on_init_fn = if on_init_body.is_empty() {
+            quote! { fn on_init_entry(_ctx: &mut Self::Ctx) {} }
+        } else {
+            quote! {
+                fn on_init_entry(ctx: &mut Self::Ctx) {
+                    #on_init_body
+                }
+            }
+        };
+
         let var_event_ty = &var.event_ty;
         let var_ctx_ty = &var.ctx_ty;
         let var_mailboxes_ty = &var.mailboxes_ty;
@@ -1231,5 +1242,166 @@ actions = ["Self::note_unhandled"]
         assert!(out.contains("blox_ctx_ticks"));
         assert!(out.contains("note_unhandled"));
         assert!(!out.contains("_stub"));
+    }
+
+    /// Feature-gated blox exercising `feature_on_init` (mirrors the shape of
+    /// crates/bloxes/pool/blox.toml): the feature variant resets the
+    /// feature-gated state fields, the base variant must not see them.
+    const FEATURE_ON_INIT_TOML: &str = r#"
+[actor]
+name = "Pool"
+
+[event]
+name = "PoolEvent"
+generics = "<R: BloxRuntime>"
+feature = "dynamic"
+feature_generics = "<R: BloxRuntime>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PoolMsg"
+message_path = "pool_messages::PoolMsg"
+
+[context]
+name = "PoolCtx"
+generics = "<R: BloxRuntime>"
+feature = "dynamic"
+feature_generics = "<R: BloxRuntime>"
+on_init = "ctx.pending = 0;"
+feature_on_init = "ctx.pending = 0; ctx.spawn_queue.clear();"
+
+[[context.fields]]
+name = "pending"
+type = "u32"
+
+[[context.uses]]
+feature = "dynamic"
+fields = [
+    { name = "spawn_queue", ty = "Vec<u32>", role = "state" },
+]
+
+[topology]
+
+[[topology.states]]
+name = "Idle"
+initial = true
+"#;
+
+    #[test]
+    fn feature_variant_uses_feature_on_init() {
+        let out = generate_stub(&parse(FEATURE_ON_INIT_TOML));
+        // Both variants reset the base field...
+        assert_eq!(
+            out.matches("ctx.pending = 0;").count(),
+            2,
+            "base reset must appear in both variants:\n{out}"
+        );
+        // ...but the feature-gated field reset appears exactly once, in the
+        // feature variant — after its #[cfg(feature = "dynamic")] gate.
+        assert_eq!(out.matches("ctx.spawn_queue.clear();").count(), 1);
+        let feat_gate = out
+            .find("#[cfg(feature = \"dynamic\")]")
+            .expect("feature variant must be emitted");
+        let extra = out
+            .find("ctx.spawn_queue.clear();")
+            .expect("feature_on_init body must be emitted");
+        assert!(
+            feat_gate < extra,
+            "feature_on_init body must live in the feature variant:\n{out}"
+        );
+    }
+
+    /// Feature-gated blox with transitions gated on the enclosing variant's
+    /// feature, on a different feature, and on none — exercises the rule-level
+    /// #[cfg] dedup inside the already-gated variant impl block.
+    const FEATURE_RULE_CFG_TOML: &str = r#"
+[actor]
+name = "Gate"
+
+[event]
+name = "GateEvent"
+generics = "<R: BloxRuntime>"
+feature = "dynamic"
+feature_generics = "<R: BloxRuntime>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "GateMsg"
+message_path = "gate_messages::GateMsg"
+
+[context]
+name = "GateCtx"
+generics = "<R: BloxRuntime>"
+feature = "dynamic"
+feature_generics = "<R: BloxRuntime>"
+
+[topology]
+
+[[topology.states]]
+name = "Idle"
+initial = true
+
+[[topology.states]]
+name = "Working"
+
+[[topology.transitions]]
+state = "Idle"
+event = "GateMsg::Go(_)"
+target = "Working"
+actions = ["Self::go"]
+
+[[topology.transitions]]
+state = "Idle"
+event = "GateMsg::Spawn(_)"
+target = "Working"
+actions = ["Self::spawn"]
+feature = "dynamic"
+
+[[topology.transitions]]
+state = "Idle"
+event = "GateMsg::Extra(_)"
+target = "Working"
+actions = ["Self::extra"]
+feature = "extra"
+"#;
+
+    #[test]
+    fn rule_cfg_duplicating_variant_gate_is_not_emitted() {
+        let out = generate_stub(&parse(FEATURE_RULE_CFG_TOML));
+        // The feature variant's items carry the block-level gate (struct,
+        // state-fns impl, MachineSpec impl) — exactly 3 occurrences. The
+        // dynamic-gated rule inside that variant must NOT add its own.
+        assert_eq!(
+            out.matches("#[cfg(feature = \"dynamic\")]").count(),
+            3,
+            "rule-level gates duplicating the variant gate must be dropped:\n{out}"
+        );
+        // A rule gated on a DIFFERENT feature keeps its own gate.
+        assert_eq!(
+            out.matches("#[cfg(feature = \"extra\")]").count(),
+            1,
+            "a rule gate differing from the variant gate must be preserved:\n{out}"
+        );
+        // The dynamic-gated rule itself is still emitted (ungated) inside the
+        // feature variant.
+        assert!(out.contains("let _stub = \"spawn\""));
+    }
+
+    #[test]
+    fn system_level_emits_no_rule_cfgs() {
+        let out = crate::system_spec::generate_concrete_spec_skeleton(
+            &parse(FEATURE_RULE_CFG_TOML),
+            None,
+            "gate-blox",
+            "crate",
+            Some("dynamic"),
+        )
+        .expect("concrete generation must succeed");
+        // System-level codegen selects the feature via Cargo.toml and strips
+        // every cfg gate, block-level and rule-level alike.
+        assert!(
+            !out.contains("#[cfg(feature"),
+            "system-level specs must carry no feature gates:\n{out}"
+        );
     }
 }

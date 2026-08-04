@@ -335,7 +335,8 @@ struct BloxSummaryRow {
     messages: usize,
 }
 
-/// Count the total number of message variants across all `[[messages]]` entries.
+/// Count the total number of message variants across all `[[messages]]`
+/// entries in a messages crate's blox.toml.
 fn count_message_variants(doc: &toml_edit::DocumentMut) -> usize {
     doc.get("messages")
         .and_then(|m| m.as_array_of_tables())
@@ -351,11 +352,71 @@ fn count_message_variants(doc: &toml_edit::DocumentMut) -> usize {
         .unwrap_or(0)
 }
 
+/// Extract candidate crate names from a `message_path` string: every
+/// identifier immediately followed by `::`. Nested generics are covered, so
+/// `bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>` yields both
+/// `bloxide_peers` and `pool_messages`.
+fn crate_candidates(message_path: &str) -> Vec<&str> {
+    let bytes = message_path.as_bytes();
+    let mut candidates = Vec::new();
+    let mut ident_start: Option<usize> = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        if b.is_ascii_alphanumeric() || b == b'_' {
+            if ident_start.is_none() {
+                ident_start = Some(i);
+            }
+        } else if let Some(start) = ident_start.take() {
+            if b == b':' && bytes.get(i + 1) == Some(&b':') {
+                candidates.push(&message_path[start..i]);
+            }
+        }
+    }
+    candidates
+}
+
+/// Resolve the `crates/messages/` crates referenced by a blox's
+/// `[[event.mailboxes]]` `message_path` entries.
+///
+/// Message enums live in dedicated messages crates, not in the blox's own
+/// blox.toml. A candidate from `message_path` resolves when
+/// `crates/messages/<crate>/blox.toml` exists (crate underscores map to
+/// directory hyphens, e.g. `ping_pong_messages` → `ping-pong-messages`);
+/// non-messages crates (context crates, feature crates) are skipped. Like
+/// the `crates/bloxes` scan, the lookup is relative to the current
+/// directory. Each messages crate is returned at most once.
+fn messages_crates_for_blox(doc: &toml_edit::DocumentMut) -> Vec<std::path::PathBuf> {
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    let Some(mailboxes) = doc
+        .get("event")
+        .and_then(|e| e.as_table())
+        .and_then(|t| t.get("mailboxes"))
+        .and_then(|m| m.as_array_of_tables())
+    else {
+        return paths;
+    };
+    for mailbox in mailboxes {
+        let Some(message_path) = mailbox.get("message_path").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        for candidate in crate_candidates(message_path) {
+            let path = std::path::Path::new("crates/messages")
+                .join(candidate.replace('_', "-"))
+                .join("blox.toml");
+            if path.exists() && !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+    }
+    paths
+}
+
 /// List all blox crates in the workspace.
 ///
 /// Scans `crates/bloxes/*/blox.toml` and prints a summary table (NAME,
 /// STATES, TRANSITIONS, MESSAGES) or a pretty-printed JSON array
-/// (`--json`).  Results are sorted alphabetically by blox name.
+/// (`--json`). MESSAGES counts the total variants across the
+/// `crates/messages/*` crates referenced by the blox's
+/// `[[event.mailboxes]]`. Results are sorted alphabetically by blox name.
 pub fn list_bloxes(json: bool) -> anyhow::Result<()> {
     let bloxes_dir = std::path::Path::new("crates/bloxes");
     let mut rows: Vec<BloxSummaryRow> = Vec::new();
@@ -385,7 +446,12 @@ pub fn list_bloxes(json: bool) -> anyhow::Result<()> {
                 .and_then(transitions_array)
                 .map(|arr| arr.len())
                 .unwrap_or(0);
-            let messages = count_message_variants(&doc);
+            let mut messages = 0;
+            for messages_path in messages_crates_for_blox(&doc) {
+                let messages_doc = load_toml(&messages_path)
+                    .with_context(|| format!("failed to load {}", messages_path.display()))?;
+                messages += count_message_variants(&messages_doc);
+            }
             rows.push(BloxSummaryRow {
                 name,
                 states,

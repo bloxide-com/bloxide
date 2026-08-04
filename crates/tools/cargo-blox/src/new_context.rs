@@ -10,14 +10,21 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
-use crate::utils::{to_camel_case, update_workspace_cargo_toml, WorkspaceAddition};
+use crate::utils::{
+    to_camel_case, update_workspace_cargo_toml, workspace_root_or_cwd, WorkspaceAddition,
+};
 
 pub fn new_context(name: &str) -> Result<()> {
+    let root = workspace_root_or_cwd()?;
+    new_context_in(&root, name)
+}
+
+pub(crate) fn new_context_in(root: &Path, name: &str) -> Result<()> {
     let name_snake = name.to_lowercase().replace("-", "_");
     let name_camel = to_camel_case(name);
     let crate_name = format!("blox-ctx-{}", name_snake);
 
-    let crate_dir = Path::new("crates/context").join(&crate_name);
+    let crate_dir = root.join("crates/context").join(&crate_name);
     let src_dir = crate_dir.join("src");
     fs::create_dir_all(&src_dir)?;
 
@@ -32,6 +39,7 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
+bloxide-core = {{ workspace = true }}
 "#
     );
     fs::write(crate_dir.join("Cargo.toml"), cargo_toml)?;
@@ -63,13 +71,16 @@ pub fn increment_count(count: &mut u32) -> bloxide_core::transition::ActionResul
         r#"{} = {{ path = "crates/context/{}" }}"#,
         crate_name, crate_name
     );
-    update_workspace_cargo_toml(&[
-        WorkspaceAddition::Member(member_path),
-        WorkspaceAddition::Dependency {
-            name: crate_name.clone(),
-            toml_line: dep_toml_line,
-        },
-    ])?;
+    update_workspace_cargo_toml(
+        root,
+        &[
+            WorkspaceAddition::Member(member_path),
+            WorkspaceAddition::Dependency {
+                name: crate_name.clone(),
+                toml_line: dep_toml_line,
+            },
+        ],
+    )?;
 
     println!("Created: {}", crate_dir.display());
     println!(

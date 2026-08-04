@@ -284,6 +284,13 @@ mod pool_tests {
         h.dispatch_spawned_worker(1, domain_ref, ctrl_ref);
         assert_eq!(h.current_state(), MachineState::State(PoolState::Active));
 
+        // Drive the dynamic spawn fields to non-initial values (stub actions
+        // never touch them, so set them directly): a stop must reset them.
+        // None of these fields feed the Active + WorkDone guard below.
+        h.machine.ctx_mut().pending_task_id = 7;
+        h.machine.ctx_mut().spawn_in_flight = true;
+        h.machine.ctx_mut().spawn_queue.push(42);
+
         // The Active + WorkDone guard is real: pending == 0 (stub actions
         // never increment it) → Decision::Stop → machine returns to Init.
         h.dispatch_work_done(1, 1, 0);
@@ -291,6 +298,12 @@ mod pool_tests {
             h.current_state().is_init(),
             "machine must be in Init after WorkDone with pending == 0 (Decision::Stop)"
         );
+
+        // Entering Init fires on_init_entry: the dynamic spawn state must be
+        // reset so a restart does not leak stale spawn bookkeeping.
+        assert_eq!(h.machine.ctx().pending_task_id, 0);
+        assert!(!h.machine.ctx().spawn_in_flight);
+        assert!(h.machine.ctx().spawn_queue.is_empty());
 
         // The machine can be restarted: Start from Init re-enters Idle.
         h.start();

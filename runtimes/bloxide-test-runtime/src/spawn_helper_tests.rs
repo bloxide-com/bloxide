@@ -1,5 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Tests for the `spawn_child` helper and `ChildCtrlRegistrar` bridge.
+//! Tests for the `spawn_dynamic_child` helper and `ChildCtrlRegistrar` bridge.
 //!
 //! These live in `bloxide-test-runtime` (not in `bloxide-spawn`) for the same
 //! reason the engine lifecycle tests do: a `bloxide-spawn` dev-dependency on
@@ -12,7 +12,7 @@ use bloxide_child_management::ChildPolicy;
 use bloxide_core::capability::DynamicChannelCap;
 use bloxide_core::lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::{ActorId, ActorRef};
-use bloxide_spawn::{spawn_child, ChildCtrlRegistrar, SpawnCap, SpawnOutput};
+use bloxide_spawn::{spawn_dynamic_child, ChildCtrlRegistrar, SpawnCap, SpawnOutput};
 
 use crate::TestRuntime;
 
@@ -60,7 +60,7 @@ fn registration_send_failure_kills_orphaned_task() {
     let (control_ref, notify_ref, _control_rx, _notify_rx) = setup(0); // capacity 0 — always Full
     crate::drain_killed();
 
-    let result = spawn_child::<TestRuntime, DummyReq, ChildCtrlRegistrar>(
+    let result = spawn_dynamic_child::<TestRuntime, DummyReq, ChildCtrlRegistrar>(
         dummy_spawn,
         DummyReq,
         &control_ref,
@@ -70,7 +70,7 @@ fn registration_send_failure_kills_orphaned_task() {
 
     assert!(
         result.is_err(),
-        "full control channel must fail the spawn_child call"
+        "full control channel must fail the spawn_dynamic_child call"
     );
     let killed = crate::drain_killed();
     assert_eq!(
@@ -85,7 +85,7 @@ fn successful_registration_does_not_kill() {
     let (control_ref, notify_ref, _control_rx, _notify_rx) = setup(1);
     crate::drain_killed();
 
-    let result = spawn_child::<TestRuntime, DummyReq, ChildCtrlRegistrar>(
+    let result = spawn_dynamic_child::<TestRuntime, DummyReq, ChildCtrlRegistrar>(
         dummy_spawn,
         DummyReq,
         &control_ref,

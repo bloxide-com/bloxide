@@ -8,9 +8,8 @@ repository.workspace = true
 license.workspace = true
 
 [features]
-default = ["alloc"]
-alloc = ["bloxide-core/alloc"]
-std = ["alloc", "bloxide-core/std", "bloxide-log/log"]
+default = []
+std = ["bloxide-core/std", "bloxide-log/log"]
 
 [dependencies]
 bloxide-core = { workspace = true }

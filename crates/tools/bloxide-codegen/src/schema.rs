@@ -190,6 +190,11 @@ pub struct ContextConfig {
     /// Body of `on_init_entry` as a raw string (inserted verbatim).
     #[serde(default)]
     pub on_init: Option<String>,
+    /// Body of `on_init_entry` for the feature-gated variant (paired `#[cfg]`
+    /// generation). Use this to reset feature-gated state fields, which do not
+    /// exist in the non-feature variant. Falls back to `on_init` when unset.
+    #[serde(default)]
+    pub feature_on_init: Option<String>,
     /// Extra impl blocks emitted after the context struct, wrapped with the
     /// appropriate generics for each variant. Each entry is a raw impl body
     /// WITHOUT the `impl<...>` header — the codegen wraps it as:

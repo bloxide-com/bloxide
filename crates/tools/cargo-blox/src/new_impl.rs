@@ -18,22 +18,32 @@ use anyhow::{Context, Result};
 
 use bloxide_codegen::schema::{BloxConfig, ContextActionConfig, ContextConfig};
 
-use crate::toml_helpers::blox_toml_path_for_blox;
-use crate::utils::{to_camel_case, update_workspace_cargo_toml, WorkspaceAddition};
+use crate::utils::{
+    to_camel_case, update_workspace_cargo_toml, workspace_root_or_cwd, WorkspaceAddition,
+};
 
 /// Run the `new-impl` command.
 ///
-/// Creates `crates/impl/<name>/` with a `Cargo.toml` and `src/lib.rs`
-/// containing function stubs for all `impl_required = true` actions
-/// declared in the specified blox's `blox.toml`.
+/// Creates `crates/impl/<name>/` (under the workspace root) with a
+/// `Cargo.toml` and `src/lib.rs` containing function stubs for all
+/// `impl_required = true` actions declared in the specified blox's
+/// `blox.toml`.
 pub fn new_impl(name: &str, blox_name: &str) -> Result<()> {
+    let root = workspace_root_or_cwd()?;
+    new_impl_in(&root, name, blox_name)
+}
+
+pub(crate) fn new_impl_in(root: &Path, name: &str, blox_name: &str) -> Result<()> {
     // `name` is used as-is for the package name (hyphens preserved).
     // `name_snake` is used for the directory name (underscores).
     let name_snake = name.to_lowercase().replace('-', "_");
     let blox_snake = blox_name.to_lowercase().replace('-', "_");
 
     // ── Load and parse the blox.toml ────────────────────────────────────────
-    let blox_toml_path = blox_toml_path_for_blox(&blox_snake);
+    let blox_toml_path = root
+        .join("crates/bloxes")
+        .join(&blox_snake)
+        .join("blox.toml");
     if !blox_toml_path.exists() {
         return Err(crate::exit::not_found(format!(
             "blox.toml not found for blox '{}' at {}",
@@ -108,7 +118,7 @@ pub fn new_impl(name: &str, blox_name: &str) -> Result<()> {
     }
 
     // ── Generate the crate ──────────────────────────────────────────────────
-    let crate_dir = Path::new("crates/impl").join(&name_snake);
+    let crate_dir = root.join("crates/impl").join(&name_snake);
     let src_dir = crate_dir.join("src");
     fs::create_dir_all(&src_dir)?;
 
@@ -135,13 +145,16 @@ pub fn new_impl(name: &str, blox_name: &str) -> Result<()> {
         r#"{} = {{ path = "crates/impl/{}" }}"#,
         dep_name, name_snake
     );
-    update_workspace_cargo_toml(&[
-        WorkspaceAddition::Member(member_path),
-        WorkspaceAddition::Dependency {
-            name: dep_name.clone(),
-            toml_line: dep_toml_line,
-        },
-    ])?;
+    update_workspace_cargo_toml(
+        root,
+        &[
+            WorkspaceAddition::Member(member_path),
+            WorkspaceAddition::Dependency {
+                name: dep_name.clone(),
+                toml_line: dep_toml_line,
+            },
+        ],
+    )?;
 
     println!(
         "\nScaffolded impl crate '{}' for blox '{}'",

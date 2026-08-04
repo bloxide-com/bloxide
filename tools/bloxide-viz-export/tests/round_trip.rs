@@ -12,7 +12,7 @@
 
 use bloxide_codegen::generate_from_toml;
 use bloxide_codegen::schema::BloxConfig;
-use bloxide_viz_export::{export_workspace, model::BloxSpec};
+use bloxide_viz_export::{export_workspace, model::BloxSpec, parse_event_pattern};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -574,24 +574,10 @@ fn test_codegen_deterministic() {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers (mirrors the viz-export internal logic for comparison)
+// Helpers (`parse_event_pattern` is imported from viz-export — the canonical
+// copy that also defines `Handler::event`; `parse_target` mirrors viz-export's
+// internal target parsing for comparison)
 // ---------------------------------------------------------------------------
-
-fn parse_event_pattern(pattern: &str) -> (String, String) {
-    let pattern = pattern.trim();
-    let clean = if let Some(pos) = pattern.find('(') {
-        &pattern[..pos]
-    } else {
-        pattern
-    };
-    if let Some(pos) = clean.find("::") {
-        let message_set = clean[..pos].trim().to_string();
-        let variant = clean[pos + 2..].trim().to_string();
-        (message_set, variant)
-    } else {
-        ("Unknown".to_string(), clean.to_string())
-    }
-}
 
 fn parse_target(s: &str) -> bloxide_viz_export::model::Target {
     let s = s.trim();

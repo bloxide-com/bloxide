@@ -46,7 +46,7 @@ children = ["ping", "pong"]
 
 From this, the codegen emits: typed channels per actor, `Ctx::new(...)` calls
 with refs injected per `[actors.inject]`, a `ChildGroupBuilder` with
-`spawn_child!` per supervised child, and the supervisor boot sequence.
+`spawn_static_child!` per supervised child, and the supervisor boot sequence.
 
 ## Lifecycle Is Dispatch-Driven
 
@@ -77,7 +77,7 @@ runtime observes `DispatchOutcome` after every dispatch in `run()` and reports
 2. `channels! { MsgType(cap), ... }` per domain actor → `(refs, mailboxes)`
 3. `Ctx::new(self_id, ...refs)` per actor — refs injected, internal state defaulted
 4. `StateMachine::new(ctx)` per actor — construction is silent (in implicit Init)
-5. `ChildGroupBuilder::new(GroupShutdown::...)`; `spawn_child!(group, task(machine, mbox, id), ChildPolicy::...)` per supervised child — creates the per-child lifecycle channel and registers the child
+5. `ChildGroupBuilder::new(GroupShutdown::...)`; `spawn_static_child!(group, task(machine, mbox, id), ChildPolicy::...)` per supervised child — creates the per-child lifecycle channel and registers the child
 6. `group.finish()` → `(ChildGroup, sup_notify_rx, sup_control_rx)`
 7. `SupervisorCtx::new(sup_id, children, sup_notify_ref)` → supervisor machine
 8. `sup_machine.dispatch(Lifecycle(Start))` → `Running::on_entry` starts all children
@@ -92,14 +92,14 @@ implementations):
 - `next_actor_id!()` — allocate a compile-time actor ID
 - `actor_task!(name, Spec)` / `actor_task_supervised!(name, Spec)` — actor task wrappers around `run()` with `RunConfig::unsupervised()` / `RunConfig::supervised(...)`
 - `root_task!(name, Spec)` — root actor wrapper around `run()` with `RunConfig::root()`
-- `spawn_child!(group, task(...), policy)` — register + spawn a supervised child
+- `spawn_static_child!(group, task(...), policy)` — register + spawn a supervised child
 - `spawn_timer!(capacity)` — spawn the timer service task
 
 ## Rules
 
 - All static wiring happens before the executor starts (Embassy) or in `main` before awaiting the root task (Tokio). Dynamic actor creation at runtime is a Tokio/TestRuntime capability — see [10-dynamic-actors.md](10-dynamic-actors.md).
 - Never pass an `ActorRef` through a message; all refs are injected via `Ctx::new()` at wiring time.
-- Domain `Mailboxes` tuples contain **no lifecycle stream** — lifecycle channels are created by `spawn_child!` and are invisible to blox code.
+- Domain `Mailboxes` tuples contain **no lifecycle stream** — lifecycle channels are created by `spawn_static_child!` and are invisible to blox code.
 - Internal state fields (counters, round numbers) are zero-initialized via
   `Default::default()` in the generated `Ctx::new()`, never at the wiring site.
 - Actor IDs come from two disjoint spaces: static wiring uses the compile-time

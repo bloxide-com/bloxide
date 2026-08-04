@@ -588,21 +588,40 @@ fn extract_actions(
     }
 }
 
-fn parse_event_pattern(pattern: &str) -> (String, String) {
+/// Split a transition event pattern into (message set, variant).
+///
+/// This DEFINES the `Set::Variant` key used for `Handler::event` and
+/// `Event::full_name`; `cargo blox verify` calls this same function to
+/// rebuild the key it compares against exported specs, so the two sides of
+/// the round-trip can never diverge.
+///
+/// - Payload is stripped at the first `(`; nested payloads (and any `::`
+///   inside them) drop away with it, e.g.
+///   `SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))`
+///   → `("SupervisorEvent", "Child")`.
+/// - Only the first alternative of an or-pattern is used — the handler is
+///   recorded under the first alternative, e.g.
+///   `PeerCtrl::AddPeer(_) | PeerCtrl::RemovePeer(_)` → `("PeerCtrl", "AddPeer")`.
+/// - Type and variant split at the LAST `::`, so qualified paths keep their
+///   leading segments on the message set: `foo::CounterMsg::Tick(_)` →
+///   `("foo::CounterMsg", "Tick")`.
+/// - A pattern with no `::` (wildcard `_`, bare variant) yields
+///   `("Unknown", <pattern>)`.
+pub fn parse_event_pattern(pattern: &str) -> (String, String) {
     let pattern = pattern.trim();
-    // Remove trailing parenthetical content like (_)
-    let clean = if let Some(pos) = pattern.find('(') {
-        &pattern[..pos]
-    } else {
-        pattern
-    };
-
-    if let Some(pos) = clean.find("::") {
-        let message_set = clean[..pos].trim().to_string();
-        let variant = clean[pos + 2..].trim().to_string();
+    // Cut at the first `(` (payload start) or `|` (or-pattern separator). A
+    // `|` inside parens is always preceded by its `(`, so the first of the
+    // two characters also ends the first top-level alternative.
+    let end = pattern
+        .find(|c| c == '(' || c == '|')
+        .unwrap_or(pattern.len());
+    let path = pattern[..end].trim();
+    if let Some(pos) = path.rfind("::") {
+        let message_set = path[..pos].trim().to_string();
+        let variant = path[pos + 2..].trim().to_string();
         (message_set, variant)
     } else {
-        ("Unknown".to_string(), clean.to_string())
+        ("Unknown".to_string(), path.to_string())
     }
 }
 
@@ -1055,6 +1074,83 @@ mod tests {
         assert!(
             paused_inherited.is_some(),
             "Paused should inherit Pong handler from Operating"
+        );
+    }
+
+    #[test]
+    fn wildcard_uses_unknown_message_set() {
+        assert_eq!(
+            parse_event_pattern("_"),
+            ("Unknown".to_string(), "_".to_string())
+        );
+    }
+
+    #[test]
+    fn unit_variant_without_payload() {
+        assert_eq!(
+            parse_event_pattern("CounterMsg::Tick"),
+            ("CounterMsg".to_string(), "Tick".to_string())
+        );
+    }
+
+    #[test]
+    fn tuple_payload_is_stripped() {
+        assert_eq!(
+            parse_event_pattern("PingPongMsg::Ping(ping)"),
+            ("PingPongMsg".to_string(), "Ping".to_string())
+        );
+    }
+
+    #[test]
+    fn nested_struct_payload_is_stripped() {
+        assert_eq!(
+            parse_event_pattern(
+                "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
+            ),
+            ("SupervisorEvent".to_string(), "Child".to_string())
+        );
+    }
+
+    #[test]
+    fn or_pattern_keeps_first_alternative() {
+        assert_eq!(
+            parse_event_pattern("PeerCtrl::AddPeer(_) | PeerCtrl::RemovePeer(_)"),
+            ("PeerCtrl".to_string(), "AddPeer".to_string())
+        );
+    }
+
+    #[test]
+    fn or_pattern_with_unit_first_alternative() {
+        assert_eq!(
+            parse_event_pattern("PeerCtrl::AddPeer | PeerCtrl::RemovePeer(_)"),
+            ("PeerCtrl".to_string(), "AddPeer".to_string())
+        );
+    }
+
+    #[test]
+    fn multi_segment_path_splits_at_last_separator() {
+        assert_eq!(
+            parse_event_pattern("crate::CounterMsg::Tick(_)"),
+            ("crate::CounterMsg".to_string(), "Tick".to_string())
+        );
+    }
+
+    #[test]
+    fn multi_segment_unit_variant() {
+        assert_eq!(
+            parse_event_pattern("bloxide_child_management::ChildCtrl::WatchdogTick"),
+            (
+                "bloxide_child_management::ChildCtrl".to_string(),
+                "WatchdogTick".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn surrounding_whitespace_is_trimmed() {
+        assert_eq!(
+            parse_event_pattern("  CounterMsg::Tick(_)  "),
+            ("CounterMsg".to_string(), "Tick".to_string())
         );
     }
 }

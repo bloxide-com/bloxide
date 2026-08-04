@@ -346,7 +346,7 @@ let ping_machine = StateMachine::new(ping_ctx);
 
 // Supervised spawning
 let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-bloxide_tokio::spawn_child!(
+bloxide_tokio::spawn_static_child!(
     group,
     ping_task(ping_machine, ping_mbox, ping_id),
     ChildPolicy::Reset

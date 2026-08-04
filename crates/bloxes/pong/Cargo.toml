@@ -12,7 +12,7 @@ default = ["std"]
 std = ["bloxide-core/std"]
 
 [dependencies]
-bloxide-core        = { workspace = true, features = ["alloc"] }
+bloxide-core        = { workspace = true }
 blox-ctx-ping-pong = { workspace = true }
 ping-pong-messages  = { workspace = true }
 

@@ -12,6 +12,10 @@
 //!   referencing undeclared states (`state = "root"` is the VirtualRoot
 //!   keyword, not a state reference; no user state may be named `root`)
 //! - duplicate state names and duplicate transitions (same state + event)
+//! - duplicate `[[context.actions]]` names, duplicate `[[context.fields]]`
+//!   names, and duplicate `[[context.uses]]` field names
+//! - action `returns` values other than "ActionResult" (anything else is a
+//!   hard codegen error — spec/architecture/15-blox-toml-source-of-truth.md)
 //! - event patterns referencing unknown variants of KNOWN enums (the blox's
 //!   own event enum, workspace message enums, framework enums)
 //! - `Self::` actions not declared in `[[context.actions]]`; bare action
@@ -30,7 +34,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use bloxide_codegen::schema::{BloxConfig, TopologyConfig, ROOT_STATE_KEYWORD};
+use bloxide_codegen::schema::{BloxConfig, ContextConfig, TopologyConfig, ROOT_STATE_KEYWORD};
 use walkdir::WalkDir;
 
 const TARGET_KEYWORDS: [&str; 5] = ["stay", "reset", "stop", "done", "fail"];
@@ -86,6 +90,9 @@ pub fn lint() -> anyhow::Result<()> {
 
     // Phase 2: per-file checks.
     for (path, config) in &configs {
+        if let Some(context) = &config.context {
+            lint_context(path, context, &mut diags);
+        }
         if let Some(topology) = &config.topology {
             lint_topology(path, config, topology, &message_enums, &mut diags);
         }
@@ -127,7 +134,7 @@ pub fn lint() -> anyhow::Result<()> {
 
 fn discover_blox_tomls(root: &Path) -> Vec<PathBuf> {
     WalkDir::new(root)
-        .max_depth(5)
+        .max_depth(crate::utils::DISCOVERY_MAX_DEPTH)
         .into_iter()
         .filter_entry(|e| e.file_name() != "target")
         .filter_map(|e| e.ok())
@@ -347,6 +354,67 @@ fn lint_topology(
     }
 }
 
+/// Context-section checks: duplicate `[[context.actions]]` names, duplicate
+/// `[[context.fields]]` / `[[context.uses]]` field names, and the `returns`
+/// contract (only "ActionResult" is recognized — anything else is a hard
+/// codegen error, mirrored here as a lint error).
+fn lint_context(path: &Path, context: &ContextConfig, diags: &mut Vec<Diagnostic>) {
+    let mut seen = BTreeSet::new();
+    for a in &context.actions {
+        if !seen.insert(&a.name) {
+            diags.push(Diagnostic::error(
+                path,
+                format!("duplicate action name \"{}\"", a.name),
+            ));
+        }
+        if let Some(returns) = &a.returns {
+            if returns != "ActionResult" {
+                diags.push(Diagnostic::error(
+                    path,
+                    format!(
+                        "action \"{}\" has returns = \"{}\" — the only recognized value is \"ActionResult\"",
+                        a.name, returns
+                    ),
+                ));
+            }
+        }
+    }
+
+    let mut seen = BTreeSet::new();
+    for f in &context.fields {
+        if !seen.insert(&f.name) {
+            diags.push(Diagnostic::error(
+                path,
+                format!("duplicate context field name \"{}\"", f.name),
+            ));
+        }
+    }
+
+    // `[[context.uses]]` entries contribute one field each (single-field
+    // shape: `field = "..."`) or one per `[[context.uses.fields]]` sub-entry
+    // (multi-field shape) — all become context struct fields, so any
+    // duplicate name is a codegen compile error.
+    let mut seen = BTreeSet::new();
+    for u in &context.uses {
+        if let Some(f) = &u.field {
+            if !seen.insert(f) {
+                diags.push(Diagnostic::error(
+                    path,
+                    format!("duplicate context uses field name \"{}\"", f),
+                ));
+            }
+        }
+        for f in &u.fields {
+            if !seen.insert(&f.name) {
+                diags.push(Diagnostic::error(
+                    path,
+                    format!("duplicate context uses field name \"{}\"", f.name),
+                ));
+            }
+        }
+    }
+}
+
 fn check_target(
     path: &Path,
     context: &str,
@@ -502,9 +570,15 @@ fn check_action_ref(
         }
         return;
     }
-    // Bare function path: its last segment must come from spec_imports.
+    // Bare function path: its last segment must be brought into scope by a
+    // spec_imports entry — a `use` statement exposes only its leaf segment(s)
+    // (exact match; substring matching would accept names that merely share
+    // a prefix with an imported item, e.g. `stop_all` vs `stop_all_children`).
     let last = action.rsplit("::").next().unwrap_or(action);
-    let imported = spec_imports.iter().any(|imp| imp.contains(last));
+    let imported = spec_imports
+        .iter()
+        .flat_map(|imp| import_leaves(imp))
+        .any(|leaf| leaf == "*" || leaf == last);
     if !imported {
         diags.push(Diagnostic::error(
             path,
@@ -513,6 +587,21 @@ fn check_action_ref(
                 action
             ),
         ));
+    }
+}
+
+/// Leaf names a raw `use` statement brings into scope: each item of a braced
+/// list (`crate::{MAX_ROUNDS, PAUSE_AT_ROUND}`) or the last path segment of a
+/// plain import (`bloxide_core::transition::ActionResult`).
+fn import_leaves(import: &str) -> Vec<&str> {
+    match (import.find('{'), import.rfind('}')) {
+        (Some(open), Some(close)) if open < close => import[open + 1..close]
+            .split(',')
+            .map(|item| item.trim())
+            .filter(|item| !item.is_empty())
+            .map(|item| item.rsplit("::").next().unwrap_or(item))
+            .collect(),
+        _ => vec![import.rsplit("::").next().unwrap_or(import)],
     }
 }
 

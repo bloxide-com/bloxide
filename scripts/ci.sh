@@ -61,9 +61,6 @@ run_lint() {
     run_step "Cargo Check (bloxide-core no-default-features)" \
         cargo check -p bloxide-core --no-default-features
 
-    run_step "Cargo Check (bloxide-core alloc)" \
-        cargo check -p bloxide-core --no-default-features --features alloc
-
     run_step "Cargo Check (bloxide-core std)" \
         cargo check -p bloxide-core --features std
 

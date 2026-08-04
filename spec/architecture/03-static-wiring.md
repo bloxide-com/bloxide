@@ -9,7 +9,7 @@ flowchart TD
     A["channels! per domain actor\nreturns refs_tuple + mailboxes_tuple"] --> B
     B["Ctx::new() per actor\ninject ActorRefs"] --> C
     C["ChildGroupBuilder::new(strategy)\ncapture control_ref() + notify_ref()\n(before finish() consumes the builder)"] --> D
-    D["spawn_child! per child task\n(lifecycle channel hidden inside)"] --> E
+    D["spawn_static_child! per child task\n(lifecycle channel hidden inside)"] --> E
     E["sup_id = next_actor_id!()\ngroup.finish()\nreturns ChildGroup + sup_notify_rx + sup_control_rx"] --> F
     F["SupervisorCtx::new(sup_id, children, sup_notify_ref)\nStateMachine::new(sup_ctx)"] --> G
     G["sup_machine.dispatch(Start)\nspawner.must_spawn(supervisor_task(...))"] --> H
@@ -18,7 +18,7 @@ flowchart TD
 
 ## Per-Actor Channel Layout
 
-Domain actors have one channel per message type they receive. Supervised actors additionally have a runtime-internal lifecycle command channel — this is created by `spawn_child!` and never visible in user code.
+Domain actors have one channel per message type they receive. Supervised actors additionally have a runtime-internal lifecycle command channel — this is created by `spawn_static_child!` and never visible in user code.
 
 | Channel | Sender held by | Purpose |
 |---------|---------------|---------|
@@ -99,7 +99,7 @@ decides (`Reset` revives it). With both flags `true` (root/unsupervised/bare),
 `Stopped` and `Failed` end the task. `Aborted` and `Done` always exit.
 
 The lifecycle stream and supervisor notify sender inside `RunConfig` are created by
-`ChildGroupBuilder`/`spawn_child!` and passed to the task automatically. User code
+`ChildGroupBuilder`/`spawn_static_child!` and passed to the task automatically. User code
 never sees them. See `crates/bloxide-core/src/runloop.rs` for the `RunConfig`
 field/variant table.
 
@@ -127,7 +127,7 @@ let sup_id = bloxide_embassy::next_actor_id!();
 
 ### `actor_task!` / `actor_task_supervised!` macros
 
-`actor_task!` generates an `#[embassy_executor::task]` wrapper for an unsupervised actor (`RunConfig::unsupervised()` — auto-starts, exits on `Stopped`/`Failed`). `actor_task_supervised!` generates the supervised variant whose signature includes `lifecycle_rx` and `supervisor_notify` (both injected by `spawn_child!`):
+`actor_task!` generates an `#[embassy_executor::task]` wrapper for an unsupervised actor (`RunConfig::unsupervised()` — auto-starts, exits on `Stopped`/`Failed`). `actor_task_supervised!` generates the supervised variant whose signature includes `lifecycle_rx` and `supervisor_notify` (both injected by `spawn_static_child!`):
 
 ```rust
 bloxide_embassy::actor_task_supervised!(ping_task, PingSpec<EmbassyRuntime>);
@@ -158,12 +158,12 @@ bloxide_embassy::timer_task!(timer_task);
 let timer_ref = bloxide_embassy::spawn_timer!(spawner, timer_task, 8);
 ```
 
-### `spawn_child!` macro
+### `spawn_static_child!` macro
 
 Hides lifecycle channel creation and task spawning plumbing. Creates the lifecycle channel, registers the child in the builder with the given `ChildPolicy`, and spawns the task:
 
 ```rust
-spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
+spawn_static_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
 ```
 
 Expands to: `let (lc_rx, sup_notify) = group.add_child(id, policy)` (which creates the lifecycle channel, capacity 4, and registers the child) → `spawner.must_spawn(ping_task(machine, mbox, lc_rx, id, sup_notify))`.
@@ -177,7 +177,7 @@ supervisor mailbox streams up front:
 - supervisor control-plane events (`sup_control_rx`)
 
 Phase one: capture `control_ref()` / `notify_ref()` (for wiring and for the
-supervisor context) and register children via `spawn_child!`. Phase two:
+supervisor context) and register children via `spawn_static_child!`. Phase two:
 `finish()` consumes the builder and returns `ChildGroup` plus both streams. The
 supervisor's own `ActorId` is allocated separately via `next_actor_id!()`:
 
@@ -185,8 +185,8 @@ supervisor's own `ActorId` is allocated separately via `next_actor_id!()`:
 let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
 let _sup_control_ref = group.control_ref();
 let sup_notify_ref = group.notify_ref();
-spawn_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
-spawn_child!(spawner, group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
+spawn_static_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
+spawn_static_child!(spawner, group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
 let (children, sup_notify_rx, sup_control_rx) = group.finish();
 ```
 
@@ -227,9 +227,9 @@ fn setup(spawner: Spawner) {
     let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref);
     let pong_ctx = PongCtx::new(pong_id, ping_ref);
 
-    // Lifecycle is fully hidden inside spawn_child!
-    bloxide_embassy::spawn_child!(spawner, group, ping_task(StateMachine::new(ping_ctx), ping_mbox, ping_id), ChildPolicy::Stop);
-    bloxide_embassy::spawn_child!(spawner, group, pong_task(StateMachine::new(pong_ctx), pong_mbox, pong_id), ChildPolicy::Stop);
+    // Lifecycle is fully hidden inside spawn_static_child!
+    bloxide_embassy::spawn_static_child!(spawner, group, ping_task(StateMachine::new(ping_ctx), ping_mbox, ping_id), ChildPolicy::Stop);
+    bloxide_embassy::spawn_static_child!(spawner, group, pong_task(StateMachine::new(pong_ctx), pong_mbox, pong_id), ChildPolicy::Stop);
 
     let sup_id = bloxide_embassy::next_actor_id!();
     let (children, sup_notify_rx, sup_control_rx) = group.finish();
@@ -247,7 +247,7 @@ fn setup(spawner: Spawner) {
 - Never pass an `ActorRef` through a message.
 - Each blox crate provides a `Ctx::new()` constructor for external wiring dependencies only.
 - Channel capacity is set at creation time. Lifecycle channels use capacity 4.
-- Root supervisors are spawned via `root_task!` (`RunConfig::root()`); supervised children via `actor_task_supervised!` + `spawn_child!`.
+- Root supervisors are spawned via `root_task!` (`RunConfig::root()`); supervised children via `actor_task_supervised!` + `spawn_static_child!`.
 - Lifecycle flows through `dispatch` — the root supervisor is started by dispatching `SupervisorEvent::Lifecycle(LifecycleCommand::Start)` before its task is spawned.
 - `ChildPolicy::Kill`/`Abort` panic at registration for static children — use `Reset`/`Stop` (see `ChildGroupBuilder` above).
 - Do not create actors after the executor starts (Embassy). For dynamic actor creation on Tokio/TestRuntime, see `spec/architecture/10-dynamic-actors.md`.

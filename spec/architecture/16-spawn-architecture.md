@@ -122,7 +122,7 @@ bloxide-spawn/            ← spawn capability (separate crate)
   SpawnCap (TaskHandle, KillHandle, spawn, kill_handle, kill)
   Kill (KillCapability impl requiring SpawnCap)
   SpawnOutput<R>, SpawnFn<R, Req>, ChildRegistrar<R>, ChildCtrlRegistrar
-  spawn_child<R, Req, C>
+  spawn_dynamic_child<R, Req, C>
 
 bloxide-child-management/ ← reusable child tracking (separate crate)
   ChildGroup<R>             ← per-child tracking, policy application, phase management
@@ -146,7 +146,7 @@ bloxide-supervisor/       ← the supervisor blox (codegen-ed from blox.toml)
 
 bloxide-tokio/            ← Tokio runtime
   run() + RunConfig re-exports (from bloxide-core)
-  channels!, dyn_channels!, next_actor_id!, spawn_timer!, spawn_child!,
+  channels!, dyn_channels!, next_actor_id!, spawn_timer!, spawn_static_child!,
     actor_task_supervised!, root_task! macros
   ChildGroupBuilder re-export (from bloxide-child-management)
   SpawnCap impl: TaskHandle = JoinHandle<()>, KillHandle = tokio::task::AbortHandle
@@ -523,7 +523,7 @@ from the supervisor. A user's custom child-managing blox can define its own cont
 /// control mailbox.
 ///
 /// There is no `Spawn` variant — spawning is decoupled from the managing blox.
-/// The spawn helper calls `spawn_child()` (in `bloxide-spawn`) which sends
+/// The spawn helper calls `spawn_dynamic_child()` (in `bloxide-spawn`) which sends
 /// `RegisterDynamicChild` on the control mailbox after the child is created.
 pub enum ChildCtrl<R: BloxRuntime> {
     /// Register a static child (wired at startup, no abort capability).
@@ -803,7 +803,7 @@ blox's control mailbox.
 /// - `C` — the `ChildRegistrar` implementation. Determines how `SpawnOutput`
 ///   is wrapped into the managing blox's control-plane message.
 ///   For the standard supervisor, `C = ChildCtrlRegistrar`.
-pub fn spawn_child<R, Req, C>(
+pub fn spawn_dynamic_child<R, Req, C>(
     spawn_fn: SpawnFn<R, Req>,
     req: Req,
     control_ref: &ActorRef<C::RegisterMsg, R>,
@@ -832,16 +832,16 @@ where
 }
 ```
 
-The requesting blox (e.g., the Pool) calls `spawn_child` directly, specifying
+The requesting blox (e.g., the Pool) calls `spawn_dynamic_child` directly, specifying
 `C = ChildCtrlRegistrar` as the type parameter to wire the `SpawnOutput` into
 the supervisor's `ChildCtrl::RegisterDynamicChild` message:
 
 ```rust
-// In the pool's impl crate — the Pool calls spawn_child directly
+// In the pool's impl crate — the Pool calls spawn_dynamic_child directly
 
-use bloxide_spawn::{spawn_child, ChildCtrlRegistrar};
+use bloxide_spawn::{spawn_dynamic_child, ChildCtrlRegistrar};
 
-let result = spawn_child::<_, _, ChildCtrlRegistrar>(
+let result = spawn_dynamic_child::<_, _, ChildCtrlRegistrar>(
     ctx.spawn_fn,
     req,
     &ctx.spawn_ref,   // supervisor control mailbox
@@ -939,15 +939,15 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
         reply_to: spawn_reply_ref.clone(),
         pool_ref: self_ref.clone(),
     };
-    // Call spawn_child directly — the Pool owns the spawn_fn
+    // Call spawn_dynamic_child directly — the Pool owns the spawn_fn
     // and the managing blox's control_ref (wired as spawn_ref).
-    ActionResult::from(spawn_child::<_, _, ChildCtrlRegistrar>(
+    ActionResult::from(spawn_dynamic_child::<_, _, ChildCtrlRegistrar>(
         *spawn_fn, req, spawn_ref, notify_ref, self_id,
     ))
 }
 ```
 
-If the control mailbox is full, `spawn_child` kills the freshly spawned task via the
+If the control mailbox is full, `spawn_dynamic_child` kills the freshly spawned task via the
 kill handle (no orphaned live tasks) and returns `Err` — the resulting
 `ActionResult` carries the failure and the transition's guard can route it (e.g. to an
 error state).
@@ -1105,7 +1105,7 @@ sequenceDiagram
     participant NewWorker as Worker N
     participant OldWorker as Workers 1..N-1
 
-    Pool->>Factory: spawn_child::<_, _, ChildCtrlRegistrar>(spawn_fn, req, ...)
+    Pool->>Factory: spawn_dynamic_child::<_, _, ChildCtrlRegistrar>(spawn_fn, req, ...)
     Factory->>NewWorker: channels!, WorkerCtx::new, R::spawn
     Factory->>Pool: SpawnedWorker reply via reply_to
     Factory->>Sup: RegisterDynamicChild(SpawnOutput) via control mailbox
@@ -1216,6 +1216,13 @@ it is.
 /// placing it in RegisterDynamicChild.
 pub trait KillCapability<R: BloxRuntime> {
     type Handle: Clone + Send + 'static;
+
+    /// Whether `kill` actually destroys the task. `false` for `NoKill`
+    /// (Embassy, static-only): `kill` is a no-op there, so `ChildPolicy::Kill`
+    /// must be refused at registration — marking a live child `Killed` would
+    /// corrupt supervision bookkeeping. `true` for `Kill` (Tokio, TestRuntime).
+    const CAN_KILL: bool;
+
     fn kill(handle: Self::Handle);
 }
 
@@ -1223,6 +1230,7 @@ pub trait KillCapability<R: BloxRuntime> {
 pub struct NoKill;
 impl<R: BloxRuntime> KillCapability<R> for NoKill {
     type Handle = ();
+    const CAN_KILL: bool = false;
     fn kill(_: ()) {}
 }
 ```
@@ -1235,6 +1243,7 @@ impl<R: BloxRuntime> KillCapability<R> for NoKill {
 pub struct Kill;
 impl<R: BloxRuntime + SpawnCap> KillCapability<R> for Kill {
     type Handle = R::KillHandle;
+    const CAN_KILL: bool = true;
     fn kill(handle: R::KillHandle) {
         R::kill(handle);
     }
@@ -1270,6 +1279,10 @@ Runtime implementations:
 **Key properties:**
 - `ChildGroup<R>` is bounded by `R: BloxRuntime` only — no `SpawnCap` bound leaks.
 - The `SpawnCap` bound is satisfied at the runtime impl site, not in the supervisor crate.
+- `CAN_KILL` gates `ChildPolicy::Kill` at registration: on a `!CAN_KILL` runtime
+  (`NoKill`, e.g. Embassy) `ChildGroup::try_add_dynamic` refuses the policy with
+  `Err(RegistrationError::KillUnavailable)` — a no-op kill must never let the
+  supervisor mark a live child dead.
 - For Embassy: `ChildEntry::kill_handle` is `Option<()>` (ZST, zero space). No `alloc`.
 - For Tokio: `ChildEntry::kill_handle` is `Option<KillHandle>`. Stored by value, no `Arc`.
 - No trait object. No dynamic dispatch. No heap allocation in the kill path.
@@ -1380,7 +1393,7 @@ Pool                      Spawn Helper            Managing Blox            Child
   |     another actor)         |                       |                       |
   |                            |                       |                       |
   | 2. Pool calls              |                       |                       |
-  |    spawn_child::<_,_,      |                       |                       |
+  |    spawn_dynamic_child::<_,_,      |                       |                       |
   |    ChildCtrlRegistrar>    |                       |                       |
   |    (spawn_fn, req,         |                       |                       |
   |     spawn_ref, notify_ref, |                       |                       |
@@ -1467,9 +1480,9 @@ Pool                      Spawn Helper            Managing Blox            Child
 ```
 
 > **Function boundary note:** Steps 3–5 all execute inside the `spawn_fn` call body (the
-> `spawn_worker` function). Step 6 is the `spawn_child` helper's code, which runs after
+> `spawn_worker` function). Step 6 is the `spawn_dynamic_child` helper's code, which runs after
 > `spawn_fn` returns — it calls `C::register(output)` to send the registration message to
-> the managing blox. The boundary between `spawn_fn` and `spawn_child` is the `return` of
+> the managing blox. The boundary between `spawn_fn` and `spawn_dynamic_child` is the `return` of
 > `SpawnOutput`.
 
 Steps 2-6 are fast (run-to-completion in the spawn helper): channel creation +
@@ -1609,7 +1622,7 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
 - `spawn_fn: SpawnFn<R, SpawnRequest<PeerCtrl<WorkerMsg, R>, R>>` field in **the Pool's** context (not the
   supervisor's)
 - `spawn_ref` points to supervisor's control mailbox (for `RegisterDynamicChild`)
-- The Pool calls `spawn_child::<_, _, ChildCtrlRegistrar>` (from `bloxide-spawn`) directly
+- The Pool calls `spawn_dynamic_child::<_, _, ChildCtrlRegistrar>` (from `bloxide-spawn`) directly
 - `R: BloxRuntime + SpawnCap` — runtime supports task spawning
 - Application provides `spawn_fn` at wiring time
 - The spawn helper creates children (including abort mailbox) and sends

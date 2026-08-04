@@ -98,11 +98,11 @@ mod worker_tests {
         assert_eq!(h.current_state(), MachineState::State(WorkerState::Waiting));
     }
 
-    // ── Action function tests (stub actions in Phase 2 spec) ──────────────
-    // In Phase 2, actions are stub no-op closures. These tests verify that
-    // the state fields are accessible and manually settable, which is what
-    // the stub-based tests rely on. Real action implementations will come
-    // in Phase 3 system-level codegen.
+    // ── Action function tests (stub actions in the blox-crate spec) ───────
+    // Blox-crate-level codegen always emits stub no-op action closures —
+    // the concrete wiring comes from the system-level codegen (system.toml).
+    // These tests verify that the state fields are accessible and manually
+    // settable, which is what the stub-based tests rely on.
 
     #[test]
     fn handle_ctrl_stub_does_not_add_peer() {

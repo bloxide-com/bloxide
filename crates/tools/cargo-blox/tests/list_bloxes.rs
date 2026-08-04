@@ -1,9 +1,11 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Integration tests for the `cargo-blox list-bloxes` command.
 //!
-//! Each test creates a temporary directory with blox.toml fixtures under
-//! `crates/bloxes/`, spawns the `cargo-blox` binary as a subprocess (so
-//! that stdout can be captured), and asserts on the printed output.
+//! Each test creates a temporary directory mirroring the real workspace
+//! layout — blox.toml fixtures under `crates/bloxes/`, message enums in
+//! dedicated messages crates under `crates/messages/` — spawns the
+//! `cargo-blox` binary as a subprocess (so that stdout can be captured),
+//! and asserts on the printed output.
 
 use std::fs;
 use std::path::PathBuf;
@@ -16,22 +18,19 @@ fn blox_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_cargo-blox"))
 }
 
-/// Fixture for blox `alpha`: 2 states, 1 transition, 1 message variant.
+/// Fixture for blox `alpha`: 2 states, 1 transition; messages come from the
+/// `alpha-messages` crate (1 variant).
 const FIXTURE_ALPHA: &str = "\
 [actor]
 name = \"Alpha\"
 
-[[messages]]
-name = \"AlphaMsg\"
-visibility = \"pub\"
-copy = true
+[event]
+name = \"AlphaEvent\"
 
-[[messages.variants]]
-name = \"Ping\"
-
-[[messages.variants.fields]]
-name = \"round\"
-ty = \"u32\"
+[[event.mailboxes]]
+variant = \"Msg\"
+message = \"AlphaMsg\"
+message_path = \"alpha_messages::AlphaMsg\"
 
 [topology]
 
@@ -48,25 +47,40 @@ event = \"AlphaMsg::Ping(_)\"
 target = \"Active\"
 ";
 
-/// Fixture for blox `beta`: 3 states, 2 transitions, 2 message variants.
-const FIXTURE_BETA: &str = "\
-[actor]
-name = \"Beta\"
-
+/// Messages-crate fixture for `alpha-messages`: `AlphaMsg` with 1 variant.
+const FIXTURE_ALPHA_MESSAGES: &str = "\
 [[messages]]
-name = \"BetaMsg\"
+name = \"AlphaMsg\"
 visibility = \"pub\"
 copy = true
 
 [[messages.variants]]
-name = \"Start\"
+name = \"Ping\"
 
 [[messages.variants.fields]]
-name = \"id\"
+name = \"round\"
 ty = \"u32\"
+";
 
-[[messages.variants]]
-name = \"Stop\"
+/// Fixture for blox `beta`: 3 states, 2 transitions; both mailboxes resolve
+/// to the `beta-messages` crate (2 variants), which must be counted once.
+/// The `Ctrl` mailbox mirrors the real worker blox's nested generic path.
+const FIXTURE_BETA: &str = "\
+[actor]
+name = \"Beta\"
+
+[event]
+name = \"BetaEvent\"
+
+[[event.mailboxes]]
+variant = \"Ctrl\"
+message = \"PeerCtrl<BetaMsg>\"
+message_path = \"bloxide_peers::PeerCtrl<beta_messages::BetaMsg, R>\"
+
+[[event.mailboxes]]
+variant = \"Msg\"
+message = \"BetaMsg\"
+message_path = \"beta_messages::BetaMsg\"
 
 [topology]
 
@@ -91,11 +105,47 @@ event = \"BetaMsg::Stop\"
 target = \"Done\"
 ";
 
-/// Fixture for blox `gamma`: 1 state, 0 transitions, 1 message variant.
+/// Messages-crate fixture for `beta-messages`: `BetaMsg` with 2 variants.
+const FIXTURE_BETA_MESSAGES: &str = "\
+[[messages]]
+name = \"BetaMsg\"
+visibility = \"pub\"
+copy = true
+
+[[messages.variants]]
+name = \"Start\"
+
+[[messages.variants.fields]]
+name = \"id\"
+ty = \"u32\"
+
+[[messages.variants]]
+name = \"Stop\"
+";
+
+/// Fixture for blox `gamma`: 1 state, 0 transitions; messages come from the
+/// `gamma-messages` crate (1 variant).
 const FIXTURE_GAMMA: &str = "\
 [actor]
 name = \"Gamma\"
 
+[event]
+name = \"GammaEvent\"
+
+[[event.mailboxes]]
+variant = \"Msg\"
+message = \"GammaMsg\"
+message_path = \"gamma_messages::GammaMsg\"
+
+[topology]
+
+[[topology.states]]
+name = \"Idle\"
+initial = true
+";
+
+/// Messages-crate fixture for `gamma-messages`: `GammaMsg` with 1 variant.
+const FIXTURE_GAMMA_MESSAGES: &str = "\
 [[messages]]
 name = \"GammaMsg\"
 visibility = \"pub\"
@@ -103,12 +153,6 @@ copy = true
 
 [[messages.variants]]
 name = \"Tick\"
-
-[topology]
-
-[[topology.states]]
-name = \"Idle\"
-initial = true
 ";
 
 /// Writes a fixture to `<temp>/crates/bloxes/<blox_name>/blox.toml`.
@@ -118,12 +162,23 @@ fn write_blox_fixture(dir: &TempDir, blox_name: &str, content: &str) {
     fs::write(blox_dir.join("blox.toml"), content).expect("write blox.toml");
 }
 
-/// Creates a temp dir with the three blox fixtures (alpha, beta, gamma).
+/// Writes a fixture to `<temp>/crates/messages/<crate_name>/blox.toml`.
+fn write_messages_fixture(dir: &TempDir, crate_name: &str, content: &str) {
+    let messages_dir = dir.path().join("crates/messages").join(crate_name);
+    fs::create_dir_all(&messages_dir).expect("create messages dir");
+    fs::write(messages_dir.join("blox.toml"), content).expect("write blox.toml");
+}
+
+/// Creates a temp dir with the three blox fixtures (alpha, beta, gamma) and
+/// their messages crates.
 fn make_three_bloxes() -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
     write_blox_fixture(&dir, "alpha", FIXTURE_ALPHA);
+    write_messages_fixture(&dir, "alpha-messages", FIXTURE_ALPHA_MESSAGES);
     write_blox_fixture(&dir, "beta", FIXTURE_BETA);
+    write_messages_fixture(&dir, "beta-messages", FIXTURE_BETA_MESSAGES);
     write_blox_fixture(&dir, "gamma", FIXTURE_GAMMA);
+    write_messages_fixture(&dir, "gamma-messages", FIXTURE_GAMMA_MESSAGES);
     dir
 }
 

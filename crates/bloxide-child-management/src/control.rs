@@ -98,7 +98,7 @@ impl<R: BloxRuntime> fmt::Debug for RegisterDynamicChild<R> {
 /// control mailbox.
 ///
 /// There is no `Spawn` variant — spawning is decoupled from the managing blox.
-/// The spawn helper calls `spawn_child()` (in `bloxide-spawn`) which sends
+/// The spawn helper calls `spawn_dynamic_child()` (in `bloxide-spawn`) which sends
 /// `RegisterDynamicChild` on the control mailbox after the child is created.
 ///
 /// Implements `Clone` because all variants are `Clone` (`RegisterDynamicChild`

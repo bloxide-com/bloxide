@@ -122,7 +122,7 @@ enum BloxSubcommand {
         #[arg(long, default_value = "tokio")]
         runtime: String,
     },
-    /// Scaffold all layers (messages, context, blox, binary)
+    /// Scaffold all layers (messages, context, blox, impl, binary)
     NewAll {
         name: String,
         /// Runtime to target (tokio or embassy)
@@ -346,12 +346,23 @@ enum BloxSubcommand {
     /// Add a [[context.uses]] entry to a blox
     AddUse {
         blox_name: String,
+        /// Single-field shape: field name (requires --field-type and --role)
+        #[arg(
+            long,
+            required_unless_present = "sub_field",
+            conflicts_with = "sub_field",
+            requires_all = ["field_type", "role"]
+        )]
+        field: Option<String>,
+        /// Single-field shape: field type
+        #[arg(long, conflicts_with = "sub_field")]
+        field_type: Option<String>,
+        /// Single-field shape: ctor or state
+        #[arg(long, conflicts_with = "sub_field")]
+        role: Option<String>,
+        /// Multi-field shape: one sub-field per flag, as name:ty:role
         #[arg(long)]
-        field: String,
-        #[arg(long)]
-        field_type: String,
-        #[arg(long)]
-        role: String,
+        sub_field: Vec<String>,
         #[arg(long)]
         feature: Option<String>,
         #[arg(long)]
@@ -398,6 +409,10 @@ enum BloxSubcommand {
         event_payload: Option<String>,
         #[arg(long)]
         impl_required: bool,
+        /// Declared return type of the action function — only "ActionResult"
+        /// is recognized (anything else is a hard error)
+        #[arg(long)]
+        returns: Option<String>,
         #[arg(long)]
         feature: Option<String>,
         #[arg(long)]
@@ -600,13 +615,15 @@ fn dispatch() -> anyhow::Result<()> {
                 field,
                 field_type,
                 role,
+                sub_field,
                 feature,
                 if_not_exists,
             } => context_cmd::add_use(
                 &blox_name,
-                &field,
-                &field_type,
-                &role,
+                field.as_deref(),
+                field_type.as_deref(),
+                role.as_deref(),
+                &sub_field,
                 feature.as_deref(),
                 if_not_exists,
             ),
@@ -632,6 +649,7 @@ fn dispatch() -> anyhow::Result<()> {
                 fn_name,
                 event_payload,
                 impl_required,
+                returns,
                 feature,
                 if_not_exists,
             } => context_cmd::add_action(
@@ -643,6 +661,7 @@ fn dispatch() -> anyhow::Result<()> {
                 fn_name.as_deref(),
                 event_payload.as_deref(),
                 impl_required,
+                returns.as_deref(),
                 feature.as_deref(),
                 if_not_exists,
             ),

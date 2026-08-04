@@ -11,9 +11,12 @@ license.workspace = true
 std = ["bloxide-core/std", "dep:bloxide-test-runtime"]
 
 [dependencies]
-# alloc is unconditional: TimerQueue and the action functions use alloc
-# types (Vec, Box) on every target, so bloxide-core/alloc is always on.
-bloxide-core = { workspace = true, features = ["alloc"] }
+bloxide-core = { workspace = true }
 bloxide-log = { workspace = true }
 critical-section = "1.2.0"
 bloxide-test-runtime = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Also a dev-dependency so the VirtualClock unit tests run under plain
+# `cargo test -p bloxide-timer` (the std feature stays off by default).
+bloxide-test-runtime = { workspace = true }

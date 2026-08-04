@@ -201,20 +201,28 @@ state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::handle_done_or_failed"]
-guards = [
-    { condition = "ctx.all_children_stopped()", target = "stop" },
-    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
-]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.pending == ChildAction::BeginShutdown"
+target = "ShuttingDown"
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::handle_done_or_failed"]
-guards = [
-    { condition = "ctx.all_children_stopped()", target = "stop" },
-    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
-]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.pending == ChildAction::BeginShutdown"
+target = "ShuttingDown"
 
 [[topology.transitions]]
 state = "Running"
@@ -227,20 +235,28 @@ state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::record_aborted"]
-guards = [
-    { condition = "ctx.all_children_stopped()", target = "stop" },
-    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
-]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.pending == ChildAction::BeginShutdown"
+target = "ShuttingDown"
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::record_killed"]
-guards = [
-    { condition = "ctx.all_children_stopped()", target = "stop" },
-    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
-]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.pending == ChildAction::BeginShutdown"
+target = "ShuttingDown"
 
 [[topology.transitions]]
 state = "Running"
@@ -253,10 +269,14 @@ state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::deregister_done"]
-guards = [
-    { condition = "ctx.all_children_stopped()", target = "stop" },
-    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
-]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.pending == ChildAction::BeginShutdown"
+target = "ShuttingDown"
 
 [[topology.transitions]]
 state = "Running"
@@ -275,10 +295,14 @@ state = "Running"
 event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::WatchdogTick))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::handle_watchdog_tick"]
-guards = [
-    { condition = "ctx.all_children_stopped()", target = "stop" },
-    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
-]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.pending == ChildAction::BeginShutdown"
+target = "ShuttingDown"
 
 # Running state — catch-alls
 [[topology.transitions]]
@@ -301,35 +325,50 @@ state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::record_stopped"]
-guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
 
 [[topology.transitions]]
 state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::deregister_done"]
-guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
 
 [[topology.transitions]]
 state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::record_failed"]
-guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
 
 [[topology.transitions]]
 state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::record_aborted"]
-guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
 
 [[topology.transitions]]
 state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::record_killed"]
-guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
 
 # WatchdogTick in ShuttingDown: only flush pending commands (no health
 # checks — children are being stopped, not monitored). The flush can complete
@@ -339,7 +378,10 @@ state = "ShuttingDown"
 event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::WatchdogTick))"
 target = "stay"
 actions = ["Self::flush_pending"]
-guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
 
 # ShuttingDown state — catch-alls (Started/Alive/registrations are absorbed)
 [[topology.transitions]]

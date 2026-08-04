@@ -10,11 +10,12 @@
 #[cfg(all(test, feature = "std"))]
 mod pong_tests {
     use crate::{PongCtx, PongEvent, PongSpec, PongState};
+    use bloxide_core::engine::DispatchOutcome;
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::messaging::Envelope;
     use bloxide_core::{DynamicChannelCap, MachineState, StateMachine};
     use bloxide_test_runtime::TestRuntime;
-    use ping_pong_messages::{Ping, PingPongMsg};
+    use ping_pong_messages::{Ping, PingPongMsg, Pong};
 
     struct PongHarness {
         machine: StateMachine<PongSpec<TestRuntime>>,
@@ -108,5 +109,28 @@ mod pong_tests {
             MachineState::State(PongState::Ready),
             "machine must be in Ready (initial_state) after reset"
         );
+    }
+
+    #[test]
+    fn unhandled_event_bubbles_to_root_and_is_dropped() {
+        let mut h = PongHarness::new();
+        h.start();
+
+        // Ready has a rule only for PingPongMsg::Ping — a stray Pong bubbles
+        // to root, where no root rules exist.
+        let outcome = h.machine.dispatch(PongEvent::Msg(Envelope(
+            0,
+            PingPongMsg::Pong(Pong { round: 3 }),
+        )));
+        assert_eq!(outcome, DispatchOutcome::NoRuleMatched);
+        assert_eq!(
+            h.current_state(),
+            MachineState::State(PongState::Ready),
+            "unhandled event must not change state"
+        );
+
+        // The machine still processes subsequent valid events.
+        h.send_ping(1);
+        assert_eq!(h.current_state(), MachineState::State(PongState::Ready));
     }
 }

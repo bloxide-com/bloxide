@@ -101,12 +101,17 @@ name = \"Foo\"
 /// Writes a lint fixture workspace: `[workspace]` Cargo.toml +
 /// `crates/bloxes/foo/blox.toml`. Returns the temp dir.
 fn write_lint_fixture() -> TempDir {
+    write_lint_fixture_with(BLOX_FIXTURE)
+}
+
+/// Same as `write_lint_fixture`, with caller-supplied blox.toml content.
+fn write_lint_fixture_with(blox_toml: &str) -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
     fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = []\n")
         .expect("write workspace Cargo.toml");
     let blox_dir = dir.path().join("crates/bloxes/foo");
     fs::create_dir_all(&blox_dir).expect("create blox dir");
-    fs::write(blox_dir.join("blox.toml"), BLOX_FIXTURE).expect("write blox.toml");
+    fs::write(blox_dir.join("blox.toml"), blox_toml).expect("write blox.toml");
     dir
 }
 
@@ -218,5 +223,239 @@ fn blox_without_spec_is_not_checked() {
     assert!(
         stdout.contains("0 error(s), 0 warning(s)"),
         "a blox without a spec should produce no warnings: {stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// End to end: context-section checks (duplicates, returns contract).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn errors_on_duplicate_action_names() {
+    let dir = write_lint_fixture_with(
+        "\
+[actor]
+name = \"Foo\"
+
+[context]
+name = \"FooCtx\"
+
+[[context.actions]]
+name = \"do_thing\"
+crate = \"some_crate\"
+
+[[context.actions]]
+name = \"do_other\"
+crate = \"some_crate\"
+
+[[context.actions]]
+name = \"do_thing\"
+crate = \"some_crate\"
+",
+    );
+
+    let (_stdout, stderr, success) = run_lint(&dir);
+    assert!(!success, "duplicate action names must fail the lint run");
+    assert!(
+        stderr.contains("duplicate action name \"do_thing\""),
+        "duplicate action name should error: {stderr}"
+    );
+    assert!(
+        !stderr.contains("duplicate action name \"do_other\""),
+        "unique action names must not error: {stderr}"
+    );
+}
+
+#[test]
+fn errors_on_invalid_action_returns() {
+    let dir = write_lint_fixture_with(
+        "\
+[actor]
+name = \"Foo\"
+
+[context]
+name = \"FooCtx\"
+
+[[context.actions]]
+name = \"good\"
+crate = \"some_crate\"
+returns = \"ActionResult\"
+
+[[context.actions]]
+name = \"bad\"
+crate = \"some_crate\"
+returns = \"bool\"
+",
+    );
+
+    let (_stdout, stderr, success) = run_lint(&dir);
+    assert!(
+        !success,
+        "an unrecognized returns value must fail the lint run"
+    );
+    assert!(
+        stderr.contains(
+            "action \"bad\" has returns = \"bool\" — the only recognized value is \"ActionResult\""
+        ),
+        "invalid returns should error with the codegen message: {stderr}"
+    );
+    assert!(
+        !stderr.contains("action \"good\" has returns"),
+        "returns = \"ActionResult\" must not error: {stderr}"
+    );
+}
+
+#[test]
+fn errors_on_duplicate_context_field_names() {
+    let dir = write_lint_fixture_with(
+        "\
+[actor]
+name = \"Foo\"
+
+[context]
+name = \"FooCtx\"
+
+[[context.fields]]
+name = \"count\"
+type = \"u32\"
+
+[[context.fields]]
+name = \"total\"
+type = \"u32\"
+
+[[context.fields]]
+name = \"count\"
+type = \"u32\"
+",
+    );
+
+    let (_stdout, stderr, success) = run_lint(&dir);
+    assert!(
+        !success,
+        "duplicate context field names must fail the lint run"
+    );
+    assert!(
+        stderr.contains("duplicate context field name \"count\""),
+        "duplicate context field name should error: {stderr}"
+    );
+    assert!(
+        !stderr.contains("duplicate context field name \"total\""),
+        "unique context field names must not error: {stderr}"
+    );
+}
+
+#[test]
+fn errors_on_duplicate_context_uses_field_names() {
+    // Both shapes: single-field entries (`field = "..."`) and multi-field
+    // entries (`[[context.uses.fields]]` sub-entries) contribute context
+    // struct fields — duplicates collide in the generated struct.
+    let dir = write_lint_fixture_with(
+        "\
+[actor]
+name = \"Foo\"
+
+[context]
+name = \"FooCtx\"
+
+[[context.uses]]
+field = \"peer_ref\"
+field_type = \"ActorRef<Msg, R>\"
+role = \"ctor\"
+
+[[context.uses]]
+field = \"peer_ref\"
+field_type = \"ActorRef<Msg, R>\"
+role = \"ctor\"
+
+[[context.uses]]
+fields = [
+    { name = \"spawn_fn\", ty = \"u32\", role = \"ctor\" },
+    { name = \"spawn_fn\", ty = \"u32\", role = \"state\" },
+]
+",
+    );
+
+    let (_stdout, stderr, success) = run_lint(&dir);
+    assert!(
+        !success,
+        "duplicate context uses field names must fail the lint run"
+    );
+    assert!(
+        stderr.contains("duplicate context uses field name \"peer_ref\""),
+        "duplicate single-field uses name should error: {stderr}"
+    );
+    assert!(
+        stderr.contains("duplicate context uses field name \"spawn_fn\""),
+        "duplicate multi-field uses name should error: {stderr}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// End to end: action references against spec_imports.
+// ---------------------------------------------------------------------------
+
+/// Regression test: the old substring match (`imp.contains(last)`) accepted
+/// `stop_all` because it is a substring of the imported `stop_all_children` —
+/// a false negative. Exact leaf-segment matching rejects it.
+#[test]
+fn errors_on_action_ref_sharing_prefix_with_import() {
+    let dir = write_lint_fixture_with(
+        "\
+[actor]
+name = \"Foo\"
+
+[topology]
+spec_imports = [\"some_crate::stop_all_children\"]
+
+[[topology.states]]
+name = \"Ready\"
+initial = true
+
+[[topology.transitions]]
+state = \"Ready\"
+event = \"FooMsg::Bar(_)\"
+target = \"stay\"
+actions = [\"stop_all\"]
+",
+    );
+
+    let (_stdout, stderr, success) = run_lint(&dir);
+    assert!(!success, "an unimported action must fail the lint run");
+    assert!(
+        stderr.contains("action `stop_all` does not appear in any spec_imports entry"),
+        "prefix-sharing action ref should error: {stderr}"
+    );
+}
+
+#[test]
+fn accepts_action_refs_matching_import_leaves() {
+    let dir = write_lint_fixture_with(
+        "\
+[actor]
+name = \"Foo\"
+
+[topology]
+spec_imports = [
+    \"some_crate::stop_all_children\",
+    \"other_crate::{send_ping, send_pong}\",
+]
+
+[[topology.states]]
+name = \"Ready\"
+initial = true
+
+[[topology.transitions]]
+state = \"Ready\"
+event = \"FooMsg::Bar(_)\"
+target = \"stay\"
+actions = [\"stop_all_children\", \"send_ping\", \"other_crate::send_pong\"]
+",
+    );
+
+    let (stdout, _stderr, success) = run_lint(&dir);
+    assert!(success, "exact leaf matches must pass the lint run");
+    assert!(
+        stdout.contains("0 error(s), 0 warning(s)"),
+        "imported action refs should produce no diagnostics: {stdout}"
     );
 }

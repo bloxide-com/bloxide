@@ -250,7 +250,16 @@ pub async fn run<S, M, R>(
                     // held only by the supervisor's group, so closure is
                     // supervisor-initiated teardown — expected, unreported.
                     Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
-                    Poll::Ready(Some(Envelope(_, AbortCommand::Abort { .. }))) => {
+                    Poll::Ready(Some(Envelope(_, AbortCommand::Abort { child_id }))) => {
+                        // Abort mailboxes are per-child, so any Abort on this
+                        // stream is definitionally for this actor. A mismatch
+                        // means the supervisor routed an Abort to the wrong
+                        // child's abort mailbox — caught here in debug builds.
+                        debug_assert_eq!(
+                            child_id, actor_id,
+                            "supervisor routed Abort for child {} to actor {}'s abort mailbox",
+                            child_id, actor_id
+                        );
                         if let Some(ref notify) = supervisor_notify {
                             report_outcome::<S, R>(&DispatchOutcome::Aborted, actor_id, notify);
                         }

@@ -28,7 +28,10 @@ use worker_blox::WorkerCtx;
 pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) -> ActionResult {
     *task_id = do_work.task_id;
     *result = do_work.task_id * 2;
-    println!("[worker] task {} processed -> result = {}", *task_id, *result);
+    println!(
+        "[worker] task {} processed -> result = {}",
+        *task_id, *result
+    );
     ActionResult::Ok
 }
 
@@ -78,14 +81,17 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
     *pending_task_id = task_id;
     *spawn_in_flight = true;
     *pending += 1;
-    println!("[pool] spawn requested for task {} (pending = {})", task_id, *pending);
+    println!(
+        "[pool] spawn requested for task {} (pending = {})",
+        task_id, *pending
+    );
 
     let req = blox_ctx_pool_ref::SpawnRequest::Worker {
         task_id,
         reply_to: spawn_reply_ref.clone(),
         pool_ref: self_ref.clone(),
     };
-    ActionResult::from(bloxide_spawn::spawn_child::<
+    ActionResult::from(bloxide_spawn::spawn_dynamic_child::<
         _,
         _,
         bloxide_spawn::ChildCtrlRegistrar,
@@ -185,7 +191,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
             reply_to: spawn_reply_ref.clone(),
             pool_ref: self_ref.clone(),
         };
-        let r = bloxide_spawn::spawn_child::<_, _, bloxide_spawn::ChildCtrlRegistrar>(
+        let r = bloxide_spawn::spawn_dynamic_child::<_, _, bloxide_spawn::ChildCtrlRegistrar>(
             *spawn_fn, req, spawn_ref, notify_ref, self_id,
         );
         if r.is_err() {
@@ -199,7 +205,7 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
 ///
 /// Creates a worker actor and returns the handles the supervisor needs.
 /// This is a plain function (not a trait impl) — the wiring layer passes
-/// it to `spawn_child()` as a `SpawnFn<R, SpawnRequest<R>>`.
+/// it to `spawn_dynamic_child()` as a `SpawnFn<R, SpawnRequest<R>>`.
 ///
 /// Generic over the worker spec type `S` so the system-level codegen can
 /// inject the concrete `WorkerSpec` (with real action closures) instead of

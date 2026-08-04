@@ -8,11 +8,10 @@ repository.workspace = true
 license.workspace = true
 
 [dependencies]
-bloxide-core = { workspace = true, features = ["alloc"] }
-bloxide-child-management = { workspace = true, features = ["alloc"] }
+bloxide-core = { workspace = true }
+bloxide-child-management = { workspace = true }
 bloxide-macros = { workspace = true }
 bloxide-timer = { workspace = true }
-bloxide-log = { workspace = true }
 embassy-futures = "0.1"
 embassy-sync = { version = "0.7" }
 embassy-time = { version = "0.5" }

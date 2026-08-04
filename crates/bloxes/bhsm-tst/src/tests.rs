@@ -21,9 +21,8 @@ use bloxide_core::mailboxes::NoMailboxes;
 use bloxide_core::messaging::Envelope;
 use bloxide_core::spec::{MachineSpec, StateFns};
 use bloxide_core::topology::LeafState;
-use bloxide_core::transition::{ActionResult, Decision, StateRule};
+use bloxide_core::transition::{Decision, StateRule};
 
-extern crate std;
 use std::cell::RefCell;
 use std::thread_local;
 use std::vec;
@@ -42,6 +41,15 @@ fn take_log() -> Vec<&'static str> {
 }
 
 // ── Recording spec over the generated topology ─────────────────────────────
+//
+// Every action closure also calls `blox_ctx_noop::noop()` — the function the
+// system-level codegen wires for all 17 declared actions of this blox
+// (`crate = "blox_ctx_noop"`, `fn_name = "noop"`, `returns = "ActionResult"`).
+// Entry/exit closures match the generated `|ctx| { ::blox_ctx_noop::noop(); }`
+// shape (return discarded); transition actions match the generated bare-call
+// shape (`returns = "ActionResult"` skips the normalization wrapper). This
+// compiles and exercises the crate-ified actions through
+// the engine, so a stale action declaration can never silently rot.
 
 struct RecSpec;
 
@@ -92,8 +100,14 @@ macro_rules! rule {
 }
 
 static S_FNS: StateFns<RecSpec> = StateFns {
-    on_entry: &[|_| log("s-ENTRY")],
-    on_exit: &[|_| log("s-EXIT")],
+    on_entry: &[|_| {
+        blox_ctx_noop::noop();
+        log("s-ENTRY")
+    }],
+    on_exit: &[|_| {
+        blox_ctx_noop::noop();
+        log("s-EXIT")
+    }],
     transitions: &[
         rule!(H, |_, _, _| Decision::Transition(LeafState::new(
             BhsmTstState::S11
@@ -102,7 +116,7 @@ static S_FNS: StateFns<RecSpec> = StateFns {
             I,
             |_, _| {
                 log("s-I");
-                ActionResult::Ok
+                blox_ctx_noop::noop()
             },
             |_, _, _| Decision::Stay
         ),
@@ -114,22 +128,34 @@ static S_FNS: StateFns<RecSpec> = StateFns {
 };
 
 static S1_FNS: StateFns<RecSpec> = StateFns {
-    on_entry: &[|_| log("s1-ENTRY")],
-    on_exit: &[|_| log("s1-EXIT")],
+    on_entry: &[|_| {
+        blox_ctx_noop::noop();
+        log("s1-ENTRY")
+    }],
+    on_exit: &[|_| {
+        blox_ctx_noop::noop();
+        log("s1-EXIT")
+    }],
     transitions: &[rule!(C, |_, _, _| Decision::Transition(LeafState::new(
         BhsmTstState::S211
     )))],
 };
 
 static S11_FNS: StateFns<RecSpec> = StateFns {
-    on_entry: &[|_| log("s11-ENTRY")],
-    on_exit: &[|_| log("s11-EXIT")],
+    on_entry: &[|_| {
+        blox_ctx_noop::noop();
+        log("s11-ENTRY")
+    }],
+    on_exit: &[|_| {
+        blox_ctx_noop::noop();
+        log("s11-EXIT")
+    }],
     transitions: &[
         rule!(
             A,
             |_, _| {
                 log("s11-A");
-                ActionResult::Ok
+                blox_ctx_noop::noop()
             },
             |_, _, _| Decision::Transition(LeafState::new(BhsmTstState::S11))
         ),
@@ -137,7 +163,7 @@ static S11_FNS: StateFns<RecSpec> = StateFns {
             B,
             |_, _| {
                 log("s11-B");
-                ActionResult::Ok
+                blox_ctx_noop::noop()
             },
             |_, _, _| Decision::Transition(LeafState::new(BhsmTstState::S11))
         ),
@@ -148,14 +174,26 @@ static S11_FNS: StateFns<RecSpec> = StateFns {
 };
 
 static S2_FNS: StateFns<RecSpec> = StateFns {
-    on_entry: &[|_| log("s2-ENTRY")],
-    on_exit: &[|_| log("s2-EXIT")],
+    on_entry: &[|_| {
+        blox_ctx_noop::noop();
+        log("s2-ENTRY")
+    }],
+    on_exit: &[|_| {
+        blox_ctx_noop::noop();
+        log("s2-EXIT")
+    }],
     transitions: &[],
 };
 
 static S21_FNS: StateFns<RecSpec> = StateFns {
-    on_entry: &[|_| log("s21-ENTRY")],
-    on_exit: &[|_| log("s21-EXIT")],
+    on_entry: &[|_| {
+        blox_ctx_noop::noop();
+        log("s21-ENTRY")
+    }],
+    on_exit: &[|_| {
+        blox_ctx_noop::noop();
+        log("s21-EXIT")
+    }],
     transitions: &[
         rule!(E, |_, _, _| Decision::Transition(LeafState::new(
             BhsmTstState::S211
@@ -167,16 +205,28 @@ static S21_FNS: StateFns<RecSpec> = StateFns {
 };
 
 static S211_FNS: StateFns<RecSpec> = StateFns {
-    on_entry: &[|_| log("s211-ENTRY")],
-    on_exit: &[|_| log("s211-EXIT")],
+    on_entry: &[|_| {
+        blox_ctx_noop::noop();
+        log("s211-ENTRY")
+    }],
+    on_exit: &[|_| {
+        blox_ctx_noop::noop();
+        log("s211-EXIT")
+    }],
     transitions: &[rule!(F, |_, _, _| Decision::Transition(LeafState::new(
         BhsmTstState::S11
     )))],
 };
 
 static ERROR_FNS: StateFns<RecSpec> = StateFns {
-    on_entry: &[|_| log("error-ENTRY")],
-    on_exit: &[|_| log("error-EXIT")],
+    on_entry: &[|_| {
+        blox_ctx_noop::noop();
+        log("error-ENTRY")
+    }],
+    on_exit: &[|_| {
+        blox_ctx_noop::noop();
+        log("error-EXIT")
+    }],
     transitions: &[],
 };
 

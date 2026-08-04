@@ -9,8 +9,7 @@ license.workspace = true
 
 [features]
 default = ["std"]
-std = ["bloxide-core/std", "bloxide-spawn/std", "alloc"]
-alloc = ["bloxide-core/alloc", "bloxide-spawn/alloc"]
+std = ["bloxide-core/std", "bloxide-spawn/std"]
 
 [dependencies]
 bloxide-core = { workspace = true }

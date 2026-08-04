@@ -1,13 +1,13 @@
 // Copyright 2025 Bloxide, all rights reserved
 #![no_std]
-//! Spawn capability for bloxide — `SpawnCap`, `Kill`, and the `spawn_child` helper.
+//! Spawn capability for bloxide — `SpawnCap`, `Kill`, and the `spawn_dynamic_child` helper.
 //!
 //! This crate is a platform primitive: the ability to spawn actor tasks at
 //! runtime. Runtimes that support dynamic spawning (Tokio) implement
 //! `SpawnCap` and use `Kill` as their `KillCapability`. Runtimes that don't
 //! (Embassy) use `NoKill` from `bloxide-core` and never depend on this crate.
 //!
-//! The `spawn_child` helper and `ChildRegistrar` trait let any managing blox
+//! The `spawn_dynamic_child` helper and `ChildRegistrar` trait let any managing blox
 //! (supervisor or custom) register spawned children without depending on
 //! the supervisor.
 
@@ -167,7 +167,7 @@ pub trait ChildRegistrar<R: BloxRuntime> {
     fn register(output: SpawnOutput<R>) -> Self::RegisterMsg;
 }
 
-/// Spawn a child actor and register it with the managing blox.
+/// Spawn a dynamic child actor and register it with the managing blox.
 ///
 /// Called by the requesting blox (e.g., the Pool) — NOT by the supervisor.
 /// The requesting blox provides the spawn function and the request.
@@ -186,7 +186,7 @@ pub trait ChildRegistrar<R: BloxRuntime> {
 /// - `Req` — the application's concrete spawn request type
 /// - `C` — the `ChildRegistrar` implementation. Determines how `SpawnOutput`
 ///   is wrapped into the managing blox's control-plane message.
-pub fn spawn_child<R, Req, C>(
+pub fn spawn_dynamic_child<R, Req, C>(
     spawn_fn: SpawnFn<R, Req>,
     req: Req,
     control_ref: &ActorRef<C::RegisterMsg, R>,

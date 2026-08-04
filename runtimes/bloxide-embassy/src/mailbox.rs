@@ -80,9 +80,11 @@ impl StaticChannelCap for EmbassyRuntime {
 
 impl GroupChannelCap for EmbassyRuntime {
     fn alloc_group_id() -> ActorId {
-        // Compile-time counter: the macro expands once at this site, so every
-        // call returns the same baked ID — the notify and control channels
-        // are both mailboxes of the one logical group actor.
+        // `next_actor_id!()` increments the compile-time counter once per
+        // expansion site, not per call — this single site expands to a
+        // constant, so every call returns the same baked ID and the notify
+        // and control channels share one ID: they are both mailboxes of the
+        // one logical group actor.
         bloxide_macros::next_actor_id!()
     }
 

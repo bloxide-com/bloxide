@@ -23,11 +23,18 @@ fn introduce_peers_sends_add_peer_to_both() {
 
     let (a_ref, _a_rx) = TestRuntime::channel::<TestMsg>(a_id, 4);
     let (b_ref, _b_rx) = TestRuntime::channel::<TestMsg>(b_id, 4);
-    let (a_ctrl, mut a_ctrl_rx) = TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(a_id + 100, 4);
-    let (b_ctrl, mut b_ctrl_rx) = TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(b_id + 100, 4);
+    let (a_ctrl, mut a_ctrl_rx) =
+        TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(a_id + 100, 4);
+    let (b_ctrl, mut b_ctrl_rx) =
+        TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(b_id + 100, 4);
 
     let result = introduce_peers(0, a_id, a_ref, a_ctrl, b_id, b_ref, b_ctrl);
-    assert_eq!(result, ActionResult::Ok, "introduce_peers should succeed: {:?}", result);
+    assert_eq!(
+        result,
+        ActionResult::Ok,
+        "introduce_peers should succeed: {:?}",
+        result
+    );
 
     let a_ctrl_msgs = a_ctrl_rx.drain_payloads();
     assert_eq!(a_ctrl_msgs.len(), 1);
@@ -60,11 +67,17 @@ fn introduce_peers_returns_err_if_first_send_fails() {
     let (a_ref, _a_rx) = TestRuntime::channel::<TestMsg>(a_id, 4);
     let (b_ref, _b_rx) = TestRuntime::channel::<TestMsg>(b_id, 4);
     // Fill a_ctrl so the first send fails.
-    let (a_ctrl, _a_ctrl_rx) = TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(a_id + 100, 0);
-    let (b_ctrl, mut b_ctrl_rx) = TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(b_id + 100, 4);
+    let (a_ctrl, _a_ctrl_rx) =
+        TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(a_id + 100, 0);
+    let (b_ctrl, mut b_ctrl_rx) =
+        TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(b_id + 100, 4);
 
     let result = introduce_peers(0, a_id, a_ref, a_ctrl, b_id, b_ref, b_ctrl);
-    assert_eq!(result, ActionResult::Err, "introduce_peers should fail when first send fails");
+    assert_eq!(
+        result,
+        ActionResult::Err,
+        "introduce_peers should fail when first send fails"
+    );
     // The second send still happens (best-effort).
     let b_ctrl_msgs = b_ctrl_rx.drain_payloads();
     assert_eq!(b_ctrl_msgs.len(), 1);
@@ -108,11 +121,26 @@ fn apply_peer_control_removes_peer() {
     let (r1, _rx1) = TestRuntime::channel::<TestMsg>(id1, 4);
     let (r2, _rx2) = TestRuntime::channel::<TestMsg>(id2, 4);
 
-    apply_peer_control(&mut peers, &PeerCtrl::AddPeer(AddPeer { peer_id: id1, peer_ref: r1 }));
-    apply_peer_control(&mut peers, &PeerCtrl::AddPeer(AddPeer { peer_id: id2, peer_ref: r2 }));
+    apply_peer_control(
+        &mut peers,
+        &PeerCtrl::AddPeer(AddPeer {
+            peer_id: id1,
+            peer_ref: r1,
+        }),
+    );
+    apply_peer_control(
+        &mut peers,
+        &PeerCtrl::AddPeer(AddPeer {
+            peer_id: id2,
+            peer_ref: r2,
+        }),
+    );
     assert_eq!(peers.len(), 2);
 
-    let result = apply_peer_control(&mut peers, &PeerCtrl::RemovePeer(RemovePeer { peer_id: id1 }));
+    let result = apply_peer_control(
+        &mut peers,
+        &PeerCtrl::RemovePeer(RemovePeer { peer_id: id1 }),
+    );
     assert_eq!(result, ActionResult::Ok);
     assert_eq!(peers.len(), 1);
     assert_eq!(peers[0].id(), id2);
@@ -151,7 +179,11 @@ fn broadcast_to_peers_returns_err_on_any_failure() {
 
     let msg = TestMsg { payload: 42 };
     let result = broadcast_to_peers(0, &peers, msg.clone());
-    assert_eq!(result, ActionResult::Err, "broadcast should fail when any send fails");
+    assert_eq!(
+        result,
+        ActionResult::Err,
+        "broadcast should fail when any send fails"
+    );
 
     // Best-effort: the first send still landed.
     let msgs1 = rx1.drain_payloads();
@@ -173,9 +205,7 @@ fn peer_ctrl_clone_roundtrips() {
     let (peer_ref, _rx) = TestRuntime::channel::<TestMsg>(peer_id, 4);
     let original = PeerCtrl::AddPeer(AddPeer { peer_id, peer_ref });
     let cloned = original.clone();
-    assert!(
-        matches!(cloned, PeerCtrl::AddPeer(AddPeer { peer_id: id, .. }) if id == peer_id)
-    );
+    assert!(matches!(cloned, PeerCtrl::AddPeer(AddPeer { peer_id: id, .. }) if id == peer_id));
 }
 
 #[test]

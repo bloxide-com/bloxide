@@ -8,109 +8,144 @@ generics = ""
 
 # --- Action declarations (Phase 3 system codegen) ---
 # All BHSM actions are entry/exit trace functions, previously logging-only.
-# They are now no-ops (no fields, no impl required).
+# They are now no-ops (no fields, no impl required), provided by the shared
+# blox-ctx-noop context crate (fn_name = "noop" for every slot).
 
 [[context.actions]]
 name = "s_entry"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s_exit"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s_i"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s1_entry"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s1_exit"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s11_entry"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s11_exit"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s11_a"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s11_b"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s2_entry"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s2_exit"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s21_entry"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s21_exit"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s211_entry"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "s211_exit"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "error_entry"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "error_exit"
-crate = "bloxide_core"
+fn_name = "noop"
+crate = "blox_ctx_noop"
 fields = []
 impl_required = false
+returns = "ActionResult"
 
 [event]
 name = "BhsmTstEvent"

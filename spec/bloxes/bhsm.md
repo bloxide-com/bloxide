@@ -2,13 +2,13 @@
 
 ## Purpose
 
-The BhsmTst (Bloxide HSM Test) actor is a pedagogical demonstration of deep hierarchical state machine mechanics. It exercises every transition topology: self-transitions, parent→child transitions, cross-sibling transitions, deep cross-subtree transitions, and top-level catch-all transitions — the classic QHsmTst topology from Miro Samek's "Practical UML Statecharts". (The original console example printed a trace on every entry/exit; in bloxide the entry/exit actions are no-ops — the blox exists to prove the engine's topology handling.)
+The BhsmTst (Bloxide HSM Test) actor is a pedagogical demonstration of deep hierarchical state machine mechanics. It exercises every transition topology: self-transitions, parent→child transitions, cross-sibling transitions, deep cross-subtree transitions, and top-level catch-all transitions — the classic QHsmTst topology from Miro Samek's "Practical UML Statecharts". (The original console example printed a trace on every entry/exit; in bloxide the entry/exit actions are no-ops from the shared `blox-ctx-noop` context crate — the blox exists to prove the engine's topology handling.)
 
 ## Crate Location
 
 - Blox crate: `crates/bloxes/bhsm-tst/`
 - Messages crate: `crates/messages/bhsm-tst-messages/`
-- No context crate needed — this is a pure topology demonstration with no mutable state
+- Context crate: `crates/context/blox-ctx-noop/` — shared no-op action functions (no mutable state; bhsm-tst is its first consumer)
 
 ## State Hierarchy
 
@@ -86,10 +86,14 @@ No state fields — this is a pure topology demonstration. `BhsmTstCtx::new(acto
 
 ## Entry / Exit Actions
 
-Every state declares `on_entry` and `on_exit` hooks; in the current blox they are
-no-ops (trace prints `{state}-ENTRY;` / `{state}-EXIT;` in the original Samek
-example). The hooks exist so the topology exercises the engine's full exit/entry
-chain machinery.
+Every state declares `on_entry` and `on_exit` hooks; they are no-ops (trace
+prints `{state}-ENTRY;` / `{state}-EXIT;` in the original Samek example). All
+17 declared actions — the entry/exit hooks plus the three transition actions
+(`s_i`, `s11_a`, `s11_b`) — resolve to `noop()` from the shared `blox-ctx-noop`
+context crate (`crate = "blox_ctx_noop"` + `fn_name = "noop"` +
+`returns = "ActionResult"` in each `[[context.actions]]` entry), demonstrating
+the composable context-crate pattern (spec 13). The hooks exist so the topology exercises the engine's full
+exit/entry chain machinery.
 
 | State | on_entry | on_exit |
 |-------|----------|---------|
@@ -182,7 +186,11 @@ Decision::Stop: fires exit chain from current state to root, enters Init. Superv
 
 > Verified by `crates/bloxes/bhsm-tst/src/tests.rs` (15 tests) —
 > a recording spec over the **generated** topology asserts the exact
-> exit/entry chain order per transition. Chains follow spec 01 LCA semantics:
+> exit/entry chain order per transition. Its action closures call
+> `blox_ctx_noop::noop()` in the same shapes the system-level codegen emits
+> (`|ctx| { noop(); }` for entry/exit, a bare `noop()` call returning
+> `ActionResult` for transitions), so the crate-ified actions are compiled
+> and exercised in-crate. Chains follow spec 01 LCA semantics:
 > the LCA state itself never exits or re-enters; full chains fire only when
 > `LCA = None` (e.g. `K` → `Error`, `X` → `Stop`).
 

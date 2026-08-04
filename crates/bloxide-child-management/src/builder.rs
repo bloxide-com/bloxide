@@ -56,6 +56,12 @@ where
     /// Allocates notify and control channels. The notify channel receives
     /// `ChildLifecycleEvent` from child actors; the control channel receives
     /// `Ctrl` messages (e.g. `RegisterChild`, `RegisterDynamicChild`).
+    ///
+    /// Both channel IDs come from `R::alloc_group_id()`. Static runtimes
+    /// (Embassy) share one baked group ID across the two calls — a single
+    /// `next_actor_id!()` expansion site makes the ID constant on every
+    /// call — while dynamic runtimes (Tokio, TestRuntime) allocate two
+    /// distinct IDs from their runtime counter. Both are correct by design.
     pub fn new(shutdown: GroupShutdown, max_misses: u8) -> Self {
         let notify_id = R::alloc_group_id();
         let (notify_ref, notify_rx) = R::group_channel::<ChildLifecycleEvent, NOTIFY>(notify_id);

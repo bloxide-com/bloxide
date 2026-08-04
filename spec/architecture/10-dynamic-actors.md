@@ -45,7 +45,7 @@ crates that parallel `bloxide-supervisor` (supervision) and `bloxide-timer`
 (timers):
 
 - **`bloxide-spawn`** — defines the `SpawnCap` Tier 2 trait, `SpawnFn`, `SpawnOutput`,
-  `ChildRegistrar`, `ChildCtrlRegistrar`, and the `spawn_child` helper; provides `Kill`
+  `ChildRegistrar`, `ChildCtrlRegistrar`, and the `spawn_dynamic_child` helper; provides `Kill`
   and re-exports `KillCapability` / `NoKill`
 - **`bloxide-core`** — defines the `KillCapability` Tier 2 trait (used by the engine)
 - **`bloxide-peers`** — defines peer introduction (`PeerCtrl`, `introduce_peers`,
@@ -58,7 +58,7 @@ runtime-agnostic.
 
 | Crate | Module | Contents |
 |-------|--------|----------|
-| `bloxide-spawn` | `lib` | `SpawnCap` trait — Tier 2, extends `DynamicChannelCap`; `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `ChildCtrlRegistrar`, `spawn_child`, `Kill` |
+| `bloxide-spawn` | `lib` | `SpawnCap` trait — Tier 2, extends `DynamicChannelCap`; `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `ChildCtrlRegistrar`, `spawn_dynamic_child`, `Kill` |
 | `bloxide-core` | `capability` | `KillCapability` trait, `NoKill` |
 | `bloxide-peers` | `lib` | `PeerCtrl`, `AddPeer`, `RemovePeer`, `introduce_peers`, `apply_peer_control`, `broadcast_to_peers` |
 
@@ -85,7 +85,7 @@ action functions only for domain-specific peer logic (e.g. `broadcast_result`).
 flowchart TD
     BloxideCore["bloxide-core\n(BloxRuntime, DynamicChannelCap,\nKillCapability,\nrun + RunConfig)"]
     BloxideChildMgmt["bloxide-child-management\n(ChildPolicy, ChildGroup, ChildCtrl)"]
-    BloxideSpawn["bloxide-spawn\n(SpawnCap, SpawnFn, SpawnOutput,\nChildRegistrar, spawn_child)"]
+    BloxideSpawn["bloxide-spawn\n(SpawnCap, SpawnFn, SpawnOutput,\nChildRegistrar, spawn_dynamic_child)"]
     BloxidePeers["bloxide-peers\n(PeerCtrl, introduce_peers)"]
     TokioRuntime["bloxide-tokio\n(impl SpawnCap —\nKillHandle = AbortHandle)"]
     PoolBlox["pool-blox / worker-blox\n(R: BloxRuntime only)"]
@@ -238,7 +238,7 @@ pub struct SpawnedWorker<Ctrl: Send + 'static, R: BloxRuntime> {
 The spawn is **two-phase**: the factory creates the child task, sends the
 app-specific handles (`SpawnedWorker`) back to the requester on the request's
 `reply_to` channel, and returns `SpawnOutput` (lifecycle/abort/kill handles) to
-the `spawn_child` helper, which registers the child with the managing blox's
+the `spawn_dynamic_child` helper, which registers the child with the managing blox's
 control mailbox.
 
 ---
@@ -409,7 +409,7 @@ needs for registration.
 ///
 /// The factory allocates channels, constructs the child's context and state machine,
 /// spawns the task, sends the app-specific refs back on `req`'s reply channel, and
-/// returns the SpawnOutput. `spawn_child` then wraps the SpawnOutput into the
+/// returns the SpawnOutput. `spawn_dynamic_child` then wraps the SpawnOutput into the
 /// managing blox's registration message.
 pub type SpawnFn<R, Req> = fn(req: Req, notify: ActorRef<ChildLifecycleEvent, R>) -> SpawnOutput<R>;
 ```
@@ -545,7 +545,7 @@ later event.
 
 - `Idle`/`Active` + `PoolMsg::SpawnWorker(_)` → `Spawning`, running
   `handle_spawn_worker`: record the task, set `spawn_in_flight`, and call
-  `bloxide_spawn::spawn_child::<_, _, ChildCtrlRegistrar>(*spawn_fn, req, spawn_ref, notify_ref, self_id)`
+  `bloxide_spawn::spawn_dynamic_child::<_, _, ChildCtrlRegistrar>(*spawn_fn, req, spawn_ref, notify_ref, self_id)`
 - `Spawning` + `PoolMsg::SpawnWorker(_)` → stay, running
   `handle_spawn_worker_queued` (buffers the task ID in `spawn_queue`)
 - `Spawning` + `PoolEvent::SpawnReply(_)` → `Active`, running
@@ -578,13 +578,13 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
         reply_to: spawn_reply_ref.clone(),
         pool_ref: self_ref.clone(),
     };
-    ActionResult::from(bloxide_spawn::spawn_child::<_, _, ChildCtrlRegistrar>(
+    ActionResult::from(bloxide_spawn::spawn_dynamic_child::<_, _, ChildCtrlRegistrar>(
         *spawn_fn, req, spawn_ref, notify_ref, self_id,
     ))
 }
 ```
 
-`spawn_child` calls the factory (creating the child) and sends
+`spawn_dynamic_child` calls the factory (creating the child) and sends
 `ChildCtrl::RegisterDynamicChild` — the `SpawnOutput` wrapped by
 `ChildCtrlRegistrar` — to the managing blox's control mailbox. The supervisor
 then registers the child via `ChildGroup::try_add_dynamic` and sends `Start`.
@@ -675,11 +675,11 @@ sequenceDiagram
     participant NewWorker as Worker N
     participant OldWorker as Workers 1..N-1
 
-    Pool->>Factory: spawn_child(...) invokes spawn_fn(req, notify)
+    Pool->>Factory: spawn_dynamic_child(...) invokes spawn_fn(req, notify)
     Factory->>NewWorker: alloc_actor_id, channels, run(supervised_with_abort), spawn
     Factory-->>Pool: SpawnedWorker reply (via reply_to channel)
     Factory-->>Pool: SpawnOutput (return value)
-    Pool->>Sup: ChildCtrl::RegisterDynamicChild (spawn_child wraps SpawnOutput)
+    Pool->>Sup: ChildCtrl::RegisterDynamicChild (spawn_dynamic_child wraps SpawnOutput)
 
     Pool->>Pool: handle_spawned_worker: store refs, pending accounting
     loop for each existing worker i in 0..N-1
@@ -1035,12 +1035,12 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
   1. Spawn the child with `run()` + `RunConfig::supervised(...)` (or
      `supervised_with_abort(...)` when abort/kill capability is needed) and a
      per-child lifecycle channel.
-  2. The `spawn_child()` helper sends `ChildCtrl::RegisterDynamicChild` (the
+  2. The `spawn_dynamic_child()` helper sends `ChildCtrl::RegisterDynamicChild` (the
      `SpawnOutput` wrapped by `ChildCtrlRegistrar`) to the managing blox's
      control mailbox.
   3. The supervisor adds the child via `ChildGroup::try_add_dynamic` (storing the
      abort/kill handles) and sends `Start`.
-  On Tokio, prefer the `spawn_child()` helper from `bloxide-spawn` (with factory
+  On Tokio, prefer the `spawn_dynamic_child()` helper from `bloxide-spawn` (with factory
   injection) to avoid wiring boilerplate — see the pool demo.
   This keeps the model deterministic and explicit without requiring mutable access to
   the supervisor's `ChildGroup` from inside domain action functions.

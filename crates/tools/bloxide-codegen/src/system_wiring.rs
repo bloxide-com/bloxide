@@ -916,7 +916,7 @@ pub fn generate(
 
             if is_tokio {
                 supervisor_finish_stmts.push(quote! {
-                    ::#runtime_crate_ident::spawn_child!(
+                    ::#runtime_crate_ident::spawn_static_child!(
                         #group_ident,
                         #child_task_ident(#child_machine_ident, #child_mbox_ident, #child_id_ident),
                         #policy
@@ -924,7 +924,7 @@ pub fn generate(
                 });
             } else {
                 supervisor_finish_stmts.push(quote! {
-                    ::#runtime_crate_ident::spawn_child!(
+                    ::#runtime_crate_ident::spawn_static_child!(
                         spawner,
                         #group_ident,
                         #child_task_ident(#child_machine_ident, #child_mbox_ident, #child_id_ident),

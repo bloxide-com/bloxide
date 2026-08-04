@@ -51,13 +51,32 @@ impl From<()> for ActionResult {
 /// Guards inspect `ActionResults` to decide the next state, enabling error
 /// handling without polluting the actor context.
 ///
-/// ```ignore
-/// // Doc test ignored: imports not resolvable in rustdoc compilation context
-/// guard(ctx, results, event) {
-///     results.any_failed() => MyState::Error,
-///     ctx.count >= MAX     => MyState::Done,
-///     _                    => MyState::Running,
-/// }
+/// ```
+/// use bloxide_core::transition::{ActionResult, ActionResults};
+/// # #[derive(Debug, PartialEq)]
+/// # enum MyState {
+/// #     Error,
+/// #     Done,
+/// #     Running,
+/// # }
+/// # struct Ctx {
+/// #     count: u32,
+/// # }
+/// # const MAX: u32 = 10;
+///
+/// // The engine collects every action outcome into `ActionResults` …
+/// let results: ActionResults = [ActionResult::Ok, ActionResult::Err].into_iter().collect();
+/// assert!(results.any_failed());
+/// assert_eq!(results.failure_count(), 1);
+///
+/// // … then the guard picks the next state from `&Ctx` and `&ActionResults`:
+/// # let ctx = Ctx { count: 3 };
+/// let next = match () {
+///     _ if results.any_failed() => MyState::Error,
+///     _ if ctx.count >= MAX => MyState::Done,
+///     _ => MyState::Running,
+/// };
+/// assert_eq!(next, MyState::Error);
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct ActionResults {

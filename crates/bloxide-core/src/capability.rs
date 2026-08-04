@@ -172,10 +172,13 @@ pub trait DynamicChannelCap: BloxRuntime {
 pub trait GroupChannelCap: BloxRuntime {
     /// Allocate an actor ID for a group channel (notify/control).
     ///
-    /// Dynamic runtimes forward to their runtime counter (distinct ID per
-    /// call). Static runtimes bake a compile-time ID per expansion site —
-    /// the notify and control channels are both mailboxes of the one
-    /// logical group actor.
+    /// Dynamic runtimes forward to their runtime counter, so each call
+    /// returns a distinct ID. Static runtimes contain exactly one
+    /// `next_actor_id!()` expansion site — the macro consumes the
+    /// compile-time counter once per expansion site (not per call) and
+    /// bakes the result as a constant, so every call returns the same ID:
+    /// the notify and control channels share one ID because they are both
+    /// mailboxes of the one logical group actor.
     fn alloc_group_id() -> ActorId;
 
     /// Create a group channel with capacity `N` and the given `id`.

@@ -6,20 +6,31 @@ use std::fs;
 use std::path::Path;
 
 use crate::utils::{
-    generate_spec_md, to_camel_case, update_workspace_cargo_toml, WorkspaceAddition,
+    generate_spec_md, to_camel_case, update_workspace_cargo_toml, workspace_root_or_cwd,
+    WorkspaceAddition,
 };
 
 pub fn new_blox(name: &str, messages: Option<&str>, context: Option<&str>) -> Result<()> {
+    let root = workspace_root_or_cwd()?;
+    new_blox_in(&root, name, messages, context)
+}
+
+pub(crate) fn new_blox_in(
+    root: &Path,
+    name: &str,
+    messages: Option<&str>,
+    context: Option<&str>,
+) -> Result<()> {
     let name_snake = name.to_lowercase().replace("-", "_");
     let name_camel = to_camel_case(name);
 
-    let spec_dir = Path::new("spec/bloxes");
-    fs::create_dir_all(spec_dir)?;
+    let spec_dir = root.join("spec/bloxes");
+    fs::create_dir_all(&spec_dir)?;
     let spec_path = spec_dir.join(format!("{}.md", name_snake));
-    fs::write(&spec_path, generate_spec_md(&name_snake, &name_camel))?;
+    fs::write(&spec_path, generate_spec_md(root, &name_snake, &name_camel))?;
     println!("Created: {}", spec_path.display());
 
-    create_blox_crate(&name_snake, &name_camel, messages, context)?;
+    create_blox_crate(root, &name_snake, &name_camel, messages, context)?;
 
     let member_path = format!("crates/bloxes/{}", name_snake);
     let dep_name = format!("{}-blox", name_snake);
@@ -27,13 +38,16 @@ pub fn new_blox(name: &str, messages: Option<&str>, context: Option<&str>) -> Re
         r#"{} = {{ path = "crates/bloxes/{}" }}"#,
         dep_name, name_snake
     );
-    update_workspace_cargo_toml(&[
-        WorkspaceAddition::Member(member_path),
-        WorkspaceAddition::Dependency {
-            name: dep_name,
-            toml_line: dep_toml_line,
-        },
-    ])?;
+    update_workspace_cargo_toml(
+        root,
+        &[
+            WorkspaceAddition::Member(member_path),
+            WorkspaceAddition::Dependency {
+                name: dep_name,
+                toml_line: dep_toml_line,
+            },
+        ],
+    )?;
 
     println!("\nScaffolded new blox '{}'", name);
     println!("Next steps:");
@@ -51,18 +65,19 @@ pub fn new_blox(name: &str, messages: Option<&str>, context: Option<&str>) -> Re
 }
 
 pub fn create_blox_crate(
+    root: &Path,
     name_snake: &str,
     name_camel: &str,
     messages: Option<&str>,
     context: Option<&str>,
 ) -> Result<()> {
-    let crate_dir = Path::new("crates/bloxes").join(name_snake);
+    let crate_dir = root.join("crates/bloxes").join(name_snake);
     let src_dir = crate_dir.join("src");
     let gen_dir = src_dir.join("generated");
     fs::create_dir_all(&gen_dir)?;
 
     let mut deps = String::from(
-        r#"bloxide-core = { workspace = true, features = ["alloc"] }
+        r#"bloxide-core = { workspace = true }
 bloxide-macros = { workspace = true }
 "#,
     );

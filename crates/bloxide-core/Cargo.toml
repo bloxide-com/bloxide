@@ -9,8 +9,7 @@ license.workspace = true
 
 [features]
 default = []
-alloc   = []
-std     = ["alloc"]
+std     = []
 tracing = ["dep:tracing"]
 
 [dependencies]

@@ -22,21 +22,181 @@ mod dyn_channels;
 /// Generate channel creation code for any number of mailboxes.
 ///
 /// Syntax:
-/// ```ignore
-/// // Doc test ignored: imports not resolvable in rustdoc compilation context
-/// channels!(EmbassyRuntime; PingPongMsg(16), SomeMsg(8))
+/// ```
+/// use bloxide_macros::channels;
+/// # use bloxide_core::capability::{BloxRuntime, NoKill, StaticChannelCap};
+/// # use bloxide_core::messaging::{ActorId, ActorRef, Envelope};
+/// # use std::collections::VecDeque;
+/// # use std::sync::{Arc, Mutex};
+/// #
+/// # // Minimal in-memory BloxRuntime so the example can compile and run.
+/// # #[derive(Clone)]
+/// # struct MockRuntime;
+/// #
+/// # // One shared queue backs the sender, receiver, and stream of a channel.
+/// # struct Chan<M: Send + 'static>(Arc<Mutex<VecDeque<Envelope<M>>>>);
+/// # impl<M: Send + 'static> Clone for Chan<M> {
+/// #     fn clone(&self) -> Self {
+/// #         Self(Arc::clone(&self.0))
+/// #     }
+/// # }
+/// # impl<M: Send + 'static> futures_core::Stream for Chan<M> {
+/// #     type Item = Envelope<M>;
+/// #     fn poll_next(
+/// #         self: core::pin::Pin<&mut Self>,
+/// #         _: &mut core::task::Context<'_>,
+/// #     ) -> core::task::Poll<Option<Self::Item>> {
+/// #         core::task::Poll::Ready(self.0.lock().unwrap().pop_front())
+/// #     }
+/// # }
+/// #
+/// # impl BloxRuntime for MockRuntime {
+/// #     type SendError = ();
+/// #     type TrySendError = ();
+/// #     type Sender<M: Send + 'static> = Chan<M>;
+/// #     type Receiver<M: Send + 'static> = Chan<M>;
+/// #     type Stream<M: Send + 'static> = Chan<M>;
+/// #     type Kill = NoKill;
+/// #     fn to_stream<M: Send + 'static>(rx: Self::Receiver<M>) -> Self::Stream<M> {
+/// #         rx
+/// #     }
+/// #     async fn send_via<M: Send + 'static>(
+/// #         tx: &Self::Sender<M>,
+/// #         env: Envelope<M>,
+/// #     ) -> Result<(), Self::SendError> {
+/// #         tx.0.lock().unwrap().push_back(env);
+/// #         Ok(())
+/// #     }
+/// #     fn try_send_via<M: Send + 'static>(
+/// #         tx: &Self::Sender<M>,
+/// #         env: Envelope<M>,
+/// #     ) -> Result<(), Self::TrySendError> {
+/// #         tx.0.lock().unwrap().push_back(env);
+/// #         Ok(())
+/// #     }
+/// #     fn try_send_error_is_closed(_: &Self::TrySendError) -> bool {
+/// #         false
+/// #     }
+/// # }
+/// #
+/// # impl StaticChannelCap for MockRuntime {
+/// #     fn channel<M: Send + 'static, const N: usize>(
+/// #         id: ActorId,
+/// #     ) -> (ActorRef<M, Self>, Self::Receiver<M>) {
+/// #         let chan = Chan(Arc::new(Mutex::new(VecDeque::new())));
+/// #         (ActorRef::new(id, chan.clone()), chan)
+/// #     }
+/// # }
+/// #
+/// # enum PingPongMsg {
+/// #     Ping,
+/// # }
+/// # enum SomeMsg {
+/// #     Go,
+/// # }
+///
+/// let ((ping_ref, some_ref), (_ping_stream, _some_stream)) =
+///     channels!(MockRuntime; PingPongMsg(16), SomeMsg(8));
+///
+/// // All mailboxes from one `channels!` call belong to the same actor and
+/// // share one compile-time actor ID.
+/// assert_eq!(ping_ref.id(), some_ref.id());
+///
+/// // The refs are live typed send handles.
+/// ping_ref.try_send(ping_ref.id(), PingPongMsg::Ping).unwrap();
+/// some_ref.try_send(some_ref.id(), SomeMsg::Go).unwrap();
 /// ```
 ///
-/// Generates a block expression that returns `((ref1, ref2, ...), (stream1, stream2, ...))`:
-/// ```ignore
-/// // Doc test ignored: imports not resolvable in rustdoc compilation context
-/// {
-///     let (r1, s1) = <EmbassyRuntime as ::bloxide_core::capability::StaticChannelCap>
-///         ::channel::<PingPongMsg, 16>();
-///     let (r2, s2) = <EmbassyRuntime as ::bloxide_core::capability::StaticChannelCap>
-///         ::channel::<SomeMsg, 8>();
+/// Generates a block expression that returns `((ref1, ref2, ...), (stream1, stream2, ...))`.
+/// Shown with `MockRuntime` standing in for the real runtime type and actor ID
+/// `1` — the value the compile-time counter bakes into the first expansion:
+/// ```
+/// # use bloxide_core::capability::{BloxRuntime, NoKill, StaticChannelCap};
+/// # use bloxide_core::messaging::{ActorId, ActorRef, Envelope};
+/// # use std::collections::VecDeque;
+/// # use std::sync::{Arc, Mutex};
+/// #
+/// # // Minimal in-memory BloxRuntime so the example can compile and run.
+/// # #[derive(Clone)]
+/// # struct MockRuntime;
+/// #
+/// # // One shared queue backs the sender, receiver, and stream of a channel.
+/// # struct Chan<M: Send + 'static>(Arc<Mutex<VecDeque<Envelope<M>>>>);
+/// # impl<M: Send + 'static> Clone for Chan<M> {
+/// #     fn clone(&self) -> Self {
+/// #         Self(Arc::clone(&self.0))
+/// #     }
+/// # }
+/// # impl<M: Send + 'static> futures_core::Stream for Chan<M> {
+/// #     type Item = Envelope<M>;
+/// #     fn poll_next(
+/// #         self: core::pin::Pin<&mut Self>,
+/// #         _: &mut core::task::Context<'_>,
+/// #     ) -> core::task::Poll<Option<Self::Item>> {
+/// #         core::task::Poll::Ready(self.0.lock().unwrap().pop_front())
+/// #     }
+/// # }
+/// #
+/// # impl BloxRuntime for MockRuntime {
+/// #     type SendError = ();
+/// #     type TrySendError = ();
+/// #     type Sender<M: Send + 'static> = Chan<M>;
+/// #     type Receiver<M: Send + 'static> = Chan<M>;
+/// #     type Stream<M: Send + 'static> = Chan<M>;
+/// #     type Kill = NoKill;
+/// #     fn to_stream<M: Send + 'static>(rx: Self::Receiver<M>) -> Self::Stream<M> {
+/// #         rx
+/// #     }
+/// #     async fn send_via<M: Send + 'static>(
+/// #         tx: &Self::Sender<M>,
+/// #         env: Envelope<M>,
+/// #     ) -> Result<(), Self::SendError> {
+/// #         tx.0.lock().unwrap().push_back(env);
+/// #         Ok(())
+/// #     }
+/// #     fn try_send_via<M: Send + 'static>(
+/// #         tx: &Self::Sender<M>,
+/// #         env: Envelope<M>,
+/// #     ) -> Result<(), Self::TrySendError> {
+/// #         tx.0.lock().unwrap().push_back(env);
+/// #         Ok(())
+/// #     }
+/// #     fn try_send_error_is_closed(_: &Self::TrySendError) -> bool {
+/// #         false
+/// #     }
+/// # }
+/// #
+/// # impl StaticChannelCap for MockRuntime {
+/// #     fn channel<M: Send + 'static, const N: usize>(
+/// #         id: ActorId,
+/// #     ) -> (ActorRef<M, Self>, Self::Receiver<M>) {
+/// #         let chan = Chan(Arc::new(Mutex::new(VecDeque::new())));
+/// #         (ActorRef::new(id, chan.clone()), chan)
+/// #     }
+/// # }
+/// #
+/// # enum PingPongMsg {
+/// #     Ping,
+/// # }
+/// # enum SomeMsg {
+/// #     Go,
+/// # }
+/// let ((r1, r2), (_s1, _s2)) = {
+///     // Compile-time guard: statically wired actor IDs live below
+///     // `DYNAMIC_ACTOR_ID_BASE`; exceeding the limit fails compilation here.
+///     const _: () = assert!(
+///         1 < ::bloxide_core::capability::DYNAMIC_ACTOR_ID_BASE,
+///         "statically wired actor limit exceeded: compile-time actor IDs must stay below DYNAMIC_ACTOR_ID_BASE"
+///     );
+///     let (r1, s1) = <MockRuntime as ::bloxide_core::capability::StaticChannelCap>
+///         ::channel::<PingPongMsg, 16>(1);
+///     let (r2, s2) = <MockRuntime as ::bloxide_core::capability::StaticChannelCap>
+///         ::channel::<SomeMsg, 8>(1);
 ///     ((r1, r2,), (s1, s2,))
-/// }
+/// };
+///
+/// assert_eq!(r1.id(), 1);
+/// assert_eq!(r2.id(), 1);
 /// ```
 ///
 /// This macro is typically wrapped by a runtime-specific thin macro (e.g.
@@ -79,8 +239,96 @@ pub fn next_actor_id(_input: TokenStream) -> TokenStream {
 /// runtime-configurable capacity (e.g. Tokio).
 ///
 /// Syntax:
-/// ```ignore
-/// dyn_channels!(TokioRuntime; PingPongMsg(16), SomeMsg(8))
+/// ```
+/// use bloxide_macros::dyn_channels;
+/// # use bloxide_core::capability::{
+/// #     BloxRuntime, DynamicChannelCap, NoKill, DYNAMIC_ACTOR_ID_BASE,
+/// # };
+/// # use bloxide_core::messaging::{ActorId, ActorRef, Envelope};
+/// # use std::collections::VecDeque;
+/// # use std::sync::{Arc, Mutex};
+/// #
+/// # // Minimal in-memory BloxRuntime so the example can compile and run.
+/// # #[derive(Clone)]
+/// # struct MockRuntime;
+/// #
+/// # // One shared queue backs the sender, receiver, and stream of a channel.
+/// # struct Chan<M: Send + 'static>(Arc<Mutex<VecDeque<Envelope<M>>>>);
+/// # impl<M: Send + 'static> Clone for Chan<M> {
+/// #     fn clone(&self) -> Self {
+/// #         Self(Arc::clone(&self.0))
+/// #     }
+/// # }
+/// # impl<M: Send + 'static> futures_core::Stream for Chan<M> {
+/// #     type Item = Envelope<M>;
+/// #     fn poll_next(
+/// #         self: core::pin::Pin<&mut Self>,
+/// #         _: &mut core::task::Context<'_>,
+/// #     ) -> core::task::Poll<Option<Self::Item>> {
+/// #         core::task::Poll::Ready(self.0.lock().unwrap().pop_front())
+/// #     }
+/// # }
+/// #
+/// # impl BloxRuntime for MockRuntime {
+/// #     type SendError = ();
+/// #     type TrySendError = ();
+/// #     type Sender<M: Send + 'static> = Chan<M>;
+/// #     type Receiver<M: Send + 'static> = Chan<M>;
+/// #     type Stream<M: Send + 'static> = Chan<M>;
+/// #     type Kill = NoKill;
+/// #     fn to_stream<M: Send + 'static>(rx: Self::Receiver<M>) -> Self::Stream<M> {
+/// #         rx
+/// #     }
+/// #     async fn send_via<M: Send + 'static>(
+/// #         tx: &Self::Sender<M>,
+/// #         env: Envelope<M>,
+/// #     ) -> Result<(), Self::SendError> {
+/// #         tx.0.lock().unwrap().push_back(env);
+/// #         Ok(())
+/// #     }
+/// #     fn try_send_via<M: Send + 'static>(
+/// #         tx: &Self::Sender<M>,
+/// #         env: Envelope<M>,
+/// #     ) -> Result<(), Self::TrySendError> {
+/// #         tx.0.lock().unwrap().push_back(env);
+/// #         Ok(())
+/// #     }
+/// #     fn try_send_error_is_closed(_: &Self::TrySendError) -> bool {
+/// #         false
+/// #     }
+/// # }
+/// #
+/// # impl DynamicChannelCap for MockRuntime {
+/// #     fn alloc_actor_id() -> ActorId {
+/// #         DYNAMIC_ACTOR_ID_BASE
+/// #     }
+/// #     fn channel<M: Send + 'static>(
+/// #         id: ActorId,
+/// #         _capacity: usize,
+/// #     ) -> (ActorRef<M, Self>, Self::Receiver<M>) {
+/// #         let chan = Chan(Arc::new(Mutex::new(VecDeque::new())));
+/// #         (ActorRef::new(id, chan.clone()), chan)
+/// #     }
+/// # }
+/// #
+/// # enum PingPongMsg {
+/// #     Ping,
+/// # }
+/// # enum SomeMsg {
+/// #     Go,
+/// # }
+///
+/// let ((ping_ref, some_ref), (_ping_stream, _some_stream)) =
+///     dyn_channels!(MockRuntime; PingPongMsg(16), SomeMsg(8));
+///
+/// // All mailboxes from one `dyn_channels!` call belong to the same actor and
+/// // share one compile-time actor ID; the runtime's dynamic counter is not
+/// // touched by static wiring.
+/// assert_eq!(ping_ref.id(), some_ref.id());
+///
+/// // The refs are live typed send handles.
+/// ping_ref.try_send(ping_ref.id(), PingPongMsg::Ping).unwrap();
+/// some_ref.try_send(some_ref.id(), SomeMsg::Go).unwrap();
 /// ```
 ///
 /// Unlike `channels!` (which uses `StaticChannelCap` with a const-generic `N`),

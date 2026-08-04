@@ -12,11 +12,12 @@ mod ping_tests {
     use crate::{PingCtx, PingEvent, PingSpec, PingState, MAX_ROUNDS, PAUSE_AT_ROUND};
     use bloxide_core::lifecycle::LifecycleCommand;
     use bloxide_core::{
-        spec::MachineSpec, DynamicChannelCap, Envelope, MachineState, StateMachine,
+        engine::DispatchOutcome, spec::MachineSpec, DynamicChannelCap, Envelope, MachineState,
+        StateMachine,
     };
     use bloxide_test_runtime::{TestReceiver, TestRuntime};
     use bloxide_timer::TimerCommand;
-    use ping_pong_messages::{PingPongMsg, Pong, Resume};
+    use ping_pong_messages::{Ping, PingPongMsg, Pong, Resume};
     use std::vec::Vec;
 
     struct PingHarness {
@@ -251,5 +252,33 @@ mod ping_tests {
             MachineState::State(PingState::Active),
             "stub actions return Ok, so no Error transition"
         );
+    }
+
+    #[test]
+    fn unhandled_event_bubbles_to_root_and_is_dropped() {
+        let mut h = PingHarness::new();
+        h.start();
+        h.drain_to_pong_rx();
+
+        // No state in the Ping machine has a rule for PingPongMsg::Ping —
+        // it bubbles Active → Operating → root, where no root rules exist.
+        let outcome = h
+            .machine
+            .dispatch(Envelope(0, PingPongMsg::Ping(Ping { round: 7 })).into());
+        assert_eq!(outcome, DispatchOutcome::NoRuleMatched);
+        assert_eq!(
+            h.current_state(),
+            MachineState::State(PingState::Active),
+            "unhandled event must not change state"
+        );
+        let sent = h.drain_to_pong_rx();
+        assert!(
+            sent.is_empty(),
+            "unhandled event must not send any message to the peer"
+        );
+
+        // The machine still processes subsequent valid events.
+        h.send_pong();
+        assert_eq!(h.current_state(), MachineState::State(PingState::Active));
     }
 }

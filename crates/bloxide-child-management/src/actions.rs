@@ -244,7 +244,7 @@ where
 /// Handle a `RegisterDynamicChild` control message.
 ///
 /// Called when the managing blox receives a `ChildCtrl::RegisterDynamicChild`
-/// from the `spawn_child` helper. Registers the child in the child group
+/// from the `spawn_dynamic_child` helper. Registers the child in the child group
 /// (storing the `abort_ref` for the cooperative abort mailbox and the
 /// `kill_handle` for the external kill ripcord) and sends a Start command.
 ///

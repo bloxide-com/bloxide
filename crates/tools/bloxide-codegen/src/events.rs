@@ -50,6 +50,63 @@ fn msg_type_ts(mb: &MailboxConfig) -> anyhow::Result<proc_macro2::TokenStream> {
     }
 }
 
+/// Returns true when a mailbox message type reference (e.g.
+/// `bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>`) mentions any of the
+/// declared generic type parameters — as the sole type argument (`Bar<R>`),
+/// after a comma (`Bar<T, R>`), nested (`Foo<Bar<T, R>>`), or as a path
+/// segment (`R::Assoc`). Unparseable references conservatively count as
+/// unused so the phantom marker is still emitted.
+fn msg_uses_type_param(msg_ref: &str, type_param_idents: &[String]) -> bool {
+    let path = match syn::parse_str::<syn::Path>(msg_ref) {
+        Ok(path) => path,
+        Err(_) => return false,
+    };
+    path_uses_type_param(&path, type_param_idents)
+}
+
+fn path_uses_type_param(path: &syn::Path, type_param_idents: &[String]) -> bool {
+    path.segments.iter().any(|segment| {
+        type_param_idents
+            .iter()
+            .any(|ident| segment.ident == ident.as_str())
+            || args_use_type_param(&segment.arguments, type_param_idents)
+    })
+}
+
+fn args_use_type_param(args: &syn::PathArguments, type_param_idents: &[String]) -> bool {
+    let syn::PathArguments::AngleBracketed(args) = args else {
+        return false;
+    };
+    args.args.iter().any(|arg| match arg {
+        syn::GenericArgument::Type(ty) => type_uses_type_param(ty, type_param_idents),
+        syn::GenericArgument::AssocType(assoc) => {
+            type_uses_type_param(&assoc.ty, type_param_idents)
+        }
+        _ => false,
+    })
+}
+
+fn type_uses_type_param(ty: &syn::Type, type_param_idents: &[String]) -> bool {
+    match ty {
+        syn::Type::Path(ty) => {
+            ty.qself.as_ref().map_or(false, |qself| {
+                type_uses_type_param(&qself.ty, type_param_idents)
+            }) || path_uses_type_param(&ty.path, type_param_idents)
+        }
+        syn::Type::Reference(ty) => type_uses_type_param(&ty.elem, type_param_idents),
+        syn::Type::Paren(ty) => type_uses_type_param(&ty.elem, type_param_idents),
+        syn::Type::Group(ty) => type_uses_type_param(&ty.elem, type_param_idents),
+        syn::Type::Slice(ty) => type_uses_type_param(&ty.elem, type_param_idents),
+        syn::Type::Array(ty) => type_uses_type_param(&ty.elem, type_param_idents),
+        syn::Type::Ptr(ty) => type_uses_type_param(&ty.elem, type_param_idents),
+        syn::Type::Tuple(ty) => ty
+            .elems
+            .iter()
+            .any(|ty| type_uses_type_param(ty, type_param_idents)),
+        _ => false,
+    }
+}
+
 /// Generate a single variant of the event enum + all its impl blocks.
 ///
 /// `mailboxes` is the filtered list of mailboxes for this variant.
@@ -98,9 +155,7 @@ fn generate_variant(
         .collect();
     let any_msg_uses_generic = mailboxes.iter().any(|mb| {
         let msg_ref = mb.message_path.as_deref().unwrap_or(&mb.message);
-        type_param_idents.iter().any(|ident| {
-            msg_ref.contains(&format!("<{ident}")) || msg_ref.contains(&format!("< {ident}"))
-        })
+        msg_uses_type_param(msg_ref, &type_param_idents)
     });
     let phantom_marker = if !type_param_idents.is_empty() && !any_msg_uses_generic {
         let phantom_ty = if type_param_idents.len() == 1 {
@@ -118,6 +173,7 @@ fn generate_variant(
         };
         Some(quote! {
             /// Marker for unused generic type parameters.
+            #[doc(hidden)]
             _Phantom(#phantom_ty)
         })
     } else {
@@ -350,4 +406,65 @@ pub fn generate(config: &EventConfig) -> anyhow::Result<String> {
     let formatted = prettyplease::unparse(&file);
 
     Ok(format!("{}{}", HEADER, formatted))
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::msg_uses_type_param;
+
+    fn params(idents: &[&str]) -> Vec<String> {
+        idents.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn detects_param_as_sole_type_argument() {
+        assert!(msg_uses_type_param("foo::Bar<R>", &params(&["R"])));
+    }
+
+    #[test]
+    fn detects_param_after_comma() {
+        assert!(msg_uses_type_param("foo::Bar<T, R>", &params(&["R"])));
+        assert!(msg_uses_type_param("foo::Bar< T , R >", &params(&["R"])));
+    }
+
+    #[test]
+    fn detects_param_in_nested_generics() {
+        assert!(msg_uses_type_param("Foo<Bar<T, R>>", &params(&["R"])));
+        assert!(msg_uses_type_param(
+            "blox_ctx_pool_ref::SpawnedWorker<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>, R>",
+            &params(&["R"])
+        ));
+    }
+
+    #[test]
+    fn detects_param_as_path_segment() {
+        assert!(msg_uses_type_param("R::Backend", &params(&["R"])));
+    }
+
+    #[test]
+    fn detects_each_of_multiple_params() {
+        let params = params(&["M", "R"]);
+        assert!(msg_uses_type_param("foo::Bar<M>", &params));
+        assert!(msg_uses_type_param("foo::Bar<R>", &params));
+        assert!(!msg_uses_type_param("foo::Bar<u32>", &params));
+    }
+
+    #[test]
+    fn unused_param_is_not_detected() {
+        assert!(!msg_uses_type_param(
+            "pool_messages::PoolMsg",
+            &params(&["R"])
+        ));
+        assert!(!msg_uses_type_param("foo::Bar<T>", &params(&["R"])));
+        // Identifiers that merely start with the param name must not match.
+        assert!(!msg_uses_type_param("foo::Bar<Reply>", &params(&["R"])));
+        assert!(!msg_uses_type_param("foo::Bar<R2>", &params(&["R"])));
+    }
+
+    #[test]
+    fn unparseable_reference_counts_as_unused() {
+        assert!(!msg_uses_type_param("not a path <", &params(&["R"])));
+    }
 }

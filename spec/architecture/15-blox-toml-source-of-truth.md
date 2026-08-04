@@ -42,7 +42,7 @@ top-level sections are:
 | `[[messages]]` | `Vec<MessageEnumConfig>` | Message enums with variants, fields, `Copy`, and visibility. |
 | `[event]` | `EventConfig` | Event enum name, generics, `derives` list, feature gates, and mailbox variants. |
 | `[topology]` | `TopologyConfig` | States, parent/initial/error flags, declarative transitions, entry/exit actions, and `spec_imports`. |
-| `[context]` | `ContextConfig` | Context struct name, generics, fields, imports, `extra_where`, `on_init`, feature gates, `[[context.actions]]`, and `[[context.uses]]` for composable context crates. |
+| `[context]` | `ContextConfig` | Context struct name, generics, fields, imports, `extra_where`, `on_init` / `feature_on_init`, feature gates, `[[context.actions]]`, and `[[context.uses]]` for composable context crates. |
 | `[mailboxes]` | `MailboxesConfig` | `max_arity` for generated mailbox tuple impls. |
 
 System-level wiring is a **separate schema** in the same file — `SystemConfig`, parsed

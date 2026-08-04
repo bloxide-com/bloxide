@@ -343,7 +343,7 @@ let timer_ref = bloxide_tokio::spawn_timer!(8);
 bloxide_tokio::actor_task_supervised!(my_task, MySpec<TokioRuntime>);
 
 let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
-bloxide_tokio::spawn_child!(
+bloxide_tokio::spawn_static_child!(
     group,
     my_task(machine, mbox, actor_id),
     ChildPolicy::Reset

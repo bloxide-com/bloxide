@@ -110,7 +110,7 @@ target = "stop"
 
 | State | Kind | Description |
 |-------|------|-------------|
-| `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` clears `worker_refs` and `worker_ctrls` and sets `pending = 0` |
+| `[Init]` | engine-implicit | Waiting for `dispatch(Start)`; `on_init_entry` clears `worker_refs` and `worker_ctrls` and sets `pending = 0` (plus `pending_task_id = 0`, `spawn_in_flight = false`, `spawn_queue` cleared under feature `dynamic`) |
 | `Idle` | leaf, initial | No spawn requested yet |
 | `Spawning` | leaf | Spawn request sent to the factory; awaiting the `SpawnedWorker` reply; further `SpawnWorker` requests are buffered in `spawn_queue` |
 | `Active` | leaf | At least one worker running; accepts more spawns and `WorkDone` |
@@ -189,7 +189,7 @@ pub struct PoolCtx<R: BloxRuntime> {
 
 | Target | Message | When |
 |--------|---------|------|
-| Spawn factory | `SpawnRequest::Worker { task_id, reply_to, pool_ref }` | inside `handle_spawn_worker` / `handle_spawned_worker` via `bloxide_spawn::spawn_child` |
+| Spawn factory | `SpawnRequest::Worker { task_id, reply_to, pool_ref }` | inside `handle_spawn_worker` / `handle_spawned_worker` via `bloxide_spawn::spawn_dynamic_child` |
 | New worker domain ref | `WorkerMsg::DoWork(DoWork { task_id })` | inside `handle_spawned_worker`, after peer introduction |
 | Worker ctrl refs (new + existing) | `PeerCtrl::AddPeer(...)` | inside `handle_spawned_worker` via `bloxide_peers::introduce_peers` (bidirectional) |
 
@@ -199,7 +199,7 @@ pub struct PoolCtx<R: BloxRuntime> {
 
 | State | on_entry | on_exit |
 |-------|----------|---------|
-| `[Init]` (engine) | `on_init`: clear `worker_refs`, `worker_ctrls`, set `pending = 0` | — |
+| `[Init]` (engine) | `on_init`: clear `worker_refs`, `worker_ctrls`, set `pending = 0`; `feature_on_init` additionally resets `pending_task_id = 0`, `spawn_in_flight = false`, clears `spawn_queue` (dynamic only) | — |
 | `Idle` | — | — |
 | `Spawning` | — | — |
 | `Active` | — | — |
@@ -265,13 +265,13 @@ them from `tokio-pool-demo-impl` (declared via `impl_crate` in `system.toml`).
 
 | Action function | Operates on | Description |
 |-----------------|-------------|-------------|
-| `handle_spawn_worker` | `spawn_fn`, `spawn_ref`, `notify_ref`, `spawn_reply_ref`, `pending_task_id`, `spawn_in_flight`, `pending` | Records the task, sets `spawn_in_flight`, `pending += 1`, sends `SpawnRequest::Worker` via `bloxide_spawn::spawn_child` |
+| `handle_spawn_worker` | `spawn_fn`, `spawn_ref`, `notify_ref`, `spawn_reply_ref`, `pending_task_id`, `spawn_in_flight`, `pending` | Records the task, sets `spawn_in_flight`, `pending += 1`, sends `SpawnRequest::Worker` via `bloxide_spawn::spawn_dynamic_child` |
 | `handle_spawn_worker_queued` | `spawn_queue`, `pending` | Buffers the `task_id`, `pending += 1` |
 | `handle_spawned_worker` | spawn fields + `spawn_queue`, `worker_refs`, `worker_ctrls` | Clears `spawn_in_flight`, introduces peers bidirectionally, sends `DoWork`, stores refs, pops the next queued spawn |
 | `handle_work_done` | `pending` | `pending -= 1` |
 
 Types: `SpawnRequest` / `SpawnedWorker` from `blox-ctx-pool-ref`; `introduce_peers`
-from `bloxide-peers`; `spawn_child` / `SpawnFn` / `SpawnOutput` from `bloxide-spawn`.
+from `bloxide-peers`; `spawn_dynamic_child` / `SpawnFn` / `SpawnOutput` from `bloxide-spawn`.
 (`notify_pool_done` is the *Worker's* dependency on `blox-ctx-pool-ref`, not the Pool's.)
 
 ## Implementation Notes

@@ -36,13 +36,14 @@ bloxide/
     bloxide-child-management/  ← child-management feature crate: ChildGroup, ChildPolicy, ChildCtrl/RegisterChild/RegisterDynamicChild control plane, supervision action functions
     bloxide-supervisor/        ← supervisor blox (reference consumer): blox.toml + generated + concrete_spec.rs (test fixture) + tests only (spec 18)
     bloxide-peers/             ← peer introduction: PeerCtrl<M,R>, AddPeer, RemovePeer, introduce_peers, broadcast_to_peers (domain-agnostic, M: Clone)
-    bloxide-spawn/             ← spawn capability: SpawnFn, SpawnOutput, SpawnCap, ChildCtrlRegistrar, spawn_child helper (platform primitive)
+    bloxide-spawn/             ← spawn capability: SpawnFn, SpawnOutput, SpawnCap, ChildCtrlRegistrar, spawn_dynamic_child helper (platform primitive)
     messages/
       ping-pong-messages/      ← PingPongMsg shared by both ping and pong bloxes
       pool-messages/           ← PoolMsg, WorkerMsg, DoWork, WorkDone, etc. shared by pool and worker
       counter-messages/        ← CounterMsg shared by counter blox and minimal wiring demo
       bhsm-tst-messages/       ← BhsmTstMsg shared by the bhsm-tst HSM topology demo
     context/
+      blox-ctx-noop/           ← shared noop action function for demo/test bloxes (composable context-crate example; first consumer: bhsm-tst)
       blox-ctx-ping-pong/      ← ping/pong demo context crate: send_ping/send_pong/send_initial_ping/schedule_resume action functions
       blox-ctx-pool-ref/       ← domain context crate + notify_pool_done action function
       blox-ctx-rounds/         ← increment_round action function
@@ -53,7 +54,7 @@ bloxide/
       worker/                  ← declarative Worker actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
       pool/                    ← declarative Pool actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
       counter/                 ← declarative Counter actor; depends on context crates (blox-ctx-ticks)
-      bhsm-tst/                ← declarative Miro Samek HSM test blox (states S/S1/S11/S2/S21/S211)
+      bhsm-tst/                ← declarative Miro Samek HSM test blox (states S/S1/S11/S2/S21/S211); depends on context crate (blox-ctx-noop)
     impl/
       tokio-pool-demo-impl/    ← impl crate: free functions (process_work, spawn_worker, pool action handlers) for pool demo
     tools/
