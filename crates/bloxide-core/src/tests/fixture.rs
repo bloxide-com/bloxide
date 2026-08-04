@@ -506,3 +506,35 @@ pub fn machine_in_ea() -> StateMachine<ESpec> {
     take_log();
     m
 }
+
+/// Spec whose `initial_state()` IS the error state — degenerate but legal.
+/// Exercises the engine normalization: `Started(error)` must become `Failed`.
+pub struct InitErrSpec;
+
+impl MachineSpec for InitErrSpec {
+    type State = EState;
+    type Event = EEvent;
+    type Ctx = ECtx;
+    type Mailboxes<R: crate::capability::BloxRuntime> = crate::mailboxes::NoMailboxes;
+
+    const HANDLER_TABLE: &'static [&'static crate::spec::StateFns<Self>] =
+        &[&INIT_ERR_FNS, &INIT_ERR_FNS, &INIT_ERR_FNS];
+
+    fn initial_state() -> EState {
+        EState::Err
+    }
+
+    fn error_state() -> Option<EState> {
+        Some(EState::Err)
+    }
+
+    fn is_error(state: &EState) -> bool {
+        matches!(state, EState::Err)
+    }
+}
+
+pub static INIT_ERR_FNS: StateFns<InitErrSpec> = StateFns {
+    on_entry: &[],
+    on_exit: &[],
+    transitions: &[],
+};

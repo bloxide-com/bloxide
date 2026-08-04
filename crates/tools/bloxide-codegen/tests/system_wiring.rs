@@ -242,3 +242,77 @@ fn cargo_toml_minimal_demo_discovers_message_crates() {
         );
     }
 }
+
+// ── supervision policy + capacities emission ───────────────────────────────
+
+fn tokio_demo_manifest() -> String {
+    let path = workspace_root().join("apps/tokio-demo/system.toml");
+    std::fs::read_to_string(path).expect("read tokio-demo manifest")
+}
+
+fn wiring_from_manifest(manifest: &str, tag: &str) -> Result<String, anyhow::Error> {
+    let dir = std::env::temp_dir().join(format!("bloxide-codegen-test-{}", tag));
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let system_path = dir.join("system.toml");
+    std::fs::write(&system_path, manifest).expect("write temp system.toml");
+    bloxide_codegen::generate_system_wiring_from_toml(&system_path, &workspace_root())
+}
+
+#[test]
+fn wiring_emits_restart_max_and_default_capacities() {
+    let manifest =
+        tokio_demo_manifest().replace("ping = { stop = true }", "ping = { restart = { max = 3 } }");
+    let main_rs = wiring_from_manifest(&manifest, "restart-default")
+        .unwrap_or_else(|e| panic!("wiring failed: {}", e));
+    assert!(
+        main_rs.contains("ChildPolicy::Reset { max: 3u32 }"),
+        "restart.max must be carried into ChildPolicy::Reset, got:\n{}",
+        main_rs
+    );
+    // Defaults: notify = max(32, 2 × 2 children) = 32, control 16, lifecycle 4.
+    assert!(
+        main_rs.contains("ChildGroupBuilder::<_, _, 32usize, 16usize, 4usize>::new"),
+        "default capacities must be emitted as const generics, got:\n{}",
+        main_rs
+    );
+}
+
+#[test]
+fn wiring_emits_explicit_capacities() {
+    let manifest = tokio_demo_manifest()
+        + "\n  [supervision.capacities]\n  notify = 64\n  control = 24\n  lifecycle = 8\n";
+    let main_rs = wiring_from_manifest(&manifest, "capacities")
+        .unwrap_or_else(|e| panic!("wiring failed: {}", e));
+    assert!(
+        main_rs.contains("ChildGroupBuilder::<_, _, 64usize, 24usize, 8usize>::new"),
+        "explicit [supervision.capacities] must be emitted, got:\n{}",
+        main_rs
+    );
+}
+
+#[test]
+fn wiring_rejects_zero_restart_max() {
+    let manifest =
+        tokio_demo_manifest().replace("ping = { stop = true }", "ping = { restart = { max = 0 } }");
+    let err = wiring_from_manifest(&manifest, "max-zero")
+        .expect_err("restart.max = 0 must be a hard error");
+    let msg = format!("{:#}", err);
+    assert!(
+        msg.contains("restart.max"),
+        "error should name restart.max, got: {}",
+        msg
+    );
+}
+
+#[test]
+fn wiring_rejects_zero_capacity() {
+    let manifest = tokio_demo_manifest() + "\n  [supervision.capacities]\n  notify = 0\n";
+    let err = wiring_from_manifest(&manifest, "capacity-zero")
+        .expect_err("capacity 0 must be a hard error");
+    let msg = format!("{:#}", err);
+    assert!(
+        msg.contains("capacities.notify"),
+        "error should name capacities.notify, got: {}",
+        msg
+    );
+}

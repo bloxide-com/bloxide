@@ -124,7 +124,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
 }
 ```
 
-`spawn_child` calls `spawn_fn(req, notify_ref.clone())`, wraps the returned `SpawnOutput` into `ChildCtrl::RegisterDynamicChild` via `ChildCtrlRegistrar`, and sends it on `spawn_ref` — the supervisor's control mailbox. The supervisor registers the child (`ChildGroup::add_dynamic`) and starts it.
+`spawn_child` calls `spawn_fn(req, notify_ref.clone())`, wraps the returned `SpawnOutput` into `ChildCtrl::RegisterDynamicChild` via `ChildCtrlRegistrar`, and sends it on `spawn_ref` — the supervisor's control mailbox. The supervisor registers the child (`ChildGroup::try_add_dynamic`) and starts it.
 
 **Layer 5 (impl crate)**: `crates/impl/tokio-pool-demo-impl/src/lib.rs` provides the concrete factory function:
 
@@ -313,17 +313,24 @@ Lifecycle commands flow through `dispatch()` at the `VirtualRoot` level, just li
 
 ### When Would a Supervised Actor Have Root Transitions?
 
-Example: A supervised Worker that handles multiple message types, and has a "poison pill" message that should trigger Reset from any state:
+Example: A supervised Worker that handles multiple message types, and has a "poison pill" message that should trigger Reset from any state. Declared in `blox.toml` as an ordinary `[[topology.transitions]]` entry with the reserved keyword `state = "root"`:
+
+```toml
+[[topology.transitions]]
+state = "root"
+event = "WorkerMsg::PoisonPill(_)"
+target = "reset"
+```
+
+The codegen emits a `ROOT_RULES` associated constant plus the `root_transitions()` override in the generated `MachineSpec` impl, equivalent to the hand-written form:
 
 ```rust
 impl MachineSpec for WorkerSpec<R> {
     fn root_transitions() -> &'static [StateRule<Self>] {
-        // Declared in blox.toml via [[topology.transitions]] with scope = "root"
-        // The codegen emits the StateRule array literal below.
         &[
             StateRule {
-                event_tag: WorkerMsg::<R>::POISON_PILL_TAG,
-                matches: |ev| matches!(ev, WorkerMsg::PoisonPill),
+                event_tag: ::bloxide_core::event_tag::WILDCARD_TAG, // msg-shorthand pattern
+                matches: |ev| ev.msg_payload().is_some_and(|m| matches!(m, WorkerMsg::PoisonPill(_))),
                 actions: &[],
                 guard: |_, _, _| Decision::Reset,
             },

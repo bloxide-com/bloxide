@@ -562,6 +562,10 @@ pub struct SupervisionConfig {
     /// ```
     #[serde(default)]
     pub policies: BTreeMap<String, ChildPolicyConfig>,
+    /// Control-plane channel capacities. All optional — defaults are computed
+    /// from the child count (see `SupervisionCapacities`).
+    #[serde(default)]
+    pub capacities: SupervisionCapacities,
 }
 
 /// A value in `[supervision.policies]` — restart or stop policy for a child.
@@ -578,6 +582,28 @@ pub struct ChildPolicyConfig {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct RestartPolicy {
-    /// Maximum restart attempts before escalation.
+    /// Maximum **consecutive** restarts before the supervisor gives up on the
+    /// child (marks it terminal and evaluates group shutdown). The counter
+    /// resets when the child proves sustained uptime by answering a health
+    /// Ping after a Started. Must be >= 1.
     pub max: u32,
+}
+
+/// `[supervision.capacities]` — control-plane channel capacities.
+///
+/// These channels carry the group's supervision control plane; they are
+/// sized to make "full" a bug rather than routine backpressure. (The
+/// confirm-before-record protocol still handles a full channel correctly —
+/// commands are queued and retried — but sizes should make that rare.)
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(deny_unknown_fields)]
+pub struct SupervisionCapacities {
+    /// Supervisor notify channel capacity (`ChildLifecycleEvent` from every
+    /// child). Default: `max(32, 2 × child count)`.
+    pub notify: Option<usize>,
+    /// Supervisor control channel capacity (registrations, health ticks).
+    /// Default: 16.
+    pub control: Option<usize>,
+    /// Per-child lifecycle channel capacity. Default: 4.
+    pub lifecycle: Option<usize>,
 }

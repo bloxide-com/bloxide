@@ -22,8 +22,8 @@ use crate::spec::MachineSpec;
 ///
 /// # Type Parameters
 ///
-/// * `S` — The actor's [`MachineSpec`]. Used to check `is_error`
-///   on the resulting state.
+/// * `S` — The actor's [`MachineSpec`]. Determines the state type carried by
+///   the [`DispatchOutcome`].
 /// * `R` — The [`BloxRuntime`], which determines the concrete sender type
 ///   (`R::Sender<ChildLifecycleEvent>`).
 pub fn report_outcome<S, R>(
@@ -50,12 +50,11 @@ pub fn report_outcome<S, R>(
     };
 
     match outcome {
-        DispatchOutcome::Started(MachineState::State(s)) => {
-            if S::is_error(s) {
-                send(ChildLifecycleEvent::Failed { child_id: actor_id });
-            } else {
-                send(ChildLifecycleEvent::Started { child_id: actor_id });
-            }
+        // The engine normalizes Started(error-state) to Failed at the source
+        // (see StateMachine::started_or_failed), so a plain Started is always
+        // a healthy start here.
+        DispatchOutcome::Started(MachineState::State(_)) => {
+            send(ChildLifecycleEvent::Started { child_id: actor_id });
         }
         DispatchOutcome::Transition(MachineState::State(_)) => {
             // Transitions into an error state are converted to

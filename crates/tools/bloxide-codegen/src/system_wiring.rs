@@ -756,8 +756,29 @@ pub fn generate(
         };
 
         // Phase 1: create builder + extract control_ref and notify_ref.
+        // Capacities: explicit const generics (expression position does not
+        // apply const-parameter defaults). Defaults: notify sized to the
+        // child count (every child can have a terminal report in flight),
+        // control 16, per-child lifecycle 4. These channels carry the
+        // supervision control plane — sized to make "full" a bug, not
+        // routine backpressure (confirm-before-record still recovers).
+        let notify_cap = sup
+            .capacities
+            .notify
+            .unwrap_or_else(|| (2 * sup.children.len()).max(32));
+        let control_cap = sup.capacities.control.unwrap_or(16);
+        let lifecycle_cap = sup.capacities.lifecycle.unwrap_or(4);
+        for (name, cap) in [
+            ("notify", notify_cap),
+            ("control", control_cap),
+            ("lifecycle", lifecycle_cap),
+        ] {
+            if cap == 0 {
+                anyhow::bail!("supervision capacities.{name} must be >= 1");
+            }
+        }
         supervisor_setup_stmts.push(quote! {
-            let mut #group_ident = ChildGroupBuilder::new(#shutdown_strategy);
+            let mut #group_ident = ChildGroupBuilder::<_, _, #notify_cap, #control_cap, #lifecycle_cap>::new(#shutdown_strategy);
             let #control_ref_ident = #group_ident.control_ref();
             let #notify_ref_ident = #group_ident.notify_ref();
         });
@@ -791,8 +812,15 @@ pub fn generate(
             let child_task_ident = format_ident!("{}_task", child_actor.name);
 
             let policy = if let Some(policy_config) = sup.policies.get(child_name) {
-                if policy_config.restart.is_some() {
-                    quote! { ChildPolicy::Reset }
+                if let Some(restart) = &policy_config.restart {
+                    if restart.max == 0 {
+                        anyhow::bail!(
+                            "supervision policy for '{child_name}': restart.max must be >= 1 \
+                             (max = 0 forbids any restart — use `stop = true` instead)"
+                        );
+                    }
+                    let max = restart.max;
+                    quote! { ChildPolicy::Reset { max: #max } }
                 } else {
                     quote! { ChildPolicy::Stop }
                 }

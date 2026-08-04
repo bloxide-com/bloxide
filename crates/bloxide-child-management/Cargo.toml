@@ -18,4 +18,5 @@ bloxide-log = { workspace = true }
 
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std"] }
+bloxide-spawn = { workspace = true }
 bloxide-test-runtime = { workspace = true }

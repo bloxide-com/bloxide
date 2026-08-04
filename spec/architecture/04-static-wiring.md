@@ -190,10 +190,12 @@ let (children, sup_notify_rx, sup_control_rx) = group.finish();
 
 The strategy comes from `system.toml`: `strategy = "when_any_done"` /
 `"when_all_done"` map to `GroupShutdown::WhenAnyDone` / `WhenAllDone`; unknown
-values are hard codegen errors. `ChildPolicy::Kill`/`Abort` panic at
-registration for static children (`ChildGroup::add` asserts — they need
-abort/kill handles that only dynamic registration provides); use `Reset` or
-`Stop`.
+values are hard codegen errors. `ChildPolicy::Kill`/`Abort` are rejected at
+registration for static children (`ChildGroup::try_add` returns
+`RegistrationError::PolicyRequiresHandles` — they need abort/kill handles that
+only dynamic registration provides; `ChildGroupBuilder::add_child` panics at
+boot time instead, since generated wiring only emits valid policies); use
+`Reset` or `Stop`.
 
 `bloxide-embassy` re-exports this shared `ChildGroupBuilder` (from
 `bloxide-child-management`) at the crate root and prelude; the `GroupChannelCap`

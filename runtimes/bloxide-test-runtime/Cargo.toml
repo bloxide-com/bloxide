@@ -16,3 +16,6 @@ alloc = ["bloxide-core/alloc", "bloxide-spawn/alloc"]
 bloxide-core = { workspace = true }
 bloxide-spawn = { workspace = true }
 futures-core = { version = "0.3" }
+
+[dev-dependencies]
+bloxide-child-management = { workspace = true }

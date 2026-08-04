@@ -14,20 +14,27 @@
 //! Channels model the semantics the runtimes provide in production:
 //!
 //! - **Capacity** — `channel(id, capacity)` bounds `try_send`: it fails with
-//!   `TestTrySendError` once `capacity` envelopes are queued. `capacity = 0`
-//!   means every `try_send` fails (always-full channel).
+//!   `TestTrySendError::Full` once `capacity` envelopes are queued.
+//!   `capacity = 0` means every `try_send` fails (always-full channel).
 //! - **Close semantics** — the channel tracks its sender count. When the last
 //!   `TestSender` (including every `ActorRef` clone) is dropped, the receiver
 //!   drains any queued envelopes and then returns `Poll::Ready(None)` — the
 //!   all-streams-close behavior of issue #134. Dropping the last sender also
 //!   wakes a pending receiver so it observes the close.
+//! - **Receiver liveness** — dropping the `TestReceiver` closes the send side:
+//!   `try_send` fails with `TestTrySendError::Closed` (Tokio semantics), which
+//!   `try_send_error_is_closed` classifies as closed. This lets tests drive
+//!   the confirm-before-record supervision paths that key off dead channels.
+//! - **Observable kill** — `SpawnCap` uses `usize` handles (a monotonically
+//!   increasing spawn id). `kill` records the id in a thread-local log;
+//!   `drain_killed()` / `kill_count()` let tests assert the kill path fired.
 //!
 //! # Intentional gaps
 //!
 //! - `send_via` is **unbounded** (no backpressure) — action functions all use
 //!   `try_send`, so `try_send` is the backpressure path under test.
-//! - `SpawnCap::kill` / `kill_handle` are **no-ops** — TestRuntime does not
-//!   run real tasks; supervisor kill paths cannot be exercised here.
+//! - Spawned futures are **recorded, not executed** — `kill` only logs the id;
+//!   it does not (and cannot) drop the recorded future.
 
 extern crate alloc;
 
@@ -40,7 +47,7 @@ use bloxide_spawn::{Kill, SpawnCap};
 use futures_core::Stream;
 use std::collections::VecDeque;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 use std::vec::Vec;
@@ -62,6 +69,9 @@ struct Shared<M: Send + 'static> {
     waker: Mutex<Option<Waker>>,
     /// Live sender count (initial sender + every clone). Close happens at 0.
     sender_count: AtomicUsize,
+    /// Receiver liveness. `false` once the `TestReceiver` is dropped —
+    /// `try_send` then fails with `TestTrySendError::Closed`.
+    receiver_alive: AtomicBool,
     /// Maximum queued envelopes before `try_send` fails.
     capacity: usize,
 }
@@ -112,6 +122,13 @@ impl<M: Send + 'static> TestReceiver<M> {
     }
 }
 
+impl<M: Send + 'static> Drop for TestReceiver<M> {
+    fn drop(&mut self) {
+        // Receiver gone — the send side observes Closed on the next try_send.
+        self.shared.receiver_alive.store(false, Ordering::SeqCst);
+    }
+}
+
 impl<M: Send + 'static> Stream for TestReceiver<M> {
     type Item = Envelope<M>;
 
@@ -154,13 +171,21 @@ impl core::fmt::Display for TestSendError {
 
 impl std::error::Error for TestSendError {}
 
-/// Error returned by `TestRuntime::try_send_via` when capacity is exhausted.
+/// Error returned by `TestRuntime::try_send_via`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TestTrySendError;
+pub enum TestTrySendError {
+    /// Capacity exhausted — transient; the receiver may drain later.
+    Full,
+    /// Receiver dropped — the channel is permanently dead.
+    Closed,
+}
 
 impl core::fmt::Display for TestTrySendError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "test try_send error: channel full")
+        match self {
+            Self::Full => write!(f, "test try_send error: channel full"),
+            Self::Closed => write!(f, "test try_send error: channel closed"),
+        }
     }
 }
 
@@ -214,13 +239,16 @@ impl BloxRuntime for TestRuntime {
         sender: &Self::Sender<M>,
         envelope: Envelope<M>,
     ) -> Result<(), Self::TrySendError> {
+        if !sender.shared.receiver_alive.load(Ordering::SeqCst) {
+            return Err(TestTrySendError::Closed);
+        }
         let mut lock = sender
             .shared
             .queue
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         if lock.len() >= sender.shared.capacity {
-            return Err(TestTrySendError);
+            return Err(TestTrySendError::Full);
         }
         lock.push_back(envelope);
         drop(lock);
@@ -228,10 +256,8 @@ impl BloxRuntime for TestRuntime {
         Ok(())
     }
 
-    fn try_send_error_is_closed(_: &Self::TrySendError) -> bool {
-        // The send side cannot observe a close: TestReceiver drop is not
-        // tracked in `Shared`, so try_send only ever fails on full.
-        false
+    fn try_send_error_is_closed(err: &Self::TrySendError) -> bool {
+        matches!(err, TestTrySendError::Closed)
     }
 }
 
@@ -248,6 +274,7 @@ impl DynamicChannelCap for TestRuntime {
             queue: Mutex::new(VecDeque::new()),
             waker: Mutex::new(None),
             sender_count: AtomicUsize::new(1),
+            receiver_alive: AtomicBool::new(true),
             capacity,
         });
         let sender = TestSender {
@@ -282,22 +309,36 @@ type SpawnedVec = AllocVec<Pin<Box<dyn Future<Output = ()> + Send>>>;
 
 thread_local! {
     static SPAWNED: std::cell::RefCell<SpawnedVec> = std::cell::RefCell::new(AllocVec::new());
+    /// Monotonically increasing spawn id — stable across `drain_spawned` calls,
+    /// so a `KillHandle` stays correlated with its spawn.
+    static NEXT_SPAWN_ID: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Ids of tasks killed via `SpawnCap::kill` since the last `drain_killed`.
+    static KILLED: std::cell::RefCell<AllocVec<usize>> =
+        const { std::cell::RefCell::new(AllocVec::new()) };
 }
 
 impl SpawnCap for TestRuntime {
-    type TaskHandle = ();
-    type KillHandle = ();
+    type TaskHandle = usize;
+    type KillHandle = usize;
 
     fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle {
+        let id = NEXT_SPAWN_ID.with(|n| {
+            let id = n.get();
+            n.set(id + 1);
+            id
+        });
         SPAWNED.with(|s| s.borrow_mut().push(Box::pin(future)));
+        id
     }
 
-    fn kill_handle(_handle: Self::TaskHandle) -> Self::KillHandle {
-        // No-op: TestRuntime doesn't run real tasks
+    fn kill_handle(handle: Self::TaskHandle) -> Self::KillHandle {
+        handle
     }
 
-    fn kill(_handle: Self::KillHandle) {
-        // No-op: TestRuntime doesn't run real tasks
+    fn kill(handle: Self::KillHandle) {
+        // Recorded, not executed: TestRuntime doesn't run real tasks, but the
+        // kill path is observable — tests assert via `drain_killed`/`kill_count`.
+        KILLED.with(|k| k.borrow_mut().push(handle));
     }
 }
 
@@ -310,6 +351,25 @@ pub fn drain_spawned() -> SpawnedVec {
 pub fn spawned_count() -> usize {
     SPAWNED.with(|s| s.borrow().len())
 }
+
+/// Drain all spawn ids recorded by `SpawnCap::kill` since the last drain.
+pub fn drain_killed() -> AllocVec<usize> {
+    KILLED.with(|k| k.borrow_mut().drain(..).collect())
+}
+
+/// Returns the number of kills recorded since the last `drain_killed`.
+pub fn kill_count() -> usize {
+    KILLED.with(|k| k.borrow().len())
+}
+
+// ── Spawn helper tests ─────────────────────────────────────────────────────
+//
+// `spawn_child` (bloxide-spawn) tests live here rather than in bloxide-spawn:
+// a bloxide-spawn dev-dependency on this crate would be a dev-dependency
+// cycle (two non-unifying `bloxide-spawn` instances in the graph).
+
+#[cfg(test)]
+mod spawn_helper_tests;
 
 // ── Waker tests ──────────────────────────────────────────────────────────
 
@@ -719,12 +779,17 @@ mod lifecycle_dispatch {
     }
 
     #[test]
-    fn start_from_operational_is_noop() {
+    fn start_from_operational_acknowledges_started() {
+        // Redundant Start is acknowledged with Started (no callbacks, no
+        // state change) — mirrors Stop-in-Init reporting Stopped.
         let ctx = SpyCtx::default();
         let mut machine = StateMachine::<TestSpec<TestRuntime>>::new(ctx);
         machine.handle_lifecycle(LifecycleCommand::Start);
         let outcome = machine.handle_lifecycle(LifecycleCommand::Start);
-        assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TestState::Running))
+        ));
         assert!(matches!(
             machine.current_state(),
             MachineState::State(TestState::Running)
@@ -965,5 +1030,65 @@ mod fidelity_tests {
             Pin::new(&mut rx).poll_next(&mut cx),
             Poll::Ready(None)
         ));
+    }
+
+    #[test]
+    fn receiver_drop_closes_send_side() {
+        use bloxide_core::capability::BloxRuntime;
+
+        let (sender, rx) = TestRuntime::channel::<u32>(1, 4);
+        sender.try_send(0, 1u32).unwrap();
+        drop(rx);
+
+        let err = sender
+            .try_send(0, 2u32)
+            .expect_err("send after receiver drop must fail");
+        assert_eq!(err, crate::TestTrySendError::Closed);
+        assert!(
+            TestRuntime::try_send_error_is_closed(&err),
+            "Closed must classify as closed"
+        );
+        // Closed takes precedence even when capacity is available, and stays
+        // closed (no resurrection).
+        let err = sender.try_send(0, 3u32).expect_err("channel stays closed");
+        assert_eq!(err, crate::TestTrySendError::Closed);
+    }
+
+    #[test]
+    fn full_error_is_not_closed() {
+        use bloxide_core::capability::BloxRuntime;
+
+        let (sender, _rx) = TestRuntime::channel::<u32>(1, 0);
+        let err = sender.try_send(0, 1u32).expect_err("capacity 0 is full");
+        assert_eq!(err, crate::TestTrySendError::Full);
+        assert!(
+            !TestRuntime::try_send_error_is_closed(&err),
+            "Full must not classify as closed"
+        );
+    }
+}
+
+// ── Observable kill tests ─────────────────────────────────────────────────
+
+#[cfg(test)]
+mod kill_tests {
+    use crate::TestRuntime;
+    use bloxide_spawn::SpawnCap;
+
+    #[test]
+    fn spawn_returns_increasing_ids_and_kill_is_recorded() {
+        let before = crate::kill_count();
+        let h1 = TestRuntime::spawn(async {});
+        let h2 = TestRuntime::spawn(async {});
+        assert!(h2 > h1, "spawn ids must increase: {} then {}", h1, h2);
+
+        let kh1 = TestRuntime::kill_handle(h1);
+        let kh2 = TestRuntime::kill_handle(h2);
+        TestRuntime::kill(kh1);
+        TestRuntime::kill(kh2);
+
+        let killed = crate::drain_killed();
+        assert_eq!(&killed[killed.len() - 2..], &[kh1, kh2]);
+        let _ = before; // count is drain-relative; ids asserted above
     }
 }

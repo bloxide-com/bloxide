@@ -270,11 +270,14 @@ impl<S: MachineSpec> StateMachine<S> {
                         // Transition from Init to user's initial state
                         let target = S::initial_state();
                         self.transition_to_state(target);
-                        DispatchOutcome::Started(MachineState::State(target))
+                        Self::started_or_failed(target)
                     }
                     MachineState::State(_) => {
-                        // Already operational - no-op
-                        DispatchOutcome::HandledNoTransition
+                        // Already operational — acknowledge with Started so
+                        // supervision logic awaiting confirmation gets it
+                        // (mirrors Stop-in-Init reporting Stopped). No
+                        // callbacks fire and no state change occurs.
+                        DispatchOutcome::Started(self.current)
                     }
                 }
             }
@@ -286,7 +289,7 @@ impl<S: MachineSpec> StateMachine<S> {
                 // No on_init_entry or on_init_exit.
                 let target = S::initial_state();
                 self.transition_to_state(target);
-                DispatchOutcome::Started(MachineState::State(target))
+                Self::started_or_failed(target)
             }
             LifecycleCommand::Stop => {
                 match self.current {
@@ -308,9 +311,28 @@ impl<S: MachineSpec> StateMachine<S> {
                 }
             }
             LifecycleCommand::Ping => {
-                // Respond Alive (runtime will send notification)
-                DispatchOutcome::Alive
+                // Respond Alive only from an operational, non-error state.
+                // In Init (never started, or suspended) and in a parked error
+                // state the Ping goes unanswered — the supervisor's health
+                // check observes silence and applies the child policy (e.g.
+                // Reset heals a lost Start, since Reset works from Init).
+                match self.current {
+                    MachineState::State(s) if !S::is_error(&s) => DispatchOutcome::Alive,
+                    _ => DispatchOutcome::HandledNoTransition,
+                }
             }
+        }
+    }
+
+    /// Map a freshly entered state to `Started`, or to `Failed` when the
+    /// target is an error state. Normalizing at the source keeps every
+    /// consumer uniform: run-loop exit logic and `report_outcome` never see a
+    /// `Started` carrying an error state.
+    fn started_or_failed(target: S::State) -> DispatchOutcome<S::State> {
+        if S::is_error(&target) {
+            DispatchOutcome::Failed
+        } else {
+            DispatchOutcome::Started(MachineState::State(target))
         }
     }
 
@@ -372,7 +394,7 @@ impl<S: MachineSpec> StateMachine<S> {
                 // fire on_exit), then the entry chain for initial_state().
                 let target = S::initial_state();
                 self.transition_to_state(target);
-                DispatchOutcome::Started(MachineState::State(target))
+                Self::started_or_failed(target)
             }
             Decision::Stop => {
                 // Self-suspend: go to Init (fire exit chain + on_init_entry).

@@ -173,13 +173,15 @@ mod tests {
         assert!(!dropped.load(Ordering::SeqCst));
         let kill_handle = <TokioRuntime as SpawnCap>::kill_handle(handle);
         let mut group = ChildGroup::<TokioRuntime>::new(GroupShutdown::WhenAnyDone);
-        group.add_dynamic(
-            child_id,
-            lifecycle_ref,
-            abort_ref,
-            kill_handle,
-            ChildPolicy::Kill,
-        );
+        group
+            .try_add_dynamic(
+                child_id,
+                lifecycle_ref,
+                abort_ref,
+                kill_handle,
+                ChildPolicy::Kill,
+            )
+            .unwrap();
         let (notify_ref, _notify_rx) =
             <TokioRuntime as DynamicChannelCap>::channel::<ChildLifecycleEvent>(42, 16);
         group.handle_done_or_failed(child_id, 42, &notify_ref);

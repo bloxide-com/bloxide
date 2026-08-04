@@ -1508,3 +1508,36 @@ name = "Active"
     assert!(content.contains("ctx.worker_refs_mut().clear();"));
     assert!(content.contains("ctx.set_pending(0);"));
 }
+
+#[test]
+fn test_parse_system_toml_supervision_capacities() {
+    let toml = r#"
+[system]
+runtime = "tokio"
+
+[[supervision]]
+supervisor = "bloxide-supervisor"
+strategy = "when_all_done"
+children = []
+
+  [supervision.capacities]
+  notify = 64
+  control = 24
+"#;
+
+    let config: SystemConfig = toml::from_str(toml).expect("parse failed");
+    let caps = &config.supervision[0].capacities;
+    assert_eq!(caps.notify, Some(64));
+    assert_eq!(caps.control, Some(24));
+    assert_eq!(
+        caps.lifecycle, None,
+        "unset capacity stays None for defaults"
+    );
+
+    // Unknown capacity keys are rejected (deny_unknown_fields).
+    let bad = toml.replace("control = 24", "bogus = 1");
+    assert!(
+        toml::from_str::<SystemConfig>(&bad).is_err(),
+        "unknown capacities key must be rejected"
+    );
+}

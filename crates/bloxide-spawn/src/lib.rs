@@ -73,6 +73,7 @@ pub struct Kill;
 
 impl<R: BloxRuntime + SpawnCap> KillCapability<R> for Kill {
     type Handle = R::KillHandle;
+    const CAN_KILL: bool = true;
     fn kill(handle: R::KillHandle) {
         R::kill(handle);
     }
@@ -201,8 +202,16 @@ where
     let output: SpawnOutput<R> = spawn_fn(req, notify_ref.clone());
 
     // 2. Wrap output into the managing blox's registration message and send it
+    let kill_handle = output.kill_handle.clone();
     let msg = C::register(output);
-    control_ref.try_send(from, msg)?;
+    if let Err(err) = control_ref.try_send(from, msg) {
+        // The registration never arrived — leaving the spawned task running
+        // would leak a live, unmanaged actor no supervisor can reach. Kill it
+        // via the ripcord before returning the error. (No-op on NoKill
+        // runtimes — see `KillCapability::CAN_KILL`.)
+        R::Kill::kill(kill_handle);
+        return Err(err);
+    }
 
     Ok(())
 }

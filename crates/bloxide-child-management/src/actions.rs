@@ -34,12 +34,30 @@ where
 /// Stop all children in the group.
 pub fn stop_all_children<R>(
     self_id: bloxide_core::ActorId,
-    children: &ChildGroup<R>,
+    children: &mut ChildGroup<R>,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     children.stop_all(self_id);
+    ActionResult::Ok
+}
+
+/// Retry every queued undelivered command (confirm-before-record).
+///
+/// Wired as the first action on the managing blox's transitions so a command
+/// lost to a full channel is retried on every event pass. The group shutdown
+/// decision is written to `pending` — a flush can complete a shutdown (a
+/// Closed channel observed here marks the child `Gone`).
+pub fn flush_pending<R>(
+    self_id: bloxide_core::ActorId,
+    children: &mut ChildGroup<R>,
+    pending: &mut ChildAction,
+) -> ActionResult
+where
+    R: bloxide_core::capability::BloxRuntime,
+{
+    *pending = children.flush_pending(self_id);
     ActionResult::Ok
 }
 
@@ -71,23 +89,50 @@ where
 /// In the four-level lifecycle model, `Started` covers both initial `Start`
 /// and `Reset` (both go directly to `initial_state()`). The managing blox
 /// does not need to send `Start` after `Reset`.
-pub fn record_started<R>(children: &mut ChildGroup<R>, ev: &ChildLifecycleEvent) -> ActionResult
+pub fn record_started<R>(
+    self_id: bloxide_core::ActorId,
+    children: &mut ChildGroup<R>,
+    ev: &ChildLifecycleEvent,
+) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let ChildLifecycleEvent::Started { child_id } = ev {
-        children.handle_started(*child_id);
+        children.handle_started(*child_id, self_id);
     }
     ActionResult::Ok
 }
 
-/// Record a stopped child.
-pub fn record_stopped<R>(children: &mut ChildGroup<R>, ev: &ChildLifecycleEvent) -> ActionResult
+/// Record a stopped child (ShuttingDown accounting).
+pub fn record_stopped<R>(
+    self_id: bloxide_core::ActorId,
+    children: &mut ChildGroup<R>,
+    ev: &ChildLifecycleEvent,
+) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let ChildLifecycleEvent::Stopped { child_id } = ev {
-        children.record_stopped(*child_id);
+        children.record_stopped(*child_id, self_id);
+    }
+    ActionResult::Ok
+}
+
+/// Record a failed child received while shutting down.
+///
+/// The child is parked in its absorbing error state (task alive) — recorded
+/// as terminal for shutdown accounting. (In Running, `Failed` goes through
+/// `handle_done_or_failed` instead, applying the child policy.)
+pub fn record_failed<R>(
+    self_id: bloxide_core::ActorId,
+    children: &mut ChildGroup<R>,
+    ev: &ChildLifecycleEvent,
+) -> ActionResult
+where
+    R: bloxide_core::capability::BloxRuntime,
+{
+    if let ChildLifecycleEvent::Failed { child_id } = ev {
+        children.record_failed(*child_id, self_id);
     }
     ActionResult::Ok
 }
@@ -96,12 +141,19 @@ where
 ///
 /// Aborted means the child's task self-terminated cooperatively via
 /// `AbortCommand`. The task is gone — restarting requires respawning.
-pub fn record_aborted<R>(children: &mut ChildGroup<R>, ev: &ChildLifecycleEvent) -> ActionResult
+/// Externally-originated aborts participate in group shutdown: the decision
+/// is written to `pending`.
+pub fn record_aborted<R>(
+    self_id: bloxide_core::ActorId,
+    children: &mut ChildGroup<R>,
+    pending: &mut ChildAction,
+    ev: &ChildLifecycleEvent,
+) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let ChildLifecycleEvent::Aborted { child_id } = ev {
-        children.record_aborted(*child_id);
+        *pending = children.record_aborted(*child_id, self_id);
     }
     ActionResult::Ok
 }
@@ -110,13 +162,19 @@ where
 ///
 /// Killed means the child's task was destroyed externally via
 /// `KillCapability::kill(handle)`. Permanently dead — cannot be restarted
-/// without respawning the task.
-pub fn record_killed<R>(children: &mut ChildGroup<R>, ev: &ChildLifecycleEvent) -> ActionResult
+/// without respawning the task. Participates in group shutdown: the decision
+/// is written to `pending`.
+pub fn record_killed<R>(
+    self_id: bloxide_core::ActorId,
+    children: &mut ChildGroup<R>,
+    pending: &mut ChildAction,
+    ev: &ChildLifecycleEvent,
+) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let ChildLifecycleEvent::Killed { child_id } = ev {
-        children.record_killed(*child_id);
+        *pending = children.record_killed(*child_id, self_id);
     }
     ActionResult::Ok
 }
@@ -136,8 +194,10 @@ where
 ///
 /// Done is normal completion: the entry is removed (no restart policy), and
 /// the group shutdown decision is recorded in `pending` so the managing blox
-/// can still progress to shutdown when the last child completes.
+/// can still progress to shutdown when the last child completes. A `Done`
+/// from an unknown child is ignored (and never triggers shutdown).
 pub fn deregister_done<R>(
+    self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
     pending: &mut ChildAction,
     ev: &ChildLifecycleEvent,
@@ -146,12 +206,16 @@ where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let ChildLifecycleEvent::Done { child_id } = ev {
-        *pending = children.deregister(*child_id);
+        *pending = children.deregister(*child_id, self_id);
     }
     ActionResult::Ok
 }
 
 /// Register a new static child.
+///
+/// Fallible: an invalid policy (`Abort`/`Kill` need handles) or a duplicate
+/// id warns and drops the registration — a malformed control message must
+/// not panic the managing blox.
 pub fn register_child<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
@@ -162,8 +226,17 @@ where
 {
     if let ChildCtrl::RegisterChild(child) = ctrl {
         let (id, lifecycle_ref, policy) = (child.id, child.lifecycle_ref.clone(), child.policy);
-        children.add(id, lifecycle_ref, policy);
-        children.start_child(id, self_id);
+        match children.try_add(id, lifecycle_ref, policy) {
+            Ok(()) => children.start_child(id, self_id),
+            Err(err) => {
+                bloxide_log::blox_log_warn!(
+                    self_id,
+                    "RegisterChild for {} rejected ({:?}) — registration dropped",
+                    id,
+                    err
+                );
+            }
+        }
     }
     ActionResult::Ok
 }
@@ -174,6 +247,9 @@ where
 /// from the `spawn_child` helper. Registers the child in the child group
 /// (storing the `abort_ref` for the cooperative abort mailbox and the
 /// `kill_handle` for the external kill ripcord) and sends a Start command.
+///
+/// Fallible, like `register_child`: `ChildPolicy::Kill` on a `!CAN_KILL`
+/// runtime or a duplicate id warns and drops the registration.
 pub fn handle_register_dynamic_child<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
@@ -184,14 +260,23 @@ where
 {
     if let ChildCtrl::RegisterDynamicChild(reg) = ctrl {
         let child_id = reg.id;
-        children.add_dynamic(
+        match children.try_add_dynamic(
             child_id,
             reg.lifecycle_ref.clone(),
             reg.abort_ref.clone(),
             reg.kill_handle.clone(),
             reg.policy,
-        );
-        children.start_child(child_id, self_id);
+        ) {
+            Ok(()) => children.start_child(child_id, self_id),
+            Err(err) => {
+                bloxide_log::blox_log_warn!(
+                    self_id,
+                    "RegisterDynamicChild for {} rejected ({:?}) — registration dropped",
+                    child_id,
+                    err
+                );
+            }
+        }
     }
     ActionResult::Ok
 }

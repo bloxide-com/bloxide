@@ -160,8 +160,9 @@ bloxide-embassy/          ← Embassy runtime (no dynamic spawning)
 
 bloxide-test-runtime/     ← in-memory test runtime
   TestRuntime: BloxRuntime + DynamicChannelCap + SpawnCap
-  KillCapability impl: type Kill = Kill (kill is a documented no-op —
-    TestRuntime runs no real tasks)
+  KillCapability impl: type Kill = Kill (kill records the spawn id in a
+    thread-local log — TestRuntime runs no real tasks; tests assert via
+    drain_killed() / kill_count())
   Channel capacity IS enforced on try_send
 
 bloxide-peers/            ← peer introduction (PeerCtrl, AddPeer, RemovePeer, introduce_peers)
@@ -589,9 +590,10 @@ Both variants are available regardless of runtime — `RegisterDynamicChild` is 
 with an `abort_ref` field; it doesn't require `R: SpawnCap` to name the type (the
 `ActorRef<AbortCommand, R>` only needs `R: BloxRuntime`). Two action functions (in
 `bloxide-child-management::actions`) handle them: `register_child` adds a static child
-via `ChildGroup::add` and sends `Start`; `handle_register_dynamic_child` adds a dynamic
-child via `ChildGroup::add_dynamic` (storing the `abort_ref` and `kill_handle`) and sends
-`Start`.
+via `ChildGroup::try_add` and sends `Start`; `handle_register_dynamic_child` adds a dynamic
+child via `ChildGroup::try_add_dynamic` (storing the `abort_ref` and `kill_handle`) and sends
+`Start`. Both registration calls are fallible (`Result<(), RegistrationError>`); a rejected
+registration is logged and dropped, never panics.
 
 ### 3.9 The Supervisor Event Enum
 
@@ -683,13 +685,17 @@ level (`()` for Embassy, `R::KillHandle` for Tokio). Neither is a trait object. 
 `Option` exists because `ChildGroup` is a single type that handles both static and dynamic
 children — the `Option` encodes "this child has an abort mailbox" vs "this child doesn't."
 
-Children are registered via two methods:
+Children are registered via two fallible methods (both return `Result<(), RegistrationError>`):
 
-- **`ChildGroup::add(id, lifecycle_ref, policy)`** — static children. **Panics** if the
-  policy is `ChildPolicy::Kill` or `ChildPolicy::Abort`: those policies need the
-  kill/abort handles that only dynamic spawn provides.
-- **`ChildGroup::add_dynamic(id, lifecycle_ref, abort_ref, kill_handle, policy)`** —
-  dynamically spawned children; stores the abort/kill capability.
+- **`ChildGroup::try_add(id, lifecycle_ref, policy)`** — static children. Returns
+  `Err(RegistrationError::PolicyRequiresHandles)` if the policy is `ChildPolicy::Kill`
+  or `ChildPolicy::Abort`: those policies need the kill/abort handles that only
+  dynamic spawn provides.
+- **`ChildGroup::try_add_dynamic(id, lifecycle_ref, abort_ref, kill_handle, policy)`** —
+  dynamically spawned children; stores the abort/kill capability. Returns
+  `Err(RegistrationError::KillUnavailable)` for `ChildPolicy::Kill` on a runtime
+  without kill capability (`CAN_KILL = false`, e.g. Embassy). Both methods return
+  `Err(RegistrationError::Duplicate)` for an already-registered id.
 
 `ChildGroup::handle_done_or_failed` evaluates the child's `ChildPolicy` when a `Stopped`
 or `Failed` lifecycle event arrives — four variants:
@@ -699,12 +705,14 @@ or `Failed` lifecycle event arrives — four variants:
   `ChildLifecycleEvent::Killed` on the notify channel, sets phase to
   `ChildPhase::Killed`, then checks group shutdown.
 - **`ChildPolicy::Abort`** (cooperative): Sends `AbortCommand::Abort` on the child's
-  `abort_ref`. The child self-terminates via its run loop and later reports `Aborted`.
-  The entry is marked `Aborted` immediately (the abort is
-  fire-and-forget; the late `Aborted` event is informational only).
-- **`ChildPolicy::Reset`**: Sends `Reset` to the child. Reset goes directly
+  `abort_ref`. On a confirmed send the entry is marked `Aborting`; the child
+  self-terminates via its run loop and reports `Aborted`, which finalizes the phase.
+- **`ChildPolicy::Reset { max }`**: Sends `Reset` to the child, capped at `max`
+  consecutive restarts (the counter resets when the child reports `Started` and then
+  answers a health `Ping` with `Alive`). Reset goes directly
   to `initial_state()` — the child reports `Started`, no separate `Start` needed. Sets
-  phase to `ResetPending`.
+  phase to `ResetPending`. Once the cap is exhausted, the child is marked `Stopped`
+  (terminal, task alive).
 - **`ChildPolicy::Stop`**: Sends **no command** — the child already self-stopped
   (suspended in Init) or failed (parked in its error state). Marks the entry
   `Stopped` (task alive, terminal for this epoch) and checks group shutdown.
@@ -714,8 +722,8 @@ or `Failed` lifecycle event arrives — four variants:
 
 if policy == ChildPolicy::Kill {
     // Ripcord: external kill. Works even if the child is stuck and
-    // never polls the abort mailbox. For NoKill runtimes this is a no-op
-    // (kill(()) does nothing). For Kill runtimes this calls AbortHandle::abort().
+    // never polls the abort mailbox. Registration guarantees CAN_KILL and a
+    // stored handle, so the kill is real here (AbortHandle::abort() on Tokio).
     let kill_handle = self.children[idx].kill_handle.take();
     if let Some(handle) = kill_handle {
         R::Kill::kill(handle);
@@ -731,15 +739,22 @@ if policy == ChildPolicy::Abort {
     if let Some(abort_ref) = &self.children[idx].abort_ref {
         let _ = abort_ref.try_send(from, AbortCommand::Abort { child_id });
     }
-    // Marked Aborted immediately; the later Aborted event is a no-op
-    // here (record_aborted finalizes the same phase).
-    self.children[idx].phase = ChildPhase::Aborted;
-    return self.check_shutdown();
+    // Confirmed send — mark Aborting; the run loop's Aborted report
+    // finalizes the phase (record_aborted).
+    self.children[idx].phase = ChildPhase::Aborting;
+    return ChildAction::Continue;
 }
-if policy == ChildPolicy::Reset {
+if let ChildPolicy::Reset { max } = policy {
+    // Capped at max consecutive restarts — the counter resets on a healthy
+    // Alive after Started; exhaustion marks the child Stopped (terminal).
+    if self.children[idx].restarts >= max {
+        self.children[idx].phase = ChildPhase::Stopped;
+        return self.check_shutdown();
+    }
     // Reset goes directly to initial_state() — no separate Start needed.
     let _ = lifecycle_ref.try_send(from, LifecycleCommand::Reset);
     self.children[idx].phase = ChildPhase::ResetPending;
+    self.children[idx].restarts += 1;
     return ChildAction::Continue;
 }
 // Stop: the child is already stopping or has failed — mark done for this epoch.
@@ -775,6 +790,8 @@ blox's control mailbox.
 ///   1. Calls the spawn function to create the child (channels, context, task)
 ///   2. Sends the registration message (typed by C::RegisterMsg) to the
 ///      managing blox's control mailbox
+///   3. If the registration send fails, kills the freshly spawned task via
+///      the kill handle before returning Err — no orphaned live tasks
 ///
 /// The supervisor receives the registration message and starts managing the
 /// child's lifecycle. The supervisor never sees the request type.
@@ -802,8 +819,14 @@ where
     let output: SpawnOutput<R> = spawn_fn(req, notify_ref.clone());
 
     // 2. Wrap output into the managing blox's registration message and send it
+    let kill_handle = output.kill_handle.clone();
     let msg = C::register(output);
-    control_ref.try_send(from, msg)?;
+    if let Err(err) = control_ref.try_send(from, msg) {
+        // The registration never arrived — kill the freshly spawned task via
+        // the ripcord rather than leak a live, unmanaged actor.
+        R::Kill::kill(kill_handle);
+        return Err(err);
+    }
 
     Ok(())
 }
@@ -924,8 +947,9 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
 }
 ```
 
-If the control mailbox is full, `spawn_child` returns `Err` and the resulting
-`ActionResult` carries the failure — the transition's guard can route it (e.g. to an
+If the control mailbox is full, `spawn_child` kills the freshly spawned task via the
+kill handle (no orphaned live tasks) and returns `Err` — the resulting
+`ActionResult` carries the failure and the transition's guard can route it (e.g. to an
 error state).
 
 The Pool's spawn-related context fields (from `crates/bloxes/pool/blox.toml`, gated by
@@ -1238,8 +1262,9 @@ Runtime implementations:
 - **Tokio**: `type Kill = Kill`. Requires `TokioRuntime: SpawnCap`.
   `Handle = tokio::task::AbortHandle`.
 - **TestRuntime** (`runtimes/bloxide-test-runtime`): `type Kill = Kill` with a
-  documented no-op kill — TestRuntime runs no real tasks, so `SpawnCap::kill` /
-  `kill_handle` do nothing. It implements `DynamicChannelCap` + `SpawnCap`, and channel
+  recorded kill — TestRuntime runs no real tasks, so `SpawnCap::kill` records the
+  `usize` spawn id in a thread-local log instead of destroying a task; tests assert
+  via `drain_killed()` / `kill_count()`. It implements `DynamicChannelCap` + `SpawnCap`, and channel
   capacity **is** enforced on `try_send`.
 
 **Key properties:**
@@ -1334,7 +1359,8 @@ Termination uses two distinct mechanisms — cooperative abort and ripcord kill:
    nothing. For `Kill` runtimes (Tokio), this calls `AbortHandle::abort()`.
 
 Both `Abort` and `Kill` result in permanent termination — no restart, no reset.
-`ChildGroup::handle_done_or_failed` sets the phase to `ChildPhase::Aborted` or
+`ChildGroup::handle_done_or_failed` sets the phase to `ChildPhase::Aborting`
+(finalized to `Aborted` when the run loop's report arrives) or
 `ChildPhase::Killed` — task gone, so `stop_all` skips their dead mailboxes. The difference
 is cooperation: `Abort` lets the child exit cleanly, `Kill` forces it — and because the
 kill is synchronous, the Kill path also emits `ChildLifecycleEvent::Killed` on the
@@ -1389,7 +1415,7 @@ Pool                      Spawn Helper            Managing Blox            Child
   |                            |---------------------->|                       |
   |                            |                       | 7. handle_register_  |
   |                            |                       |    dynamic_child:    |
-  |                            |                       |    add_dynamic to    |
+  |                            |                       |  try_add_dynamic to  |
   |                            |                       |    ChildGroup,       |
   |                            |                       |    store abort_ref + |
   |                            |                       |     kill_handle,     |
@@ -1569,7 +1595,8 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
   by `ChildGroupBuilder::add_child`
 - Supervisor manages lifecycle only — sends Start/Stop/Reset
 - `ChildPolicy::Abort` and `ChildPolicy::Kill` are not available (no abort mailbox, no
-  `SpawnCap` — `ChildGroup::add` panics if either is registered for a static child).
+  `SpawnCap` — `ChildGroup::try_add` rejects either with
+  `RegistrationError::PolicyRequiresHandles` for a static child).
   Use `Reset` or `Stop`.
 - `R: BloxRuntime` only — no `SpawnCap` needed
 - The Pool blox doesn't have `spawn_fn` — it's not wired

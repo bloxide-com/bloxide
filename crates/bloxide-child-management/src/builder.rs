@@ -22,9 +22,22 @@ use bloxide_core::{
 /// channels, static runtimes (Embassy) create const-capacity channels — so
 /// generated wiring is identical across runtimes.
 ///
+/// Channel capacities are const generics with defaults (notify 32, control 16,
+/// per-child lifecycle 4). Generated wiring overrides them from the system.toml
+/// `[supervision.capacities]` table, computing defaults from the child count —
+/// the channels carry the supervision control plane, so they are sized to make
+/// "full" a bug rather than routine backpressure (confirm-before-record still
+/// handles Full correctly when it happens).
+///
 /// Created with `::new(shutdown)`, children are added via `add_child()`, and the
 /// group is consumed via `finish()`.
-pub struct ChildGroupBuilder<R: GroupChannelCap, Ctrl: Send + 'static> {
+pub struct ChildGroupBuilder<
+    R: GroupChannelCap,
+    Ctrl: Send + 'static,
+    const NOTIFY: usize = 32,
+    const CONTROL: usize = 16,
+    const LIFECYCLE: usize = 4,
+> {
     group: ChildGroup<R>,
     notify_ref: ActorRef<ChildLifecycleEvent, R>,
     notify_rx: Option<R::Receiver<ChildLifecycleEvent>>,
@@ -32,7 +45,8 @@ pub struct ChildGroupBuilder<R: GroupChannelCap, Ctrl: Send + 'static> {
     control_rx: Option<R::Receiver<Ctrl>>,
 }
 
-impl<R, Ctrl> ChildGroupBuilder<R, Ctrl>
+impl<R, Ctrl, const NOTIFY: usize, const CONTROL: usize, const LIFECYCLE: usize>
+    ChildGroupBuilder<R, Ctrl, NOTIFY, CONTROL, LIFECYCLE>
 where
     R: GroupChannelCap,
     Ctrl: Send + 'static,
@@ -44,10 +58,10 @@ where
     /// `Ctrl` messages (e.g. `RegisterChild`, `RegisterDynamicChild`).
     pub fn new(shutdown: GroupShutdown) -> Self {
         let notify_id = R::alloc_group_id();
-        let (notify_ref, notify_rx) = R::group_channel::<ChildLifecycleEvent, 32>(notify_id);
+        let (notify_ref, notify_rx) = R::group_channel::<ChildLifecycleEvent, NOTIFY>(notify_id);
 
         let control_id = R::alloc_group_id();
-        let (control_ref, control_rx) = R::group_channel::<Ctrl, 16>(control_id);
+        let (control_ref, control_rx) = R::group_channel::<Ctrl, CONTROL>(control_id);
 
         Self {
             group: ChildGroup::new(shutdown),
@@ -62,6 +76,14 @@ where
     ///
     /// Creates a per-child lifecycle channel and registers the child.
     /// Returns the lifecycle receive stream and the notify sender.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the policy is invalid for a static child (`Abort`/`Kill` —
+    /// they need handles) or the id is already registered. This is boot-time
+    /// wiring code: generated apps only ever emit valid policies (the
+    /// system.toml vocabulary has no abort/kill), so a panic here is a
+    /// hand-written wiring bug caught at startup, not a message-driven event.
     pub fn add_child(
         &mut self,
         id: ActorId,
@@ -70,8 +92,10 @@ where
         R::Receiver<LifecycleCommand>,
         R::Sender<ChildLifecycleEvent>,
     ) {
-        let (lifecycle_ref, cmd_rx) = R::group_channel::<LifecycleCommand, 4>(id);
-        self.group.add(id, lifecycle_ref, policy);
+        let (lifecycle_ref, cmd_rx) = R::group_channel::<LifecycleCommand, LIFECYCLE>(id);
+        self.group.try_add(id, lifecycle_ref, policy).expect(
+            "ChildGroupBuilder::add_child — invalid policy or duplicate id in static wiring",
+        );
         (cmd_rx, self.notify_ref.sender())
     }
 

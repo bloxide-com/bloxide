@@ -254,8 +254,11 @@ feature) and provides:
 - `DynamicChannelCap` — creates `(ActorRef, TestReceiver)` pairs on demand;
   `alloc_actor_id()` hands out IDs starting at `DYNAMIC_ACTOR_ID_BASE`
   (256) so they can never collide with compile-time IDs.
-- `SpawnCap` — dynamic spawning in tests; `kill` / `kill_handle` are
-  documented no-ops (`KillHandle = ()`) since TestRuntime runs no real tasks.
+- `SpawnCap` — dynamic spawning in tests; handles are `usize` spawn ids
+  (`KillHandle = usize`). `kill` records the id in a thread-local log rather
+  than destroying a task (TestRuntime runs no real tasks); tests assert via
+  `drain_killed()` / `kill_count()`. The `Kill` adapter in `bloxide-spawn`
+  reports `CAN_KILL = true` for this runtime.
 
 Timer testing is not built into `TestRuntime` itself, but `bloxide-timer`
 provides a reusable std-only helper: `bloxide_timer::test_utils::VirtualClock`.

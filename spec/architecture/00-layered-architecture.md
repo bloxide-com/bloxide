@@ -154,7 +154,7 @@ This table shows which runtime implements each Tier 2 capability.
 || Dynamic channel creation | `DynamicChannelCap` | ❌ | ✅ | ✅ | Runtime-configurable capacity; Tokio uses `__dyn_channels_proc_macro` |
 || Timer service | `TimerService` | ✅ | ✅ | ❌ | Bridges native timer to `TimerQueue`; tests use `VirtualClock` instead |
 || Spawn capability | `SpawnCap` | ❌ | ✅ | ✅ | Dynamic actor spawning |
-|| Kill capability | `KillCapability` | ❌ (`NoKill`) | ✅ (`Kill`) | ✅ (`Kill`, no-op) | Immediately aborts actor tasks for dynamic actor cleanup; TestRuntime's `kill` is a documented no-op (no real tasks) |
+|| Kill capability | `KillCapability` | ❌ (`NoKill`) | ✅ (`Kill`) | ✅ (`Kill`, recorded) | Immediately aborts actor tasks for dynamic actor cleanup; TestRuntime's `kill` records the handle in a thread-local log (no real tasks) — tests assert via `drain_killed()` / `kill_count()` |
 
 ### Feature Flags
 
@@ -171,9 +171,10 @@ TestRuntime implements `DynamicChannelCap` (from `bloxide-core`) and `SpawnCap`
 own crates while allowing tests to exercise dynamic spawning without a real
 executor. It is intentionally not a full-fidelity runtime: channel capacity
 **is** enforced for `try_send` (the backpressure path action functions use),
-but `send_via` is unbounded and never fails; `SpawnCap::kill` /
-`kill_handle` are documented no-ops (`KillHandle = ()`) since TestRuntime runs
-no real tasks. Receivers model all-streams-close semantics (issue #134):
+but `send_via` is unbounded and never fails; `SpawnCap` handles are `usize`
+spawn ids (`KillHandle = usize`) and `kill` records the id in a thread-local
+log — tests assert via `drain_killed()` / `kill_count()` — since TestRuntime
+runs no real tasks. Receivers model all-streams-close semantics (issue #134):
 dropping the last sender wakes the receiver, which drains queued envelopes
 and then returns `Poll::Ready(None)`. Tests validate HSM logic, not
 runtime-integration behavior.

@@ -281,8 +281,10 @@ If the actor is non-responsive (stuck in infinite loop, blocking call):
 - `ChildPolicy::Kill` calls `KillCapability::kill(handle)` — the external
   ripcord. No callbacks fire; the task is destroyed in place.
 - Kill requires a runtime with external task abort (Tokio; Embassy is `NoKill`).
-- Kill/Abort policies require abort/kill handles: `ChildGroup::add` panics if
-  either is requested for a **static** child — register via `add_dynamic` or
+- Kill/Abort policies require abort/kill handles: `ChildGroup::try_add` rejects
+  either for a **static** child with `RegistrationError::PolicyRequiresHandles`
+  (`Kill` also requires `KillCapability::CAN_KILL` — `try_add_dynamic` returns
+  `RegistrationError::KillUnavailable` otherwise) — register via `try_add_dynamic` or
   choose `ChildPolicy::Reset`/`Stop`.
 - The supervisor synthesizes `ChildLifecycleEvent::Killed` when it applies
   `ChildPolicy::Kill` (`DispatchOutcome` has no `Killed` variant — the run
@@ -291,7 +293,7 @@ If the actor is non-responsive (stuck in infinite loop, blocking call):
 ### Double Start is Idempotent
 
 If `LifecycleCommand::Start` is dispatched while the machine is already operational:
-- Returns `DispatchOutcome::HandledNoTransition`
+- Returns `DispatchOutcome::Started(current)` (an ack — mirrors Stop-in-Init)
 - Machine stays in current state
 - No callbacks fire (no re-entry to `initial_state()`)
 

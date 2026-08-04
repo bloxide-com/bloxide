@@ -12,7 +12,7 @@ use core::task::Poll;
 use futures_core::Stream;
 
 use crate::capability::BloxRuntime;
-use crate::engine::{DispatchOutcome, MachineState, StateMachine};
+use crate::engine::{DispatchOutcome, StateMachine};
 use crate::lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand};
 use crate::mailboxes::Mailboxes;
 use crate::messaging::{ActorId, Envelope};
@@ -158,6 +158,19 @@ impl<R: BloxRuntime> RunConfig<R> {
 ///   closed (all-streams-close, issue #134): no domain sender remains
 ///   anywhere, so the actor cannot be reached at all
 ///
+/// Stream-closed exits are classified by who could consume a report:
+/// - **Lifecycle / abort stream closed** — the senders live only in the
+///   supervisor's child group, so closure is always supervisor-initiated
+///   (deregistration or app teardown). Expected exit; nothing is reported.
+/// - **All domain streams closed** (all-streams-close, issue #134) — domain
+///   senders live in peers, parents, and wiring, so closure means the actor
+///   became unreachable *while the supervisor is still alive*. Abnormal for
+///   an operational actor: the loop reports `Failed` before ending the task,
+///   and the child policy applies (its command send fails Closed — the task
+///   is already gone — and the supervisor records task-gone). An actor
+///   suspended in Init stays silent — a properly stopped actor losing its
+///   domain senders is the expected app-teardown cascade.
+///
 /// When `exit_on_stop` is false (supervised actors), `Stopped` is NOT terminal —
 /// the actor self-suspends to Init and the task stays alive, waiting for a
 /// future `Start` or `Reset` from the supervisor. Likewise, when `exit_on_fail`
@@ -180,9 +193,8 @@ pub async fn run<S, M, R>(
             report_outcome::<S, R>(&outcome, actor_id, notify);
         }
         match &outcome {
-            DispatchOutcome::Started(MachineState::State(state)) if S::is_error(state) => {
-                return;
-            }
+            // The engine normalizes Started(error-state) to Failed, so the
+            // exit_on_fail arm covers the error case uniformly.
             DispatchOutcome::Failed if config.exit_on_fail => return,
             DispatchOutcome::Stopped if config.exit_on_stop => return,
             _ => {}
@@ -203,6 +215,11 @@ pub async fn run<S, M, R>(
             // 1. Lifecycle stream (highest priority)
             if let Some(ref mut ls) = lifecycle_stream {
                 match Pin::new(ls).poll_next(cx) {
+                    // Lifecycle-stream closure is always supervisor-initiated
+                    // (deregistration after Done, or app teardown dropping the
+                    // group) — an expected exit, reported to nobody. The only
+                    // consumer of a report here would be the supervisor, and
+                    // this closure implies it is already gone.
                     Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
                     Poll::Ready(Some(Envelope(_, cmd))) => {
                         let outcome = machine.handle_lifecycle(cmd);
@@ -229,6 +246,9 @@ pub async fn run<S, M, R>(
             // 2. Abort stream (high priority — serviced before domain messages)
             if let Some(ref mut as_) = abort_stream {
                 match Pin::new(as_).poll_next(cx) {
+                    // Same as lifecycle-stream closure: the abort sender is
+                    // held only by the supervisor's group, so closure is
+                    // supervisor-initiated teardown — expected, unreported.
                     Poll::Ready(None) => return Poll::Ready(LoopAction::Stop),
                     Poll::Ready(Some(Envelope(_, AbortCommand::Abort { .. }))) => {
                         if let Some(ref notify) = supervisor_notify {
@@ -260,7 +280,24 @@ pub async fn run<S, M, R>(
                         _ => Poll::Ready(LoopAction::Continue),
                     }
                 }
-                Poll::Ready(None) => Poll::Ready(LoopAction::Stop),
+                Poll::Ready(None) => {
+                    // All domain streams closed (all-streams-close, issue
+                    // #134): no domain sender remains anywhere, so the actor
+                    // cannot be reached at all — yet the supervisor (holding
+                    // only the lifecycle channel) is still alive. This exit is
+                    // abnormal *for an operational actor*: report Failed so
+                    // the child policy applies (its command send fails Closed
+                    // — the task is already gone — and the supervisor records
+                    // task-gone). An actor suspended in Init stays silent: it
+                    // was properly stopped, and losing its domain senders is
+                    // just the app-teardown cascade.
+                    if !machine.current_state().is_init() {
+                        if let Some(ref notify) = supervisor_notify {
+                            report_outcome::<S, R>(&DispatchOutcome::Failed, actor_id, notify);
+                        }
+                    }
+                    Poll::Ready(LoopAction::Stop)
+                }
                 Poll::Pending => Poll::Pending,
             }
         })

@@ -244,9 +244,15 @@ mod hsm_engine {
         m.dispatch(TEvent::Lifecycle(LifecycleCommand::Start));
         take_log();
 
-        // Second start - machine is in operational state, lifecycle Start is handled
+        // Second Start — machine is already operational: acknowledged with
+        // Started (like Stop-in-Init reporting Stopped), firing no callbacks
+        // and changing no state.
         let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Start));
-        assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TState::A))
+        ));
+        assert!(matches!(m.current_state(), MachineState::State(TState::A)));
         assert!(
             take_log().is_empty(),
             "second start from operational must not fire callbacks"
@@ -484,5 +490,79 @@ mod hsm_engine {
         let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Ping));
         assert!(matches!(outcome, DispatchOutcome::Alive));
         assert!(take_log().is_empty());
+    }
+
+    // ── Health-check / ack semantics (production-grade supervision) ─────────
+
+    #[test]
+    fn ping_is_silent_in_init() {
+        // A never-started or suspended child must NOT answer Ping — silence
+        // is what lets the supervisor's health check detect it.
+        let mut m = StateMachine::<TSpec>::new(TCtx);
+        take_log();
+        let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Ping));
+        assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
+        assert!(m.current_state().is_init());
+        assert!(take_log().is_empty());
+    }
+
+    #[test]
+    fn ping_is_silent_in_error_state() {
+        // A child parked in its absorbing error state must NOT answer Ping —
+        // otherwise a dropped Failed report would leave the supervisor
+        // believing the child is healthy forever.
+        let mut m = machine_in_ea();
+        m.dispatch(EEvent::Boom); // -> Err (Failed)
+        take_log();
+        let outcome = m.dispatch(EEvent::Lifecycle(LifecycleCommand::Ping));
+        assert!(matches!(outcome, DispatchOutcome::HandledNoTransition));
+        assert!(matches!(
+            m.current_state(),
+            MachineState::State(EState::Err)
+        ));
+    }
+
+    #[test]
+    fn start_in_operational_acknowledges_with_started() {
+        // Redundant Start is acknowledged (mirrors Stop-in-Init reporting
+        // Stopped): supervision logic awaiting Started confirmation gets it.
+        // No callbacks fire and no state change occurs.
+        let mut m = machine_in_a();
+        take_log();
+        let outcome = m.dispatch(TEvent::Lifecycle(LifecycleCommand::Start));
+        assert!(matches!(
+            outcome,
+            DispatchOutcome::Started(MachineState::State(TState::A))
+        ));
+        assert!(matches!(m.current_state(), MachineState::State(TState::A)));
+        assert!(
+            take_log().is_empty(),
+            "redundant Start must fire no callbacks"
+        );
+    }
+
+    #[test]
+    fn start_with_error_initial_state_returns_failed() {
+        // Started(error) is normalized to Failed at the source so run-loop
+        // exit logic and report_outcome behave uniformly on every path.
+        let mut m = StateMachine::<InitErrSpec>::new(ECtx);
+        let outcome = m.dispatch(EEvent::Lifecycle(LifecycleCommand::Start));
+        assert!(matches!(outcome, DispatchOutcome::Failed));
+        assert!(matches!(
+            m.current_state(),
+            MachineState::State(EState::Err)
+        ));
+    }
+
+    #[test]
+    fn reset_with_error_initial_state_returns_failed() {
+        let mut m = StateMachine::<InitErrSpec>::new(ECtx);
+        m.dispatch(EEvent::Lifecycle(LifecycleCommand::Start));
+        let outcome = m.dispatch(EEvent::Lifecycle(LifecycleCommand::Reset));
+        assert!(matches!(outcome, DispatchOutcome::Failed));
+        assert!(matches!(
+            m.current_state(),
+            MachineState::State(EState::Err)
+        ));
     }
 }

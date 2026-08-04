@@ -27,6 +27,11 @@ extra_impls = [
 # ── Action declarations ─────────────────────────────────────────────────────
 # Each action is a free function in crate::actions that takes concrete params.
 # The codegen generates wrapper closures that extract ctx fields and call them.
+#
+# `flush_pending` is the first action on nearly every transition: commands
+# lost to a full channel are retried on every event pass (confirm-before-
+# record), and a Closed channel observed while flushing marks the child Gone
+# — which can itself complete a shutdown.
 
 [[context.actions]]
 name = "start_children"
@@ -38,7 +43,13 @@ fields = ["self_id", "children:mut", "pending:mut"]
 name = "stop_all_children"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["self_id", "children:ref"]
+fields = ["self_id", "children:mut"]
+
+[[context.actions]]
+name = "flush_pending"
+crate = "bloxide_child_management"
+module = "actions"
+fields = ["self_id", "children:mut", "pending:mut"]
 
 [[context.actions]]
 name = "handle_done_or_failed"
@@ -51,28 +62,35 @@ event_payload = "ev"
 name = "record_started"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["children:mut"]
+fields = ["self_id", "children:mut"]
 event_payload = "ev"
 
 [[context.actions]]
 name = "record_stopped"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["children:mut"]
+fields = ["self_id", "children:mut"]
+event_payload = "ev"
+
+[[context.actions]]
+name = "record_failed"
+crate = "bloxide_child_management"
+module = "actions"
+fields = ["self_id", "children:mut"]
 event_payload = "ev"
 
 [[context.actions]]
 name = "record_aborted"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["children:mut"]
+fields = ["self_id", "children:mut", "pending:mut"]
 event_payload = "ev"
 
 [[context.actions]]
 name = "record_killed"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["children:mut"]
+fields = ["self_id", "children:mut", "pending:mut"]
 event_payload = "ev"
 
 [[context.actions]]
@@ -86,7 +104,7 @@ event_payload = "ev"
 name = "deregister_done"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["children:mut", "pending:mut"]
+fields = ["self_id", "children:mut", "pending:mut"]
 event_payload = "ev"
 
 [[context.actions]]
@@ -155,69 +173,98 @@ spec_imports = [
 ]
 
 # Running state — lifecycle handling
+#
+# Shutdown guard chain (ordered): if the group is already fully terminal after
+# the action ran — all children Stopped/Aborted/Killed/Gone, or empty after
+# Done-deregistration — there is nothing left to stop and the supervisor
+# self-stops immediately ("stop"). Otherwise, when the trigger fired
+# (pending == BeginShutdown), it enters ShuttingDown to stop the remaining
+# live children. The direct-stop path is what makes Done-of-last-child and
+# all-task-gone cases complete instead of wedging in an event-less
+# ShuttingDown.
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
-actions = ["Self::handle_done_or_failed"]
-guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
+actions = ["Self::flush_pending", "Self::handle_done_or_failed"]
+guards = [
+    { condition = "ctx.all_children_stopped()", target = "stop" },
+    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
+]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { .. }))"
 target = "stay"
-actions = ["Self::handle_done_or_failed"]
-guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
+actions = ["Self::flush_pending", "Self::handle_done_or_failed"]
+guards = [
+    { condition = "ctx.all_children_stopped()", target = "stop" },
+    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
+]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Started { .. }))"
 target = "stay"
-actions = ["Self::record_started"]
+actions = ["Self::flush_pending", "Self::record_started"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { .. }))"
 target = "stay"
-actions = ["Self::record_aborted"]
+actions = ["Self::flush_pending", "Self::record_aborted"]
+guards = [
+    { condition = "ctx.all_children_stopped()", target = "stop" },
+    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
+]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))"
 target = "stay"
-actions = ["Self::record_killed"]
+actions = ["Self::flush_pending", "Self::record_killed"]
+guards = [
+    { condition = "ctx.all_children_stopped()", target = "stop" },
+    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
+]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Alive { .. }))"
 target = "stay"
-actions = ["Self::record_alive"]
+actions = ["Self::flush_pending", "Self::record_alive"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))"
 target = "stay"
-actions = ["Self::deregister_done"]
-guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
+actions = ["Self::flush_pending", "Self::deregister_done"]
+guards = [
+    { condition = "ctx.all_children_stopped()", target = "stop" },
+    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
+]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterChild(_)))"
 target = "stay"
-actions = ["Self::register_child"]
+actions = ["Self::flush_pending", "Self::register_child"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterDynamicChild(_)))"
 target = "stay"
-actions = ["Self::handle_register_dynamic_child"]
+actions = ["Self::flush_pending", "Self::handle_register_dynamic_child"]
 
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::HealthCheckTick))"
 target = "stay"
-actions = ["Self::handle_health_check"]
-guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
+actions = ["Self::flush_pending", "Self::handle_health_check"]
+guards = [
+    { condition = "ctx.all_children_stopped()", target = "stop" },
+    { condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" },
+]
 
 # Running state — catch-alls
 [[topology.transitions]]
@@ -230,21 +277,57 @@ state = "Running"
 event = "SupervisorEvent::Control(_)"
 target = "stay"
 
-# ShuttingDown state
+# ShuttingDown state — record ALL terminal evidence and wait for every child.
+# There is no timeout by design (wait-forever): a genuinely stuck child cannot
+# be killed on static runtimes anyway. Every terminal signal counts toward
+# completion — Stopped, Done, Failed (parked-error, task alive), Aborted,
+# Killed, and Gone (observed via Closed channel while flushing).
 [[topology.transitions]]
 state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
 target = "stay"
-actions = ["Self::record_stopped"]
+actions = ["Self::flush_pending", "Self::record_stopped"]
 guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
 
 [[topology.transitions]]
 state = "ShuttingDown"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Done { .. }))"
 target = "stay"
-actions = ["Self::deregister_done"]
+actions = ["Self::flush_pending", "Self::deregister_done"]
 guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
 
+[[topology.transitions]]
+state = "ShuttingDown"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Failed { .. }))"
+target = "stay"
+actions = ["Self::flush_pending", "Self::record_failed"]
+guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+[[topology.transitions]]
+state = "ShuttingDown"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Aborted { .. }))"
+target = "stay"
+actions = ["Self::flush_pending", "Self::record_aborted"]
+guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+[[topology.transitions]]
+state = "ShuttingDown"
+event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Killed { .. }))"
+target = "stay"
+actions = ["Self::flush_pending", "Self::record_killed"]
+guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+# HealthCheckTick in ShuttingDown: only flush pending commands (no health
+# checks — children are being stopped, not monitored). The flush can complete
+# the shutdown (pending Stop delivered, or a Closed channel marks Gone).
+[[topology.transitions]]
+state = "ShuttingDown"
+event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::HealthCheckTick))"
+target = "stay"
+actions = ["Self::flush_pending"]
+guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
+
+# ShuttingDown state — catch-alls (Started/Alive/registrations are absorbed)
 [[topology.transitions]]
 state = "ShuttingDown"
 event = "SupervisorEvent::Child(_)"

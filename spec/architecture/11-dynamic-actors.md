@@ -29,7 +29,7 @@ genuinely cannot be determined before the executor starts.
 |---------|---------------|-------|
 | `EmbassyRuntime` | No | Embassy tasks require compile-time static declarations |
 | `TokioRuntime` | Yes | `tokio::task::spawn` — implements `SpawnCap` (`KillHandle = tokio::task::AbortHandle`) |
-| `TestRuntime` | Yes | Collects futures in a thread-local; implements `SpawnCap` (kill is a no-op) |
+| `TestRuntime` | Yes | Collects futures in a thread-local; implements `SpawnCap` (kill records the spawn id; `drain_killed()` / `kill_count()`) |
 
 Embassy has no dynamic spawning by design: `#[embassy_executor::task]` functions must
 be declared at compile time and cannot be called from within a running task in the
@@ -275,10 +275,12 @@ pub trait SpawnCap: DynamicChannelCap {
 For Tokio, `TaskHandle = tokio::task::JoinHandle<()>` and
 `KillHandle = tokio::task::AbortHandle` (`kill` calls `abort()`); the `JoinHandle`
 is not `Clone`, so the factory converts it to an `AbortHandle` right after
-spawning. For TestRuntime both handles are `()` and `kill` is a no-op. The `Kill`
+spawning. For TestRuntime both handles are `usize` spawn ids and `kill` records
+the id in a thread-local log (tests assert via `drain_killed()` /
+`kill_count()`); the task is not real, so nothing is destroyed. The `Kill`
 struct in `bloxide-spawn` adapts `SpawnCap::kill` to the engine's
-`KillCapability` trait; static runtimes (Embassy) use `NoKill` from
-`bloxide-core` instead.
+`KillCapability` trait (`CAN_KILL = true`); static runtimes (Embassy) use
+`NoKill` from `bloxide-core` instead (`CAN_KILL = false`).
 
 The full inheritance chain:
 
@@ -585,7 +587,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
 `spawn_child` calls the factory (creating the child) and sends
 `ChildCtrl::RegisterDynamicChild` — the `SpawnOutput` wrapped by
 `ChildCtrlRegistrar` — to the managing blox's control mailbox. The supervisor
-then registers the child via `ChildGroup::add_dynamic` and sends `Start`.
+then registers the child via `ChildGroup::try_add_dynamic` and sends `Start`.
 
 ---
 
@@ -890,7 +892,7 @@ fn test_spawn_worker(
                 child_id: worker_id,
                 lifecycle_ref,
                 abort_ref,
-                kill_handle: (),       // TestRuntime has no external kill
+                kill_handle: 0,        // TestRuntime kill handles are usize spawn ids
                 policy: ChildPolicy::Stop,
             }
         }
@@ -959,6 +961,8 @@ only the state machine behavior is tested via direct dispatch.
 |----------|-------------|
 | `spawned_count() -> usize` | Number of futures submitted since the last `drain_spawned` |
 | `drain_spawned() -> Vec<Pin<Box<dyn Future<Output = ()> + Send>>>` | Drains all submitted futures; resets the count to 0 |
+| `kill_count() -> usize` | Number of spawn ids recorded by `SpawnCap::kill` since the last `drain_killed` |
+| `drain_killed() -> Vec<usize>` | Drains all spawn ids recorded by `SpawnCap::kill`; resets the kill count to 0 |
 
 Both operate on a `thread_local!` so each test thread is isolated.
 
@@ -1034,7 +1038,7 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
   2. The `spawn_child()` helper sends `ChildCtrl::RegisterDynamicChild` (the
      `SpawnOutput` wrapped by `ChildCtrlRegistrar`) to the managing blox's
      control mailbox.
-  3. The supervisor adds the child via `ChildGroup::add_dynamic` (storing the
+  3. The supervisor adds the child via `ChildGroup::try_add_dynamic` (storing the
      abort/kill handles) and sends `Start`.
   On Tokio, prefer the `spawn_child()` helper from `bloxide-spawn` (with factory
   injection) to avoid wiring boilerplate — see the pool demo.
@@ -1042,8 +1046,10 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
   the supervisor's `ChildGroup` from inside domain action functions.
 
 - **`ChildPolicy::Kill` / `ChildPolicy::Abort` require dynamic children** — they
-  need the abort/kill handles that only dynamic spawn provides. `ChildGroup::add`
-  panics if either policy is requested for a static child; use
+  need the abort/kill handles that only dynamic spawn provides. `ChildGroup::try_add`
+  rejects either policy for a static child with `RegistrationError::PolicyRequiresHandles`,
+  and `Kill` is rejected with `RegistrationError::KillUnavailable` on runtimes
+  without kill capability (`CAN_KILL = false`, e.g. Embassy); use
   `ChildPolicy::Reset`/`Stop` for static children. `ChildPolicy::Stop` sends no
   command — the child is simply marked done for the epoch.
 
@@ -1053,5 +1059,5 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
 - **Peer introduction API** → `crates/bloxide-peers/src/lib.rs`
 - **Pool/Worker blox specs** → `spec/bloxes/pool.md`, `spec/bloxes/worker.md`
 - **Tokio SpawnCap impl** → `runtimes/bloxide-tokio/src/spawn.rs`
-- **TestRuntime SpawnCap impl** (`spawned_count` / `drain_spawned`) → `runtimes/bloxide-test-runtime/src/lib.rs`
+- **TestRuntime SpawnCap impl** (`spawned_count` / `drain_spawned` / `drain_killed` / `kill_count`) → `runtimes/bloxide-test-runtime/src/lib.rs`
 - **Spawn traits and helpers** → `crates/bloxide-spawn/src/lib.rs`

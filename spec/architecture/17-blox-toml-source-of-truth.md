@@ -157,6 +157,7 @@ target = "stop"
 - The state hierarchy (`parent`, `composite`, `initial`).
 - Error flags.
 - Declarative transitions with event patterns, action function paths, guards, and targets (`stay`, `reset`, `stop`, `done`, `fail`, or a state name). Actions used in `Self::` form must be declared in `[[context.actions]]`.
+- Root-level fallback rules: any `[[topology.transitions]]` entry with the reserved keyword `state = "root"` (`"root"` cannot name a user state). Root rules are evaluated when a domain event bubbles past all user states (the engine-implicit VirtualRoot). Catch-all `event = "_"` is allowed and yields `WILDCARD_TAG`. The codegen emits them as a `ROOT_RULES` constant plus a `root_transitions()` override in the `MachineSpec` impl.
 - Per-state `entry` and `exit` action lists.
 - `spec_imports` — raw `use` statements for the spec_skeleton module (imports the action functions referenced by transitions/entry/exit).
 
@@ -337,7 +338,7 @@ It also emits `From` impls and `Debug` when requested.
 
 1. A `#[repr(u8)]` state enum with one variant per `[[topology.states]]`.
 2. A `StateTopology` impl with `parent`, `is_leaf`, `path`, and `as_index`.
-3. Complete `StateFns` constants built from raw `StateRule { ... }` struct literals emitted by `bloxide-codegen` from `[[topology.transitions]]` entries. Codegen emits the arrays directly.
+3. A `<state>_handler_table!` macro that assembles the `HANDLER_TABLE` slice from the per-state `StateFns` associated constants. The `StateFns` constants themselves — raw `StateRule { ... }` struct literals built from `[[topology.transitions]]` entries, plus the `ROOT_RULES` constant from `state = "root"` entries — are emitted by `spec_skeleton.rs`, not `topology.rs`.
 
 From `crates/bloxes/ping/src/generated/topology.rs`:
 
@@ -593,7 +594,9 @@ Validation happens in three places: the TOML parser, the codegen, and
 
 2. **State references** — every `topology.transitions[].state`, every transition and
    guard `target`, every `entry`/`exit` state, and every `parent` reference must name a
-   declared state (targets may also be `stay`, `reset`, `stop`, `done`, `fail`). Parent
+   declared state (targets may also be `stay`, `reset`, `stop`, `done`, `fail`; `state`
+   may also be the reserved keyword `root`, which marks a VirtualRoot fallback rule —
+   and no user state may be named `root`). Parent
    chains are checked for cycles. Violations are hard codegen errors.
 3. **Pattern and guard syntax** — event patterns and guard conditions must parse as
    Rust syntax; semantic mismatches (e.g. a nonexistent message variant) fail later at

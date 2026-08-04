@@ -17,7 +17,7 @@ mechanisms with inconsistent ownership:
 | Lifecycle | `bloxide-core` ✓ | `bloxide-core` ✓ |
 | Child management | **`bloxide-supervisor`** ✗ | **`bloxide-supervisor`** ✗ |
 
-The supervisor — conceptually just *an example consumer* of the
+The supervisor — the production-grade reference consumer of the
 child-management feature — owned that feature's control plane
 (`SupervisorControl`, `RegisterChild`, `RegisterDynamicChild`) and its action
 functions. `bloxide-messaging` was a demo-specific ping/pong action crate under

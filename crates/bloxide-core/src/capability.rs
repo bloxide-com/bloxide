@@ -205,6 +205,13 @@ pub trait GroupChannelCap: BloxRuntime {
 /// placing it in `RegisterDynamicChild`.
 pub trait KillCapability<R: BloxRuntime> {
     type Handle: Clone + Send + 'static;
+
+    /// Whether `kill` actually destroys the task. `false` for `NoKill`
+    /// (Embassy, static-only): `kill` is a no-op there, so `ChildPolicy::Kill`
+    /// must be refused at registration — marking a live child `Killed` would
+    /// corrupt supervision bookkeeping. `true` for `Kill` (Tokio, TestRuntime).
+    const CAN_KILL: bool;
+
     fn kill(handle: Self::Handle);
 }
 
@@ -212,6 +219,7 @@ pub trait KillCapability<R: BloxRuntime> {
 pub struct NoKill;
 impl<R: BloxRuntime> KillCapability<R> for NoKill {
     type Handle = ();
+    const CAN_KILL: bool = false;
     fn kill(_: ()) {}
 }
 

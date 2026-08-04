@@ -89,7 +89,7 @@ mod pool_tests {
                     child_id: worker_id,
                     lifecycle_ref,
                     abort_ref,
-                    kill_handle: (),
+                    kill_handle: 0,
                     policy: ChildPolicy::Stop,
                 }
             }
