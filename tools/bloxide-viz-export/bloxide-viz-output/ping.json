@@ -192,14 +192,6 @@
     }
   ],
   "entry_exit": {
-    "Paused": {
-      "on_entry": [
-        "Self::schedule_pause_timer"
-      ],
-      "on_exit": [
-        "Self::cancel_pause_timer"
-      ]
-    },
     "Active": {
       "on_entry": [
         "Self::send_initial_ping"
@@ -209,6 +201,14 @@
     "Error": {
       "on_entry": [],
       "on_exit": []
+    },
+    "Paused": {
+      "on_entry": [
+        "Self::schedule_pause_timer"
+      ],
+      "on_exit": [
+        "Self::cancel_pause_timer"
+      ]
     }
   },
   "message_sets": [

@@ -25,7 +25,7 @@ Domain actors have one channel per message type they receive. Supervised actors 
 | `ActorRef<DomainMsg, R>` | Peer actors | Domain message exchange |
 | `ActorRef<LifecycleCommand, R>` (internal) | `ChildGroup` | Runtime-internal: Start/Stop/Reset/Ping |
 | `EmbassySender<ChildLifecycleEvent>` (internal) | `run` with `RunConfig::supervised` run loop | Runtime-internal: notifies supervisor |
-| `ActorRef<ChildCtrl<R>, R>` (internal) | Wiring/control plane | Supervisor control: dynamic registration and health ticks |
+| `ActorRef<ChildCtrl<R>, R>` (internal) | Wiring/control plane | Supervisor control: dynamic registration and watchdog ticks |
 
 The `Mailboxes` tuple for domain actors contains only domain streams. The lifecycle channel is threaded through `run` with `RunConfig::supervised` separately, invisible to the blox author.
 

@@ -83,7 +83,7 @@ No feature logic and no feature message sets in a blox crate.
 | `bloxide-timer` | `TimerCommand` | `timer_ref`, `current_timer` | `set_timer`, `cancel_timer`, `cancel_timer_by_id` (in `bloxide_timer::actions`, re-exported at the crate root and prelude) | `TimerService` |
 | `bloxide-peers` | `PeerCtrl<M, R>` | `peers` | `introduce_peers`, `apply_peer_control`, `broadcast_to_peers` (all domain-agnostic — no pool-messages dependency) | — |
 | `bloxide-spawn` | — (exception) | `spawn_fn` (ctor) | `spawn_child`, `ChildRegistrar` / `ChildCtrlRegistrar` | `SpawnCap` |
-| `bloxide-child-management` | `ChildCtrl<R>` (`RegisterChild`, `RegisterDynamicChild`, `HealthCheckTick`) | `children`, `child_notify`, `pending` | supervision action functions (moved from `bloxide-supervisor`) | — |
+| `bloxide-child-management` | `ChildCtrl<R>` (`RegisterChild`, `RegisterDynamicChild`, `WatchdogTick`) | `children`, `child_notify`, `pending` | supervision action functions (moved from `bloxide-supervisor`) | — |
 
 Reference consumer: `bloxide-supervisor` — `blox.toml`, generated spec, tests.
 One documented exception: `src/concrete_spec.rs`, a hand-written concrete spec

@@ -497,22 +497,22 @@ fn kill_policy_kills_task_and_emits_killed_event() {
 // ── Health checks ───────────────────────────────────────────────────────
 
 #[test]
-fn health_tick_pings_child_and_counts_misses_before_rogue() {
+fn watchdog_tick_pings_child_and_counts_misses_before_rogue() {
     let (mut group, mut rx, notify_ref, _notify_rx) =
         setup_one_child(ChildPolicy::Reset { max: 3 });
     group.handle_started(1, FROM);
 
     // Tick 1: first Ping delivered, no verdict yet.
-    group.health_check_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     assert!(matches!(rx.drain_payloads()[..], [LifecycleCommand::Ping]));
     assert_eq!(group.children[0].misses, 0); // no outstanding ping before this one
 
     // Tick 2: one unanswered Ping → miss 1 (below MAX_MISSES) → no Reset.
-    group.health_check_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     assert_eq!(rx.drain_payloads().len(), 1, "re-pinged, not reset");
 
     // Tick 3: second consecutive miss → rogue → policy (Reset).
-    group.health_check_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     let cmds = rx.drain_payloads();
     assert!(
         cmds.iter().any(|c| matches!(c, LifecycleCommand::Reset)),
@@ -535,17 +535,17 @@ fn full_ping_channel_is_not_counted_as_miss() {
     group.handle_started(1, FROM);
 
     // Tick 1: Ping delivered (fills capacity 1), outstanding.
-    group.health_check_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     // Tick 2: outstanding + send fails Full → one miss (from the outstanding
     // ping), but no NEW miss from the undelivered one.
-    group.health_check_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     assert_eq!(group.children[0].misses, 1);
     assert_eq!(group.children[0].phase, ChildPhase::Running);
 
     // Tick 3: still full — the original outstanding Ping convicts (miss 2 →
     // rogue), but the Reset remedy also cannot be delivered: it is queued in
     // pending_cmd, and the phase stays Running (confirm-before-record).
-    group.health_check_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     assert_eq!(group.children[0].phase, ChildPhase::Running);
     assert_eq!(group.children[0].pending_cmd, Some(PendingCmd::Reset));
 
@@ -567,7 +567,7 @@ fn closed_ping_channel_marks_child_gone() {
     group.handle_started(1, FROM);
 
     drop(rx);
-    let action = group.health_check_tick(FROM, &notify_ref);
+    let action = group.watchdog_tick(FROM, &notify_ref);
     assert_eq!(group.children[0].phase, ChildPhase::Gone);
     assert_eq!(action, ChildAction::BeginShutdown);
 }
@@ -584,7 +584,7 @@ fn reset_pending_child_is_pinged_and_alive_heals_lost_started() {
     // Health check pings ResetPending children (they are transitioning, and a
     // lost Started report must not wedge them — the old code excluded them,
     // so a dropped Started left the child in ResetPending forever).
-    group.health_check_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     assert!(matches!(rx.drain_payloads()[..], [LifecycleCommand::Ping]));
 
     // Alive proves the child is operational → heals ResetPending to Running
@@ -600,7 +600,7 @@ fn alive_heals_init_phase_after_lost_started_report() {
     let (mut group, _rx, notify_ref, _notify_rx) = setup_one_child(ChildPolicy::Stop);
     assert_eq!(group.children[0].phase, ChildPhase::Init);
 
-    group.health_check_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     group.handle_alive(1);
     assert_eq!(group.children[0].phase, ChildPhase::Running);
 }
@@ -715,7 +715,7 @@ fn clear_counters_preserves_terminal_phases_and_clears_pending() {
     assert_eq!(group.children[3].phase, ChildPhase::Killed);
 
     // Health check pings only the reset child.
-    group.health_check_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     let pings: Vec<usize> = receivers
         .iter_mut()
         .map(|rx| rx.drain_payloads().len())

@@ -1102,44 +1102,12 @@
     }
   ],
   "entry_exit": {
-    "Error": {
-      "on_entry": [
-        "Self::error_entry"
-      ],
-      "on_exit": [
-        "Self::error_exit"
-      ]
-    },
-    "S1": {
-      "on_entry": [
-        "Self::s1_entry"
-      ],
-      "on_exit": [
-        "Self::s1_exit"
-      ]
-    },
     "S": {
       "on_entry": [
         "Self::s_entry"
       ],
       "on_exit": [
         "Self::s_exit"
-      ]
-    },
-    "S2": {
-      "on_entry": [
-        "Self::s2_entry"
-      ],
-      "on_exit": [
-        "Self::s2_exit"
-      ]
-    },
-    "S21": {
-      "on_entry": [
-        "Self::s21_entry"
-      ],
-      "on_exit": [
-        "Self::s21_exit"
       ]
     },
     "S11": {
@@ -1150,12 +1118,44 @@
         "Self::s11_exit"
       ]
     },
+    "S1": {
+      "on_entry": [
+        "Self::s1_entry"
+      ],
+      "on_exit": [
+        "Self::s1_exit"
+      ]
+    },
+    "S2": {
+      "on_entry": [
+        "Self::s2_entry"
+      ],
+      "on_exit": [
+        "Self::s2_exit"
+      ]
+    },
     "S211": {
       "on_entry": [
         "Self::s211_entry"
       ],
       "on_exit": [
         "Self::s211_exit"
+      ]
+    },
+    "S21": {
+      "on_entry": [
+        "Self::s21_entry"
+      ],
+      "on_exit": [
+        "Self::s21_exit"
+      ]
+    },
+    "Error": {
+      "on_entry": [
+        "Self::error_entry"
+      ],
+      "on_exit": [
+        "Self::error_exit"
       ]
     }
   },

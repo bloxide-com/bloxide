@@ -281,8 +281,8 @@ where
     ActionResult::Ok
 }
 
-/// Handle a health-check tick.
-pub fn handle_health_check<R>(
+/// Handle a watchdog tick (drives one health-check round).
+pub fn handle_watchdog_tick<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
     child_notify: &ActorRef<ChildLifecycleEvent, R>,
@@ -292,8 +292,8 @@ pub fn handle_health_check<R>(
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    if let ChildCtrl::HealthCheckTick = ctrl {
-        let action = children.health_check_tick(self_id, child_notify);
+    if let ChildCtrl::WatchdogTick = ctrl {
+        let action = children.watchdog_tick(self_id, child_notify);
         *pending = action;
     }
     ActionResult::Ok

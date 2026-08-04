@@ -81,7 +81,7 @@ pub enum ChildPolicy {
     /// and then answers a health `Ping` with `Alive` (a no-clock proxy for
     /// sustained uptime). Once the child has been reset `max` times in a row,
     /// the next failure gives up: the child is marked `Stopped` (terminal,
-    /// task alive) and group shutdown is evaluated. Without health ticks,
+    /// task alive) and group shutdown is evaluated. Without watchdog ticks,
     /// `Alive` never arrives, so `max` degrades to a lifetime restart cap —
     /// the fail-safe direction.
     Reset { max: u32 },
@@ -668,7 +668,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
     ///
     /// A `Started` report also clears health-miss state (the child is
     /// demonstrably alive) but deliberately does NOT reset the consecutive-
-    /// restart counter — that requires surviving a full health tick (`Alive`),
+    /// restart counter — that requires surviving a full watchdog tick (`Alive`),
     /// otherwise a crash loop would keep resetting its own cap.
     pub fn handle_started(&mut self, child_id: ActorId, from: ActorId) {
         match self.children.iter_mut().find(|e| e.id == child_id) {
@@ -711,7 +711,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
     }
 
-    pub fn health_check_tick(
+    pub fn watchdog_tick(
         &mut self,
         from: ActorId,
         notify: &ActorRef<ChildLifecycleEvent, R>,

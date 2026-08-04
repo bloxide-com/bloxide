@@ -164,7 +164,7 @@ fn build_message_registry(configs: &[(PathBuf, BloxConfig)]) -> BTreeMap<String,
         ("PeerCtrl", vec!["AddPeer", "RemovePeer"]),
         (
             "ChildCtrl",
-            vec!["RegisterChild", "RegisterDynamicChild", "HealthCheckTick"],
+            vec!["RegisterChild", "RegisterDynamicChild", "WatchdogTick"],
         ),
     ] {
         registry.insert(

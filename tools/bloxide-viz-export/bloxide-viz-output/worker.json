@@ -94,16 +94,16 @@
   },
   "message_sets": [
     {
-      "name": "PeerCtrl",
-      "variants": [
-        "AddPeer"
-      ]
-    },
-    {
       "name": "WorkerMsg",
       "variants": [
         "DoWork",
         "PeerResult"
+      ]
+    },
+    {
+      "name": "PeerCtrl",
+      "variants": [
+        "AddPeer"
       ]
     }
   ],

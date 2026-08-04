@@ -233,16 +233,16 @@
   "entry_exit": {},
   "message_sets": [
     {
-      "name": "PoolEvent",
-      "variants": [
-        "SpawnReply"
-      ]
-    },
-    {
       "name": "PoolMsg",
       "variants": [
         "SpawnWorker",
         "WorkDone"
+      ]
+    },
+    {
+      "name": "PoolEvent",
+      "variants": [
+        "SpawnReply"
       ]
     }
   ],

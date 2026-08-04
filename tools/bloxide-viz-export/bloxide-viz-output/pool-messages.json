@@ -28,17 +28,17 @@
   "entry_exit": {},
   "message_sets": [
     {
-      "name": "WorkerMsg",
-      "variants": [
-        "DoWork",
-        "PeerResult"
-      ]
-    },
-    {
       "name": "PoolMsg",
       "variants": [
         "SpawnWorker",
         "WorkDone"
+      ]
+    },
+    {
+      "name": "WorkerMsg",
+      "variants": [
+        "DoWork",
+        "PeerResult"
       ]
     }
   ],

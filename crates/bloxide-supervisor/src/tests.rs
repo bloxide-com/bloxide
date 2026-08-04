@@ -304,14 +304,14 @@ fn register_child_event_adds_child_and_sends_start() {
 }
 
 #[test]
-fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
+fn watchdog_tick_marks_unresponsive_restart_child_and_sends_ping() {
     let (mut machine, mut receivers) =
         make_supervisor(GroupShutdown::WhenAnyDone, &[ChildPolicy::Reset { max: 3 }]);
     machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
     drain_start_commands(&mut receivers);
 
     // Tick #1: ping all monitored children (no verdict yet — no outstanding Ping).
-    let outcome = dispatch_control_event(&mut machine, ChildCtrl::HealthCheckTick);
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::WatchdogTick);
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
     let first = receivers[0].drain_payloads();
     assert_eq!(first.len(), 1);
@@ -319,7 +319,7 @@ fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
 
     // Tick #2 with no Alive from child: one miss (below the two-miss
     // threshold) — re-pinged, NOT yet declared rogue.
-    let outcome = dispatch_control_event(&mut machine, ChildCtrl::HealthCheckTick);
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::WatchdogTick);
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
     let second = receivers[0].drain_payloads();
     assert_eq!(second.len(), 1);
@@ -331,7 +331,7 @@ fn health_check_tick_marks_unresponsive_restart_child_and_sends_ping() {
 
     // Tick #3, still no Alive: second consecutive miss → rogue → child
     // policy fires (Reset), and the now-ResetPending child is re-pinged.
-    let outcome = dispatch_control_event(&mut machine, ChildCtrl::HealthCheckTick);
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::WatchdogTick);
     assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
     let third = receivers[0].drain_payloads();
     assert!(
@@ -830,8 +830,8 @@ fn shutting_down_tick_flushes_pending_stop() {
     // transition; once delivered, the child's Stopped ack completes shutdown.
     let (mut machine, mut receivers) = make_shutting_down_with_pending_stop();
 
-    // HealthCheckTick flushes the pending Stop to child 2 (channel drained).
-    let outcome = dispatch_control_event(&mut machine, ChildCtrl::HealthCheckTick);
+    // WatchdogTick flushes the pending Stop to child 2 (channel drained).
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::WatchdogTick);
     assert_eq!(
         outcome,
         DispatchOutcome::HandledNoTransition,
@@ -858,7 +858,7 @@ fn shutting_down_completes_when_pending_stop_target_dies() {
     let (mut machine, receivers) = make_shutting_down_with_pending_stop();
     drop(receivers); // both child tasks die — channels close
 
-    let outcome = dispatch_control_event(&mut machine, ChildCtrl::HealthCheckTick);
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::WatchdogTick);
     assert_eq!(
         outcome,
         DispatchOutcome::Stopped,

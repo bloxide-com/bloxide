@@ -335,7 +335,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                 matches: |ev| {
                     matches!(
                         ev,
-                        SupervisorEvent::Control(Envelope(_, ChildCtrl::HealthCheckTick))
+                        SupervisorEvent::Control(Envelope(_, ChildCtrl::WatchdogTick))
                     )
                 },
                 actions: &[
@@ -345,7 +345,7 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     },
                     |ctx, ev| {
                         if let Some(ctrl) = ev.control_payload() {
-                            bloxide_child_management::actions::handle_health_check(
+                            bloxide_child_management::actions::handle_watchdog_tick(
                                 ctx.self_id,
                                 &mut ctx.children,
                                 &ctx.child_notify,
@@ -552,14 +552,14 @@ impl<R: BloxRuntime> ConcreteSupervisorSpec<R> {
                     }
                 },
             },
-            // HealthCheckTick in ShuttingDown: flush pending commands only
+            // WatchdogTick in ShuttingDown: flush pending commands only
             // (no health checks — children are being stopped, not monitored).
             StateRule {
                 event_tag: SupervisorEvent::<R>::CONTROL_TAG,
                 matches: |ev| {
                     matches!(
                         ev,
-                        SupervisorEvent::Control(Envelope(_, ChildCtrl::HealthCheckTick))
+                        SupervisorEvent::Control(Envelope(_, ChildCtrl::WatchdogTick))
                     )
                 },
                 actions: &[|ctx, _ev| {

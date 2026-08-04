@@ -21,7 +21,7 @@ Supervision is split across a core engine layer, a platform child-management lay
 | `report_outcome` (`DispatchOutcome` → `ChildLifecycleEvent`) | `bloxide-core::supervision` |
 | `KillCapability`, `NoKill` | `bloxide-core::capability` |
 | `ChildGroup`, `ChildPolicy`, `GroupShutdown`, `ChildAction`, `ChildPhase` | `bloxide-child-management` |
-| Action fns (`start_children`, `stop_all_children`, `handle_done_or_failed`, `record_*`, `deregister_done`, `register_child`, `handle_register_dynamic_child`, `handle_health_check`) | `bloxide-child-management::actions` |
+| Action fns (`start_children`, `stop_all_children`, `handle_done_or_failed`, `record_*`, `deregister_done`, `register_child`, `handle_register_dynamic_child`, `handle_watchdog_tick`) | `bloxide-child-management::actions` |
 | `ChildCtrl`, `RegisterChild`, `RegisterDynamicChild` | `bloxide-child-management::control` |
 | `ChildGroupBuilder<R, Ctrl>` (group channels via `GroupChannelCap`) | `bloxide-child-management::builder` |
 | `SpawnCap`, `Kill`, `SpawnFn`, `SpawnOutput`, `ChildRegistrar`, `ChildCtrlRegistrar`, `spawn_child` | `bloxide-spawn` |
@@ -232,7 +232,7 @@ The supervisor handles all seven `ChildLifecycleEvent` variants, plus the synthe
 | **Aborted** | `Aborted { child_id }` | Child's task self-terminated via `AbortCommand` | `record_aborted` — participates in group shutdown |
 | **Killed** | `Killed { child_id }` | Child was killed via the ripcord (synthesized by `ChildGroup`, not the child's run loop) | `record_killed` — participates in group shutdown |
 | **Alive** | `Alive { child_id }` | Child responded to `Ping` from an operational, non-error state | `record_alive` (clears misses, heals lost `Started`, resets restart counter) |
-| **Rogue** | *(two missed health ticks)* | Child left `MAX_MISSES` (2) consecutive delivered Pings unanswered | treated as `handle_done_or_failed` (child policy applies) |
+| **Rogue** | *(two missed watchdog ticks)* | Child left `MAX_MISSES` (2) consecutive delivered Pings unanswered | treated as `handle_done_or_failed` (child policy applies) |
 
 ## Reliability Contract: Confirm-Before-Record
 
@@ -291,7 +291,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
     ) -> ChildAction;
     pub fn handle_started(&mut self, child_id: ActorId, from: ActorId);
     pub fn handle_alive(&mut self, child_id: ActorId);
-    pub fn health_check_tick(
+    pub fn watchdog_tick(
         &mut self,
         from: ActorId,
         notify: &ActorRef<ChildLifecycleEvent, R>,
@@ -325,7 +325,7 @@ Children in a terminal phase, in `ResetPending`/`Aborting`, or with a queued pol
 
 `handle_alive` treats `Alive` as operational evidence (the engine answers `Ping` only from a non-error operational state): it clears the miss state, resets the consecutive-restart counter (sustained-uptime proof), and heals lost `Started` reports by moving an `Init`/`ResetPending` child to `Running`. A late `Alive` for an unknown or terminal child is a normal race and is absorbed silently.
 
-`health_check_tick` implements a deterministic health-check round:
+`watchdog_tick` implements a deterministic health-check round:
 1. **Verdict pass** — a monitored child with a Ping still outstanding from a previous tick has missed it; `MAX_MISSES` (2) consecutive misses declare it rogue and route it through `handle_done_or_failed`, so normal child policy applies. A Ping that could not be delivered is *not* a miss — the child was never asked.
 2. **Ping pass** — each monitored child gets one `Ping`. Delivered → outstanding (answered by `Alive`). `Full` → not counted. `Closed` → `Gone`.
 
@@ -355,7 +355,7 @@ When a child reports `Stopped` or `Failed`:
 2. If the group is **already fully terminal** after the action ran — every child `Stopped`/`Aborted`/`Killed`/`Gone`, or empty after `Done`-deregistration — there is nothing left to stop: the guard short-circuits to `Decision::Stop` immediately. (This is what makes Done-of-last-child and all-task-gone cases complete; passing through an event-less `ShuttingDown` would wedge, since completion there is guard-driven by events that never come.)
 3. Otherwise, if the result is `ChildAction::BeginShutdown`, the supervisor transitions to `ShuttingDown` to stop the remaining live children; if `Continue`, it stays in `Running`.
 
-Entering `ShuttingDown` runs the entry action `stop_all_children`, which sends `Stop` to every child whose task is still alive (task-gone — `Aborted`/`Killed`/`Gone` — children are skipped; `Stopped` children still receive `Stop` because their task is alive and the engine acknowledges `Stop`-in-Init with a `Stopped` report). In `ShuttingDown`, the supervisor **records every terminal signal** — `Stopped` (`record_stopped`), late `Done` completions (`deregister_done`), `Failed` (`record_failed` — parked-error, task alive), `Aborted` (`record_aborted`), `Killed` (`record_killed`), and `Gone` (observed via a `Closed` channel while `flush_pending` retries pending `Stop`s on every event, including `HealthCheckTick`). When `all_children_stopped()` holds, the transition guard returns `Decision::Stop` and the supervisor self-stops. That produces `DispatchOutcome::Stopped`, and the root run loop (`RunConfig::root()`, `exit_on_stop = true`) sees `Stopped` and returns — the supervisor task exits cleanly.
+Entering `ShuttingDown` runs the entry action `stop_all_children`, which sends `Stop` to every child whose task is still alive (task-gone — `Aborted`/`Killed`/`Gone` — children are skipped; `Stopped` children still receive `Stop` because their task is alive and the engine acknowledges `Stop`-in-Init with a `Stopped` report). In `ShuttingDown`, the supervisor **records every terminal signal** — `Stopped` (`record_stopped`), late `Done` completions (`deregister_done`), `Failed` (`record_failed` — parked-error, task alive), `Aborted` (`record_aborted`), `Killed` (`record_killed`), and `Gone` (observed via a `Closed` channel while `flush_pending` retries pending `Stop`s on every event, including `WatchdogTick`). When `all_children_stopped()` holds, the transition guard returns `Decision::Stop` and the supervisor self-stops. That produces `DispatchOutcome::Stopped`, and the root run loop (`RunConfig::root()`, `exit_on_stop = true`) sees `Stopped` and returns — the supervisor task exits cleanly.
 
 Note the supervisor self-stops via **`Decision::Stop`**, not Reset: there is nothing to restart to. Both `Running` and `ShuttingDown` have `Done` transitions (`deregister_done`) so clean completions are handled in either state.
 
@@ -382,7 +382,7 @@ impl<R: BloxRuntime> SupervisorCtx<R> {
 }
 ```
 
-`child_notify` is the group's own notify channel ref — the action functions pass it to `ChildGroup::handle_done_or_failed` / `health_check_tick` so a synthesized `Killed` event (or a rogue-child policy outcome) lands back on the supervisor's notify mailbox.
+`child_notify` is the group's own notify channel ref — the action functions pass it to `ChildGroup::handle_done_or_failed` / `watchdog_tick` so a synthesized `Killed` event (or a rogue-child policy outcome) lands back on the supervisor's notify mailbox.
 
 ### Handler Tables
 
@@ -452,9 +452,9 @@ actions = ["Self::flush_pending", "Self::handle_register_dynamic_child"]
 
 [[topology.transitions]]
 state = "Running"
-event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::HealthCheckTick))"
+event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::WatchdogTick))"
 target = "stay"
-actions = ["Self::flush_pending", "Self::handle_health_check"]
+actions = ["Self::flush_pending", "Self::handle_watchdog_tick"]
 guards = [{ condition = "ctx.pending == ChildAction::BeginShutdown", target = "ShuttingDown" }]
 
 # Catch-alls: absorb any other Child / Control events
@@ -504,12 +504,12 @@ target = "stay"
 actions = ["Self::flush_pending", "Self::record_killed"]
 guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
 
-# HealthCheckTick in ShuttingDown: flush pending commands only (no health
+# WatchdogTick in ShuttingDown: flush pending commands only (no health
 # checks) — the flush can complete the shutdown (pending Stop delivered, or
 # a Closed channel marks the child Gone).
 [[topology.transitions]]
 state = "ShuttingDown"
-event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::HealthCheckTick))"
+event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::WatchdogTick))"
 target = "stay"
 actions = ["Self::flush_pending"]
 guards = [{ condition = "ctx.all_children_stopped()", target = "stop" }]
@@ -555,7 +555,7 @@ All supervisor actions are free functions in `bloxide-child-management::actions`
 | `deregister_done` | `(self_id, &mut ChildGroup, &mut ChildAction, &ChildLifecycleEvent)` | Remove cleanly completed child; record shutdown decision in `pending` (unknown child ignored) |
 | `register_child` | `(self_id, &mut ChildGroup, &ChildCtrl)` | `ChildGroup::try_add` (warn-and-drop on `RegistrationError`) + `start_child` |
 | `handle_register_dynamic_child` | `(self_id, &mut ChildGroup, &ChildCtrl)` | `ChildGroup::try_add_dynamic` (warn-and-drop) + `start_child` |
-| `handle_health_check` | `(self_id, &mut ChildGroup, &ActorRef<ChildLifecycleEvent, R>, &mut ChildAction, &ChildCtrl)` | Run one health-check round; store resulting `ChildAction` in `pending` |
+| `handle_watchdog_tick` | `(self_id, &mut ChildGroup, &ActorRef<ChildLifecycleEvent, R>, &mut ChildAction, &ChildCtrl)` | Run one health-check round; store resulting `ChildAction` in `pending` |
 
 ### `MachineSpec` Implementation
 
@@ -662,8 +662,8 @@ sequenceDiagram
 
 Health checks are delivered through the supervisor control-plane stream:
 
-1. A health driver (for example, a runtime timer task) sends `ChildCtrl::HealthCheckTick`.
-2. The supervisor calls `health_check_tick(from, notify)` on `ChildGroup` via the `handle_health_check` action.
+1. A health driver (for example, a runtime timer task) sends `ChildCtrl::WatchdogTick`.
+2. The supervisor calls `watchdog_tick(from, notify)` on `ChildGroup` via the `handle_watchdog_tick` action.
 3. **Verdict pass**: a monitored child with a `Ping` still outstanding from a previous tick has missed it; `MAX_MISSES` (2) consecutive misses declare it rogue and apply the normal child policy (`handle_done_or_failed`). A `Ping` that could not be delivered (channel full) is never counted as a miss — a transient full channel cannot convict a healthy child.
 4. **Ping pass**: each monitored child (`Init`, `Running`, `ResetPending`) gets one `LifecycleCommand::Ping`. A `Closed` channel marks the child `Gone`.
 5. Children reply with `ChildLifecycleEvent::Alive { child_id }` **only from an operational, non-error state** — the engine is silent in Init and in parked error states, so a never-started child (lost registration-time `Start`) or a failed child whose report was lost go rogue and are healed by their policy (`Reset` works from Init). `Alive` clears the miss state, resets the consecutive-restart counter, and heals a lost `Started` report (`Init`/`ResetPending` → `Running`).
@@ -770,14 +770,14 @@ The `Lifecycle` variant is how the wiring layer boots the supervisor (`dispatch(
 pub enum ChildCtrl<R: BloxRuntime> {
     RegisterChild(RegisterChild<R>),                  // static child: id + lifecycle_ref + policy
     RegisterDynamicChild(RegisterDynamicChild<R>),    // dynamic child: + abort_ref + kill_handle
-    HealthCheckTick,
+    WatchdogTick,
 }
 ```
 
 `Child` variants arrive from the runtime's supervised run loop. `Control` variants come from supervisor wiring/control-plane senders and enable:
 - static registration of supervised children (`RegisterChild`)
 - dynamic registration of supervised children with abort/kill capability (`RegisterDynamicChild` — carries the `abort_ref` and `kill_handle` needed by `ChildPolicy::Abort` and `ChildPolicy::Kill`; sent by the `spawn_child` helper after a dynamic spawn)
-- periodic health checks (`HealthCheckTick`)
+- periodic health checks (`WatchdogTick`)
 
 ## Dynamic Spawning and Registration
 
@@ -937,7 +937,7 @@ Supervision-specific invariants:
 - `ChildGroup<R>` encapsulates all policy evaluation and shutdown logic.
 - **Confirm-before-record**: phase transitions happen only on confirmed delivery or observed reports, never on attempted sends. `Closed` = the child's task is provably gone (terminal `Gone` phase, shutdown evaluated); `Full` = transient (command queued in `pending_cmd`, retried by `flush_pending` on every event pass). Embassy channels never close — dead children are detected via health-check misses there.
 - **Shutdown is record-all, wait-forever**: `ShuttingDown` records every terminal signal (`Stopped`, `Done`, `Failed`, `Aborted`, `Killed`, `Gone`); there is no timeout or escalation ladder — a permanently unresponsive child cannot be killed on static runtimes anyway. When the group is already fully terminal after an action (including empty after `Done`-deregistration), the guard short-circuits to `Decision::Stop` immediately — there is nothing left to stop, and passing through an event-less `ShuttingDown` would wedge. Registration is fallible everywhere (`try_add`/`try_add_dynamic` → `RegistrationError`); malformed control messages warn-and-drop, never panic.
-- Per-child `ChildPolicy` (four variants: `Reset { max }`, `Stop`, `Abort`, `Kill`) gives each child its own lifecycle policy. `Reset { max }` caps **consecutive** restarts (counter resets only on an `Alive` after `Started`; without health ticks it degrades to a lifetime cap). `Abort`/`Kill` require dynamically spawned children with abort/kill handles; `Kill` additionally requires `KillCapability::CAN_KILL`.
+- Per-child `ChildPolicy` (four variants: `Reset { max }`, `Stop`, `Abort`, `Kill`) gives each child its own lifecycle policy. `Reset { max }` caps **consecutive** restarts (counter resets only on an `Alive` after `Started`; without watchdog ticks it degrades to a lifetime cap). `Abort`/`Kill` require dynamically spawned children with abort/kill handles; `Kill` additionally requires `KillCapability::CAN_KILL`.
 - `GroupShutdown` controls when the supervisor enters shutdown, not which children are affected. Every terminal signal counts toward it — including externally-originated `Aborted`/`Killed` — and it is only evaluated on real state changes (unknown-child events never trigger it).
 - `ChildPhase` tracks each child's state: `Init`, `Running`, `ResetPending` (Reset delivered, awaiting `Started`), `Aborting` (AbortCommand delivered, awaiting `Aborted`), `Stopped` (task alive — self-stopped, failed-parked, restart-capped, or Stop-policy; terminal for the epoch), `Aborted`/`Killed`/`Gone` (task gone — mailboxes are dead, so lifecycle commands must not be sent). `is_terminal()` (`Stopped`/`Aborted`/`Killed`/`Gone`) drives group-shutdown evaluation; `is_task_gone()` (`Aborted`/`Killed`/`Gone`) excludes children from `stop_all`. Health checks monitor `Init`/`Running`/`ResetPending` children.
 - `Ping` is answered with `Alive` only from an operational, non-error state (silent in Init and parked error states) — a lost `Start` or lost `Failed` report goes rogue and is healed by the child policy. Redundant `Start` is acknowledged with `Started` (mirroring `Stop`-in-Init). `Started(error)` is normalized to `Failed` at the source. A run loop that exits without a lifecycle decision reports `Failed` (never exits silently).

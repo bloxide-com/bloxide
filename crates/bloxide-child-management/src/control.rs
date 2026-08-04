@@ -110,7 +110,7 @@ pub enum ChildCtrl<R: BloxRuntime> {
     /// Register a dynamically spawned child (has abort capability + kill handle).
     RegisterDynamicChild(RegisterDynamicChild<R>),
     /// Trigger one health-check round.
-    HealthCheckTick,
+    WatchdogTick,
 }
 
 impl<R: BloxRuntime> Clone for ChildCtrl<R> {
@@ -118,7 +118,7 @@ impl<R: BloxRuntime> Clone for ChildCtrl<R> {
         match self {
             Self::RegisterChild(r) => Self::RegisterChild(r.clone()),
             Self::RegisterDynamicChild(r) => Self::RegisterDynamicChild(r.clone()),
-            Self::HealthCheckTick => Self::HealthCheckTick,
+            Self::WatchdogTick => Self::WatchdogTick,
         }
     }
 }
@@ -130,7 +130,7 @@ impl<R: BloxRuntime> fmt::Debug for ChildCtrl<R> {
             Self::RegisterDynamicChild(r) => {
                 f.debug_tuple("RegisterDynamicChild").field(r).finish()
             }
-            Self::HealthCheckTick => write!(f, "HealthCheckTick"),
+            Self::WatchdogTick => write!(f, "WatchdogTick"),
         }
     }
 }

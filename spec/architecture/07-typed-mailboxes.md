@@ -122,7 +122,7 @@ After every dispatch the runtime observes `DispatchOutcome` and sends
 
 `SupervisorSpec` itself uses a two-stream domain mailbox tuple:
 - child lifecycle events (`Stream<ChildLifecycleEvent>`)
-- supervisor control-plane events (`Stream<ChildCtrl<R>>`) for dynamic registration and health ticks
+- supervisor control-plane events (`Stream<ChildCtrl<R>>`) for dynamic registration and watchdog ticks
 
 ## Wiring Pattern
 

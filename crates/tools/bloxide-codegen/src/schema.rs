@@ -601,7 +601,7 @@ pub struct SupervisionCapacities {
     /// Supervisor notify channel capacity (`ChildLifecycleEvent` from every
     /// child). Default: `max(32, 2 × child count)`.
     pub notify: Option<usize>,
-    /// Supervisor control channel capacity (registrations, health ticks).
+    /// Supervisor control channel capacity (registrations, watchdog ticks).
     /// Default: 16.
     pub control: Option<usize>,
     /// Per-child lifecycle channel capacity. Default: 4.

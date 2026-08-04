@@ -132,7 +132,7 @@ bloxide-child-management/ ← reusable child tracking (separate crate)
   control module: ChildCtrl, RegisterChild, RegisterDynamicChild
   actions module: start_children, stop_all_children, handle_done_or_failed,
     record_started, record_stopped, record_aborted, record_killed, record_alive,
-    deregister_done, register_child, handle_register_dynamic_child, handle_health_check
+    deregister_done, register_child, handle_register_dynamic_child, handle_watchdog_tick
 
 bloxide-supervisor/       ← the supervisor blox (codegen-ed from blox.toml)
   blox.toml                ← source of truth: states, context, transitions, events
@@ -537,7 +537,7 @@ pub enum ChildCtrl<R: BloxRuntime> {
     RegisterDynamicChild(RegisterDynamicChild<R>),
 
     /// Trigger one health-check round.
-    HealthCheckTick,
+    WatchdogTick,
 }
 ```
 
