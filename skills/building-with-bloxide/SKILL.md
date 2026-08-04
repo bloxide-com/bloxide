@@ -240,7 +240,7 @@ actions = ["Self::increment_round", "Self::forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "ctx.round >= MAX_ROUNDS as u32"
-  target = "stop"
+  target = "done"
 
   [[topology.transitions.guards]]
   condition = "ctx.round == PAUSE_AT_ROUND as u32"

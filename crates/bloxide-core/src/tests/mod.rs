@@ -135,7 +135,7 @@ mod hsm_engine {
 
     // ── Decision::Reset ────────────────────────────────────────────────────────
     //
-    // In the four-level lifecycle model, Decision::Reset goes directly to
+    // In the five-level lifecycle model, Decision::Reset goes directly to
     // initial_state() (TState::A) — it does NOT visit Init and does NOT
     // fire on_init_entry. The exit chain fires for the current state,
     // then the entry chain fires for initial_state().

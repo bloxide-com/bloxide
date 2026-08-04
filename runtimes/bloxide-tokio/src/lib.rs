@@ -168,11 +168,13 @@ macro_rules! spawn_timer {
 /// `ChildGroupBuilder`, and spawns the task with lifecycle arguments injected.
 ///
 /// Unlike the Embassy version, there is no `spawner` parameter — Tokio tasks
-/// are spawned directly via `tokio::spawn`.
+/// are spawned through the runtime's `SpawnCap` implementation.
 #[macro_export]
 macro_rules! spawn_child {
     ($builder:expr, $task_fn:ident($machine:expr, $mbox:expr, $id:expr), $policy:expr) => {{
         let (lc_rx, sup_notify) = $builder.add_child($id, $policy);
-        let _handle = tokio::spawn($task_fn($machine, $mbox, lc_rx, $id, sup_notify));
+        let _handle = <$crate::TokioRuntime as $crate::SpawnCap>::spawn($task_fn(
+            $machine, $mbox, lc_rx, $id, sup_notify,
+        ));
     }};
 }

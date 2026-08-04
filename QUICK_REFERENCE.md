@@ -326,7 +326,7 @@ actions = ["Self::forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "ctx.round >= MAX_ROUNDS as u32"
-  target = "stop"
+  target = "done"
 
   [[topology.transitions.guards]]
   condition = "ctx.round == PAUSE_AT_ROUND as u32"
@@ -442,7 +442,7 @@ that, not a copy. Quick sanity checks for the most commonly violated ones:
 ## cargo blox Command Reference
 
 The canonical list of `cargo blox` subcommands (from `crates/tools/cargo-blox/src/main.rs`;
-see `spec/architecture/19-cli-design.md` for the full design). All commands resolve the
+see `spec/architecture/17-cli-design.md` for the full design). All commands resolve the
 workspace root, so they work from any subdirectory. Semantic exit codes: `0` success,
 `1` other error, `2` usage error (clap), `3` not found, `5` conflict (already exists).
 `generate` runs the spec-to-code lint first and is idempotent. When working from a source

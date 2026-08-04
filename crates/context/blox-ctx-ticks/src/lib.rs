@@ -8,10 +8,8 @@
 
 use bloxide_core::transition::ActionResult;
 
-/// Increment a count by one.
-pub fn increment_count<Count: Copy + core::ops::Add<Output = Count> + From<u8>>(
-    count: &mut Count,
-) -> ActionResult {
-    *count = *count + Count::from(1);
+/// Increment the tick count by one.
+pub fn increment_count(count: &mut u32) -> ActionResult {
+    *count += 1;
     ActionResult::Ok
 }

@@ -1,5 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Semantic process exit codes (spec 19).
+//! Semantic process exit codes (spec 17).
 //!
 //! | Code | Meaning |
 //! |------|---------|

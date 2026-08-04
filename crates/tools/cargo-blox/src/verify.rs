@@ -103,17 +103,25 @@ pub fn verify(workspace: Option<PathBuf>) -> anyhow::Result<()> {
         specs.len()
     );
 
-    // Step 5: Verify states, transitions, context, wiring are present
+    // Step 5: Verify states, transitions, context, wiring are present.
+    //
+    // Only actor specs are checked: message crates and apps (which have no
+    // [actor]/[topology] section) produce specs with no states by design —
+    // they are not blox state machines and are skipped here.
     for spec in &specs {
-        if spec.states.is_empty() {
-            errors.push(format!("spec '{}': no states", spec.name));
-        }
-
         // Match this spec to its original BloxConfig
         let config = match configs_by_actor.get(&spec.name) {
             Some(c) => c,
             None => continue, // Not an actor blox, skip
         };
+
+        if config.topology.is_none() {
+            continue; // Manifest has an [actor] but no [topology] — nothing to verify
+        }
+
+        if spec.states.is_empty() {
+            errors.push(format!("spec '{}': no states", spec.name));
+        }
 
         // Verify states
         if let Some(topo) = &config.topology {

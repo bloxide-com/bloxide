@@ -56,7 +56,7 @@ where
     /// Allocates notify and control channels. The notify channel receives
     /// `ChildLifecycleEvent` from child actors; the control channel receives
     /// `Ctrl` messages (e.g. `RegisterChild`, `RegisterDynamicChild`).
-    pub fn new(shutdown: GroupShutdown) -> Self {
+    pub fn new(shutdown: GroupShutdown, max_misses: u8) -> Self {
         let notify_id = R::alloc_group_id();
         let (notify_ref, notify_rx) = R::group_channel::<ChildLifecycleEvent, NOTIFY>(notify_id);
 
@@ -64,7 +64,7 @@ where
         let (control_ref, control_rx) = R::group_channel::<Ctrl, CONTROL>(control_id);
 
         Self {
-            group: ChildGroup::new(shutdown),
+            group: ChildGroup::new(shutdown, max_misses),
             notify_ref,
             notify_rx: Some(notify_rx),
             control_ref,

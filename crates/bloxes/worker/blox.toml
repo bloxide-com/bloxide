@@ -61,12 +61,14 @@ fn_name = "apply_peer_control"
 fields = ["peers:mut"]
 event_payload = "ctrl"
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "process_work"
 fields = ["task_id:mut", "result:mut"]
 event_payload = "do_work"
 impl_required = true
+returns = "ActionResult"
 
 [[context.actions]]
 name = "do_broadcast"
@@ -74,6 +76,7 @@ crate = "blox_ctx_pool_ref"
 fn_name = "broadcast_result"
 fields = ["self_id", "peers:ref", "result"]
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "do_notify_pool"
@@ -81,6 +84,7 @@ crate = "blox_ctx_pool_ref"
 fn_name = "notify_pool_done"
 fields = ["self_id", "pool_ref:ref", "task_id", "result"]
 impl_required = false
+returns = "ActionResult"
 
 # --- Declarative transitions ---
 
@@ -98,7 +102,7 @@ actions = ["Self::handle_ctrl"]
 [[topology.transitions]]
 state = "Waiting"
 event = "WorkerMsg::DoWork(_)"
-target = "stop"
+target = "done"
 actions = ["Self::process_work", "Self::do_broadcast", "Self::do_notify_pool"]
 
 [[topology.transitions]]

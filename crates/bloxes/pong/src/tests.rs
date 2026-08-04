@@ -100,7 +100,7 @@ mod pong_tests {
 
         h.terminate();
 
-        // In the four-level lifecycle model, Reset goes directly to
+        // In the five-level lifecycle model, Reset goes directly to
         // initial_state() (Ready) — not Init. The machine is immediately
         // operational.
         assert_eq!(

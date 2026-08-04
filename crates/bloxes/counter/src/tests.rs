@@ -95,7 +95,7 @@ mod counter_tests {
 
     #[test]
     fn test_increment_count_function() {
-        let mut count = 0u8;
+        let mut count = 0u32;
         increment_count(&mut count);
         assert_eq!(count, 1);
         increment_count(&mut count);

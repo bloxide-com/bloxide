@@ -3,7 +3,7 @@
 //!
 //! Provides the generic `PeerCtrl<M, R>` control message type and the
 //! `introduce_peers` / `apply_peer_control` / `broadcast_to_peers` helper
-//! functions. All helpers are domain-agnostic (spec 20): the message
+//! functions. All helpers are domain-agnostic (spec 18): the message
 //! broadcast to peers is supplied by the caller. Domain code uses these
 //! directly instead of defining per-domain copies like `WorkerCtrl`,
 //! `AddWorkerPeer`, etc.
@@ -162,3 +162,6 @@ where
     }
     result
 }
+
+#[cfg(test)]
+mod tests;

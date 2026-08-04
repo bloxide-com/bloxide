@@ -4,7 +4,7 @@
 //! Action functions for peer/self messaging (`send_ping`, `send_pong`,
 //! `send_initial_ping`) and the pause/resume timer (`schedule_resume`).
 //! Timer primitives come from the `bloxide-timer` platform feature crate —
-//! this crate holds only ping/pong-domain logic (spec 20: Platform Feature
+//! this crate holds only ping/pong-domain logic (spec 18: Platform Feature
 //! Pattern, feature crates vs domain context crates).
 #![no_std]
 
@@ -52,8 +52,8 @@ pub fn send_initial_ping<R: BloxRuntime>(
 
 /// Schedule a resume timer delivering `PingPongMsg::Resume` to self after
 /// a duration derived from the current round number. Stores the `TimerId`
-/// in `current_timer`. Returns `Err` (leaving `current_timer` unset) if the
-/// timer command could not be queued.
+/// in `current_timer`. Returns `Err` (clearing `current_timer` to `None`)
+/// if the timer command could not be queued.
 pub fn schedule_resume<R: BloxRuntime>(
     self_id: ActorId,
     self_ref: &ActorRef<PingPongMsg, R>,

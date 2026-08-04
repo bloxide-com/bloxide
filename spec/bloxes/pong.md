@@ -101,8 +101,8 @@ they verify topology and lifecycle semantics, not action side effects.
 - `try_send` is used (not `send`) because `on_event` runs synchronously inside dispatch.
 - Pong does not know when the exchange ends — it will keep responding to pings indefinitely. When Ping's guard returns `Decision::Stop`, it self-suspends to `Init` and simply stops sending, and Pong's mailbox goes quiet.
 - The blox crate only imports `blox-ctx-ping-pong` for the `send_pong` action function. It does NOT depend on `bloxide-log` (invariant #15).
-- See `spec/architecture/08-supervision.md` for how the runtime manages lifecycle.
-- See `spec/architecture/12-action-crate-pattern.md` for the full four-layer architecture.
+- See `spec/architecture/07-supervision.md` for how the runtime manages lifecycle.
+- See `spec/architecture/11-action-crate-pattern.md` for the full four-layer architecture.
 
 ## Acceptance Criteria → Test Mapping
 

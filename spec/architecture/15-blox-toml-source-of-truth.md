@@ -47,7 +47,7 @@ top-level sections are:
 
 System-level wiring is a **separate schema** in the same file — `SystemConfig`, parsed
 from `system.toml`, not from `blox.toml`. There is no `[wiring]` section in `BloxConfig`.
-See `spec/architecture/16-declarative-wiring.md`.
+See `spec/architecture/14-declarative-wiring.md`.
 
 #### `[actor]` — actor identity
 
@@ -238,6 +238,11 @@ Notes on `[[context.actions]]` entries:
 - `fields` lists the context fields the action needs, with access-mode suffixes
   (`field:mut`, `field:ref`, or `field` for copy/owned); `event_payload` /
   `event_arg` control how the event is passed to the function.
+- `returns = "ActionResult"` (the only recognized value) tells the codegen the
+  function already returns `ActionResult`, so the transition wrapper emits the
+  call bare instead of wrapping it in `ActionResult::from(...)` — the wrapper
+  would be a same-type conversion flagged by clippy. Any other value is a hard
+  error.
 
 #### `[mailboxes]` — mailbox arity
 
@@ -295,7 +300,7 @@ children = ["ping", "pong"]
 6. **Supervision children are declared** — every `[[supervision]].children` entry names
    a declared actor; unknown `strategy` values are hard errors.
 
-See `spec/architecture/16-declarative-wiring.md` for the full manifest reference.
+See `spec/architecture/14-declarative-wiring.md` for the full manifest reference.
 
 ### What the codegen generates
 
@@ -444,7 +449,7 @@ impl<R: BloxRuntime> PingSpec<R> {
                         ::bloxide_core::topology::LeafState::new(PingState::Error),
                     )
                 } else if ctx.round >= MAX_ROUNDS as u32 {
-                    ::bloxide_core::transition::Decision::Stop
+                    ::bloxide_core::transition::Decision::Done
                 } else {
                     ::bloxide_core::transition::Decision::Stay
                 }
@@ -476,7 +481,7 @@ references). See `crates/tools/bloxide-codegen/src/system_spec.rs`.
 
 #### `wiring_main.rs`
 
-From `system.toml`, the codegen emits a complete `main.rs` that creates channels, constructs contexts, builds machines, wires the supervisor tree, and starts the system. See `spec/architecture/16-declarative-wiring.md` for the generated structure and `apps/tokio-pool-demo/src/main.rs` for real output.
+From `system.toml`, the codegen emits a complete `main.rs` that creates channels, constructs contexts, builds machines, wires the supervisor tree, and starts the system. See `spec/architecture/14-declarative-wiring.md` for the generated structure and `apps/tokio-pool-demo/src/main.rs` for real output.
 
 ### What remains hand-written
 
@@ -679,8 +684,8 @@ The only hand-written Rust the UI cannot produce is action function bodies and c
 
 ## Related documents
 
-- `spec/architecture/15-composable-context-crates.md` — how `[[context.uses]]` pulls in reusable context crates.
-- `spec/architecture/16-declarative-wiring.md` — the `system.toml` wiring manifest and handle injection.
-- `spec/architecture/02-hsm-engine.md` — `MachineSpec`, `StateTopology`, and the declarative `[[topology.transitions]]` schema.
-- `spec/architecture/05-handler-patterns.md` — transition patterns and guard semantics.
-- `spec/architecture/12-action-crate-pattern.md` — the relationship between context crates and bloxes.
+- `spec/architecture/13-composable-context-crates.md` — how `[[context.uses]]` pulls in reusable context crates.
+- `spec/architecture/14-declarative-wiring.md` — the `system.toml` wiring manifest and handle injection.
+- `spec/architecture/01-hsm-engine.md` — `MachineSpec`, `StateTopology`, and the declarative `[[topology.transitions]]` schema.
+- `spec/architecture/04-handler-patterns.md` — transition patterns and guard semantics.
+- `spec/architecture/11-action-crate-pattern.md` — the relationship between context crates and bloxes.

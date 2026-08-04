@@ -65,6 +65,10 @@ pub struct State {
     pub parent: Option<String>,
     pub description: String,
     pub depth: usize,
+    /// True when this state is the machine's initial state
+    /// (`initial = true` in `blox.toml`).
+    #[serde(default)]
+    pub initial: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

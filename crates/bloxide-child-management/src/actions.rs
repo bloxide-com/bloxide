@@ -3,7 +3,7 @@
 //!
 //! These take concrete params (extracted from the context by the generated
 //! wrapper closures) plus an extracted event payload — `&ChildLifecycleEvent`
-//! or `&ChildCtrl<R>` — never the consumer's event enum type (spec 20:
+//! or `&ChildCtrl<R>` — never the consumer's event enum type (spec 18:
 //! Platform Feature Pattern).
 
 use crate::control::ChildCtrl;
@@ -13,7 +13,7 @@ use bloxide_core::{lifecycle::ChildLifecycleEvent, messaging::ActorRef, transiti
 /// Start all children in the group and clear lifecycle counters.
 ///
 /// This is the `on_entry` for the managing blox's Running state. In the
-/// four-level lifecycle model, `Decision::Reset` goes directly to
+/// five-level lifecycle model, `Decision::Reset` goes directly to
 /// `initial_state()` (Running) — it does NOT fire `on_init_entry`. So
 /// counters must be cleared here, in the Running on_entry, which fires both
 /// on initial Start and on Reset.
@@ -86,7 +86,7 @@ where
 
 /// Record a started child.
 ///
-/// In the four-level lifecycle model, `Started` covers both initial `Start`
+/// In the five-level lifecycle model, `Started` covers both initial `Start`
 /// and `Reset` (both go directly to `initial_state()`). The managing blox
 /// does not need to send `Start` after `Reset`.
 pub fn record_started<R>(

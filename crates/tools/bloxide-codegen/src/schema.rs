@@ -203,7 +203,7 @@ pub struct ContextConfig {
     ///
     /// Each entry pulls in a field (or several) from an external crate into
     /// the generated context struct.
-    /// See `spec/architecture/15-composable-context-crates.md`.
+    /// See `spec/architecture/13-composable-context-crates.md`.
     #[serde(default)]
     pub uses: Vec<ContextUse>,
 
@@ -327,6 +327,14 @@ pub struct ContextActionConfig {
     /// `crate::actions::start_children(...)`.
     #[serde(default)]
     pub module: Option<String>,
+    /// Declared return type of the action function. The only recognized
+    /// value is `"ActionResult"` — the transition wrapper then emits the
+    /// call bare, skipping the `ActionResult::from(...)` normalization
+    /// (which would be a same-type conversion flagged by clippy). When
+    /// omitted, the wrapper is emitted (contract: the function returns
+    /// `ActionResult`, `Result<(), E>`, or `()`).
+    #[serde(default)]
+    pub returns: Option<String>,
 }
 
 /// A `[[context.uses]]` entry — pulls traits and fields from a composable
@@ -404,7 +412,7 @@ pub struct MailboxesConfig {
 // supervisor tree, and which runtime to target. The codegen turns this into a
 // complete `main.rs` binary.
 //
-// See `spec/architecture/16-declarative-wiring.md`.
+// See `spec/architecture/14-declarative-wiring.md`.
 // ---------------------------------------------------------------------------
 
 /// Top-level wiring manifest (`system.toml`).
@@ -566,6 +574,11 @@ pub struct SupervisionConfig {
     /// from the child count (see `SupervisionCapacities`).
     #[serde(default)]
     pub capacities: SupervisionCapacities,
+    /// Watchdog configuration. When present, codegen emits a timer-based driver
+    /// that sends `ChildCtrl::WatchdogTick` to the supervisor's control channel
+    /// at the configured interval.
+    #[serde(default)]
+    pub watchdog: Option<WatchdogConfig>,
 }
 
 /// A value in `[supervision.policies]` — restart or stop policy for a child.
@@ -606,4 +619,20 @@ pub struct SupervisionCapacities {
     pub control: Option<usize>,
     /// Per-child lifecycle channel capacity. Default: 4.
     pub lifecycle: Option<usize>,
+}
+
+/// `[supervision.watchdog]` — health-check driver configuration.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct WatchdogConfig {
+    /// Interval between health-check rounds in milliseconds.
+    pub interval_ms: u64,
+    /// Consecutive unanswered Pings before a child is declared rogue.
+    /// Default: 2.
+    #[serde(default = "default_max_misses")]
+    pub max_misses: u8,
+}
+
+fn default_max_misses() -> u8 {
+    2
 }

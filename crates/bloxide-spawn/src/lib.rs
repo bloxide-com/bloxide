@@ -195,7 +195,7 @@ pub fn spawn_child<R, Req, C>(
 ) -> Result<(), R::TrySendError>
 where
     R: BloxRuntime,
-    Req: Send + Clone + 'static,
+    Req: Send + 'static,
     C: ChildRegistrar<R>,
 {
     // 1. Call the spawn function — creates channels, constructs child, spawns task

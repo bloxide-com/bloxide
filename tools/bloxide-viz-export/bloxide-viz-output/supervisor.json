@@ -1,20 +1,22 @@
 {
   "name": "Supervisor",
-  "crate_path": "./crates/bloxide-supervisor",
+  "crate_path": "/repos/internal/bloxide/crates/bloxide-supervisor",
   "states": [
     {
       "name": "Running",
       "kind": "Leaf",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": true
     },
     {
       "name": "ShuttingDown",
       "kind": "Leaf",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": false
     }
   ],
   "events": [
@@ -515,15 +517,15 @@
     }
   ],
   "entry_exit": {
-    "ShuttingDown": {
-      "on_entry": [
-        "Self::stop_all_children"
-      ],
-      "on_exit": []
-    },
     "Running": {
       "on_entry": [
         "Self::start_children"
+      ],
+      "on_exit": []
+    },
+    "ShuttingDown": {
+      "on_entry": [
+        "Self::stop_all_children"
       ],
       "on_exit": []
     }

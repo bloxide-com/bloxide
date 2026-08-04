@@ -13,7 +13,7 @@
 
 - Blox crate: `crates/bloxes/<blox-name>/`
 - Messages crate: `crates/messages/<blox-name>-messages/` _(if new messages are needed; share with peers using the same protocol)_
-- Context crate: `crates/context/<blox-name>-context/` _(plain context struct + generic action functions; no concrete types)_
+- Context crate: `crates/context/blox-ctx-<blox-name>/` _(plain context struct + generic action functions; no concrete types)_
 - Impl crate: a separate crate consumed by the wiring binary (e.g. `crates/impl/ping-pong-impl/`); contains concrete action function implementations injected into the blox context
 
 ## State Hierarchy
@@ -33,7 +33,7 @@ stateDiagram-v2
 
     Idle --> Working : DomainMsg::Begin
     Working --> Idle : DomainMsg::Complete
-    Working --> [*] : DomainMsg::Finish [guard condition] : Guard::Stop
+    Working --> [*] : DomainMsg::Finish [guard condition] : Decision::Stop
 ```
 
 > Legend:
@@ -109,7 +109,7 @@ target = "stop"
 condition = "_"
 target = "Idle"
 
-# Working: Finish event → Guard::Stop (self-suspend to Init)
+# Working: Finish event → Decision::Stop (self-suspend to Init)
 [[topology.transitions]]
 state = "Working"
 event = "DomainMsg::Finish(_)"
@@ -130,7 +130,7 @@ actions = ["log_work_complete"]
 > **Transition declarations** (`[[topology.transitions]]`):
 > - `state` — which state handles this transition (must match a declared state)
 > - `event` — match pattern, e.g. `DomainMsg::Begin(_)` or `DomainMsg::A(_) | DomainMsg::B(_)` for or-patterns
-> - `target` — `stay` (self-transition), `reset`, `fail`, or a state name (leaf states only)
+> - `target` — `stay`, `reset`, `stop`, `done`, `fail`, or a state name (leaf states only)
 > - `actions` — list of action function references (e.g. `["Self::log_round", "send_initial_ping"]`)
 > - `[[topology.transitions.guards]]` — ordered guard branches; each has `condition` (Rust expression or `_` for catch-all) and `target`
 >
@@ -138,7 +138,7 @@ actions = ["log_work_complete"]
 > - `state` — which state this handler belongs to
 > - `actions` — list of `fn(&mut Ctx)` function references
 >
-> See `spec/architecture/12-action-crate-pattern.md` for the full blox.toml schema.
+> See `spec/architecture/11-action-crate-pattern.md` for the full blox.toml schema.
 
 ## States
 
@@ -151,26 +151,26 @@ actions = ["log_work_complete"]
 
 > Adjust table rows to match your state hierarchy diagram exactly.
 > Do NOT include a Root row — it is engine-implicit.
-> Actors self-suspend via `Guard::Stop` (goes to Init, reports `Stopped`). No `is_terminal()` needed.
+> Actors self-suspend via `Decision::Stop` (goes to Init, reports `Stopped`). No `is_terminal()` needed.
 
 ## Events
 
 > List every domain event variant this actor's mailbox accepts.
 > Do NOT list lifecycle events (start/reset) — those are runtime-managed.
-> In the "Rule pattern" column use one of the named patterns from `spec/architecture/05-handler-patterns.md`:
+> In the "Rule pattern" column use one of the named patterns from `spec/architecture/04-handler-patterns.md`:
 > Pure Transition, Sink, Action-Then-Stay, Action-Then-Guard, Pure Guard, Bubble.
 
 | Event | Handled by | Rule pattern | Guard outcome | Side effects |
 |-------|-----------|--------------|--------------|--------------|
-| `DomainMsg::Begin` | `Idle` | Pure Transition | `Guard::Transition(Working)` | none |
-| `DomainMsg::Complete` | `Working` | Action-Then-Guard | `Guard::Transition(Idle)` | sends `PeerMsg::Done` |
-| `DomainMsg::Finish` | `Working` | Action-Then-Guard | `Guard::Stop` if guard met, else `Guard::Stay` | none |
+| `DomainMsg::Begin` | `Idle` | Pure Transition | `Decision::Transition(Working)` | none |
+| `DomainMsg::Complete` | `Working` | Action-Then-Guard | `Decision::Transition(Idle)` | sends `PeerMsg::Done` |
+| `DomainMsg::Finish` | `Working` | Action-Then-Guard | `Decision::Stop` if guard met, else `Decision::Stay` | none |
 | any unhandled | root (no rules) | — | dropped | none |
 
 ## Context
 
 > Describe every field in `<BloxName>Ctx<R>`. The context is a plain struct with plain fields (no `#[derive(BloxCtx)]`, no accessor traits).
-> See `spec/architecture/12-action-crate-pattern.md` for field conventions.
+> See `spec/architecture/11-action-crate-pattern.md` for field conventions.
 > No `supervisor_ref` field — actors don't hold a reference to their supervisor.
 
 ```rust
@@ -212,7 +212,7 @@ Defined in `crates/messages/<msg-crate-name>/`.
 
 | Target | Message | When |
 |--------|---------|------|
-| `peer_ref` | `SharedMsg::Done(Done { id })` | transition actions (before `Guard::Stop`) |
+| `peer_ref` | `SharedMsg::Done(Done { id })` | transition actions (before `Decision::Stop`) |
 
 > The runtime notifies the supervisor of lifecycle events (Started, Stopped, Failed) automatically.
 > Do NOT add supervisor_ref sends here.
@@ -221,7 +221,7 @@ Defined in `crates/messages/<msg-crate-name>/`.
 
 > Document non-trivial `on_entry` and `on_exit` behaviors.
 > Reference action function names from the context crate — not closures or inline logic.
-> For `Guard::Stop`, on_entry of Init fires automatically. Transition actions run before the guard.
+> For `Decision::Stop`, on_entry of Init fires automatically. Transition actions run before the guard.
 
 | State | on_entry | on_exit |
 |-------|----------|---------|
@@ -237,7 +237,7 @@ Each listed action is a free function from the context crate with signature `fn(
 - [ ] `dispatch(LifecycleCommand::Start)` exits Init and enters `Idle`
 - [ ] `DomainMsg::Begin` in `Idle` transitions to `Working`
 - [ ] `DomainMsg::Complete` in `Working` transitions back to `Idle`
-- [ ] `DomainMsg::Finish` in `Working` triggers `Guard::Stop` when guard is met (self-suspend to Init)
+- [ ] `DomainMsg::Finish` in `Working` triggers `Decision::Stop` when guard is met (self-suspend to Init)
 - [ ] `dispatch(LifecycleCommand::Reset)` from any state exits all states and enters `initial_state()` directly; `on_init_entry` does NOT fire; domain state is reset via `initial_state()::on_entry`
 - [ ] `initial_state()::on_entry` does NOT send any messages — domain-state reset only
 - [ ] Unknown events bubble to root (no root rules) and are silently dropped
@@ -248,13 +248,13 @@ Each listed action is a free function from the context crate with signature `fn(
 
 | Function | From crate | Operates on |
 |----------|-----------|-------------|
-| `send_done_to_peer` | `<blox>-context` | `peer_ref` field |
-| `increment_counter` | `<blox>-context` | `counter` field |
+| `send_done_to_peer` | `blox-ctx-<blox-name>` | `peer_ref` field |
+| `increment_counter` | `blox-ctx-<blox-name>` | `counter` field |
 
 ## Open Questions
 
 > List any design questions that must be resolved before implementation.
 
-- [ ] Should completion trigger `Guard::Stop` (self-suspend) or `Guard::Transition` to another running state?
+- [ ] Should completion trigger `Decision::Stop` (self-suspend) or `Decision::Transition` to another running state?
 - [ ] What is the correct mailbox capacity for this actor?
 - [ ] Which `bloxide-log` backend does the wiring crate enable?

@@ -12,10 +12,12 @@ use crate::TokioRuntime;
 
 fn now_ms() -> u64 {
     // Tokio's Instant does not expose `as_millis()` directly; compute relative
-    // to a fixed epoch by measuring elapsed time from a lazy static.
+    // to a fixed epoch by measuring elapsed time from a lazy static. The epoch
+    // uses tokio::time::Instant — the same clock as the sleep primitive below —
+    // so a paused Tokio clock (e.g. in tests) cannot make the two diverge.
     use std::sync::OnceLock;
-    static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
-    let epoch = EPOCH.get_or_init(std::time::Instant::now);
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    let epoch = EPOCH.get_or_init(Instant::now);
     epoch.elapsed().as_millis() as u64
 }
 

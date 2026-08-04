@@ -22,6 +22,23 @@ pub use bloxide_core::{run, RunConfig};
 pub use bloxide_core::{ChildLifecycleEvent, LifecycleCommand};
 pub use channel::{EmbassySender, EmbassyStream, EmbassyTrySendError};
 
+/// Terminate the host process after a root task's run loop returns.
+///
+/// std-hosted builds (embassy-executor `arch-std`) exit the process with code
+/// 0 once the root supervisor completes — a supervised app is done when its
+/// supervisor is done. `no_std` (embedded) builds are a no-op: the task ends
+/// and the executor keeps idling (the device runs until reset).
+///
+/// Used as the `root_task!` on-done expression by generated binaries.
+#[cfg(feature = "std")]
+pub fn exit_process() -> ! {
+    std::process::exit(0)
+}
+
+/// `no_std` variant: no-op (see the std `exit_process`).
+#[cfg(not(feature = "std"))]
+pub fn exit_process() {}
+
 // ── EmbassyRuntime ────────────────────────────────────────────────────────────
 
 /// The Embassy runtime capability handle (zero-sized type).
@@ -117,8 +134,8 @@ macro_rules! actor_task_supervised {
 ///
 /// ```ignore
 /// // Doc test ignored: imports not resolvable in rustdoc compilation context
-/// // On std targets — exit the process after shutdown:
-/// root_task!(supervisor_task, SuperSpec<EmbassyRuntime>, std::process::exit(0));
+/// // On std targets — exit the process after shutdown (what the codegen emits):
+/// root_task!(supervisor_task, SuperSpec<EmbassyRuntime>, bloxide_embassy::exit_process());
 ///
 /// // On embedded targets — just return (task ends, executor continues):
 /// root_task!(supervisor_task, SuperSpec<EmbassyRuntime>);

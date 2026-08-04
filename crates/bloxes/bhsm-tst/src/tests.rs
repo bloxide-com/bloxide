@@ -8,7 +8,7 @@
 //! engine drives the real generated state paths, and the exact chain order
 //! is asserted for every transition shape.
 //!
-//! LCA semantics (spec 02): exit `source_path[i+1..]` leaf-first, enter
+//! LCA semantics (spec 01): exit `source_path[i+1..]` leaf-first, enter
 //! `target_path[i+1..]` root-first; the LCA state itself never exits or
 //! re-enters. `LCA = None` exits/enters the full chains. Self-transitions
 //! exit and re-enter only the leaf.
@@ -250,7 +250,7 @@ mod tests {
         let mut m = machine_in_s11();
         m.dispatch(msg(BhsmTstMsg::D(D)));
         // LCA(S11, S211) = S: exit below S (S11, S1), enter below S (S2, S21, S211).
-        // S itself does NOT exit or re-enter (spec 02).
+        // S itself does NOT exit or re-enter (spec 01).
         assert_eq!(
             take_log(),
             vec!["s11-EXIT", "s1-EXIT", "s2-ENTRY", "s21-ENTRY", "s211-ENTRY"]

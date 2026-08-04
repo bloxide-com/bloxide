@@ -31,10 +31,10 @@ bloxide/
   crates/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits, messaging data types (ActorRef, Envelope, ActorId) (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
-    bloxide-macros/            ← proc macros: #[blox_event], etc.
+    bloxide-macros/            ← proc macros: channels!, dyn_channels!, next_actor_id!
     bloxide-timer/             ← timer feature crate: TimerCommand, TimerId, TimerQueue, TimerService trait, set_timer/cancel_timer/cancel_timer_by_id action functions
     bloxide-child-management/  ← child-management feature crate: ChildGroup, ChildPolicy, ChildCtrl/RegisterChild/RegisterDynamicChild control plane, supervision action functions
-    bloxide-supervisor/        ← supervisor blox (reference consumer): blox.toml + generated + concrete_spec.rs (test fixture) + tests only (spec 20)
+    bloxide-supervisor/        ← supervisor blox (reference consumer): blox.toml + generated + concrete_spec.rs (test fixture) + tests only (spec 18)
     bloxide-peers/             ← peer introduction: PeerCtrl<M,R>, AddPeer, RemovePeer, introduce_peers, broadcast_to_peers (domain-agnostic, M: Clone)
     bloxide-spawn/             ← spawn capability: SpawnFn, SpawnOutput, SpawnCap, ChildCtrlRegistrar, spawn_child helper (platform primitive)
     messages/
@@ -97,7 +97,7 @@ Use this model when you are deciding where a new capability belongs.
 
 ### 2. Four-layer application structure
 
-This is the application-author view described in `skills/building-with-bloxide/SKILL.md` and `spec/architecture/12-action-crate-pattern.md`.
+This is the application-author view described in `skills/building-with-bloxide/SKILL.md` and `spec/architecture/11-action-crate-pattern.md`.
 
 ```
 Before:  messages → actions → context → impl → blox → (codegen) → binary
@@ -137,40 +137,40 @@ Use this model when you are wiring runtimes, reading macro output, or adding new
 4. **QUICK_REFERENCE.md** — decision trees and lookup tables when you're stuck
 
 Then dive deeper as needed:
-- `spec/architecture/02-hsm-engine.md` — `MachineSpec`, dispatch, and the five-level lifecycle (reset → stop → done → abort → kill)
-- `spec/architecture/05-handler-patterns.md` — transition patterns and declarative TOML transitions
-- `spec/architecture/08-supervision.md` — supervisor patterns
-- `spec/architecture/11-dynamic-actors.md` — dynamic spawning and factory injection
+- `spec/architecture/01-hsm-engine.md` — `MachineSpec`, dispatch, and the five-level lifecycle (reset → stop → done → abort → kill)
+- `spec/architecture/04-handler-patterns.md` — transition patterns and declarative TOML transitions
+- `spec/architecture/07-supervision.md` — supervisor patterns
+- `spec/architecture/10-dynamic-actors.md` — dynamic spawning and factory injection
 
 | Question | File |
 |---|---|
 | What is the layered architecture and two-tier trait system? | `spec/architecture/00-layered-architecture.md` |
 | How does the overall system fit together? | `spec/architecture/00-layered-architecture.md` (System Overview) |
-| How do HSMs, the engine, and the lifecycle model work? | `spec/architecture/02-hsm-engine.md` (HSM Engine & Lifecycle) |
-| How do actors send messages? | `spec/architecture/03-actor-messaging.md` |
-| How are actors wired at startup? | `spec/architecture/04-static-wiring.md` |
-| What are the named handler and topology patterns? | `spec/architecture/05-handler-patterns.md` |
-| How do actions, logging, and declarative TOML transitions work? | `spec/architecture/06-actions.md` |
-| How do typed mailboxes and priority ordering work? | `spec/architecture/07-typed-mailboxes.md` |
-| How does supervision work? | `spec/architecture/08-supervision.md` |
-| How is an application wired end to end? | `spec/architecture/09-application.md` |
-| How do effects (timers) and capabilities work? | `spec/architecture/10-effects-and-capabilities.md` |
-| **How do context crates, impl crates, and bloxes fit together?** | **`spec/architecture/12-action-crate-pattern.md`** |
-| How do dynamic actors, factory injection, and peer introduction work? | `spec/architecture/11-dynamic-actors.md` |
-| How does factory injection interact with supervision? | `spec/architecture/13-factory-injection-and-supervision.md` |
-| How do composable context crates work? | `spec/architecture/15-composable-context-crates.md` |
-| How does declarative wiring and handle injection work? | `spec/architecture/16-declarative-wiring.md` |
-| How does blox.toml serve as the source of truth? | `spec/architecture/17-blox-toml-source-of-truth.md` |
-| How does spawning work? | `spec/architecture/18-spawn-architecture.md` |
-| How does the cargo-blox CLI work? What commands exist? | `spec/architecture/19-cli-design.md` |
+| How do HSMs, the engine, and the lifecycle model work? | `spec/architecture/01-hsm-engine.md` (HSM Engine & Lifecycle) |
+| How do actors send messages? | `spec/architecture/02-actor-messaging.md` |
+| How are actors wired at startup? | `spec/architecture/03-static-wiring.md` |
+| What are the named handler and topology patterns? | `spec/architecture/04-handler-patterns.md` |
+| How do actions, logging, and declarative TOML transitions work? | `spec/architecture/05-actions.md` |
+| How do typed mailboxes and priority ordering work? | `spec/architecture/06-typed-mailboxes.md` |
+| How does supervision work? | `spec/architecture/07-supervision.md` |
+| How is an application wired end to end? | `spec/architecture/08-application.md` |
+| How do effects (timers) and capabilities work? | `spec/architecture/09-effects-and-capabilities.md` |
+| **How do context crates, impl crates, and bloxes fit together?** | **`spec/architecture/11-action-crate-pattern.md`** |
+| How do dynamic actors, factory injection, and peer introduction work? | `spec/architecture/10-dynamic-actors.md` |
+| How does factory injection interact with supervision? | `spec/architecture/12-factory-injection-and-supervision.md` |
+| How do composable context crates work? | `spec/architecture/13-composable-context-crates.md` |
+| How does declarative wiring and handle injection work? | `spec/architecture/14-declarative-wiring.md` |
+| How does blox.toml serve as the source of truth? | `spec/architecture/15-blox-toml-source-of-truth.md` |
+| How does spawning work? | `spec/architecture/16-spawn-architecture.md` |
+| How does the cargo-blox CLI work? What commands exist? | `spec/architecture/17-cli-design.md` |
 | Spec for the Ping actor | `spec/bloxes/ping.md` |
 | Spec for the Pong actor | `spec/bloxes/pong.md` |
 | Spec for the Counter actor | `spec/bloxes/counter.md` |
 | Spec for the Pool actor | `spec/bloxes/pool.md` |
 | Spec for the Worker actor | `spec/bloxes/worker.md` |
 | Spec for the BHSM test actor | `spec/bloxes/bhsm.md` |
-| How does the reusable supervisor spec work? | `spec/architecture/08-supervision.md` |
-| How are platform features packaged and consumed? | `spec/architecture/20-platform-feature-pattern.md` |
+| How does the reusable supervisor spec work? | `spec/architecture/07-supervision.md` |
+| How are platform features packaged and consumed? | `spec/architecture/18-platform-feature-pattern.md` |
 | Template for a new blox | `spec/templates/blox-spec.md` |
 | **How do I test a blox in isolation?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
 | **What is TestRuntime for?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
@@ -216,6 +216,7 @@ Actions are declared in `[[context.actions]]` entries in `blox.toml`. There is n
 - `impl_required` — `true` if the function comes from an impl crate, `false` if from a context crate
 - `crate` — the crate providing the function; required for context crate actions (omitted when `impl_required = true`)
 - `fn_name` — optional, the actual function name if different from `name`
+- `returns` — optional; the only recognized value is `"ActionResult"`. When set, the transition wrapper emits the call bare (no `ActionResult::from(...)` normalization — it would be a same-type conversion flagged by clippy). Any other value is a hard error.
 
 ### Example
 
@@ -256,8 +257,8 @@ of restating the list — this is the single canonical copy.
 
 16. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (declared as `[[context.uses]]` entries with `role = "ctor"`, e.g. `spawn_fn: SpawnFn<R, Req>`). The binary (or impl crate) provides the concrete factory function at construction time. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
 17. **KillCapability is a runtime capability, not a message** — `KillCapability::kill(handle)` immediately aborts the child's task without any callbacks firing. No `on_exit` handlers run; the task is dropped in-place. KillCapability is for (1) unresponsive actors that cannot process Stop, or (2) cleanup of stopped actors whose resources should be freed immediately. Kill works for both static and dynamic actors; killed actors are permanently dead and cannot be restarted — normal lifecycle uses Reset/Stop through dispatch(). `KillCapability` lives in `bloxide-core` as a trait (with `NoKill` for static runtimes); the `Kill` type lives in `bloxide-spawn` because it requires the `SpawnCap` bound. Each runtime picks one via the `BloxRuntime::Kill` associated type (`NoKill` for Embassy, `Kill` for Tokio and TestRuntime). The trait carries a `CAN_KILL` associated const (`false` for `NoKill`, `true` for `Kill`): `ChildPolicy::Kill` is refused at registration on `!CAN_KILL` runtimes — a no-op kill must never let a supervisor mark a live child dead. TestRuntime's kill is **recorded, not executed** (`drain_killed()` / `kill_count()`), so kill paths are exercisable in unit tests. Supervisors store the concrete `KillHandle` per child (cloneable, so action functions can extract it from `&Event`); actors never see it.
-18. **System.toml is the single source of truth for concrete action wiring** — Blox-crate-level codegen ALWAYS produces stub `spec_skeletons`. The system-level codegen (from `system.toml`) ALWAYS produces concrete action closures, for every actor including dynamically spawned ones. There is no `crate = "crate"` path at the blox-crate level. The action contract is uniform: a transition action function returns `ActionResult`, `Result<(), E>`, or `()` — the codegen wrapper normalizes via `ActionResult::from(...)`; entry/exit functions are infallible `fn(&mut Ctx)` (any return value is discarded). Dynamic actors are declared in `system.toml` with `kind = "dynamic"` — they get a concrete spec generated but no channels/tasks/bootstrap in main.rs. The impl crate's spawn function is generic over the spec type; the generated main.rs monomorphizes it with the system-level concrete spec. Supervision strategy vocabulary in `system.toml` is `when_any_done` / `when_all_done` (maps to `GroupShutdown` variants; unknown values are hard errors).
-19. **Platform features are consumed uniformly** (spec 20) — a platform feature crate owns its message set, context field declarations, and consumer-side action functions (concrete params or extracted payloads, never the consumer's event enum). Blox crates compose features via `[[context.uses]]` / `[[context.actions]]` and never own feature logic or feature message sets. The supervisor is the reference consumer: topology only, everything else from `bloxide-child-management` + `bloxide-spawn`. Factory/capability features (spawn) are the documented exception to message-set ownership.
+18. **System.toml is the single source of truth for concrete action wiring** — Blox-crate-level codegen ALWAYS produces stub `spec_skeletons`. The system-level codegen (from `system.toml`) ALWAYS produces concrete action closures, for every actor including dynamically spawned ones. There is no `crate = "crate"` path at the blox-crate level. The action contract is uniform: a transition action function returns `ActionResult`, `Result<(), E>`, or `()` — the codegen wrapper normalizes via `ActionResult::from(...)`; declare `returns = "ActionResult"` on the `[[context.actions]]` entry to skip the wrapper when the function already returns `ActionResult` (any other `returns` value is a hard error). Entry/exit functions are infallible `fn(&mut Ctx)` (any return value is discarded). Dynamic actors are declared in `system.toml` with `kind = "dynamic"` — they get a concrete spec generated but no channels/tasks/bootstrap in main.rs. The impl crate's spawn function is generic over the spec type; the generated main.rs monomorphizes it with the system-level concrete spec. Supervision strategy vocabulary in `system.toml` is `when_any_done` / `when_all_done` (maps to `GroupShutdown` variants; unknown values are hard errors).
+19. **Platform features are consumed uniformly** (spec 18) — a platform feature crate owns its message set, context field declarations, and consumer-side action functions (concrete params or extracted payloads, never the consumer's event enum). Blox crates compose features via `[[context.uses]]` / `[[context.actions]]` and never own feature logic or feature message sets. The supervisor is the reference consumer: topology only, everything else from `bloxide-child-management` + `bloxide-spawn`. Factory/capability features (spawn) are the documented exception to message-set ownership.
 20. **The supervision control plane is confirm-before-record** — `ChildGroup` phase transitions happen only on confirmed delivery or observed lifecycle reports, never on attempted sends. `try_send` error kinds are load-bearing: `Closed` proves the child's task is gone (terminal `Gone` phase, shutdown evaluated); `Full` queues the command in the per-child `pending_cmd` slot, retried by `flush_pending` on every event pass. Registration is fallible (`try_add`/`try_add_dynamic` → `RegistrationError`, warn-and-drop) — never a panic on message data. `ShuttingDown` records every terminal signal (`Stopped`/`Done`/`Failed`/`Aborted`/`Killed`/`Gone`) and waits forever by design (no timeout — an unresponsive child cannot be killed on static runtimes anyway). Reporting-side semantics: `Ping` is answered with `Alive` only from operational, non-error states; redundant `Start` is acknowledged with `Started` (mirroring `Stop`-in-Init); `Started(error)` is normalized to `Failed` at the source; a run loop whose domain streams ALL close while operational (all-streams-close — the actor became unreachable while the supervisor lives) reports `Failed` before exiting, while lifecycle/abort stream closure and all-streams-close in Init are the expected supervisor-teardown cascade and stay silent. Health checks require `MAX_MISSES` (2) consecutive unanswered delivered Pings before declaring a child rogue; an undelivered Ping is never a miss.
 
 ## Development Workflow
@@ -273,7 +274,7 @@ See `skills/building-with-bloxide/SKILL.md` for the full step-by-step workflow.
 
 ## Clarification: Factory Injection and Supervision
 
-If you're confused about constructor fields or why supervised actors return `&[]` for `root_transitions()`, read `spec/architecture/13-factory-injection-and-supervision.md`. It contains:
+If you're confused about constructor fields or why supervised actors return `&[]` for `root_transitions()`, read `spec/architecture/12-factory-injection-and-supervision.md`. It contains:
 
 - **Layer-by-layer walkthrough** of factory injection for dynamic spawning
 - **How constructor fields work** and what code they generate

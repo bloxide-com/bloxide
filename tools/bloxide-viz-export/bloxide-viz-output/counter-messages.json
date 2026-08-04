@@ -1,6 +1,6 @@
 {
   "name": "Counter-messages",
-  "crate_path": "./crates/messages/counter-messages",
+  "crate_path": "/repos/internal/bloxide/crates/messages/counter-messages",
   "states": [],
   "events": [
     {

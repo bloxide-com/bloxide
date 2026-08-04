@@ -86,6 +86,7 @@ fields = ["self_id", "self_ref:ref", "spawn_fn:ref", "spawn_ref:ref", "notify_re
 event_payload = "spawn_worker"
 impl_required = true
 feature = "dynamic"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "handle_spawned_worker"
@@ -93,6 +94,7 @@ fields = ["self_id", "self_ref:ref", "spawn_fn:ref", "spawn_ref:ref", "notify_re
 event_payload = "spawned_worker"
 impl_required = true
 feature = "dynamic"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "handle_spawn_worker_queued"
@@ -100,12 +102,14 @@ fields = ["spawn_queue:mut", "pending:mut"]
 event_payload = "spawn_worker"
 impl_required = true
 feature = "dynamic"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "handle_work_done"
 fields = ["pending:mut"]
 event_payload = "work_done"
 impl_required = true
+returns = "ActionResult"
 
 [topology]
 

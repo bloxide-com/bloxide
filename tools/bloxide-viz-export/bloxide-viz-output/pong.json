@@ -1,13 +1,14 @@
 {
   "name": "Pong",
-  "crate_path": "./crates/bloxes/pong",
+  "crate_path": "/repos/internal/bloxide/crates/bloxes/pong",
   "states": [
     {
       "name": "Ready",
       "kind": "Leaf",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": true
     }
   ],
   "events": [

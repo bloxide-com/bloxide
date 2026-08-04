@@ -150,7 +150,7 @@ fn build_message_registry(configs: &[(PathBuf, BloxConfig)]) -> BTreeMap<String,
             }
         }
     }
-    // Framework enums (stable platform message sets — spec 20).
+    // Framework enums (stable platform message sets — spec 18).
     for (name, variants) in [
         ("LifecycleCommand", vec!["Start", "Reset", "Stop", "Ping"]),
         (

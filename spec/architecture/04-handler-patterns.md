@@ -2,13 +2,13 @@
 
 > **When would I use this?** Use this document when implementing event
 > handlers, transition rules, or state topologies for a blox. For the
-> dispatch algorithm and lifecycle handling, see `02-hsm-engine.md`.
+> dispatch algorithm and lifecycle handling, see `01-hsm-engine.md`.
 
 > Transition rules are declared declaratively in `blox.toml` via
 > `[[topology.transitions]]`, and `bloxide-codegen` emits raw
 > `StateRule { ... }` struct literals from those entries — no proc macro is
 > involved. The code blocks below show the TOML syntax for each pattern. See
-> `spec/architecture/17-blox-toml-source-of-truth.md` for the current
+> `spec/architecture/15-blox-toml-source-of-truth.md` for the current
 > TOML schema and `QUICK_REFERENCE.md` → "Declarative Transitions
 > (blox.toml)" for a worked example.
 
@@ -108,7 +108,7 @@ actions = ["forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "ctx.round >= MAX_ROUNDS as u32"
-  target = "stop"
+  target = "done"
 
   [[topology.transitions.guards]]
   condition = "ctx.round == PAUSE_AT_ROUND as u32"
@@ -159,7 +159,7 @@ Use when: a leaf state does not handle an event and wants its parent (or root) t
 
 Root rules use `StateRule<S>` with `Decision` — all six variants (`Transition`, `Stay`, `Reset`, `Stop`, `Done`, `Fail`). Root rules are the same type as state-level rules — `root_transitions()` returns `&'static [StateRule<Self>]`.
 
-> **Canonical source for lifecycle handling**: `spec/architecture/02-hsm-engine.md`
+> **Canonical source for lifecycle handling**: `spec/architecture/01-hsm-engine.md`
 > documents how lifecycle commands (Start, Reset, Stop, Ping) flow through
 > `dispatch()` at the VirtualRoot level. Supervised actors return `&[]` from
 > `root_transitions()` — lifecycle is handled by engine defaults.
@@ -272,18 +272,18 @@ An actor that has completed its work can self-suspend by returning `Decision::St
 ```toml
 [[topology.transitions]]
 state = "Active"
-event = "PingPongMsg::Pong(_)"
+event = "PoolMsg::WorkDone(_)"
 target = "stay"  # fallback
-actions = ["forward_ping"]
+actions = ["handle_work_done"]
 
   [[topology.transitions.guards]]
-  condition = "ctx.round >= MAX_ROUNDS"
+  condition = "ctx.pending == 0"
   target = "stop"
 ```
 
 The `stop` target in a `[[topology.transitions]]` entry produces `Decision::Stop`. The full exit chain is guaranteed, then `on_init_entry` fires for cleanup. The actor sits suspended in `Init`; for supervised actors the run loop stays alive (`exit_on_stop = false`) and the supervisor sees `Stopped` and can later send `Start` to resume — for root/unsupervised/bare actors (`exit_on_stop = true`) the run loop exits instead.
 
-**Example**: Ping's `Active` state returns `Decision::Stop` when `round >= MAX_ROUNDS`.
+**Example**: Pool's `Active` state returns `Decision::Stop` when `pending == 0`.
 
 ---
 
@@ -379,7 +379,7 @@ The `reset` target performs an LCA-based `change_state` to `initial_state()`: `o
 
 ## Related Docs
 
-- **Action functions** → `spec/architecture/06-actions.md`
-- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/17-blox-toml-source-of-truth.md`
-- **Dispatch algorithm and lifecycle** → `spec/architecture/02-hsm-engine.md`
+- **Action functions** → `spec/architecture/05-actions.md`
+- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/15-blox-toml-source-of-truth.md`
+- **Dispatch algorithm and lifecycle** → `spec/architecture/01-hsm-engine.md`
 - **Examples in practice** → `spec/bloxes/ping.md`, `spec/bloxes/pong.md`

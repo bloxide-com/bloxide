@@ -1,55 +1,62 @@
 {
   "name": "BhsmTst",
-  "crate_path": "./crates/bloxes/bhsm-tst",
+  "crate_path": "/repos/internal/bloxide/crates/bloxes/bhsm-tst",
   "states": [
     {
       "name": "S",
       "kind": "Composite",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": false
     },
     {
       "name": "S1",
       "kind": "Composite",
       "parent": "S",
       "description": "",
-      "depth": 1
+      "depth": 1,
+      "initial": false
     },
     {
       "name": "S11",
       "kind": "Leaf",
       "parent": "S1",
       "description": "",
-      "depth": 1
+      "depth": 2,
+      "initial": false
     },
     {
       "name": "S2",
       "kind": "Composite",
       "parent": "S",
       "description": "",
-      "depth": 1
+      "depth": 1,
+      "initial": false
     },
     {
       "name": "S21",
       "kind": "Composite",
       "parent": "S2",
       "description": "",
-      "depth": 1
+      "depth": 2,
+      "initial": false
     },
     {
       "name": "S211",
       "kind": "Leaf",
       "parent": "S21",
       "description": "",
-      "depth": 1
+      "depth": 3,
+      "initial": false
     },
     {
       "name": "Error",
       "kind": "Error",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": false
     }
   ],
   "events": [
@@ -1110,14 +1117,6 @@
         "Self::s_exit"
       ]
     },
-    "S11": {
-      "on_entry": [
-        "Self::s11_entry"
-      ],
-      "on_exit": [
-        "Self::s11_exit"
-      ]
-    },
     "S1": {
       "on_entry": [
         "Self::s1_entry"
@@ -1126,12 +1125,12 @@
         "Self::s1_exit"
       ]
     },
-    "S2": {
+    "S11": {
       "on_entry": [
-        "Self::s2_entry"
+        "Self::s11_entry"
       ],
       "on_exit": [
-        "Self::s2_exit"
+        "Self::s11_exit"
       ]
     },
     "S211": {
@@ -1142,12 +1141,12 @@
         "Self::s211_exit"
       ]
     },
-    "S21": {
+    "S2": {
       "on_entry": [
-        "Self::s21_entry"
+        "Self::s2_entry"
       ],
       "on_exit": [
-        "Self::s21_exit"
+        "Self::s2_exit"
       ]
     },
     "Error": {
@@ -1156,6 +1155,14 @@
       ],
       "on_exit": [
         "Self::error_exit"
+      ]
+    },
+    "S21": {
+      "on_entry": [
+        "Self::s21_entry"
+      ],
+      "on_exit": [
+        "Self::s21_exit"
       ]
     }
   },

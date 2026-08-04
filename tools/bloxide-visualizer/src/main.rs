@@ -314,19 +314,9 @@ enum DiagramSelection {
 
 #[component]
 fn App() -> Element {
-    // Specs load asynchronously from the server (blox.toml is the sole data
-    // source — exported via bloxide-viz-export, issue #119).
+    // Specs start empty; the user must explicitly load a workspace or import
+    // a JSON file. No auto-scan of CARGO_MANIFEST_DIR or current directory.
     let mut specs = use_signal(Vec::<BloxSpec>::new);
-    let default_load =
-        use_resource(move || async move { default_specs().await.ok().unwrap_or_default() });
-    use_effect(move || {
-        let loaded = default_load.read().clone();
-        if let Some(loaded) = loaded {
-            if !loaded.is_empty() && specs.read().is_empty() {
-                specs.set(loaded);
-            }
-        }
-    });
     let mut selected_spec = use_signal(|| 0usize);
     let mut selected_cell = use_signal(|| None::<(String, String)>);
     let mut view_mode = use_signal(|| ViewMode::Heatmap);
@@ -336,9 +326,53 @@ fn App() -> Element {
     if specs.read().is_empty() {
         return rsx! {
             div {
-                style: "font-family: system-ui, -apple-system, sans-serif; padding: 20px; background: #f5f5f5; min-height: 100vh;",
-                h1 { style: "margin: 0 0 20px 0; color: #333;", "Bloxide Visualizer" }
-                p { style: "color: #666;", "Loading workspace specs from blox.toml…" }
+                style: "font-family: system-ui, -apple-system, sans-serif; padding: 40px; background: #f5f5f5; min-height: 100vh;",
+                h1 { style: "margin: 0 0 24px 0; color: #333;", "Bloxide Visualizer" }
+                div {
+                    style: "display: flex; flex-direction: column; gap: 16px; max-width: 600px;",
+                    WorkspaceScanner {
+                        specs: specs,
+                        selected_spec: selected_spec,
+                        selected_cell: selected_cell,
+                        selected_diagram: selected_diagram,
+                    }
+                    label {
+                        style: "padding: 8px 16px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; display: inline-block; font-size: 14px; font-family: system-ui, sans-serif; width: fit-content;",
+                        "Import .json"
+                        input {
+                            r#type: "file",
+                            accept: ".json",
+                            style: "display: none;",
+                            onchange: move |evt| {
+                                async move {
+                                    for file in evt.files() {
+                                        if let Ok(content) = file.read_string().await {
+                                            let name = {
+                                                let n = file.name()
+                                                    .trim_end_matches(".json")
+                                                    .trim_end_matches(".JSON")
+                                                    .to_string();
+                                                if n.is_empty() { "Imported".to_string() } else { n }
+                                            };
+                                            let imported = match crate::data::parse_json_spec(&name, &content) {
+                                                Ok(spec) => spec,
+                                                Err(_e) => continue,
+                                            };
+                                            let new_idx = {
+                                                let mut specs_guard = specs.write();
+                                                specs_guard.push(imported);
+                                                specs_guard.len() - 1
+                                            };
+                                            selected_cell.set(None);
+                                            selected_diagram.set(None);
+                                            selected_spec.set(new_idx);
+                                        }
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
             }
         };
     }
@@ -1099,7 +1133,6 @@ fn state_color(kind: &StateKind) -> &'static str {
     match kind {
         StateKind::Leaf => "#3b82f6",
         StateKind::Composite => "#8b5cf6",
-        StateKind::Terminal => "#10b981",
         StateKind::Error => "#ef4444",
     }
 }
@@ -1108,7 +1141,6 @@ fn state_fill(kind: &StateKind) -> &'static str {
     match kind {
         StateKind::Leaf => "#eff6ff",
         StateKind::Composite => "#faf5ff",
-        StateKind::Terminal => "#ecfdf5",
         StateKind::Error => "#fef2f2",
     }
 }
@@ -1124,7 +1156,6 @@ fn shape_radius(kind: &StateKind) -> f64 {
     match kind {
         StateKind::Leaf => 8.0,
         StateKind::Composite => 10.0,
-        StateKind::Terminal => 2.0,
         StateKind::Error => 2.0,
     }
 }
@@ -1467,7 +1498,7 @@ fn RawTomlView(spec: BloxSpec) -> Element {
         div {
             style: "width: 800px; min-height: 400px; padding: 20px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; font-family: monospace; font-size: 13px; color: #374151; white-space: pre-wrap;",
             "// Raw TOML source is not currently stored in the BloxSpec model.\n"
-            "// The visualizer loads parsed specs from markdown files and JSON exports.\n"
+            "// The visualizer loads parsed specs from JSON exports.\n"
             "// To add raw source viewing, extend the data model to carry the original blox.toml contents.\n\n"
             "Spec: {spec.name}\n"
             "States: {spec.states.len()}\n"

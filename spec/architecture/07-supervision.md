@@ -1,10 +1,10 @@
 # Supervision
 
 > **When would I use this?** Use this document when setting up supervision,
-> understanding the four-level lifecycle model (`reset → stop → abort → kill`),
+> understanding the five-level lifecycle model (`reset → stop → done → abort → kill`),
 > KillCapability (the kill ripcord for unresponsive actors), or learning how child lifecycle
-> events flow to supervisors. For lifecycle command handling details, see `02-hsm-engine.md`
-> → "Four-Level Lifecycle" and "Lifecycle Command Handling at VirtualRoot".
+> events flow to supervisors. For lifecycle command handling details, see `01-hsm-engine.md`
+> → "Five-Level Lifecycle" and "Lifecycle Command Handling at VirtualRoot".
 
 The supervision model is inspired by Elixir/OTP. A **supervisor** is itself a state machine actor that monitors child actors and either restarts or permanently stops them in response to lifecycle triggers. Unlike OTP, the supervisor is a **generic library component** — users configure children and policies in the wiring layer without writing a custom blox.
 
@@ -31,16 +31,17 @@ Supervision is split across a core engine layer, a platform child-management lay
 
 ## Core Principle: Actor Lifecycle Commands
 
-Bloxide has a **four-level lifecycle model** (`reset → stop → abort → kill`), ordered from gentlest to most forceful. Two of the four levels are `LifecycleCommand` variants handled through the normal dispatch pipeline (`Reset`, `Stop`); the cooperative level (`Abort`) is delivered on a dedicated abort mailbox, and the final forceful level (`Kill`) is a runtime capability that bypasses dispatch entirely.
+Bloxide has a **five-level lifecycle model** (`reset → stop → done → abort → kill`), ordered from gentlest to most forceful. Three of the five levels pass through the normal dispatch pipeline (`Reset` and `Stop` are `LifecycleCommand` variants; `Done` is a guard-driven `Decision`); the cooperative level (`Abort`) is delivered on a dedicated abort mailbox, and the final forceful level (`Kill`) is a runtime capability that bypasses dispatch entirely.
 
 | Command / Capability | Target State | Through dispatch? | Callbacks | Can Restart? |
 |---------|--------------|-------------------|-----------|--------------|
 | `Reset` | User-defined initial operational state (`initial_state()`) | Yes | Full exit chain + entry chain for `initial_state()` (no `on_init_entry`) | Yes (already running) |
 | `Stop` | Init | Yes | Full exit chain + `on_init_entry` | Yes (send `Start` to resume) |
+| `Done` (`Decision::Done`) | Init (cleanup), then the task ends | Yes | Full exit chain + `on_init_entry` | No (task ends; supervisor deregisters) |
 | `Abort` (`AbortCommand`) | Task ends cooperatively | No (run loop breaks) | None | Yes (respawn the task) |
 | `Kill` (`KillCapability::kill`) | Destroyed (task aborted in place) | No (runtime ripcord) | None | No (permanently dead) |
 
-> For the full engine-level treatment of the four-level model (including how `Decision::Reset`/`Decision::Stop`/`Decision::Done` and the `DispatchOutcome` variants map to these levels), see `02-hsm-engine.md` → "Four-Level Lifecycle".
+> For the full engine-level treatment of the five-level model (including how `Decision::Reset`/`Decision::Stop`/`Decision::Done` and the `DispatchOutcome` variants map to these levels), see `01-hsm-engine.md` → "Five-Level Lifecycle".
 
 ### Reset — Immediate Restart
 
@@ -56,6 +57,10 @@ Use for:
 - Graceful shutdown (callbacks run, clean exit)
 - Pausing an actor with intent to resume later
 - Dynamic actors you may want to restart
+
+### Done — Normal Completion
+
+`Done` is not a command — it is a guard-driven `Decision::Done` returned from a transition rule when the actor has finished its work. The engine runs the same cleanup ritual as `Stop` (full exit chain + `on_init_entry`), then the run loop ends the task and reports `ChildLifecycleEvent::Done`. The supervisor **deregisters** the child — no `ChildPolicy` restart applies, because Done is success, not a fault. Use `Decision::Stop` for suspend/resume, `Decision::Done` for normal completion.
 
 ### Abort — Cooperative Self-Termination
 
@@ -93,9 +98,9 @@ Stop → actor goes to Init (suspended, callbacks ran)
 
 ## KillCapability: The Kill Ripcord
 
-`KillCapability` is the **runtime capability** behind the `Kill` level of the four-level lifecycle model. It terminates an actor's task immediately, bypassing the normal dispatch lifecycle. It is used for unresponsive actors that cannot service `Stop`/`Reset`/`Abort`, or for cleanup when the task handle must be freed immediately.
+`KillCapability` is the **runtime capability** behind the `Kill` level of the five-level lifecycle model. It terminates an actor's task immediately, bypassing the normal dispatch lifecycle. It is used for unresponsive actors that cannot service `Stop`/`Reset`/`Abort`, or for cleanup when the task handle must be freed immediately.
 
-In the four-level model, `KillCapability` is **only** invoked by `ChildPolicy::Kill`. The cooperative `Abort` path uses `AbortCommand` on the abort mailbox instead (see [Abort — Cooperative Self-Termination](#abort--cooperative-self-termination) above).
+In the five-level model, `KillCapability` is **only** invoked by `ChildPolicy::Kill`. The cooperative `Abort` path uses `AbortCommand` on the abort mailbox instead (see [Abort — Cooperative Self-Termination](#abort--cooperative-self-termination) above).
 
 ### KillCapability vs. Lifecycle Commands and Abort
 
@@ -254,7 +259,9 @@ Runtime note: Embassy's static channels never close, so `Gone` is a Tokio/TestRu
 pub struct ChildGroup<R: BloxRuntime> { /* opaque */ }
 
 impl<R: BloxRuntime> ChildGroup<R> {
-    pub fn new(shutdown: GroupShutdown) -> Self;
+    /// `max_misses` — consecutive unanswered delivered watchdog Pings
+    /// before a child is declared rogue and its policy is applied.
+    pub fn new(shutdown: GroupShutdown, max_misses: u8) -> Self;
     /// Static child. Rejects Abort/Kill policies (no handles) and duplicates.
     pub fn try_add(
         &mut self,
@@ -538,7 +545,7 @@ A transition guard with `target = "stop"` is the declarative form of `Decision::
 
 ### Action Functions
 
-All supervisor actions are free functions in `bloxide-child-management::actions`, returning `ActionResult` and taking concrete params (extracted context fields) plus an extracted event payload — never the consumer's event enum (spec 20: Platform Feature Pattern). The generated wrapper closures extract the fields from `SupervisorCtx` and call them:
+All supervisor actions are free functions in `bloxide-child-management::actions`, returning `ActionResult` and taking concrete params (extracted context fields) plus an extracted event payload — never the consumer's event enum (spec 18: Platform Feature Pattern). The generated wrapper closures extract the fields from `SupervisorCtx` and call them:
 
 | Function | Signature (params in order) | Purpose |
 |---|---|---|
@@ -572,7 +579,7 @@ impl<R: BloxRuntime> MachineSpec for SupervisorSpec<R> {
     fn initial_state() -> SupervisorState { SupervisorState::Running }
 
     // on_init_entry fires only when the supervisor itself is Stopped (enters
-    // Init). In the four-level model, Decision::Reset goes directly to
+    // Init). In the five-level model, Decision::Reset goes directly to
     // initial_state() (Running) — it does NOT fire on_init_entry. Counter
     // clearing for a normal restart cycle is therefore done by the Running
     // on_entry action `start_children`, not here.
@@ -806,7 +813,7 @@ pub fn spawn_child<R, Req, C>(
 
 `spawn_child` calls the application-provided spawn function (which allocates channels, builds the child, spawns the task with `RunConfig::supervised_with_abort`, and converts the `TaskHandle` into a cloneable `KillHandle` via `SpawnCap::kill_handle`), then wraps the returned `SpawnOutput` into the managing blox's registration message via a `ChildRegistrar` and sends it on the control mailbox. `ChildCtrlRegistrar` is the registrar for the standard control plane — it wraps `SpawnOutput` into `ChildCtrl::RegisterDynamicChild`. **If the registration send fails, `spawn_child` kills the freshly spawned task via its kill handle before returning the error** — a live task no supervisor knows about would be an unmanaged orphan. The supervisor's `handle_register_dynamic_child` action then calls `ChildGroup::try_add_dynamic` (warn-and-drop on `RegistrationError`) and starts the child.
 
-See `13-factory-injection-and-supervision.md` for the full factory-injection walkthrough.
+See `12-factory-injection-and-supervision.md` for the full factory-injection walkthrough.
 
 ## Wiring a Supervised Group
 
@@ -824,8 +831,10 @@ let pong_id = pong_ref.id();
 // ChildGroupBuilder allocates the notify + control channels.
 // Const-generic capacities are emitted by the codegen from
 // [supervision.capacities] (defaults shown: notify 32, control 16, lifecycle 4).
+// The second argument is max_misses — consecutive unanswered delivered
+// watchdog Pings before a child is declared rogue (default: 2).
 // Grab the control/notify refs before finish() consumes the builder.
-let mut group = ChildGroupBuilder::<_, _, 32, 16, 4>::new(GroupShutdown::WhenAnyDone);
+let mut group = ChildGroupBuilder::<_, _, 32, 16, 4>::new(GroupShutdown::WhenAnyDone, 2);
 let sup_control_ref = group.control_ref();
 let sup_notify_ref = group.notify_ref();
 
@@ -941,13 +950,13 @@ Supervision-specific invariants:
 - `GroupShutdown` controls when the supervisor enters shutdown, not which children are affected. Every terminal signal counts toward it — including externally-originated `Aborted`/`Killed` — and it is only evaluated on real state changes (unknown-child events never trigger it).
 - `ChildPhase` tracks each child's state: `Init`, `Running`, `ResetPending` (Reset delivered, awaiting `Started`), `Aborting` (AbortCommand delivered, awaiting `Aborted`), `Stopped` (task alive — self-stopped, failed-parked, restart-capped, or Stop-policy; terminal for the epoch), `Aborted`/`Killed`/`Gone` (task gone — mailboxes are dead, so lifecycle commands must not be sent). `is_terminal()` (`Stopped`/`Aborted`/`Killed`/`Gone`) drives group-shutdown evaluation; `is_task_gone()` (`Aborted`/`Killed`/`Gone`) excludes children from `stop_all`. Health checks monitor `Init`/`Running`/`ResetPending` children.
 - `Ping` is answered with `Alive` only from an operational, non-error state (silent in Init and parked error states) — a lost `Start` or lost `Failed` report goes rogue and is healed by the child policy. Redundant `Start` is acknowledged with `Started` (mirroring `Stop`-in-Init). `Started(error)` is normalized to `Failed` at the source. A run loop that exits without a lifecycle decision reports `Failed` (never exits silently).
-- `LifecycleCommand`, `ChildLifecycleEvent`, and `AbortCommand` are defined in `bloxide-core::lifecycle`. `ChildPolicy`, `ChildAction`, `GroupShutdown`, `ChildGroup`, and the supervision action functions are defined in `bloxide-child-management`. `ChildCtrl`, `RegisterChild`, and `RegisterDynamicChild` are defined in `bloxide-child-management::control`; `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildCtrlRegistrar`, and `spawn_child` are defined in `bloxide-spawn` (spec 20: Platform Feature Pattern). `spawn_child` kills the orphaned task when the registration send fails.
+- `LifecycleCommand`, `ChildLifecycleEvent`, and `AbortCommand` are defined in `bloxide-core::lifecycle`. `ChildPolicy`, `ChildAction`, `GroupShutdown`, `ChildGroup`, and the supervision action functions are defined in `bloxide-child-management`. `ChildCtrl`, `RegisterChild`, and `RegisterDynamicChild` are defined in `bloxide-child-management::control`; `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildCtrlRegistrar`, and `spawn_child` are defined in `bloxide-spawn` (spec 18: Platform Feature Pattern). `spawn_child` kills the orphaned task when the registration send fails.
 - No custom supervisor implementation is needed — `SupervisorSpec<R>` is a generic, reusable `MachineSpec`.
 
 ## Related Docs
 
-- **Lifecycle engine details** → `spec/architecture/02-hsm-engine.md`
-- **Wiring supervised actors** → `spec/architecture/04-static-wiring.md`
-- **Supervisor as reusable blox** → `spec/architecture/12-action-crate-pattern.md` → "Supervisor As The Same Pattern"
-- **Factory injection + dynamic spawning** → `spec/architecture/13-factory-injection-and-supervision.md`
+- **Lifecycle engine details** → `spec/architecture/01-hsm-engine.md`
+- **Wiring supervised actors** → `spec/architecture/03-static-wiring.md`
+- **Supervisor as reusable blox** → `spec/architecture/11-action-crate-pattern.md` → "Supervisor As The Same Pattern"
+- **Factory injection + dynamic spawning** → `spec/architecture/12-factory-injection-and-supervision.md`
 - **Runtime supervision impl** → `runtimes/*/src/supervision.rs`

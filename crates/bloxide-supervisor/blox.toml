@@ -38,18 +38,21 @@ name = "start_children"
 crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut", "pending:mut"]
+returns = "ActionResult"
 
 [[context.actions]]
 name = "stop_all_children"
 crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut"]
+returns = "ActionResult"
 
 [[context.actions]]
 name = "flush_pending"
 crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut", "pending:mut"]
+returns = "ActionResult"
 
 [[context.actions]]
 name = "handle_done_or_failed"
@@ -57,6 +60,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut", "child_notify:ref", "pending:mut"]
 event_payload = "ev"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "record_started"
@@ -64,6 +68,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut"]
 event_payload = "ev"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "record_stopped"
@@ -71,6 +76,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut"]
 event_payload = "ev"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "record_failed"
@@ -78,6 +84,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut"]
 event_payload = "ev"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "record_aborted"
@@ -85,6 +92,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut", "pending:mut"]
 event_payload = "ev"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "record_killed"
@@ -92,6 +100,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut", "pending:mut"]
 event_payload = "ev"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "record_alive"
@@ -99,6 +108,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["children:mut"]
 event_payload = "ev"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "deregister_done"
@@ -106,6 +116,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut", "pending:mut"]
 event_payload = "ev"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "register_child"
@@ -113,6 +124,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut"]
 event_payload = "ctrl"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "handle_register_dynamic_child"
@@ -120,6 +132,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut"]
 event_payload = "ctrl"
+returns = "ActionResult"
 
 [[context.actions]]
 name = "handle_watchdog_tick"
@@ -127,6 +140,7 @@ crate = "bloxide_child_management"
 module = "actions"
 fields = ["self_id", "children:mut", "child_notify:ref", "pending:mut"]
 event_payload = "ctrl"
+returns = "ActionResult"
 
 # ── Event type (standard codegen-generated event enum) ──────────────────────
 

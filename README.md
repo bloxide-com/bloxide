@@ -81,7 +81,7 @@ bloxide/
 ├── crates/            # framework + layered application crates
 │   ├── bloxide-core/      # HSM engine, MachineSpec, BloxRuntime, KillCapability, run/RunConfig
 │   ├── bloxide-log/       # feature-gated logging macros (log / defmt / no-op)
-│   ├── bloxide-macros/    # proc macros: #[blox_event], event!, blox_messages!, EventTag, channels!
+│   ├── bloxide-macros/    # proc macros: channels!, dyn_channels!, next_actor_id!
 │   ├── bloxide-peers/     # peer introduction: PeerCtrl, introduce_peers, broadcast_to_peers, apply_peer_control
 │   ├── bloxide-child-management/ # reusable child tracking: ChildGroup, ChildEntry, ChildPhase,
 │   │                         #   ChildCtrl/RegisterChild/RegisterDynamicChild, ChildPolicy, GroupShutdown, action functions
@@ -169,7 +169,7 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 | Crate | Path | `no_std` | Purpose |
 |---|---|:---:|---|
 | `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, `KillCapability`, `run`/`RunConfig` |
-| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `#[blox_event]` |
+| `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `channels!`, `dyn_channels!`, `next_actor_id!` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
 | `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `cancel_timer_by_id`, `VirtualClock` |
 | `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase`, `ChildGroupBuilder`, `ChildPolicy`, `GroupShutdown`, `ChildCtrl`/`RegisterChild`/`RegisterDynamicChild`, action functions |

@@ -511,7 +511,7 @@ to `run` with `RunConfig::supervised_with_abort` which listens on it in the chil
 ### 3.7 ChildCtrl Enum
 
 The supervisor's control-plane enum, owned by the platform
-(`bloxide-child-management::control`, spec 20: Platform Feature Pattern) — the standard
+(`bloxide-child-management::control`, spec 18: Platform Feature Pattern) — the standard
 supervisor is just the reference consumer. No `Spawn` variant — spawning is decoupled
 from the supervisor. A user's custom child-managing blox can define its own control enum
 (see §3.5 `ChildRegistrar`).
@@ -624,7 +624,7 @@ event enum — the supervisor gets it for free, same as every other blox.
 
 The generated wrapper closures match on `&SupervisorEvent<R>` and extract the payload;
 the action functions themselves take `&ChildLifecycleEvent` or `&ChildCtrl<R>` directly
-(never the consumer's event enum — spec 20: Platform Feature Pattern).
+(never the consumer's event enum — spec 18: Platform Feature Pattern).
 
 ### 3.10 The Supervisor Context
 
@@ -1090,7 +1090,7 @@ The parent stores both in its context and uses them for different purposes:
 The child actor's `Mailboxes` tuple places ctrl at index 0 (highest priority) and the
 domain channel at index 1. This guarantees that `AddPeer` commands sent by the parent are
 processed before any `DoWork` message — even if both are enqueued before the child has
-processed anything. See [07-typed-mailboxes.md](07-typed-mailboxes.md) for the polling
+processed anything. See [06-typed-mailboxes.md](06-typed-mailboxes.md) for the polling
 priority semantics.
 
 ### Peer Introduction Sequence
@@ -1558,7 +1558,7 @@ stateDiagram-v2
 ```
 
 > **Note**: The lifecycle model has **five levels**: `reset → stop → done → abort → kill`
-> (see [02-hsm-engine.md](02-hsm-engine.md) for the full model). `Decision::Stop` suspends
+> (see [01-hsm-engine.md](01-hsm-engine.md) for the full model). `Decision::Stop` suspends
 > the machine in `Init` (producing `DispatchOutcome::Stopped`); `Decision::Done` is the
 > clean self-termination — the same exit-chain + `on_init_entry` ritual as `Stop`, then
 > the task **ends** and the supervisor deregisters the child. The transition's actions
@@ -1642,11 +1642,11 @@ features determine which parts are active). The feature knowledge lives in `blox
 
 ## 10. The Wiring
 
-Wiring is fully specified elsewhere: [16-declarative-wiring.md](16-declarative-wiring.md)
+Wiring is fully specified elsewhere: [14-declarative-wiring.md](14-declarative-wiring.md)
 describes the `system.toml` manifest (inject sources — including `source = "factory"`
 for the spawn `fn` pointer — supervision strategies, bootstrap messages) and the codegen
 behind it (the ref symbol table and the supervisor two-phase wiring split, moved there
-from this document). [17-blox-toml-source-of-truth.md](17-blox-toml-source-of-truth.md)
+from this document). [15-blox-toml-source-of-truth.md](15-blox-toml-source-of-truth.md)
 defines the schema and the round-trip contract (`cargo blox generate` is the mandatory
 first step after checkout — generated files are not committed). The running example in
 both is the real `apps/tokio-pool-demo/system.toml`.

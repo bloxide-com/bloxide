@@ -9,7 +9,7 @@ license.workspace = true
 
 [features]
 default = ["alloc"]
-alloc = ["bloxide-core/alloc", "bloxide-timer/alloc"]
+alloc = ["bloxide-core/alloc"]
 
 [dependencies]
 bloxide-core = { workspace = true }

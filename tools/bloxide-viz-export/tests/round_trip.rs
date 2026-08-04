@@ -111,10 +111,7 @@ fn test_all_blox_tomls_parse() {
 // Step 2: Codegen produces output for every blox.toml
 // ---------------------------------------------------------------------------
 
-// NOTE: Ignored until Phase 3 codegen update — blox action functions have been
-// replaced with inline closures and no-ops that the codegen doesn't emit yet.
 #[test]
-#[ignore = "Phase 1 manual edits to generated files; codegen update pending Phase 3"]
 fn test_all_blox_tomls_codegen() {
     let ws = workspace_root();
     let tomls = find_blox_tomls(&ws);
@@ -541,9 +538,7 @@ fn test_full_round_trip_no_data_loss() {
 // Step 7: Verify codegen output is deterministic (same TOML → same output)
 // ---------------------------------------------------------------------------
 
-// NOTE: Ignored until Phase 3 codegen update — same reason as test_all_blox_tomls_codegen.
 #[test]
-#[ignore = "Phase 1 manual edits to generated files; codegen update pending Phase 3"]
 fn test_codegen_deterministic() {
     let ws = workspace_root();
     let tomls = find_blox_tomls(&ws);

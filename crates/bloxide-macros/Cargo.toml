@@ -3,7 +3,7 @@
 name = "bloxide-macros"
 version.workspace = true
 edition.workspace = true
-description = "Procedural macros for bloxide — channels!, dyn_channels!, EventTag, ..."
+description = "Procedural macros for bloxide — channels!, dyn_channels!, next_actor_id!"
 repository.workspace = true
 license.workspace = true
 

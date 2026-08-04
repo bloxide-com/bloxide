@@ -285,6 +285,7 @@ fn extract_states(spec: &mut BloxSpec, topology: &TopologyConfig) {
                 parent,
                 description: String::new(),
                 depth: 0,
+                initial: state_cfg.initial.unwrap_or(false),
             });
         }
     }
@@ -610,10 +611,33 @@ fn parse_event_pattern(pattern: &str) -> (String, String) {
 // ---------------------------------------------------------------------------
 
 fn compute_hierarchy(states: &mut [model::State]) {
-    for state in states.iter_mut() {
-        if state.parent.is_some() {
-            state.depth = 1;
-        }
+    // Two-pass: build a parent lookup, then walk each state's ancestor
+    // chain so that depth reflects true nesting (S211 → S21 → S2 → S is
+    // depth 3, not 1). The walk is bounded by the state count so a
+    // malformed parent cycle cannot loop forever.
+    let parent_of: HashMap<&str, Option<&str>> = states
+        .iter()
+        .map(|s| (s.name.as_str(), s.parent.as_deref()))
+        .collect();
+
+    let depths: Vec<usize> = states
+        .iter()
+        .map(|s| {
+            let mut depth = 0;
+            let mut ancestor = s.parent.as_deref();
+            while let Some(name) = ancestor {
+                depth += 1;
+                if depth > parent_of.len() {
+                    break;
+                }
+                ancestor = parent_of.get(name).copied().flatten();
+            }
+            depth
+        })
+        .collect();
+
+    for (state, depth) in states.iter_mut().zip(depths) {
+        state.depth = depth;
     }
 }
 
@@ -907,9 +931,11 @@ mod tests {
         let ctx = ping.context.as_ref().expect("Ping has context");
         assert_eq!(ctx.struct_name, "PingCtx");
         assert!(ctx.uses.iter().any(|f| f.name == "peer_ref"));
-        // current_timer and round are now in [[context.fields]], not [[context.uses]]
-        // The viz-export parser will be updated in Phase 3 to parse context.fields
-        // For now, just verify the struct name and accessor fields are correct
+        // State fields from [[context.fields]] (round, current_timer) are
+        // exported alongside the auto-emitted self_id and uses fields.
+        assert!(ctx.fields.iter().any(|f| f.name == "self_id"));
+        assert!(ctx.fields.iter().any(|f| f.name == "round"));
+        assert!(ctx.fields.iter().any(|f| f.name == "current_timer"));
     }
 
     #[test]

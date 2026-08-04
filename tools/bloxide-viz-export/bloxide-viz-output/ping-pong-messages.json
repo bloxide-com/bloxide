@@ -1,6 +1,6 @@
 {
   "name": "Ping-pong-messages",
-  "crate_path": "./crates/messages/ping-pong-messages",
+  "crate_path": "/repos/internal/bloxide/crates/messages/ping-pong-messages",
   "states": [],
   "events": [
     {

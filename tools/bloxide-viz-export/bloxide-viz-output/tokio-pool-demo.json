@@ -1,6 +1,6 @@
 {
   "name": "tokio-pool-demo",
-  "crate_path": "./apps/tokio-pool-demo",
+  "crate_path": "/repos/internal/bloxide/apps/tokio-pool-demo",
   "states": [],
   "events": [],
   "handlers": [],

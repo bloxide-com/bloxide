@@ -130,7 +130,7 @@ target = "stay"
 
 ## Related Docs
 
-- See `spec/architecture/12-action-crate-pattern.md` for the four-layer model
+- See `spec/architecture/11-action-crate-pattern.md` for the four-layer model
 - See `tokio-minimal-demo.rs` for wiring example
 
 ## Open Questions

@@ -5,7 +5,7 @@
 > (`reset → stop → done → abort → kill`), Init/start/reset behavior, LCA
 > transitions, or how supervisors observe `DispatchOutcome`. This is the
 > canonical reference for the HSM engine and the unified lifecycle model. For
-> the supervision policy layer, see `08-supervision.md`.
+> the supervision policy layer, see `07-supervision.md`.
 
 The engine lives in `bloxide-core`. It implements hierarchical state machine (HSM) semantics: parent fallback, LCA-based transitions, and run-to-completion dispatch.
 
@@ -803,12 +803,12 @@ builds.
 
 ### Full bloxide-macros surface
 
+`bloxide-codegen` generates all blox boilerplate (event enums, message types,
+handler tables) from `blox.toml`, so the macro crate only carries the
+channel/ID helpers used by runtime wiring code:
+
 | Macro | Kind | Purpose |
 |---|---|---|
-| `#[derive(EventTag)]` | derive | Sequential `u8` variant tags + `*_TAG` constants (rejects >254 variants) |
-| `#[blox_event]` | attribute | `From<Envelope<M>>` impls, `EventTag`, `*_TAG` constants, payload accessors for an existing enum |
-| `event!(Name { Variant: Msg })` | fn-like | Generate a complete event enum from a mailbox spec |
-| `blox_messages!(pub enum M { ... })` | fn-like | Generate message structs/enum (`copy,` prefix adds `Copy`) |
 | `channels!(Runtime; Msg(CAP), ...)` | fn-like | Static-capacity channel creation via `StaticChannelCap` |
 | `dyn_channels!(Runtime; Msg(CAP), ...)` | fn-like | Runtime-capacity channel creation via `DynamicChannelCap` |
 | `next_actor_id!()` | fn-like | Compile-time actor ID allocation |
@@ -828,7 +828,7 @@ hard-code the runtime type.
 - **Mailbox polling semantics** → `crates/bloxide-core/src/mailboxes.rs`
 - **KillCapability** → `crates/bloxide-core/src/capability.rs`
 - **State topology definition** → `crates/bloxide-core/src/topology.rs`
-- **Handler patterns** → `spec/architecture/05-handler-patterns.md`
+- **Handler patterns** → `spec/architecture/04-handler-patterns.md`
 - **Declarative transitions (blox.toml)** → `skills/building-with-bloxide/reference.md` → `[[topology.transitions]]`
 - **Five-level lifecycle** → This file → [Five-Level Lifecycle](#five-level-lifecycle-reset--stop--done--abort--kill)
-- **Supervision policies** → `spec/architecture/08-supervision.md`
+- **Supervision policies** → `spec/architecture/07-supervision.md`

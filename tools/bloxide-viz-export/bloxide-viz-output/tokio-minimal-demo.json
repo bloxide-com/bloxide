@@ -1,6 +1,6 @@
 {
   "name": "tokio-minimal-demo",
-  "crate_path": "./apps/tokio-minimal-demo",
+  "crate_path": "/repos/internal/bloxide/apps/tokio-minimal-demo",
   "states": [],
   "events": [],
   "handlers": [],

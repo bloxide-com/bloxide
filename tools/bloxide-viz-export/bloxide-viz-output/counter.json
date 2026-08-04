@@ -1,13 +1,14 @@
 {
   "name": "Counter",
-  "crate_path": "./crates/bloxes/counter",
+  "crate_path": "/repos/internal/bloxide/crates/bloxes/counter",
   "states": [
     {
       "name": "Ready",
       "kind": "Leaf",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": true
     }
   ],
   "events": [

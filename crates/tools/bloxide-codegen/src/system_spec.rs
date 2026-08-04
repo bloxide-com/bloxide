@@ -117,6 +117,18 @@ pub fn resolve_concrete_action(
     // Find the action declaration by name.
     let config = actions.iter().find(|a| a.name == name)?;
 
+    // Validate the declared return type first (before the no-op shortcut).
+    // Only "ActionResult" is recognized; anything else is a hard error
+    // (stale or misspelled value).
+    let skip_wrap = match config.returns.as_deref() {
+        None => false,
+        Some("ActionResult") => true,
+        Some(other) => panic!(
+            "action '{}' has returns = \"{}\" — the only recognized value is \"ActionResult\"",
+            config.name, other
+        ),
+    };
+
     // No-op actions: empty fields and no event_payload.
     // Generate minimal no-op closures.
     if is_noop_action(config) {
@@ -207,10 +219,17 @@ pub fn resolve_concrete_action(
         let ev_param = if config.event_arg { "ev" } else { "_ev" };
         // Transition action functions may return `ActionResult`,
         // `Result<(), E>`, or `()`; the wrapper normalizes via
-        // `ActionResult::from`.
-        let code = format!(
-            "|ctx, {ev_param}| {{ ::bloxide_core::transition::ActionResult::from({fn_full_path}({args})) }}"
-        );
+        // `ActionResult::from`. Actions that declare
+        // `returns = "ActionResult"` skip the wrapper (it would be a
+        // same-type conversion flagged by clippy).
+        let call = format!("{fn_full_path}({args})");
+        let code = if skip_wrap {
+            format!("|ctx, {ev_param}| {{ {call} }}")
+        } else {
+            format!(
+                "|ctx, {ev_param}| {{ ::bloxide_core::transition::ActionResult::from({call}) }}"
+            )
+        };
         Some(
             syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|e| {
                 panic!("codegen produced unparseable transition closure for action '{name}': {e}")
@@ -287,11 +306,18 @@ pub fn resolve_concrete_action(
 
         // A payload that doesn't match is a no-op (literal Ok); when it
         // matches, the function's result (`ActionResult`, `Result<(), E>`,
-        // or `()`) is normalized via `ActionResult::from`.
+        // or `()`) is normalized via `ActionResult::from`. Actions that
+        // declare `returns = "ActionResult"` skip the wrapper.
+        let call = format!("{fn_full_path}({args_with_payload})");
+        let normalized = if skip_wrap {
+            call
+        } else {
+            format!("::bloxide_core::transition::ActionResult::from({call})")
+        };
         let code = format!(
             "|ctx, ev| {{ \
              if let {if_let_pattern} = {payload_accessor} {{ \
-             ::bloxide_core::transition::ActionResult::from({fn_full_path}({args_with_payload})) \
+             {normalized} \
              }} else {{ \
              ::bloxide_core::transition::ActionResult::Ok \
              }} \
@@ -559,6 +585,7 @@ mod tests {
             feature: None,
             fn_name: None,
             module: None,
+            returns: None,
         }
     }
 
@@ -637,6 +664,42 @@ mod tests {
         let result =
             resolve_concrete_action("some_function", &actions, None, "TestEvent", None, true);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_resolve_concrete_transition_returns_action_result_skips_wrapper() {
+        let mut action = make_action(
+            "increment_round",
+            Some("blox_ctx_rounds"),
+            vec!["round:mut"],
+            None,
+            false,
+        );
+        action.returns = Some("ActionResult".to_string());
+        let actions = vec![action];
+        let result = resolve_concrete_action(
+            "Self::increment_round",
+            &actions,
+            None,
+            "TestEvent",
+            None,
+            true,
+        );
+        assert!(result.is_some());
+        let tokens = result.unwrap().to_string();
+        assert!(tokens.contains("increment_round"));
+        // returns = "ActionResult" — the call is emitted bare, no
+        // ActionResult::from(...) normalization wrapper.
+        assert!(!tokens.contains("ActionResult :: from"));
+    }
+
+    #[test]
+    #[should_panic(expected = "the only recognized value is \"ActionResult\"")]
+    fn test_resolve_concrete_unknown_returns_value_panics() {
+        let mut action = make_action("f", Some("some_crate"), vec![], None, false);
+        action.returns = Some("bool".to_string());
+        let actions = vec![action];
+        resolve_concrete_action("Self::f", &actions, None, "TestEvent", None, true);
     }
 
     #[test]

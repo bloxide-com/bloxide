@@ -24,6 +24,7 @@ crate = "blox_ctx_ping_pong"
 fields = ["self_id", "peer_ref:ref"]
 event_payload = "ping"
 impl_required = false
+returns = "ActionResult"
 
 [event]
 name = "PongEvent"

@@ -88,7 +88,7 @@ fn wiring_tokio_demo_wires_peer_injection() {
     );
 }
 
-// ── system wiring: tokio-minimal-demo (single actor) ───────────────────────
+// ── system wiring: tokio-minimal-demo (single actor) ────────────────────────
 
 #[test]
 fn wiring_minimal_demo_parses_and_builds_counter() {
@@ -149,7 +149,7 @@ fn wiring_pool_demo_multi_mailbox_actor() {
     );
 }
 
-// ── system wiring: embassy-demo (embassy runtime selection) ────────────────
+// ── system wiring: embassy-demo (embassy runtime selection) ───────────────
 
 #[test]
 fn wiring_embassy_demo_selects_embassy_runtime() {
@@ -313,6 +313,87 @@ fn wiring_rejects_zero_capacity() {
     assert!(
         msg.contains("capacities.notify"),
         "error should name capacities.notify, got: {}",
+        msg
+    );
+}
+
+// ── Watchdog driver + max_misses emission ────────────────────────────────
+
+#[test]
+fn wiring_emits_watchdog_driver_for_tokio() {
+    let manifest = tokio_demo_manifest()
+        + "\n  [supervision.watchdog]\n  interval_ms = 500\n  max_misses = 3\n";
+    let main_rs = wiring_from_manifest(&manifest, "watchdog-tokio")
+        .unwrap_or_else(|e| panic!("wiring failed: {}", e));
+    assert_parses_rust("watchdog-tokio", &main_rs);
+    assert!(
+        main_rs.contains("tokio::time::interval"),
+        "tokio watchdog driver must use tokio::time::interval, got:\n{}",
+        main_rs
+    );
+    assert!(
+        main_rs.contains("ChildCtrl::WatchdogTick"),
+        "watchdog driver must send WatchdogTick, got:\n{}",
+        main_rs
+    );
+    assert!(
+        main_rs.contains("ChildGroupBuilder::<_, _, 32usize, 16usize, 4usize>::new(GroupShutdown::WhenAnyDone, 3)"),
+        "max_misses must be passed to ChildGroupBuilder, got:\n{}",
+        main_rs
+    );
+}
+
+#[test]
+fn wiring_emits_watchdog_driver_for_embassy() {
+    let manifest = std::fs::read_to_string(workspace_root().join("apps/embassy-demo/system.toml"))
+        .expect("read embassy-demo manifest")
+        + "\n  [supervision.watchdog]\n  interval_ms = 1000\n";
+    let main_rs = wiring_from_manifest(&manifest, "watchdog-embassy")
+        .unwrap_or_else(|e| panic!("wiring failed: {}", e));
+    assert_parses_rust("watchdog-embassy", &main_rs);
+    assert!(
+        main_rs.contains("#[embassy_executor::task]")
+        && main_rs.contains("async fn watchdog_task")
+        && main_rs.contains("embassy_time::Timer::after_millis"),
+        "embassy watchdog driver must be a task using embassy_time::Timer, got:\n{}",
+        main_rs
+    );
+    assert!(
+        main_rs.contains("spawner.must_spawn(watchdog_task("),
+        "embassy watchdog task must be spawned, got:\n{}",
+        main_rs
+    );
+    assert!(
+        main_rs.contains("ChildGroupBuilder::<_, _, 32usize, 16usize, 4usize>::new(GroupShutdown::WhenAnyDone, 2)"),
+        "default max_misses (2) must be passed to ChildGroupBuilder, got:\n{}",
+        main_rs
+    );
+}
+
+#[test]
+fn wiring_rejects_zero_watchdog_interval() {
+    let manifest = tokio_demo_manifest()
+        + "\n  [supervision.watchdog]\n  interval_ms = 0\n";
+    let err = wiring_from_manifest(&manifest, "watchdog-zero")
+        .expect_err("watchdog interval_ms = 0 must be a hard error");
+    let msg = format!("{:#}", err);
+    assert!(
+        msg.contains("interval_ms"),
+        "error should name interval_ms, got: {}",
+        msg
+    );
+}
+
+#[test]
+fn wiring_rejects_stop_false() {
+    let manifest = tokio_demo_manifest()
+        .replace("ping = { stop = true }", "ping = { stop = false }");
+    let err = wiring_from_manifest(&manifest, "stop-false")
+        .expect_err("stop = false must be a hard error");
+    let msg = format!("{:#}", err);
+    assert!(
+        msg.contains("stop = false"),
+        "error should name stop = false, got: {}",
         msg
     );
 }

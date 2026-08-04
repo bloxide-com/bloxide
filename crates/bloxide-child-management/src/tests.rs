@@ -21,7 +21,7 @@ fn setup_one_child(
     ActorRef<ChildLifecycleEvent, TestRuntime>,
     TestReceiver<ChildLifecycleEvent>,
 ) {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
     let id = 1usize;
     let (lifecycle_ref, rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
     let (notify_ref, notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
@@ -41,7 +41,7 @@ fn setup_dynamic_child(
     TestReceiver<ChildLifecycleEvent>,
     usize,
 ) {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
     let id = 1usize;
     let (lifecycle_ref, lc_rx) = TestRuntime::channel::<LifecycleCommand>(id, 16);
     let (abort_ref, abort_rx) = TestRuntime::channel::<AbortCommand>(id + 100, 16);
@@ -58,7 +58,7 @@ fn setup_dynamic_child(
 
 #[test]
 fn try_add_rejects_abort_and_kill_policies() {
-    let mut group = ChildGroup::<TestRuntime>::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::<TestRuntime>::new(GroupShutdown::WhenAnyDone, 2);
     let (r1, _rx1) = TestRuntime::channel::<LifecycleCommand>(1, 4);
     let (r2, _rx2) = TestRuntime::channel::<LifecycleCommand>(2, 4);
     assert_eq!(
@@ -154,7 +154,7 @@ impl DynamicChannelCap for NoKillRuntime {
 
 #[test]
 fn try_add_dynamic_rejects_kill_policy_on_nokill_runtime() {
-    let mut group = ChildGroup::<NoKillRuntime>::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::<NoKillRuntime>::new(GroupShutdown::WhenAnyDone, 2);
     let (lifecycle_ref, _rx) = NoKillRuntime::channel::<LifecycleCommand>(1, 4);
     let (abort_ref, _abort_rx) = NoKillRuntime::channel::<AbortCommand>(101, 4);
     assert_eq!(
@@ -261,7 +261,7 @@ fn failed_reset_send_is_queued_not_reset_pending() {
     // Confirm-before-record: a Reset that could not be delivered must NOT
     // move the child to ResetPending (the old code wedged the child there
     // forever — no Started could ever arrive).
-    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
     let (lifecycle_ref, _rx) = TestRuntime::channel::<LifecycleCommand>(1, 0); // always full
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
     group
@@ -285,7 +285,7 @@ fn failed_reset_send_is_queued_not_reset_pending() {
 
 #[test]
 fn flush_pending_delivers_queued_reset_and_counts_restart() {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
     let (lifecycle_ref, mut rx) = TestRuntime::channel::<LifecycleCommand>(1, 1);
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
     group
@@ -320,7 +320,7 @@ fn flush_pending_delivers_queued_reset_and_counts_restart() {
 fn flush_pending_recovers_start_for_never_started_child() {
     // Registration-time Start lost to a full channel: queued, retried on the
     // next event pass, delivered once the channel drains.
-    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
     let (lifecycle_ref, mut rx) = TestRuntime::channel::<LifecycleCommand>(1, 1);
     let (_notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
     group
@@ -341,7 +341,7 @@ fn flush_pending_recovers_start_for_never_started_child() {
 
 #[test]
 fn failed_reset_send_on_closed_channel_marks_gone() {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone, 2);
     let (lifecycle_ref, rx) = TestRuntime::channel::<LifecycleCommand>(1, 4);
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
     group
@@ -374,7 +374,7 @@ fn stop_policy_sets_stopped_and_triggers_shutdown() {
 
 #[test]
 fn stop_policy_with_when_all_done_waits_for_others() {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone, 2);
     let (lifecycle_ref1, _rx1) = TestRuntime::channel::<LifecycleCommand>(1, 16);
     let (lifecycle_ref2, _rx2) = TestRuntime::channel::<LifecycleCommand>(2, 16);
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
@@ -420,7 +420,7 @@ fn abort_policy_sends_abort_and_waits_in_aborting() {
 
 #[test]
 fn failed_abort_send_is_queued_then_flushed() {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
     let (lifecycle_ref, _lc_rx) = TestRuntime::channel::<LifecycleCommand>(1, 16);
     let (abort_ref, mut abort_rx) = TestRuntime::channel::<AbortCommand>(101, 1);
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
@@ -452,7 +452,7 @@ fn failed_abort_send_is_queued_then_flushed() {
 
 #[test]
 fn abort_send_on_closed_channel_marks_gone() {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
     let (lifecycle_ref, _lc_rx) = TestRuntime::channel::<LifecycleCommand>(1, 16);
     let (abort_ref, abort_rx) = TestRuntime::channel::<AbortCommand>(101, 16);
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
@@ -526,7 +526,7 @@ fn full_ping_channel_is_not_counted_as_miss() {
     // A Ping that was never delivered must not count against the child —
     // otherwise a transient full channel produces a false rogue verdict and
     // can reset (or kill) a healthy child.
-    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
     let (lifecycle_ref, mut rx) = TestRuntime::channel::<LifecycleCommand>(1, 1);
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
     group
@@ -558,7 +558,7 @@ fn full_ping_channel_is_not_counted_as_miss() {
 
 #[test]
 fn closed_ping_channel_marks_child_gone() {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone, 2);
     let (lifecycle_ref, rx) = TestRuntime::channel::<LifecycleCommand>(1, 4);
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
     group
@@ -621,7 +621,7 @@ fn record_stopped_never_overwrites_terminal_phase() {
 
 #[test]
 fn record_aborted_and_killed_guard_terminal_and_evaluate_shutdown() {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone, 2);
     let (r1, _rx1) = TestRuntime::channel::<LifecycleCommand>(1, 4);
     let (r2, _rx2) = TestRuntime::channel::<LifecycleCommand>(2, 4);
     group.try_add(1, r1, ChildPolicy::Stop).unwrap();
@@ -689,7 +689,7 @@ fn deregister_known_child_evaluates_shutdown() {
 
 #[test]
 fn clear_counters_preserves_terminal_phases_and_clears_pending() {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone, 2);
     let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(FROM, 16);
 
     let mut receivers = Vec::new();
@@ -727,7 +727,7 @@ fn clear_counters_preserves_terminal_phases_and_clears_pending() {
 
 #[test]
 fn stop_all_skips_task_gone_and_queues_full_sends() {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAllDone, 2);
     let (r1, mut rx1) = TestRuntime::channel::<LifecycleCommand>(1, 1);
     let (r2, rx2) = TestRuntime::channel::<LifecycleCommand>(2, 4);
     let (r3, mut rx3) = TestRuntime::channel::<LifecycleCommand>(3, 4);

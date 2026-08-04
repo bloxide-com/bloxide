@@ -1,6 +1,6 @@
 {
   "name": "embassy-demo",
-  "crate_path": "./apps/embassy-demo",
+  "crate_path": "/repos/internal/bloxide/apps/embassy-demo",
   "states": [],
   "events": [],
   "handlers": [],

@@ -19,16 +19,22 @@ Example against the main bloxide repo:
 cargo run -- /repos/internal/bloxide
 ```
 
-Output goes to `./bloxide-viz-output/` by default (or `[output-dir]` if provided). One `.json` file is written per discovered blox crate.
+Output goes to `./bloxide-viz-output/` by default (or `[output-dir]` if provided). One `.json` file is written per discovered blox crate, plus one per `system.toml` application manifest (see below).
 
 ## How it works
 
-1. **Scans** the workspace for `blox.toml` files.
+1. **Scans** the workspace for `blox.toml` files **and `system.toml` files**.
 2. **Parses** each `blox.toml` to extract:
-   - State topology (states, composite/parent attributes, initial/terminal/error flags)
+   - State topology (states, composite/parent attributes, initial/error flags)
    - `[[topology.transitions]]` entries (events, targets, actions, guards)
    - Event/message definitions and context fields
-3. **Writes** a JSON file per blox.
+3. **Parses** each `system.toml` (application wiring manifest, e.g. `apps/tokio-demo/system.toml`) into a system spec whose `wiring` field carries the actor graph:
+   - `actors` — actor instances and their blox crates
+   - `connections` — channel connections (from/to actor, message type, capacity)
+   - `supervisors` — supervision strategy and children
+4. **Writes** a JSON file per blox and per system.
+
+System specs have no state topology — only the wiring graph is populated (`wiring: Some(...)`); blox specs have `wiring: None`. The visualizer uses the wiring graph to render the System View (actor connection diagram).
 
 ## JSON → Visualizer
 

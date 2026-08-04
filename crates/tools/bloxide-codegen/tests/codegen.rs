@@ -1260,7 +1260,7 @@ runtime = "tokio"
 
 #[test]
 fn test_parse_system_toml_ping_pong() {
-    // Full ping-pong wiring manifest matching spec 19.
+    // Full ping-pong wiring manifest matching spec 17.
     let toml = r#"
 [system]
 runtime = "tokio"

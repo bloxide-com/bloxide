@@ -34,7 +34,7 @@ genuinely cannot be determined before the executor starts.
 Embassy has no dynamic spawning by design: `#[embassy_executor::task]` functions must
 be declared at compile time and cannot be called from within a running task in the
 general case. All Embassy actors use the static wiring pattern described in
-[04-static-wiring.md](04-static-wiring.md).
+[03-static-wiring.md](03-static-wiring.md).
 
 ---
 
@@ -610,7 +610,7 @@ The parent stores both in its context and uses them for different purposes:
 The child actor's `Mailboxes` tuple places ctrl at index 0 (highest priority) and the
 domain channel at index 1. This guarantees that `AddPeer` commands sent by the parent
 are processed before any `DoWork` message — even if both are enqueued before the child
-has processed anything. See [07-typed-mailboxes.md](07-typed-mailboxes.md) for the
+has processed anything. See [06-typed-mailboxes.md](06-typed-mailboxes.md) for the
 polling priority semantics.
 
 ```rust
@@ -1024,7 +1024,7 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
 
 - **Embassy has no `SpawnCap`** — Embassy tasks are declared at compile time with
   `#[embassy_executor::task]` and cannot be created dynamically. All Embassy bloxes
-  use the static wiring pattern in [04-static-wiring.md](04-static-wiring.md).
+  use the static wiring pattern in [03-static-wiring.md](03-static-wiring.md).
 
 - **`alloc` required for `Vec<ActorRef<M, R>>`** — dynamic collections require heap
   allocation. Blox crates using peer lists must declare
@@ -1055,7 +1055,7 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
 
 ## Related Docs
 
-- **Priority mailboxes** → `spec/architecture/07-typed-mailboxes.md`
+- **Priority mailboxes** → `spec/architecture/06-typed-mailboxes.md`
 - **Peer introduction API** → `crates/bloxide-peers/src/lib.rs`
 - **Pool/Worker blox specs** → `spec/bloxes/pool.md`, `spec/bloxes/worker.md`
 - **Tokio SpawnCap impl** → `runtimes/bloxide-tokio/src/spawn.rs`

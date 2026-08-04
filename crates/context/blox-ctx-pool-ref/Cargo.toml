@@ -9,9 +9,9 @@ license.workspace = true
 
 [features]
 default = []
-std = ["bloxide-core/std"]
+alloc = ["bloxide-core/alloc"]
 
 [dependencies]
-bloxide-core = { workspace = true, features = ["alloc"] }
+bloxide-core = { workspace = true }
 bloxide-peers = { workspace = true }
 pool-messages = { workspace = true }

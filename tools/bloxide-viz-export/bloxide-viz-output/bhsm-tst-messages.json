@@ -1,6 +1,6 @@
 {
   "name": "Bhsm-tst-messages",
-  "crate_path": "./crates/messages/bhsm-tst-messages",
+  "crate_path": "/repos/internal/bloxide/crates/messages/bhsm-tst-messages",
   "states": [],
   "events": [
     {

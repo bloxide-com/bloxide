@@ -5,8 +5,8 @@ constructs state machines, and spawns actor tasks. In the current architecture
 this wiring is **generated**, not hand-written: `system.toml` is the source of
 truth and `cargo blox generate` (system-level codegen) emits `src/main.rs` and
 the concrete specs. See
-[16-declarative-wiring.md](16-declarative-wiring.md) and
-[17-blox-toml-source-of-truth.md](17-blox-toml-source-of-truth.md).
+[14-declarative-wiring.md](14-declarative-wiring.md) and
+[15-blox-toml-source-of-truth.md](15-blox-toml-source-of-truth.md).
 
 The canonical examples are the demo apps: `apps/tokio-demo/`,
 `apps/tokio-minimal-demo/`, `apps/tokio-pool-demo/`, `apps/embassy-demo/` —
@@ -52,7 +52,7 @@ with refs injected per `[actors.inject]`, a `ChildGroupBuilder` with
 
 Actors never call `machine.start()` / `machine.reset()` — lifecycle commands
 flow through `dispatch()` and are intercepted at the VirtualRoot level
-(see [02-hsm-engine.md](02-hsm-engine.md)). This includes the
+(see [01-hsm-engine.md](01-hsm-engine.md)). This includes the
 supervisor itself at boot:
 
 ```rust
@@ -97,7 +97,7 @@ implementations):
 
 ## Rules
 
-- All static wiring happens before the executor starts (Embassy) or in `main` before awaiting the root task (Tokio). Dynamic actor creation at runtime is a Tokio/TestRuntime capability — see [11-dynamic-actors.md](11-dynamic-actors.md).
+- All static wiring happens before the executor starts (Embassy) or in `main` before awaiting the root task (Tokio). Dynamic actor creation at runtime is a Tokio/TestRuntime capability — see [10-dynamic-actors.md](10-dynamic-actors.md).
 - Never pass an `ActorRef` through a message; all refs are injected via `Ctx::new()` at wiring time.
 - Domain `Mailboxes` tuples contain **no lifecycle stream** — lifecycle channels are created by `spawn_child!` and are invisible to blox code.
 - Internal state fields (counters, round numbers) are zero-initialized via
@@ -108,5 +108,5 @@ implementations):
   compile-time assert baked into each macro expansion); dynamically spawned
   actors use `DynamicChannelCap::alloc_actor_id`,
   whose counter starts at `DYNAMIC_ACTOR_ID_BASE` (256) — see
-  [11-dynamic-actors.md](11-dynamic-actors.md).
+  [10-dynamic-actors.md](10-dynamic-actors.md).
 - The supervisor is started via `dispatch()` of `LifecycleCommand::Start`, like every other lifecycle transition.

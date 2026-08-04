@@ -281,7 +281,7 @@ from `bloxide-peers`; `spawn_child` / `SpawnFn` / `SpawnOutput` from `bloxide-sp
 - Queue semantics: at most one spawn is in flight. `SpawnWorker` arriving in `Spawning` is appended to `spawn_queue`; each `SpawnedWorker` reply pops the oldest queued `task_id` and issues its spawn request, so the pool stays in `Spawning` until the queue drains and no spawn is in flight.
 - The `SpawnReply` guard does not inspect action results: a failed `DoWork` send surfaces as `ActionResult::Err` but does not divert the transition (see `spawned_worker_with_full_domain_channel_keeps_pending`).
 - Pool is generic over `R: BloxRuntime` but requires `SpawnCap` at wiring time (Tokio only); the worker type is abstract — the pool only knows the factory signature.
-- See `spec/architecture/11-dynamic-actors.md` for the dynamic spawning pattern.
+- See `spec/architecture/10-dynamic-actors.md` for the dynamic spawning pattern.
 
 ## Open Questions
 

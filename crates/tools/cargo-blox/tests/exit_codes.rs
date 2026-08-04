@@ -1,5 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Integration tests for the semantic process exit codes (spec 19):
+//! Integration tests for the semantic process exit codes (spec 17):
 //! 0 success, 1 other, 2 usage (clap), 3 not found, 5 conflict.
 //!
 //! `exit::code_of` is exercised directly (the module is included via

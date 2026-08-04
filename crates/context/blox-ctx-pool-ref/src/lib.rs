@@ -69,7 +69,7 @@ pub fn notify_pool_done<R: BloxRuntime>(
 ///
 /// Thin domain wrapper over `bloxide_peers::broadcast_to_peers`: it owns the
 /// `WorkerMsg::PeerResult` construction so the platform crate stays
-/// domain-agnostic (spec 20).
+/// domain-agnostic (spec 18).
 pub fn broadcast_result<R: BloxRuntime>(
     self_id: ActorId,
     peers: &[ActorRef<WorkerMsg, R>],

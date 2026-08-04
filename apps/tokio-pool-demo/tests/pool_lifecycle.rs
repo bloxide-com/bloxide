@@ -13,13 +13,15 @@
 //!    tasks and registers them with the supervisor via
 //!    `RegisterDynamicChild`.
 //! 4. The pool sends `DoWork` to each worker; the worker computes the result
-//!    and replies `WorkDone`, then self-stops via `Decision::Stop` (its run
-//!    loop reports `ChildLifecycleEvent::Stopped`).
+//!    and replies `WorkDone`, then self-terminates via `Decision::Done` (its
+//!    run loop reports `ChildLifecycleEvent::Done` and the task ends; the
+//!    supervisor deregisters the worker — single-use actor, no restart).
 //! 5. When the last `WorkDone` drains the pool's `pending` counter, the
 //!    pool's guard returns `Decision::Stop` and reports `Stopped`.
-//! 6. With every child stopped, `WhenAllDone` shuts the group down: the
-//!    supervisor returns `Decision::Done` and its root run loop exits — the
-//!    completion the test waits on.
+//! 6. With every remaining child terminal (workers deregistered, pool
+//!    stopped), `WhenAllDone` shuts the group down: the supervisor returns
+//!    `Decision::Done` and its root run loop exits — the completion the test
+//!    waits on.
 //!
 //! Observation: all child lifecycle events flow through a tap channel into a
 //! small collector actor that records each event and forwards it to the
@@ -161,7 +163,7 @@ async fn pool_lifecycle_spawn_and_done() {
 
     // ── 2. Supervisor child group (WhenAllDone) ─────────────────────────────
     let mut group_builder: ChildGroupBuilder<TokioRuntime, ChildCtrl<TokioRuntime>> =
-        ChildGroupBuilder::new(GroupShutdown::WhenAllDone);
+        ChildGroupBuilder::new(GroupShutdown::WhenAllDone, 2);
     let sup_control_ref = group_builder.control_ref();
     let sup_notify_ref = group_builder.notify_ref();
 
@@ -239,9 +241,10 @@ async fn pool_lifecycle_spawn_and_done() {
 
     // ── 7. Wait for group shutdown ──────────────────────────────────────────
     //
-    // WhenAllDone fires once the pool and both workers have reported Stopped;
-    // the supervisor then returns Decision::Done and its root run loop exits.
-    // The timeout is only a deadlock backstop, not synchronization.
+    // WhenAllDone fires once both workers have reported Done (deregistered)
+    // and the pool has reported Stopped; the supervisor then returns
+    // Decision::Done and its root run loop exits. The timeout is only a
+    // deadlock backstop, not synchronization.
     let events_summary = || {
         seen.lock()
             .map(|e| format!("{:?}", e))
@@ -263,13 +266,18 @@ async fn pool_lifecycle_spawn_and_done() {
     //
     // - `Started` counts are exact: each child leaves Init exactly once (no
     //   Reset in this flow).
-    // - `Stopped` is asserted per distinct child id: after the last genuine
-    //   stop, the supervisor enters ShuttingDown and `stop_all_children`
-    //   sends Stop to every child; children already suspended in Init
-    //   acknowledge with a duplicate `Stopped`. How many of those acks land
-    //   before this point is racy, so raw counts would be flaky — the set of
-    //   stopped ids is not (the supervisor could only shut down after the
-    //   genuine Stopped of every child).
+    // - `Done` is asserted per distinct worker id: each worker self-terminates
+    //   exactly once after its DoWork (its task then ends — no duplicate
+    //   reports are possible).
+    // - `Stopped` is asserted for the pool: after the last genuine stop, the
+    //   supervisor enters ShuttingDown and `stop_all_children` sends Stop to
+    //   every child; children already suspended in Init acknowledge with a
+    //   duplicate `Stopped`. How many of those acks land before this point is
+    //   racy, so raw counts would be flaky — `>= 1` is not (the supervisor
+    //   could only shut down after the genuine Stopped of the pool). Workers
+    //   never report `Stopped`: their tasks ended at `Decision::Done`, so the
+    //   shutdown `Stop` fails Closed and they are recorded `Gone` (internal
+    //   bookkeeping, no notify event).
     let events = seen.lock().expect("collector lock poisoned");
 
     let pool_started_count = events
@@ -280,13 +288,17 @@ async fn pool_lifecycle_spawn_and_done() {
         .iter()
         .filter(|e| matches!(e, ChildLifecycleEvent::Started { child_id } if *child_id != pool_id))
         .count();
-    let stopped_worker_ids: std::collections::BTreeSet<usize> = events
+    let done_worker_ids: std::collections::BTreeSet<usize> = events
         .iter()
         .filter_map(|e| match e {
-            ChildLifecycleEvent::Stopped { child_id } if *child_id != pool_id => Some(*child_id),
+            ChildLifecycleEvent::Done { child_id } if *child_id != pool_id => Some(*child_id),
             _ => None,
         })
         .collect();
+    let stopped_worker_count = events
+        .iter()
+        .filter(|e| matches!(e, ChildLifecycleEvent::Stopped { child_id } if *child_id != pool_id))
+        .count();
     let pool_stopped_count = events
         .iter()
         .filter(|e| matches!(e, ChildLifecycleEvent::Stopped { child_id } if *child_id == pool_id))
@@ -307,10 +319,15 @@ async fn pool_lifecycle_spawn_and_done() {
         events
     );
     assert_eq!(
-        stopped_worker_ids.len(),
+        done_worker_ids.len(),
         2,
-        "expected both workers to report Stopped (each self-stops via Decision::Stop \
+        "expected both workers to report Done (each self-terminates via Decision::Done \
          after its DoWork): events={:?}",
+        events
+    );
+    assert_eq!(
+        stopped_worker_count, 0,
+        "workers must not report Stopped — their tasks ended at Decision::Done: events={:?}",
         events
     );
     assert!(

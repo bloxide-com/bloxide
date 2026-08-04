@@ -92,9 +92,9 @@ sequenceDiagram
     Note over Ping,Pong: ... round 4 ...
 
     Ping->>Pong: PingPongMsg::Ping(5)
-    Note over Ping: Decision::Stop<br/>(round >= MAX_ROUNDS, self-suspend to Init)
+    Note over Ping: Decision::Done<br/>(round >= MAX_ROUNDS, clean self-termination)
     Pong->>Ping: PingPongMsg::Pong(5)
-    Note over Ping: suspended in Init — Pong(5) not consumed
+    Note over Ping: task ended — Pong(5) not consumed
 ```
 
 ## Rules

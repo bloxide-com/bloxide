@@ -1,27 +1,30 @@
 {
   "name": "Pool",
-  "crate_path": "./crates/bloxes/pool",
+  "crate_path": "/repos/internal/bloxide/crates/bloxes/pool",
   "states": [
     {
       "name": "Idle",
       "kind": "Leaf",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": true
     },
     {
       "name": "Spawning",
       "kind": "Leaf",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": false
     },
     {
       "name": "Active",
       "kind": "Leaf",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": false
     }
   ],
   "events": [

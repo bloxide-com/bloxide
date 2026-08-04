@@ -548,6 +548,10 @@ pub fn generate(
     let mut embassy_timer_task_decl = Vec::new();
     let mut timer_stmts = Vec::new();
 
+    // ── Watchdog spawn ──────────────────────────────────────────────────────
+    let mut embassy_watchdog_task_decls = Vec::new();
+    let mut watchdog_stmts = Vec::new();
+
     let has_timer = config
         .actors
         .iter()
@@ -777,11 +781,29 @@ pub fn generate(
                 anyhow::bail!("supervision capacities.{name} must be >= 1");
             }
         }
+        let max_misses = sup.watchdog.as_ref().map(|w| w.max_misses).unwrap_or(2u8);
+        let max_misses_lit = proc_macro2::Literal::u8_unsuffixed(max_misses);
+        // The control ref is only needed when a watchdog driver sends on the
+        // control channel or an actor injects it (e.g. the Pool's spawn_ref).
+        // Emitting it unconditionally leaves an unused variable in static-only
+        // systems (embassy-demo, tokio-demo, tokio-minimal-demo).
+        let control_ref_used = sup.watchdog.is_some()
+            || config.actors.iter().any(|actor| {
+                actor.inject.values().any(|source| {
+                    source.source == "actor"
+                        && source.actor.as_deref() == Some("supervisor")
+                        && source.field.as_deref() == Some("control")
+                })
+            });
         supervisor_setup_stmts.push(quote! {
-            let mut #group_ident = ChildGroupBuilder::<_, _, #notify_cap, #control_cap, #lifecycle_cap>::new(#shutdown_strategy);
-            let #control_ref_ident = #group_ident.control_ref();
+            let mut #group_ident = ChildGroupBuilder::<_, _, #notify_cap, #control_cap, #lifecycle_cap>::new(#shutdown_strategy, #max_misses_lit);
             let #notify_ref_ident = #group_ident.notify_ref();
         });
+        if control_ref_used {
+            supervisor_setup_stmts.push(quote! {
+                let #control_ref_ident = #group_ident.control_ref();
+            });
+        }
 
         // Register refs in symbol table.
         // The supervisor actor name comes from the supervision entry —
@@ -796,6 +818,64 @@ pub fn generate(
             (sup_name.clone(), "notify".to_string()),
             notify_ref_ident.to_string(),
         );
+
+        // Watchdog driver: when a watchdog config is present, emit a timer-based
+        // task that sends `ChildCtrl::WatchdogTick` to the supervisor's control
+        // channel at the configured interval.
+        if let Some(watchdog) = &sup.watchdog {
+            if watchdog.interval_ms == 0 {
+                anyhow::bail!(
+                    "supervision watchdog interval_ms must be >= 1 (got {})",
+                    watchdog.interval_ms
+                );
+            }
+            let interval_ms = watchdog.interval_ms;
+            let interval_lit = proc_macro2::Literal::u64_unsuffixed(interval_ms);
+            if is_tokio {
+                watchdog_stmts.push(quote! {
+                    let _ = tokio::spawn(async move {
+                        let mut interval = tokio::time::interval(
+                            std::time::Duration::from_millis(#interval_lit),
+                        );
+                        loop {
+                            interval.tick().await;
+                            let _ = #control_ref_ident.try_send(
+                                0,
+                                ::bloxide_child_management::control::ChildCtrl::WatchdogTick,
+                            );
+                        }
+                    });
+                });
+            } else {
+                let watchdog_task_ident = if config.supervision.len() == 1 {
+                    format_ident!("watchdog_task")
+                } else {
+                    format_ident!("watchdog_task_{}", idx)
+                };
+                embassy_watchdog_task_decls.push(quote! {
+                    #[embassy_executor::task]
+                    async fn #watchdog_task_ident(
+                        control_ref: ::bloxide_core::messaging::ActorRef<
+                            ::bloxide_child_management::control::ChildCtrl<
+                                ::#runtime_crate_ident::EmbassyRuntime
+                            >,
+                            ::#runtime_crate_ident::EmbassyRuntime,
+                        >,
+                    ) {
+                        loop {
+                            ::embassy_time::Timer::after_millis(#interval_lit).await;
+                            let _ = control_ref.try_send(
+                                0,
+                                ::bloxide_child_management::control::ChildCtrl::WatchdogTick,
+                            );
+                        }
+                    }
+                });
+                watchdog_stmts.push(quote! {
+                    spawner.must_spawn(#watchdog_task_ident(#control_ref_ident.clone()));
+                });
+            }
+        }
 
         // Phase 2: add children, finish, construct supervisor (after machines).
         for child_name in &sup.children {
@@ -812,6 +892,12 @@ pub fn generate(
             let child_task_ident = format_ident!("{}_task", child_actor.name);
 
             let policy = if let Some(policy_config) = sup.policies.get(child_name) {
+                if policy_config.stop == Some(false) {
+                    anyhow::bail!(
+                        "supervision policy for '{child_name}': stop = false is invalid \
+                         — use stop = true or restart = {{ max = N }}"
+                    );
+                }
                 if let Some(restart) = &policy_config.restart {
                     if restart.max == 0 {
                         anyhow::bail!(
@@ -876,13 +962,12 @@ pub fn generate(
                 ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
             });
         } else {
-            // Embassy: use the two-argument form (no std::process::exit).
-            // The root task simply returns when the supervisor stops.
-            // On std targets (arch-std), the executor stays alive idle —
-            // the process can be terminated with Ctrl-C or a hardware reset.
-            // On no_std targets, std::process::exit doesn't exist.
+            // Embassy: exit the process when the root supervisor's run loop
+            // returns. `exit_process` is `std::process::exit(0)` on std-hosted
+            // (arch-std) builds and a no-op on no_std embedded builds (the
+            // task ends and the executor idles, as before).
             root_task_decls.push(quote! {
-                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>);
+                ::#runtime_crate_ident::root_task!(#task_ident, #supervisor_spec_path<#runtime_ident>, ::#runtime_crate_ident::exit_process());
             });
         }
     }
@@ -1205,6 +1290,7 @@ pub fn generate(
                 #(#machine_stmts)*
                 #(#supervisor_finish_stmts)*
                 #(#bootstrap_send_stmts)*
+                #(#watchdog_stmts)*
                 #(#supervisor_run_stmts)*
                 println!(#done_lit);
             }
@@ -1226,6 +1312,7 @@ pub fn generate(
                 #(#machine_stmts)*
                 #(#supervisor_finish_stmts)*
                 #(#bootstrap_send_stmts)*
+                #(#watchdog_stmts)*
                 #(#supervisor_run_stmts)*
                 println!(#done_lit);
             }
@@ -1235,6 +1322,7 @@ pub fn generate(
     let tokens = quote! {
         #![allow(unused_imports, unused_variables)]
         #(#embassy_timer_task_decl)*
+        #(#embassy_watchdog_task_decls)*
         #(#use_stmts)*
         #(#task_decls)*
         #(#root_task_decls)*
@@ -1248,6 +1336,7 @@ pub fn generate(
             #![allow(unused_imports, unused_variables)]
             mod generated;
             #(#embassy_timer_task_decl)*
+            #(#embassy_watchdog_task_decls)*
             #(#use_stmts)*
             #(#task_decls)*
             #(#root_task_decls)*

@@ -1,6 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! The standard supervisor blox — the reference consumer of the
-//! child-management platform feature (spec 20: Platform Feature Pattern).
+//! child-management platform feature (spec 18: Platform Feature Pattern).
 //!
 //! This crate owns only the supervisor topology: `blox.toml`, the generated
 //! state machine code, and tests. The child-management control plane

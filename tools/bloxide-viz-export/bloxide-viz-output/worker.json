@@ -1,13 +1,14 @@
 {
   "name": "Worker",
-  "crate_path": "./crates/bloxes/worker",
+  "crate_path": "/repos/internal/bloxide/crates/bloxes/worker",
   "states": [
     {
       "name": "Waiting",
       "kind": "Leaf",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": true
     }
   ],
   "events": [
@@ -50,7 +51,7 @@
     {
       "state": "Waiting",
       "event": "WorkerMsg::DoWork",
-      "label": "3 actions → stop",
+      "label": "3 actions → done",
       "pattern": "WorkerMsg::DoWork(_)",
       "feature": null,
       "actions": [
@@ -59,11 +60,11 @@
         "Self::do_notify_pool"
       ],
       "guard": {
-        "description": "stop",
+        "description": "done",
         "raw": "",
         "branches": []
       },
-      "target": "Stop",
+      "target": "Done",
       "source": "Explicit",
       "on_entry": [],
       "on_exit": []

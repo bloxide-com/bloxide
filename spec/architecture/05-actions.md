@@ -9,7 +9,7 @@
 > taking concrete params. The `B` generic has been eliminated. Blox crates
 > contain zero logic — they are purely declarative topology + event matching.
 > Two-stage codegen generates stub actions at the blox level and concrete
-> actions at the system level. See `spec/architecture/12-action-crate-pattern.md`
+> actions at the system level. See `spec/architecture/11-action-crate-pattern.md`
 > (now "Context Crate Pattern") for the full layer model.
 
 Bloxide uses a composition model where a blox is assembled from reusable building blocks — **messages**, **context crates** (which include action functions), and **state machine logic**. This keeps each concern in its own crate and ensures the blox itself contains no platform-specific code or logic.
@@ -189,7 +189,7 @@ impl<R: BloxRuntime> PingSpec<R> {
             // REAL guard — direct field access, no B, no trait methods
             guard: |ctx, results, _ev| {
                 if results.any_failed() { Decision::Transition(LeafState::new(PingState::Error)) }
-                else if ctx.round >= MAX_ROUNDS as u32 { Decision::Stop }
+                else if ctx.round >= MAX_ROUNDS as u32 { Decision::Done }
                 else if ctx.round == PAUSE_AT_ROUND as u32 { Decision::Transition(LeafState::new(PingState::Paused)) }
                 else { Decision::Stay }
             },
@@ -227,7 +227,7 @@ impl<R: BloxRuntime> PingSpec<R> {
             ],
             guard: |ctx, results, _ev| {  // same as blox-level
                 if results.any_failed() { Decision::Transition(LeafState::new(PingState::Error)) }
-                else if ctx.round >= MAX_ROUNDS as u32 { Decision::Stop }
+                else if ctx.round >= MAX_ROUNDS as u32 { Decision::Done }
                 else if ctx.round == PAUSE_AT_ROUND as u32 { Decision::Transition(LeafState::new(PingState::Paused)) }
                 else { Decision::Stay }
             },
@@ -276,7 +276,7 @@ actions = ["Self::increment_round", "Self::forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "ctx.round >= MAX_ROUNDS as u32"
-  target = "stop"
+  target = "done"
 
   [[topology.transitions.guards]]
   condition = "ctx.round == PAUSE_AT_ROUND as u32"
@@ -336,6 +336,6 @@ Never add `blox_log_*!` calls to blox crates or add `bloxide-log` as a dependenc
 
 ## Related Docs
 
-- **Context crate pattern** → `spec/architecture/12-action-crate-pattern.md`
-- **Handler patterns** → `spec/architecture/05-handler-patterns.md`
-- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/17-blox-toml-source-of-truth.md`
+- **Context crate pattern** → `spec/architecture/11-action-crate-pattern.md`
+- **Handler patterns** → `spec/architecture/04-handler-patterns.md`
+- **Declarative transitions (blox.toml)** → `QUICK_REFERENCE.md` → "Declarative Transitions (blox.toml)" and `spec/architecture/15-blox-toml-source-of-truth.md`

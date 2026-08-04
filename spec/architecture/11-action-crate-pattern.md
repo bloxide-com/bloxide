@@ -268,8 +268,8 @@ supervisor actor implementation.
 
 ## Related Docs
 
-- [06-actions.md](06-actions.md) for action function mechanics and two-stage codegen
-- [08-supervision.md](08-supervision.md) for the reusable supervisor model
-- [09-application.md](09-application.md) for end-to-end wiring
-- [11-dynamic-actors.md](11-dynamic-actors.md) for runtime spawning patterns
-- [15-composable-context-crates.md](15-composable-context-crates.md) for context crate composition
+- [05-actions.md](05-actions.md) for action function mechanics and two-stage codegen
+- [07-supervision.md](07-supervision.md) for the reusable supervisor model
+- [08-application.md](08-application.md) for end-to-end wiring
+- [10-dynamic-actors.md](10-dynamic-actors.md) for runtime spawning patterns
+- [13-composable-context-crates.md](13-composable-context-crates.md) for context crate composition

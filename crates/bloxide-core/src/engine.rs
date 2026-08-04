@@ -272,12 +272,15 @@ impl<S: MachineSpec> StateMachine<S> {
                         self.transition_to_state(target);
                         Self::started_or_failed(target)
                     }
-                    MachineState::State(_) => {
+                    MachineState::State(current) => {
                         // Already operational — acknowledge with Started so
                         // supervision logic awaiting confirmation gets it
                         // (mirrors Stop-in-Init reporting Stopped). No
-                        // callbacks fire and no state change occurs.
-                        DispatchOutcome::Started(self.current)
+                        // callbacks fire and no state change occurs. Routed
+                        // through started_or_failed: a redundant Start while
+                        // parked in an error state normalizes to Failed
+                        // (is_error takes precedence).
+                        Self::started_or_failed(current)
                     }
                 }
             }

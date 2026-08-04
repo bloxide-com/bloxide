@@ -44,12 +44,14 @@ name = "increment_round"
 crate = "blox_ctx_rounds"
 fields = ["round:mut"]
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "send_initial_ping"
 crate = "blox_ctx_ping_pong"
 fields = ["self_id", "peer_ref:ref", "round:mut"]
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "forward_ping"
@@ -57,6 +59,7 @@ fn_name = "send_ping"
 crate = "blox_ctx_ping_pong"
 fields = ["self_id", "peer_ref:ref", "round"]
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "schedule_pause_timer"
@@ -64,6 +67,7 @@ fn_name = "schedule_resume"
 crate = "blox_ctx_ping_pong"
 fields = ["self_id", "self_ref:ref", "timer_ref:ref", "round", "current_timer:mut"]
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "cancel_pause_timer"
@@ -72,6 +76,7 @@ crate = "bloxide_timer"
 module = "actions"
 fields = ["self_id", "timer_ref:ref", "current_timer:mut"]
 impl_required = false
+returns = "ActionResult"
 
 [event]
 name = "PingEvent"
@@ -130,7 +135,7 @@ target = "Error"
 
 [[topology.transitions.guards]]
 condition = "ctx.round >= MAX_ROUNDS as u32"
-target = "stop"
+target = "done"
 
 [[topology.transitions.guards]]
 condition = "ctx.round == PAUSE_AT_ROUND as u32"

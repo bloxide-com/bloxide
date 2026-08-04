@@ -96,7 +96,7 @@ actions = ["Self::increment_round", "Self::forward_ping"]
 
   [[topology.transitions.guards]]
   condition = "ctx.round >= MAX_ROUNDS as u32"
-  target = "stop"
+  target = "done"
 
   [[topology.transitions.guards]]
   condition = "ctx.round == PAUSE_AT_ROUND as u32"
@@ -128,12 +128,14 @@ name = "increment_round"
 crate = "blox_ctx_rounds"
 fields = ["round:mut"]
 impl_required = false
+returns = "ActionResult"
 
 [[context.actions]]
 name = "process_work"
 fields = ["task_id:mut", "result:mut"]
 event_payload = "do_work"
 impl_required = true
+returns = "ActionResult"
 ```
 
 **Field access modes:**
@@ -144,7 +146,7 @@ impl_required = true
 | `:ref` | Immutable borrow | `&ctx.field` |
 | (none) | Copy/move | `ctx.field` |
 
-The use site — transition vs entry/exit — determines the closure signature. Transition action functions return `ActionResult`, `Result<(), E>`, or `()`; the generated wrapper normalizes the result via `::bloxide_core::transition::ActionResult::from(...)`. Entry/exit closures are `fn(&mut Ctx)` and discard any return value. `crate` is optional and informational. Unknown TOML keys are hard errors (`deny_unknown_fields`) — a stale `kind` key is rejected the same way.
+The use site — transition vs entry/exit — determines the closure signature. Transition action functions return `ActionResult`, `Result<(), E>`, or `()`; the generated wrapper normalizes the result via `::bloxide_core::transition::ActionResult::from(...)`. When the function already returns `ActionResult`, declare `returns = "ActionResult"` (the only recognized value; anything else is a hard error) so the wrapper is skipped — a same-type `ActionResult::from(...)` would trigger `clippy::useless_conversion`. Entry/exit closures are `fn(&mut Ctx)` and discard any return value. `crate` is optional and informational. Unknown TOML keys are hard errors (`deny_unknown_fields`) — a stale `kind` key is rejected the same way.
 
 ## StateFns Structure
 

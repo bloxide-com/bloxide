@@ -1,6 +1,6 @@
 {
   "name": "Pool-messages",
-  "crate_path": "./crates/messages/pool-messages",
+  "crate_path": "/repos/internal/bloxide/crates/messages/pool-messages",
   "states": [],
   "events": [
     {

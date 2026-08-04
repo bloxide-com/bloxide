@@ -29,7 +29,7 @@ let ping_ctx = PingCtx::new(
 2. **Injection** (wiring manifest) — "ping's `peer_ref` comes from pong's channel"
 3. **Acquisition** (runtime) — the pool learns `worker_refs` from `SpawnedWorker` replies
 
-Stage 1 is handled by the `role = "ctor"` field in `[[context.uses]]` (see spec 15). Stage 2 is the wiring manifest. Stage 3 is action functions.
+Stage 1 is handled by the `role = "ctor"` field in `[[context.uses]]` (see spec 13). Stage 2 is the wiring manifest. Stage 3 is action functions.
 
 ### The wiring manifest
 
@@ -190,7 +190,7 @@ async fn main() {
 
 ### Codegen internals: the ref symbol table and the two-phase supervisor split
 
-> This section was moved here from spec 18 (§10), which now only points here.
+> This section was moved here from spec 16 (§10), which now only points here.
 
 The `source = "actor"` form injects another actor's named ref. The optional `field`
 parameter generalizes this to any named ref an actor exposes — not just the primary

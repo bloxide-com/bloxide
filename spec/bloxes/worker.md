@@ -6,7 +6,7 @@ The Worker actor demonstrates:
 - **Priority mailbox handling**: Ctrl stream polled before domain stream
 - **Peer accumulation**: Receives `AddPeer` commands before `DoWork`
 - **Result broadcast**: Sends result to all peers before notifying pool
-- **Self-suspend via Decision::Stop**: When work is done, the guard returns `Decision::Stop` — the actor self-suspends to `Init` and the runtime reports `ChildLifecycleEvent::Stopped` to the pool
+- **Self-terminate via Decision::Done**: When work is done, the guard returns `Decision::Done` — the actor runs the Stop cleanup ritual, the runtime reports `ChildLifecycleEvent::Done` to the supervisor, and the run loop ends the task. The supervisor deregisters the worker (single-use actor; no restart)
 
 Workers are spawned dynamically by the Pool actor.
 
@@ -22,7 +22,7 @@ Workers are spawned dynamically by the Pool actor.
 ```mermaid
 stateDiagram-v2
     [*] --> Waiting : dispatch(Start)
-    Waiting --> [*] : WorkerMsg::DoWork : Decision::Stop
+    Waiting --> [*] : WorkerMsg::DoWork : Decision::Done
 ```
 
 > `[Init]` is engine-implicit. `Waiting` is a leaf state.
@@ -40,7 +40,7 @@ stateDiagram-v2
 |-------|-----------|--------------|--------------|--------------|
 | `PeerCtrl::AddPeer(_)` | `Waiting` | Action-Then-Stay | `Decision::Stay` | `handle_ctrl` (fn `apply_peer_control`) appends the peer (idempotent by peer id) |
 | `PeerCtrl::RemovePeer(_)` | `Waiting` | Action-Then-Stay | `Decision::Stay` | `handle_ctrl` (fn `apply_peer_control`) removes the peer by id |
-| `WorkerMsg::DoWork(_)` | `Waiting` | Action-Then-Guard | `Decision::Stop` | `process_work`, `do_broadcast`, `do_notify_pool` |
+| `WorkerMsg::DoWork(_)` | `Waiting` | Action-Then-Guard | `Decision::Done` | `process_work`, `do_broadcast`, `do_notify_pool` |
 | `WorkerMsg::PeerResult(_)` | `Waiting` | Sink | `Decision::Stay` | none (absorbed) |
 | any unhandled | root (no rules) | — | dropped | none |
 
@@ -91,8 +91,8 @@ pub struct WorkerCtx<R: BloxRuntime> {
 
 | Target | Message | When |
 |--------|---------|------|
-| All peers | `WorkerMsg::PeerResult(...)` | transition actions (before `Decision::Stop`) via `do_broadcast` (fn `broadcast_result` from `blox-ctx-pool-ref`) |
-| `pool_ref` | `PoolMsg::WorkDone(...)` | transition actions (before `Decision::Stop`) via `do_notify_pool` (fn `notify_pool_done` from `blox-ctx-pool-ref`) |
+| All peers | `WorkerMsg::PeerResult(...)` | transition actions (before `Decision::Done`) via `do_broadcast` (fn `broadcast_result` from `blox-ctx-pool-ref`) |
+| `pool_ref` | `PoolMsg::WorkDone(...)` | transition actions (before `Decision::Done`) via `do_notify_pool` (fn `notify_pool_done` from `blox-ctx-pool-ref`) |
 
 ## Entry / Exit Actions
 
@@ -100,7 +100,7 @@ pub struct WorkerCtx<R: BloxRuntime> {
 |-------|----------|---------|
 | `[Init]` (engine) | `on_init`: task_id=0, result=0, peers cleared | — |
 | `Waiting` | — (empty) | — |
-| `Waiting` → `Decision::Stop` | `process_work`, `do_broadcast` (fn `broadcast_result`), `do_notify_pool` (fn `notify_pool_done`) (in transition actions) | — |
+| `Waiting` → `Decision::Done` | `process_work`, `do_broadcast` (fn `broadcast_result`), `do_notify_pool` (fn `notify_pool_done`) (in transition actions) | — |
 
 There are no logging actions (invariant #15).
 
@@ -110,7 +110,7 @@ Blox-crate unit tests run against the blox-level **stub** spec (per invariant #1
 they verify topology and guard outcomes, not action side effects.
 
 - [x] `dispatch(WorkerEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Waiting`
-- [x] `WorkerMsg::DoWork` in `Waiting` runs transition actions then `Decision::Stop` self-suspends to Init
+- [x] `WorkerMsg::DoWork` in `Waiting` runs transition actions then `Decision::Done` (machine parks in Init; run loop ends the task)
 - [x] `WorkerMsg::PeerResult` in `Waiting` is ignored (`Stay`)
 - [x] With stub actions, `PeerCtrl::AddPeer` does not modify `peers` (stub verification)
 - [x] With stub actions, `process_work` does not set `task_id` (stub verification)
@@ -124,7 +124,7 @@ All tests live in `crates/bloxes/worker/src/tests.rs` and use `TestRuntime`:
 | Acceptance Criterion | Test Function |
 |---|---|
 | `dispatch(LifecycleCommand::Start)` enters Waiting | `worker_starts_in_waiting` |
-| DoWork → Decision::Stop | `do_work_transitions_to_stop` |
+| DoWork → Decision::Done | `do_work_transitions_to_done` |
 | PeerResult ignored | `peer_result_in_waiting_is_ignored` |
 | Stub handle_ctrl does not add peer | `handle_ctrl_stub_does_not_add_peer` |
 | Stub process_work does not set task_id | `process_work_stub_does_not_set_task_id` |
@@ -143,8 +143,8 @@ All tests live in `crates/bloxes/worker/src/tests.rs` and use `TestRuntime`:
 ## Related Docs
 
 - See `spec/bloxes/pool.md` for the pool perspective
-- See `spec/architecture/07-typed-mailboxes.md` for priority ordering
-- See `spec/architecture/11-dynamic-actors.md` for peer introduction
+- See `spec/architecture/06-typed-mailboxes.md` for priority ordering
+- See `spec/architecture/10-dynamic-actors.md` for peer introduction
 
 ## blox.toml
 
@@ -160,7 +160,7 @@ actions = ["Self::handle_ctrl"]
 [[topology.transitions]]
 state = "Waiting"
 event = "WorkerMsg::DoWork(_)"
-target = "stop"
+target = "done"
 actions = ["Self::process_work", "Self::do_broadcast", "Self::do_notify_pool"]
 
 [[topology.transitions]]

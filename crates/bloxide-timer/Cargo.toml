@@ -8,12 +8,12 @@ repository.workspace = true
 license.workspace = true
 
 [features]
-default = ["alloc"]
-alloc = ["bloxide-core/alloc"]
-std = ["bloxide-core/std", "alloc", "dep:bloxide-test-runtime"]
+std = ["bloxide-core/std", "dep:bloxide-test-runtime"]
 
 [dependencies]
-bloxide-core = { workspace = true }
+# alloc is unconditional: TimerQueue and the action functions use alloc
+# types (Vec, Box) on every target, so bloxide-core/alloc is always on.
+bloxide-core = { workspace = true, features = ["alloc"] }
 bloxide-log = { workspace = true }
 critical-section = "1.2.0"
 bloxide-test-runtime = { workspace = true, optional = true }

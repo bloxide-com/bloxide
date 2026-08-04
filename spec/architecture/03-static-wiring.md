@@ -1,6 +1,6 @@
 # Static Wiring
 
-All actors are allocated at compile time. `ActorRef`s are wired together before the executor starts. There is no dynamic actor spawning for Embassy. For runtimes that support it, see [11-dynamic-actors.md](11-dynamic-actors.md).
+All actors are allocated at compile time. `ActorRef`s are wired together before the executor starts. There is no dynamic actor spawning for Embassy. For runtimes that support it, see [10-dynamic-actors.md](10-dynamic-actors.md).
 
 ## Initialization Order
 
@@ -138,11 +138,13 @@ bloxide_embassy::actor_task_supervised!(pong_task, PongSpec<EmbassyRuntime>);
 
 Generates the `#[embassy_executor::task]` wrapper for the root supervisor
 (`RunConfig::root()` — the loop exits on `Stopped`, `Done`, `Failed`, or
-`Aborted`). An optional trailing expression runs after the loop exits (e.g.
-`std::process::exit(0)` on std targets):
+`Aborted`). An optional trailing expression runs after the loop exits. The
+codegen passes `bloxide_embassy::exit_process()`, which is
+`std::process::exit(0)` on std-hosted (arch-std) builds — a supervised app is
+done when its supervisor is done — and a no-op on `no_std` embedded builds:
 
 ```rust
-bloxide_embassy::root_task!(supervisor_task, SupervisorSpec<EmbassyRuntime>);
+bloxide_embassy::root_task!(supervisor_task, SupervisorSpec<EmbassyRuntime>, bloxide_embassy::exit_process());
 ```
 
 ### `timer_task!` / `spawn_timer!` macros
@@ -248,5 +250,5 @@ fn setup(spawner: Spawner) {
 - Root supervisors are spawned via `root_task!` (`RunConfig::root()`); supervised children via `actor_task_supervised!` + `spawn_child!`.
 - Lifecycle flows through `dispatch` — the root supervisor is started by dispatching `SupervisorEvent::Lifecycle(LifecycleCommand::Start)` before its task is spawned.
 - `ChildPolicy::Kill`/`Abort` panic at registration for static children — use `Reset`/`Stop` (see `ChildGroupBuilder` above).
-- Do not create actors after the executor starts (Embassy). For dynamic actor creation on Tokio/TestRuntime, see `spec/architecture/11-dynamic-actors.md`.
+- Do not create actors after the executor starts (Embassy). For dynamic actor creation on Tokio/TestRuntime, see `spec/architecture/10-dynamic-actors.md`.
 - `ChildGroupBuilder` must call `finish()` before constructing the supervisor context; `SupervisorCtx::new` takes `(sup_id, children, sup_notify_ref)`.

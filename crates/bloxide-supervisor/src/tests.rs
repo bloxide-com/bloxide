@@ -27,7 +27,7 @@ fn make_supervisor(
     shutdown: GroupShutdown,
     policies: &[ChildPolicy],
 ) -> (StateMachine<Spec>, Vec<TestReceiver<LifecycleCommand>>) {
-    let mut group = ChildGroup::new(shutdown);
+    let mut group = ChildGroup::new(shutdown, 2);
     let mut receivers = Vec::new();
     for (i, policy) in policies.iter().enumerate() {
         let id = i + 1;
@@ -86,6 +86,23 @@ fn start_enters_running() {
     }
 }
 
+/// Empty supervisor: `all_children_stopped()` is vacuously true, so the guard
+/// short-circuits to `Decision::Stop` on the first event that carries the
+/// guard (here, `WatchdogTick`). This pins the vacuous-truth behavior and
+/// prevents a wedge where an event-less empty supervisor would loop forever.
+#[test]
+fn zero_children_supervisor_stops_on_first_event() {
+    let (mut machine, _receivers) = make_supervisor(GroupShutdown::WhenAnyDone, &[]);
+    machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+
+    let outcome = dispatch_control_event(&mut machine, ChildCtrl::WatchdogTick);
+    assert_eq!(
+        outcome,
+        DispatchOutcome::Stopped,
+        "empty supervisor must self-stop on first event (vacuous all_children_stopped)"
+    );
+}
+
 #[test]
 fn restart_policy_stays_running_on_done() {
     let (mut machine, mut receivers) =
@@ -101,7 +118,7 @@ fn restart_policy_stays_running_on_done() {
     assert!(matches!(cmds[0], LifecycleCommand::Reset));
 }
 
-/// In the four-level lifecycle model, Reset goes directly to initial_state()
+/// In the five-level lifecycle model, Reset goes directly to initial_state()
 /// and returns Started. The supervisor does NOT send a separate Start after
 /// Reset — the Reset command itself re-enters initial_state(). The supervisor
 /// sees Started from the child (which is the outcome of the Reset dispatch).
@@ -793,7 +810,7 @@ fn shutting_down_completes_on_killed() {
 /// receivers (kept alive — dropping one closes the channel), and child 2's id.
 fn make_shutting_down_with_pending_stop(
 ) -> (StateMachine<Spec>, Vec<TestReceiver<LifecycleCommand>>) {
-    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
     let (lc1, rx1) = TestRuntime::channel::<LifecycleCommand>(1, 16);
     let (lc2, rx2) = TestRuntime::channel::<LifecycleCommand>(2, 1);
     group.try_add(1, lc1, ChildPolicy::Stop).unwrap();

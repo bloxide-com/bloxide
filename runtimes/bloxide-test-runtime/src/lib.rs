@@ -35,8 +35,20 @@
 //!   `try_send`, so `try_send` is the backpressure path under test.
 //! - Spawned futures are **recorded, not executed** — `kill` only logs the id;
 //!   it does not (and cannot) drop the recorded future.
+//!
+//! # `no_std` support
+//!
+//! The crate is `no_std` + `alloc`. With the default `std` feature the spawn
+//! and kill logs are thread-local (parallel `cargo test` threads stay
+//! isolated); with `--no-default-features --features alloc` they become
+//! process-global logs behind a `spin::Mutex` (single-threaded harnesses).
+
+#![no_std]
 
 extern crate alloc;
+
+#[cfg(any(test, feature = "std"))]
+extern crate std;
 
 use bloxide_core::capability::{
     BloxRuntime, DynamicChannelCap, GroupChannelCap, DYNAMIC_ACTOR_ID_BASE,
@@ -44,13 +56,14 @@ use bloxide_core::capability::{
 use bloxide_core::messaging::{ActorId, ActorRef, Envelope};
 use bloxide_spawn::{Kill, SpawnCap};
 
+use alloc::collections::VecDeque;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::pin::Pin;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::task::{Context, Poll, Waker};
 use futures_core::Stream;
-use std::collections::VecDeque;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Waker};
-use std::vec::Vec;
+use spin::Mutex;
 
 // ── Unique actor ID generator ────────────────────────────────────────────
 
@@ -78,7 +91,7 @@ struct Shared<M: Send + 'static> {
 
 impl<M: Send + 'static> Shared<M> {
     fn wake(&self) {
-        if let Some(waker) = self.waker.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        if let Some(waker) = self.waker.lock().take() {
             waker.wake();
         }
     }
@@ -112,12 +125,12 @@ pub struct TestReceiver<M: Send + 'static> {
 
 impl<M: Send + 'static> TestReceiver<M> {
     pub fn drain_payloads(&mut self) -> Vec<M> {
-        let mut lock = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
+        let mut lock = self.shared.queue.lock();
         lock.drain(..).map(|e| e.1).collect()
     }
 
     pub fn drain_envelopes(&mut self) -> Vec<Envelope<M>> {
-        let mut lock = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
+        let mut lock = self.shared.queue.lock();
         lock.drain(..).collect()
     }
 }
@@ -134,7 +147,7 @@ impl<M: Send + 'static> Stream for TestReceiver<M> {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         {
-            let mut lock = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
+            let mut lock = self.shared.queue.lock();
             if let Some(env) = lock.pop_front() {
                 return Poll::Ready(Some(env));
             }
@@ -147,8 +160,8 @@ impl<M: Send + 'static> Stream for TestReceiver<M> {
         // Register the waker, then re-check the queue: a send that landed
         // between the first check and registration must not be lost (the
         // sender's wake() would have found an empty waker slot).
-        *self.shared.waker.lock().unwrap_or_else(|e| e.into_inner()) = Some(cx.waker().clone());
-        let mut lock = self.shared.queue.lock().unwrap_or_else(|e| e.into_inner());
+        *self.shared.waker.lock() = Some(cx.waker().clone());
+        let mut lock = self.shared.queue.lock();
         if let Some(env) = lock.pop_front() {
             return Poll::Ready(Some(env));
         }
@@ -169,6 +182,7 @@ impl core::fmt::Display for TestSendError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for TestSendError {}
 
 /// Error returned by `TestRuntime::try_send_via`.
@@ -189,6 +203,7 @@ impl core::fmt::Display for TestTrySendError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for TestTrySendError {}
 
 // ── TestRuntime ──────────────────────────────────────────────────────────
@@ -225,12 +240,7 @@ impl BloxRuntime for TestRuntime {
         envelope: Envelope<M>,
     ) -> Result<(), Self::SendError> {
         // Intentional gap: unbounded (no backpressure on the async path).
-        sender
-            .shared
-            .queue
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push_back(envelope);
+        sender.shared.queue.lock().push_back(envelope);
         sender.shared.wake();
         Ok(())
     }
@@ -242,11 +252,7 @@ impl BloxRuntime for TestRuntime {
         if !sender.shared.receiver_alive.load(Ordering::SeqCst) {
             return Err(TestTrySendError::Closed);
         }
-        let mut lock = sender
-            .shared
-            .queue
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut lock = sender.shared.queue.lock();
         if lock.len() >= sender.shared.capacity {
             return Err(TestTrySendError::Full);
         }
@@ -302,19 +308,107 @@ impl GroupChannelCap for TestRuntime {
 // ── SpawnCap ─────────────────────────────────────────────────────────────
 
 use alloc::boxed::Box;
-use alloc::vec::Vec as AllocVec;
 use core::future::Future;
 
-type SpawnedVec = AllocVec<Pin<Box<dyn Future<Output = ()> + Send>>>;
+type SpawnedVec = Vec<Pin<Box<dyn Future<Output = ()> + Send>>>;
 
-thread_local! {
-    static SPAWNED: std::cell::RefCell<SpawnedVec> = std::cell::RefCell::new(AllocVec::new());
-    /// Monotonically increasing spawn id — stable across `drain_spawned` calls,
-    /// so a `KillHandle` stays correlated with its spawn.
-    static NEXT_SPAWN_ID: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-    /// Ids of tasks killed via `SpawnCap::kill` since the last `drain_killed`.
-    static KILLED: std::cell::RefCell<AllocVec<usize>> =
-        const { std::cell::RefCell::new(AllocVec::new()) };
+#[cfg(feature = "std")]
+mod spawn_log {
+    //! Thread-local spawn/kill logs: parallel `cargo test` threads each get
+    //! their own log, so tests cannot interfere with one another.
+    use super::SpawnedVec;
+    use alloc::boxed::Box;
+    use alloc::vec::Vec;
+    use core::cell::{Cell, RefCell};
+    use core::future::Future;
+    use core::pin::Pin;
+
+    std::thread_local! {
+        static SPAWNED: RefCell<SpawnedVec> = RefCell::new(Vec::new());
+        /// Monotonically increasing spawn id — stable across `drain_spawned` calls,
+        /// so a `KillHandle` stays correlated with its spawn.
+        static NEXT_SPAWN_ID: Cell<usize> = const { Cell::new(0) };
+        /// Ids of tasks killed via `SpawnCap::kill` since the last `drain_killed`.
+        static KILLED: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+    }
+
+    pub fn next_spawn_id() -> usize {
+        NEXT_SPAWN_ID.with(|n| {
+            let id = n.get();
+            n.set(id + 1);
+            id
+        })
+    }
+
+    pub fn record_spawn(future: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        SPAWNED.with(|s| s.borrow_mut().push(future));
+    }
+
+    pub fn record_kill(handle: usize) {
+        KILLED.with(|k| k.borrow_mut().push(handle));
+    }
+
+    pub fn drain_spawned() -> SpawnedVec {
+        SPAWNED.with(|s| s.borrow_mut().drain(..).collect())
+    }
+
+    pub fn spawned_count() -> usize {
+        SPAWNED.with(|s| s.borrow().len())
+    }
+
+    pub fn drain_killed() -> Vec<usize> {
+        KILLED.with(|k| k.borrow_mut().drain(..).collect())
+    }
+
+    pub fn kill_count() -> usize {
+        KILLED.with(|k| k.borrow().len())
+    }
+}
+
+#[cfg(not(feature = "std"))]
+mod spawn_log {
+    //! `no_std` fallback: process-global logs behind a `spin::Mutex`. There
+    //! are no threads to isolate in an alloc-only harness, so a single
+    //! global log is sufficient.
+    use super::SpawnedVec;
+    use alloc::boxed::Box;
+    use alloc::vec::Vec;
+    use core::future::Future;
+    use core::pin::Pin;
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    use spin::Mutex;
+
+    static SPAWNED: Mutex<SpawnedVec> = Mutex::new(Vec::new());
+    static NEXT_SPAWN_ID: AtomicUsize = AtomicUsize::new(0);
+    static KILLED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+
+    pub fn next_spawn_id() -> usize {
+        NEXT_SPAWN_ID.fetch_add(1, Ordering::Relaxed)
+    }
+
+    pub fn record_spawn(future: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        SPAWNED.lock().push(future);
+    }
+
+    pub fn record_kill(handle: usize) {
+        KILLED.lock().push(handle);
+    }
+
+    pub fn drain_spawned() -> SpawnedVec {
+        SPAWNED.lock().drain(..).collect()
+    }
+
+    pub fn spawned_count() -> usize {
+        SPAWNED.lock().len()
+    }
+
+    pub fn drain_killed() -> Vec<usize> {
+        KILLED.lock().drain(..).collect()
+    }
+
+    pub fn kill_count() -> usize {
+        KILLED.lock().len()
+    }
 }
 
 impl SpawnCap for TestRuntime {
@@ -322,12 +416,8 @@ impl SpawnCap for TestRuntime {
     type KillHandle = usize;
 
     fn spawn(future: impl Future<Output = ()> + Send + 'static) -> Self::TaskHandle {
-        let id = NEXT_SPAWN_ID.with(|n| {
-            let id = n.get();
-            n.set(id + 1);
-            id
-        });
-        SPAWNED.with(|s| s.borrow_mut().push(Box::pin(future)));
+        let id = spawn_log::next_spawn_id();
+        spawn_log::record_spawn(Box::pin(future));
         id
     }
 
@@ -338,28 +428,28 @@ impl SpawnCap for TestRuntime {
     fn kill(handle: Self::KillHandle) {
         // Recorded, not executed: TestRuntime doesn't run real tasks, but the
         // kill path is observable — tests assert via `drain_killed`/`kill_count`.
-        KILLED.with(|k| k.borrow_mut().push(handle));
+        spawn_log::record_kill(handle);
     }
 }
 
 /// Drain all futures submitted via `SpawnCap::spawn` since the last drain.
 pub fn drain_spawned() -> SpawnedVec {
-    SPAWNED.with(|s| s.borrow_mut().drain(..).collect())
+    spawn_log::drain_spawned()
 }
 
 /// Returns the number of futures submitted since the last drain.
 pub fn spawned_count() -> usize {
-    SPAWNED.with(|s| s.borrow().len())
+    spawn_log::spawned_count()
 }
 
 /// Drain all spawn ids recorded by `SpawnCap::kill` since the last drain.
-pub fn drain_killed() -> AllocVec<usize> {
-    KILLED.with(|k| k.borrow_mut().drain(..).collect())
+pub fn drain_killed() -> Vec<usize> {
+    spawn_log::drain_killed()
 }
 
 /// Returns the number of kills recorded since the last `drain_killed`.
 pub fn kill_count() -> usize {
-    KILLED.with(|k| k.borrow().len())
+    spawn_log::kill_count()
 }
 
 // ── Spawn helper tests ─────────────────────────────────────────────────────

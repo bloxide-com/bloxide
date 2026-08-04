@@ -19,6 +19,7 @@ fn_name = "increment_count"
 crate = "blox_ctx_ticks"
 fields = ["count:mut"]
 impl_required = false
+returns = "ActionResult"
 
 [event]
 name = "CounterEvent"

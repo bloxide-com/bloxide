@@ -101,29 +101,27 @@ pub struct State {
     pub parent: Option<String>,
     pub description: String,
     pub depth: usize,
+    /// True when this state is the machine's initial state.
+    #[serde(default)]
+    pub initial: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StateKind {
     Leaf,
     Composite,
-    Terminal,
     Error,
 }
 
 impl StateKind {
     pub fn is_leaf(&self) -> bool {
-        matches!(
-            self,
-            StateKind::Leaf | StateKind::Terminal | StateKind::Error
-        )
+        matches!(self, StateKind::Leaf | StateKind::Error)
     }
 
     pub fn symbol(&self) -> &'static str {
         match self {
             StateKind::Leaf => "",
             StateKind::Composite => "◇",
-            StateKind::Terminal => "◆",
             StateKind::Error => "◈",
         }
     }

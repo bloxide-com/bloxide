@@ -145,20 +145,23 @@ mod ping_tests {
     }
 
     #[test]
-    fn stop_after_max_rounds() {
+    fn done_after_max_rounds() {
         let mut h = PingHarness::new();
         h.start();
         h.drain_to_pong_rx();
 
-        // Manually set round to MAX_ROUNDS to trigger Decision::Stop
+        // Manually set round to MAX_ROUNDS to trigger Decision::Done
         h.machine.ctx_mut().round = MAX_ROUNDS as u32;
         h.send_pong();
 
-        // Decision::Stop fires when round >= MAX_ROUNDS, returning the machine
-        // to Init (suspended).
+        // Decision::Done fires when round >= MAX_ROUNDS: the machine runs the
+        // same cleanup as Stop (exit chain + on_init_entry, landing in Init),
+        // and the run loop then ends the task and reports Done to the
+        // supervisor (the task-end is a run-loop concern — the machine
+        // itself is left parked in Init).
         assert!(
             h.current_state().is_init(),
-            "machine must be in Init after Decision::Stop at MAX_ROUNDS"
+            "machine must be in Init after Decision::Done at MAX_ROUNDS"
         );
     }
 
@@ -180,17 +183,17 @@ mod ping_tests {
 
         h.start();
         h.drain_to_pong_rx();
-        h.machine.ctx_mut().round = MAX_ROUNDS as u32;
-        h.send_pong();
-
+        // Park the machine in Init via the Stop lifecycle command.
+        h.machine
+            .dispatch(PingEvent::Lifecycle(LifecycleCommand::Stop));
         assert!(
             h.current_state().is_init(),
-            "machine must be in Init after Decision::Stop at MAX_ROUNDS"
+            "machine must be in Init after LifecycleCommand::Stop"
         );
 
         h.terminate();
 
-        // In the four-level lifecycle model, Reset goes directly to
+        // In the five-level lifecycle model, Reset goes directly to
         // initial_state() (Active) — not Init. The machine is immediately
         // operational. on_init_entry does NOT fire on Reset (per spec),
         // so the round is NOT reset.

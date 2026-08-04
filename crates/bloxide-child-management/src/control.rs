@@ -4,7 +4,7 @@
 //! The managing blox (the standard supervisor, or a custom one) receives
 //! registration and health-check messages on a dedicated control mailbox.
 //! The standard supervisor blox is the reference consumer — these types are
-//! owned by the platform, not by any blox (spec 20: Platform Feature Pattern).
+//! owned by the platform, not by any blox (spec 18: Platform Feature Pattern).
 use core::fmt;
 
 use crate::ChildPolicy;

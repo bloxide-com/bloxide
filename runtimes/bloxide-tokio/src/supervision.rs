@@ -172,7 +172,7 @@ mod tests {
         sleep(Duration::from_millis(50)).await;
         assert!(!dropped.load(Ordering::SeqCst));
         let kill_handle = <TokioRuntime as SpawnCap>::kill_handle(handle);
-        let mut group = ChildGroup::<TokioRuntime>::new(GroupShutdown::WhenAnyDone);
+        let mut group = ChildGroup::<TokioRuntime>::new(GroupShutdown::WhenAnyDone, 2);
         group
             .try_add_dynamic(
                 child_id,

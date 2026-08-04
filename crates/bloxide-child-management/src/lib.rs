@@ -6,7 +6,7 @@
 //! `ChildGroup` directly. The supervisor is one such consumer; a custom
 //! managing blox could use it without depending on `bloxide-supervisor`.
 //!
-//! Following the Platform Feature Pattern (spec 20), this crate also owns the
+//! Following the Platform Feature Pattern (spec 18), this crate also owns the
 //! child-management control plane (`control`: `ChildCtrl`, `RegisterChild`,
 //! `RegisterDynamicChild`) and the consumer-side action functions (`actions`)
 //! that a managing blox wires into its topology.
@@ -46,15 +46,12 @@ use bloxide_core::{
     messaging::{ActorId, ActorRef},
 };
 
-/// Consecutive unanswered Pings before a child is declared rogue.
-const MAX_MISSES: u8 = 2;
-
 /// Supervision policy for a child actor.
 ///
 /// Determines what the managing blox does when the child fails (reports
 /// `Stopped` or `Failed`, or misses `MAX_MISSES` consecutive health checks).
 ///
-/// The four-level lifecycle model (`reset → stop → abort → kill`):
+/// The five-level lifecycle model (`reset → stop → done → abort → kill`):
 ///
 /// | Policy | Mechanism | Cooperative? | Callbacks? | Revivable? |
 /// |--------|-----------|-------------|------------|------------|
@@ -220,13 +217,23 @@ struct ChildEntry<R: BloxRuntime> {
 pub struct ChildGroup<R: BloxRuntime> {
     children: Vec<ChildEntry<R>>,
     shutdown: GroupShutdown,
+    max_misses: u8,
 }
 
 impl<R: BloxRuntime> ChildGroup<R> {
-    pub fn new(shutdown: GroupShutdown) -> Self {
+    /// Create an empty child group.
+    ///
+    /// - `shutdown` — when to trigger group-level shutdown
+    ///   (`GroupShutdown::WhenAnyDone` on the first terminal report,
+    ///   `GroupShutdown::WhenAllDone` once every child is terminal).
+    /// - `max_misses` — consecutive unanswered **delivered** watchdog Pings
+    ///   before a child is declared rogue and its `ChildPolicy` is applied.
+    ///   An undelivered Ping (full channel) is never counted as a miss.
+    pub fn new(shutdown: GroupShutdown, max_misses: u8) -> Self {
         Self {
             children: Vec::new(),
             shutdown,
+            max_misses,
         }
     }
 
@@ -661,7 +668,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
     /// Handle a `ChildLifecycleEvent::Started` for a child.
     ///
-    /// In the four-level lifecycle model, `Started` is sent for both initial
+    /// In the five-level lifecycle model, `Started` is sent for both initial
     /// `Start` and `Reset` (both go directly to `initial_state()`). The
     /// supervisor does not need to send `Start` after `Reset` — `Reset` is
     /// self-contained.
@@ -726,7 +733,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             }
             if entry.ping_outstanding {
                 entry.misses += 1;
-                if entry.misses >= MAX_MISSES {
+                if entry.misses >= self.max_misses {
                     entry.ping_outstanding = false;
                     entry.misses = 0;
                     rogue_ids.push(entry.id);

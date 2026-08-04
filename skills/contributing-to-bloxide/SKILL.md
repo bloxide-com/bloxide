@@ -20,7 +20,7 @@ This guide is for modifying the bloxide framework itself — the HSM engine, pro
 
 ```
 bloxide-core        HSM engine, BloxRuntime, channel traits, KillCapability, run/RunConfig  (no_std)
-bloxide-macros      Proc macros: blox_event, event!, blox_messages!, EventTag, channels!    (host-compiled)
+bloxide-macros      Proc macros: channels!, dyn_channels!, next_actor_id!     (host-compiled)
 bloxide-codegen     TOML-driven code generator library                        (host-compiled)
 cargo-blox          CLI: see QUICK_REFERENCE.md → "cargo blox Command Reference"  (host-compiled)
 bloxide-log         Feature-gated logging macros                              (no_std)

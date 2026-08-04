@@ -1,34 +1,38 @@
 {
   "name": "Ping",
-  "crate_path": "./crates/bloxes/ping",
+  "crate_path": "/repos/internal/bloxide/crates/bloxes/ping",
   "states": [
     {
       "name": "Operating",
       "kind": "Composite",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": false
     },
     {
       "name": "Active",
       "kind": "Leaf",
       "parent": "Operating",
       "description": "",
-      "depth": 1
+      "depth": 1,
+      "initial": true
     },
     {
       "name": "Paused",
       "kind": "Leaf",
       "parent": "Operating",
       "description": "",
-      "depth": 1
+      "depth": 1,
+      "initial": false
     },
     {
       "name": "Error",
       "kind": "Error",
       "parent": null,
       "description": "",
-      "depth": 0
+      "depth": 0,
+      "initial": false
     }
   ],
   "events": [
@@ -72,8 +76,8 @@
         "Self::forward_ping"
       ],
       "guard": {
-        "description": "results.any_failed() => Error\nctx.round >= MAX_ROUNDS as u32 => stop\nctx.round == PAUSE_AT_ROUND as u32 => Paused\n_ => stay",
-        "raw": "if results.any_failed() { Error } else if ctx.round >= MAX_ROUNDS as u32 { stop } else if ctx.round == PAUSE_AT_ROUND as u32 { Paused } else { stay }",
+        "description": "results.any_failed() => Error\nctx.round >= MAX_ROUNDS as u32 => done\nctx.round == PAUSE_AT_ROUND as u32 => Paused\n_ => stay",
+        "raw": "if results.any_failed() { Error } else if ctx.round >= MAX_ROUNDS as u32 { done } else if ctx.round == PAUSE_AT_ROUND as u32 { Paused } else { stay }",
         "branches": [
           {
             "condition": "results.any_failed()",
@@ -83,7 +87,7 @@
           },
           {
             "condition": "ctx.round >= MAX_ROUNDS as u32",
-            "target": "Stop"
+            "target": "Done"
           },
           {
             "condition": "ctx.round == PAUSE_AT_ROUND as u32",
@@ -192,12 +196,6 @@
     }
   ],
   "entry_exit": {
-    "Active": {
-      "on_entry": [
-        "Self::send_initial_ping"
-      ],
-      "on_exit": []
-    },
     "Error": {
       "on_entry": [],
       "on_exit": []
@@ -209,6 +207,12 @@
       "on_exit": [
         "Self::cancel_pause_timer"
       ]
+    },
+    "Active": {
+      "on_entry": [
+        "Self::send_initial_ping"
+      ],
+      "on_exit": []
     }
   },
   "message_sets": [

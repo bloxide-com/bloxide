@@ -117,7 +117,7 @@ Entry:  S2.on_entry  ← s2-ENTRY;
         S211.on_entry← s211-ENTRY;
 ```
 > `S.on_exit` / `S.on_entry` do NOT fire — the LCA state itself never exits
-> or re-enters (spec 02). Only when source and target share NO user ancestor
+> or re-enters (spec 01). Only when source and target share NO user ancestor
 > (LCA = None, e.g. `K` → `Error`) do the full chains fire.
 
 ### `S11 → S211` via event C (bubbled to S1, LCA = S)
@@ -180,9 +180,9 @@ Decision::Stop: fires exit chain from current state to root, enters Init. Superv
 
 ## Acceptance Criteria
 
-> Verified by `crates/bloxes/bhsm-tst/src/tests.rs` (15 tests, issue #136) —
+> Verified by `crates/bloxes/bhsm-tst/src/tests.rs` (15 tests) —
 > a recording spec over the **generated** topology asserts the exact
-> exit/entry chain order per transition. Chains follow spec 02 LCA semantics:
+> exit/entry chain order per transition. Chains follow spec 01 LCA semantics:
 > the LCA state itself never exits or re-enters; full chains fire only when
 > `LCA = None` (e.g. `K` → `Error`, `X` → `Stop`).
 

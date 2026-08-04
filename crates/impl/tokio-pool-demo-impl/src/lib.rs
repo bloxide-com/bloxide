@@ -28,6 +28,7 @@ use worker_blox::WorkerCtx;
 pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) -> ActionResult {
     *task_id = do_work.task_id;
     *result = do_work.task_id * 2;
+    println!("[worker] task {} processed -> result = {}", *task_id, *result);
     ActionResult::Ok
 }
 
@@ -36,10 +37,14 @@ pub fn process_work(task_id: &mut u32, result: &mut u32, do_work: &DoWork) -> Ac
 // context fields passed as parameters (not the full PoolCtx).
 
 /// Decrement the pending work counter when a WorkDone is received.
-pub fn handle_work_done(pending: &mut u32, _work_done: &pool_messages::WorkDone) -> ActionResult {
+pub fn handle_work_done(pending: &mut u32, work_done: &pool_messages::WorkDone) -> ActionResult {
     if *pending > 0 {
         *pending -= 1;
     }
+    println!(
+        "[pool] task {} done by worker {} (result = {}) — {} still pending",
+        work_done.task_id, work_done.worker_id, work_done.result, *pending
+    );
     ActionResult::Ok
 }
 
@@ -73,6 +78,7 @@ pub fn handle_spawn_worker<R: BloxRuntime>(
     *pending_task_id = task_id;
     *spawn_in_flight = true;
     *pending += 1;
+    println!("[pool] spawn requested for task {} (pending = {})", task_id, *pending);
 
     let req = blox_ctx_pool_ref::SpawnRequest::Worker {
         task_id,
@@ -95,6 +101,10 @@ pub fn handle_spawn_worker_queued(
 ) -> ActionResult {
     spawn_queue.push(spawn_worker.task_id);
     *pending += 1;
+    println!(
+        "[pool] spawn for task {} queued behind in-flight spawn (pending = {})",
+        spawn_worker.task_id, *pending
+    );
     ActionResult::Ok
 }
 
@@ -157,6 +167,12 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
     // Store the new worker's refs.
     worker_refs.push(new_domain_ref);
     worker_ctrls.push(new_ctrl_ref);
+    println!(
+        "[pool] worker {} up — DoWork task {} dispatched ({} peer(s) introduced)",
+        new_worker_id,
+        *pending_task_id,
+        worker_refs.len() - 1
+    );
 
     // Process the next queued spawn if any.
     if let Some(&next_task_id) = spawn_queue.first() {
@@ -203,11 +219,12 @@ where
 {
     match req {
         SpawnRequest::Worker {
-            task_id: _,
+            task_id,
             reply_to,
             pool_ref,
         } => {
             let worker_id = <TokioRuntime as DynamicChannelCap>::alloc_actor_id();
+            println!("[spawn] worker {} created for task {}", worker_id, task_id);
             let (ctrl_ref, ctrl_rx) = <TokioRuntime as DynamicChannelCap>::channel::<
                 PeerCtrl<WorkerMsg, TokioRuntime>,
             >(worker_id, 16);

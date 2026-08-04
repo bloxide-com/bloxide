@@ -12,7 +12,7 @@ use std::path::Path;
 use toml_edit::{Array, ArrayOfTables, DocumentMut, Item, Table};
 
 /// Classification of edit failures so CLI callers can map them to process
-/// exit codes (spec 19): `Conflict` → 5, `NotFound` → 3.
+/// exit codes (spec 17): `Conflict` → 5, `NotFound` → 3.
 #[derive(Debug)]
 pub enum EditError {
     Conflict(String),

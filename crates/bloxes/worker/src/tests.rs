@@ -67,14 +67,16 @@ mod worker_tests {
     }
 
     #[test]
-    fn do_work_transitions_to_stop() {
+    fn do_work_transitions_to_done() {
         let mut h = WorkerHarness::new();
         h.start();
         h.dispatch_do_work(7);
-        // Decision::Stop fires after stub actions — machine returns to Init.
+        // Decision::Done fires after stub actions — same cleanup as Stop
+        // (machine parks in Init), then the run loop ends the task and the
+        // supervisor deregisters the worker (task-end is a run-loop concern).
         assert!(
             h.current_state().is_init(),
-            "machine must be in Init after DoWork (Decision::Stop)"
+            "machine must be in Init after DoWork (Decision::Done)"
         );
     }
 

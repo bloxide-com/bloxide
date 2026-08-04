@@ -3,7 +3,7 @@
 > **When would I use this?** Use this document when implementing dynamic
 > actor spawning via factory injection, understanding why supervised actors
 > return `&[]` from `root_transitions()`, or learning LCA transition patterns.
-> For the canonical lifecycle handling reference, see `02-hsm-engine.md`.
+> For the canonical lifecycle handling reference, see `01-hsm-engine.md`.
 
 This document clarifies two common confusion points: (1) how factory injection works
 through constructor-injected context fields and `system.toml` inject sources, and (2) why
@@ -253,7 +253,7 @@ The factory injection pattern **does not require the blox to have `R: SpawnCap`*
 ## Part 2: Why Supervised Actors Return `&[]` for `root_transitions()`
 
 > **Canonical source**: For the full lifecycle command handling reference, see
-> `spec/architecture/02-hsm-engine.md` → "Lifecycle Command Handling at VirtualRoot".
+> `spec/architecture/01-hsm-engine.md` → "Lifecycle Command Handling at VirtualRoot".
 
 ### The Confusion
 
