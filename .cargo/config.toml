@@ -1,0 +1,12 @@
+# Copyright 2025 Bloxide, all rights reserved
+# Workspace-local cargo aliases for the `cargo blox` CLI
+# (crates/tools/cargo-blox, spec/architecture/17-cli-design.md).
+# Each alias forwards to the corresponding `cargo blox <subcommand>`; requires
+# cargo-blox on PATH (cargo install --path crates/tools/cargo-blox).
+[alias]
+blox-generate = "blox generate"
+blox-new = "blox new"
+blox-build = "blox build"
+blox-check = "blox check"
+blox-test = "blox test"
+blox-run = "blox run"

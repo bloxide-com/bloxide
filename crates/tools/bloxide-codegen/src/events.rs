@@ -9,7 +9,7 @@
 use quote::{format_ident, quote};
 
 use crate::schema::{EventConfig, MailboxConfig};
-use crate::util::{to_snake_case, to_upper_snake_case, HEADER};
+use crate::util::{to_snake_case, to_upper_snake_case, DOC_FROM_BLOX_TOML, HEADER};
 
 /// Parse a `syn::Generics` from an optional string, returning default if None.
 fn parse_generics(g: Option<&str>) -> anyhow::Result<syn::Generics> {
@@ -373,7 +373,7 @@ pub fn generate(config: &EventConfig) -> anyhow::Result<String> {
         let file = syn::parse_str::<syn::File>(&raw)
             .map_err(|e| anyhow::anyhow!("syn parsing failed: {}", e))?;
         let formatted = prettyplease::unparse(&file);
-        return Ok(format!("{}{}", HEADER, formatted));
+        return Ok(format!("{}{}{}", HEADER, DOC_FROM_BLOX_TOML, formatted));
     }
 
     // Paired-variant mode
@@ -406,7 +406,7 @@ pub fn generate(config: &EventConfig) -> anyhow::Result<String> {
         .map_err(|e| anyhow::anyhow!("syn parsing failed: {}", e))?;
     let formatted = prettyplease::unparse(&file);
 
-    Ok(format!("{}{}", HEADER, formatted))
+    Ok(format!("{}{}{}", HEADER, DOC_FROM_BLOX_TOML, formatted))
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────

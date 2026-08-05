@@ -15,6 +15,7 @@
 #   - stable Rust toolchain (rustup, cargo, rustc)
 #   - clippy component installed
 #   - riscv32imc-unknown-none-elf target installed (for embassy checks)
+#   - cargo-blox (this script installs it from crates/tools/cargo-blox if missing)
 
 set -euo pipefail
 
@@ -22,6 +23,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${REPO_ROOT}"
+
+# cargo-blox must be on PATH for `cargo blox build` / `cargo blox test`.
+# Installed from the current checkout so the invoked binary always matches
+# the sources under test (mirrors .github/workflows/lint-and-test.yml).
+if ! command -v cargo-blox >/dev/null 2>&1; then
+    echo "cargo-blox not found; installing from crates/tools/cargo-blox ..."
+    cargo install --path "${REPO_ROOT}/crates/tools/cargo-blox"
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -56,7 +65,9 @@ check_copyright() {
 }
 
 run_lint() {
-    run_step "Cargo Build (default features)" cargo build
+    # cargo blox build regenerates from blox.toml/system.toml first, so the
+    # build never runs against stale generated artifacts.
+    run_step "Cargo Build (default features, via cargo blox)" cargo blox build
 
     run_step "Cargo Check (bloxide-core no-default-features)" \
         cargo check -p bloxide-core --no-default-features
@@ -82,8 +93,8 @@ run_tests() {
     run_step "Cargo Test (bloxide-embassy std)" \
         cargo test -p bloxide-embassy --features std
 
-    run_step "Cargo Test (workspace default)" \
-        cargo test
+    run_step "Cargo Test (workspace default, via cargo blox)" \
+        cargo blox test
 }
 
 run_docs() {

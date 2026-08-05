@@ -9,4 +9,4 @@
 pub mod generated;
 pub mod prelude;
 
-pub use generated::*;
+pub use generated::{DoWork, PeerResult, PoolMsg, SpawnWorker, WorkDone, WorkerMsg};

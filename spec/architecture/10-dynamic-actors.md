@@ -1076,5 +1076,5 @@ The following rules extend the [core invariants in AGENTS.md](../../AGENTS.md):
 - **Peer introduction API** → `crates/bloxide-peers/src/lib.rs`
 - **Pool/Worker blox specs** → `spec/bloxes/pool.md`, `spec/bloxes/worker.md`
 - **Tokio SpawnCap impl** → `runtimes/bloxide-tokio/src/spawn.rs`
-- **TestRuntime SpawnCap impl** (`spawned_count` / `drain_spawned` / `drain_killed` / `kill_count`) → `runtimes/bloxide-test-runtime/src/lib.rs`
+- **TestRuntime SpawnCap impl** (`spawned_count` / `drain_spawned` / `drain_killed` / `kill_count`) → `runtimes/bloxide-test-runtime/src/runtime.rs`
 - **Spawn traits and helpers** → `crates/bloxide-spawn/src/lib.rs`

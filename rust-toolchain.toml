@@ -1,0 +1,8 @@
+# Copyright 2025 Bloxide, all rights reserved
+# Matches CI (.github/workflows/lint-and-test.yml, scripts/ci.sh): stable
+# toolchain with rustfmt + clippy, and the riscv32imc target used by the
+# no_std audit matrix ([workspace.metadata.bloxide-ci] in Cargo.toml).
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["riscv32imc-unknown-none-elf"]

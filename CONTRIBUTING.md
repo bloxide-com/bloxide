@@ -38,8 +38,8 @@ Before modifying any code, review the **Key Invariants** section in `AGENTS.md`.
 `scripts/ci.sh` runs the same checks as CI:
 
 - Copyright header check
-- `cargo build` + feature-matrix `cargo check` runs
+- `cargo blox build` (runs codegen first) + feature-matrix `cargo check` runs
 - `cargo fmt --check`
 - `cargo clippy --all-targets -- -W warnings -D warnings`
-- `cargo test`
+- `cargo blox test` (workspace default) + feature-specific `cargo test` runs
 - `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS=-Dwarnings`

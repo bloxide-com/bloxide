@@ -13,7 +13,7 @@
 use quote::{format_ident, quote};
 
 use crate::schema::ContextConfig;
-use crate::util::HEADER;
+use crate::util::{DOC_FROM_BLOX_TOML, HEADER};
 
 /// A field descriptor for constructor generation.
 struct FieldDesc {
@@ -370,7 +370,7 @@ pub fn generate(config: &ContextConfig, crate_name: &str) -> anyhow::Result<Stri
         let file = syn::parse_str::<syn::File>(&raw)
             .map_err(|e| anyhow::anyhow!("syn parsing failed: {}", e))?;
         let formatted = prettyplease::unparse(&file);
-        return Ok(format!("{}{}", HEADER, formatted));
+        return Ok(format!("{}{}{}", HEADER, DOC_FROM_BLOX_TOML, formatted));
     }
 
     // Paired-variant mode.
@@ -415,5 +415,5 @@ pub fn generate(config: &ContextConfig, crate_name: &str) -> anyhow::Result<Stri
         .map_err(|e| anyhow::anyhow!("syn parsing failed: {}", e))?;
     let formatted = prettyplease::unparse(&file);
 
-    Ok(format!("{}{}", HEADER, formatted))
+    Ok(format!("{}{}{}", HEADER, DOC_FROM_BLOX_TOML, formatted))
 }

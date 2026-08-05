@@ -4,7 +4,7 @@
 use quote::{format_ident, quote};
 
 use crate::schema::MessageEnumConfig;
-use crate::util::HEADER;
+use crate::util::{DOC_FROM_BLOX_TOML, HEADER};
 
 /// Generate Rust code for a message enum and its payload structs.
 pub fn generate(config: &MessageEnumConfig) -> anyhow::Result<String> {
@@ -102,5 +102,5 @@ pub fn generate(config: &MessageEnumConfig) -> anyhow::Result<String> {
         .map_err(|e| anyhow::anyhow!("syn parsing failed: {}", e))?;
     let formatted = prettyplease::unparse(&file);
 
-    Ok(format!("{}{}", HEADER, formatted))
+    Ok(format!("{}{}{}", HEADER, DOC_FROM_BLOX_TOML, formatted))
 }

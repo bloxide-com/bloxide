@@ -83,7 +83,7 @@ fn parse_blox_toml(path: &Path) -> (String, BloxConfig) {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_all_blox_tomls_parse() {
+fn all_blox_tomls_parse() {
     let ws = workspace_root();
     let tomls = find_blox_tomls(&ws);
     assert!(
@@ -112,7 +112,7 @@ fn test_all_blox_tomls_parse() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_all_blox_tomls_codegen() {
+fn all_blox_tomls_codegen() {
     let ws = workspace_root();
     let tomls = find_blox_tomls(&ws);
 
@@ -139,7 +139,7 @@ fn test_all_blox_tomls_codegen() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_viz_export_covers_all_blox_tomls() {
+fn viz_export_covers_all_blox_tomls() {
     let ws = workspace_root();
     let tomls = find_blox_tomls(&ws);
     let specs = export_workspace(&ws).expect("export should succeed");
@@ -166,7 +166,7 @@ fn test_viz_export_covers_all_blox_tomls() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_json_round_trip_all_specs() {
+fn json_round_trip_all_specs() {
     let ws = workspace_root();
     let specs = export_workspace(&ws).expect("export should succeed");
 
@@ -184,7 +184,7 @@ fn test_json_round_trip_all_specs() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_all_specs_have_content() {
+fn all_specs_have_content() {
     let ws = workspace_root();
     let specs = export_workspace(&ws).expect("export should succeed");
 
@@ -200,7 +200,7 @@ fn test_all_specs_have_content() {
 }
 
 #[test]
-fn test_explicit_transitions_preserved() {
+fn explicit_transitions_preserved() {
     let ws = workspace_root();
     let tomls = find_blox_tomls(&ws);
 
@@ -249,7 +249,7 @@ fn test_explicit_transitions_preserved() {
 }
 
 #[test]
-fn test_context_preserved() {
+fn context_preserved() {
     let ws = workspace_root();
     let tomls = find_blox_tomls(&ws);
     let specs = export_workspace(&ws).expect("export should succeed");
@@ -307,7 +307,7 @@ fn test_context_preserved() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_full_round_trip_no_data_loss() {
+fn full_round_trip_no_data_loss() {
     let ws = workspace_root();
     let tomls = find_blox_tomls(&ws);
     let specs = export_workspace(&ws).expect("export should succeed");
@@ -546,7 +546,7 @@ fn test_full_round_trip_no_data_loss() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_codegen_deterministic() {
+fn codegen_deterministic() {
     let ws = workspace_root();
     let tomls = find_blox_tomls(&ws);
 

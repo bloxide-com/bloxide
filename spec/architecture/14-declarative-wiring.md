@@ -146,7 +146,7 @@ composes the domain build with the platform spawn
 (`(|req, notify| ::bloxide_spawn::spawn_actor_task(::tokio_pool_demo_impl::build_worker::<WorkerSpec<TokioRuntime>>(req), notify)) as _`);
 for a plain function that assembles `SpawnOutput` directly it emits a path expression
 with a cast (`::my_impl_crate::my_factory as _`). See
-`crates/tools/bloxide-codegen/src/system_wiring.rs` and the real example in
+`crates/tools/bloxide-codegen/src/system_wiring/emit.rs` and the real example in
 `apps/tokio-pool-demo/system.toml`. The codegen also adds a `bloxide-spawn` dependency
 to the generated app's `Cargo.toml` when a factory injection exists (the emitted
 closure names `::bloxide_spawn::spawn_actor_task`).
@@ -212,7 +212,7 @@ to Rust variable idents. Each generation phase registers the symbols it creates:
 The injection handler looks up `(actor, field)` in the symbol table:
 
 ```rust
-// In system_wiring.rs context construction (simplified)
+// In system_wiring/emit.rs context construction (simplified)
 } else if source.source == "actor" {
     let field_selector = source.field.as_deref().unwrap_or("primary");
     if field_selector == "primary" {
@@ -276,7 +276,7 @@ runtime = "tokio"  # or "embassy"
 ```
 
 These are the only two supported values — the codegen
-(`system_wiring.rs::generate`) bails on anything else, including `"test"`. Tests drive
+(`system_wiring/emit.rs::generate`) bails on anything else, including `"test"`. Tests drive
 `TestRuntime` directly in Rust (see `runtimes/bloxide-test-runtime`), not through the
 wiring manifest.
 

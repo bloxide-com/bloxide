@@ -1,15 +1,12 @@
 // Copyright 2025 Bloxide, all rights reserved.
-//! Generate MachineSpec skeleton from actor, topology, context, and event config.
-//!
-//! When `context.feature` is set, emits paired `#[cfg]` variants with different
-//! generics, event types, and mailboxes types. The StateFns are generated as
-//! associated constants inside `impl` blocks using raw `StateRule { ... }` struct
-//! literals emitted directly from TOML.
+//! Emission of the full spec skeleton source file: spec struct, per-variant
+//! generics/cfg pairing, and the `MachineSpec` impl.
 
 use quote::{format_ident, quote, ToTokens};
 
+use super::generate_state_fns_impl;
 use crate::schema::{ActorConfig, ContextConfig, EventConfig, TopologyConfig};
-use crate::util::{to_snake_case, HEADER};
+use crate::util::{to_snake_case, DOC_FROM_BLOX_TOML, HEADER};
 
 /// Parameters for a single variant of the spec skeleton.
 struct VariantParams {
@@ -32,273 +29,6 @@ struct VariantParams {
     feature_filter: Option<String>,
     /// Extra imports specific to this variant (raw use paths).
     extra_imports: Vec<String>,
-}
-
-/// Replace placeholders {R}, {Ctx}, {Event} in a string with variant-specific values.
-pub(crate) fn replace_placeholders(
-    s: &str,
-    ctx_type_str: &str,
-    event_type_str: &str,
-    type_params: &[String],
-) -> String {
-    let result = s.replace("{Ctx}", ctx_type_str);
-    let result = result.replace("{Event}", event_type_str);
-    // {R} → first type param (or "R" if no type params)
-    let first_param = type_params.first().map(|s| s.as_str()).unwrap_or("R");
-    result.replace("{R}", first_param)
-}
-
-/// Resolve an action string to a token stream.
-///
-/// When the action string starts with `Self::` (e.g. `Self::increment_round`),
-/// generate a stub no-op closure instead of a function path reference.
-/// The stub closures are no-ops that will be replaced by real implementations
-/// in the system-level codegen. The stub body carries the action name in a
-/// marker binding for readability.
-///
-/// For transition actions: `|_ctx, _ev| { let _stub = "<name>"; ::bloxide_core::transition::ActionResult::Ok }`
-/// For entry/exit actions: `|_ctx| { let _stub = "<name>"; }`
-///
-/// Action strings that do NOT start with `Self::` (e.g. `handle_work_done` or
-/// `bloxide_child_management::start_children`) are parsed as function path
-/// references — these are real functions imported via `spec_imports`.
-pub(crate) fn resolve_action(
-    action: &str,
-    ctx_type_str: &str,
-    event_type_str: &str,
-    type_params: &[String],
-    _event_pattern: Option<&str>,
-    is_transition: bool,
-) -> anyhow::Result<proc_macro2::TokenStream> {
-    let resolved = replace_placeholders(action, ctx_type_str, event_type_str, type_params);
-
-    if resolved.starts_with("Self::") {
-        // Self:: prefix indicates an action method on the spec struct.
-        // In Phase 2, actions are stub no-op closures — the real action
-        // implementations live in the blox crate's actions.rs (or context
-        // crates) and are tested there, not through the generated spec.
-        let name = resolved.strip_prefix("Self::").unwrap_or(&resolved);
-        if is_transition {
-            Ok(quote! {
-                |_ctx, _ev| { let _stub = #name; ::bloxide_core::transition::ActionResult::Ok }
-            })
-        } else {
-            Ok(quote! {
-                |_ctx| { let _stub = #name; }
-            })
-        }
-    } else {
-        // Real function path reference — parse as a path.
-        Ok(syn::parse_str::<syn::Path>(&resolved)
-            .map(|p| p.to_token_stream())
-            .unwrap_or_else(|_| {
-                let ident = format_ident!("{}", resolved);
-                quote! { #ident }
-            }))
-    }
-}
-
-/// Generate the StateFns associated constants for a variant.
-///
-/// Returns the impl-block tokens plus a flag telling whether a non-empty
-/// `ROOT_RULES` const was emitted (after catch-all elision) — the caller uses
-/// it to decide whether to generate the `root_transitions()` override.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn generate_state_fns_impl(
-    topology: &TopologyConfig,
-    event: Option<&EventConfig>,
-    state_enum_ident: &syn::Ident,
-    spec_ident: &syn::Ident,
-    ctx_type_str: &str,
-    event_type_str: &str,
-    type_params: &[String],
-    spec_impl_generics: proc_macro2::TokenStream,
-    spec_ty_generics: proc_macro2::TokenStream,
-    spec_where_clause: Option<&syn::WhereClause>,
-    feature_filter: Option<&str>,
-    strip_feature_cfg: bool,
-    action_resolver: crate::ActionResolver<'_>,
-) -> anyhow::Result<(proc_macro2::TokenStream, bool)> {
-    use crate::schema::{EntryExitConfig, TransitionConfig, ROOT_STATE_KEYWORD};
-    use crate::topology::generate_state_rule;
-    use std::collections::HashMap;
-
-    // Partition transitions: state rules (owned by a user state) vs root rules
-    // (state = "root" — VirtualRoot fallback, emitted as ROOT_RULES below).
-    // Build lookup maps, filtering by feature
-    let trans_by_state: HashMap<String, Vec<&TransitionConfig>> = {
-        let mut map: HashMap<String, Vec<&TransitionConfig>> = HashMap::new();
-        for t in &topology.transitions {
-            if t.state == ROOT_STATE_KEYWORD {
-                continue;
-            }
-            // Non-feature variant: include transitions with no `feature` attribute.
-            // Feature variant: include ALL transitions (both gated and non-gated).
-            if match feature_filter {
-                None => t.feature.is_none(),
-                Some(_) => true,
-            } {
-                map.entry(t.state.clone()).or_default().push(t);
-            }
-        }
-        map
-    };
-    // Root rules for this variant, with the same feature filtering.
-    let root_trans: Vec<&TransitionConfig> = topology
-        .transitions
-        .iter()
-        .filter(|t| t.state == ROOT_STATE_KEYWORD)
-        .filter(|t| match feature_filter {
-            None => t.feature.is_none(),
-            Some(_) => true,
-        })
-        .collect();
-    let entry_by_state: HashMap<String, Vec<&EntryExitConfig>> = {
-        let mut map: HashMap<String, Vec<&EntryExitConfig>> = HashMap::new();
-        for e in &topology.entry {
-            // Same feature filtering as transitions
-            if match feature_filter {
-                None => e.feature.is_none(),
-                Some(_) => true,
-            } {
-                map.entry(e.state.clone()).or_default().push(e);
-            }
-        }
-        map
-    };
-    let exit_by_state: HashMap<String, Vec<&EntryExitConfig>> = {
-        let mut map: HashMap<String, Vec<&EntryExitConfig>> = HashMap::new();
-        for e in &topology.exit {
-            if match feature_filter {
-                None => e.feature.is_none(),
-                Some(_) => true,
-            } {
-                map.entry(e.state.clone()).or_default().push(e);
-            }
-        }
-        map
-    };
-
-    let mut consts = Vec::new();
-    for state in &topology.states {
-        let fns_ident = format_ident!("{}_FNS", to_snake_case(&state.name).to_ascii_uppercase());
-        let state_trans = trans_by_state
-            .get(&state.name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
-        let state_entry = entry_by_state
-            .get(&state.name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
-        let state_exit = exit_by_state
-            .get(&state.name)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
-
-        // on_entry actions
-        let entry_tokens: Vec<proc_macro2::TokenStream> = state_entry
-            .first()
-            .map(|ee| {
-                ee.actions
-                    .iter()
-                    .map(|a| {
-                        action_resolver(a, ctx_type_str, event_type_str, type_params, None, false)
-                    })
-                    .collect::<anyhow::Result<Vec<_>>>()
-            })
-            .transpose()?
-            .unwrap_or_default();
-
-        // on_exit actions
-        let exit_tokens: Vec<proc_macro2::TokenStream> = state_exit
-            .first()
-            .map(|ee| {
-                ee.actions
-                    .iter()
-                    .map(|a| {
-                        action_resolver(a, ctx_type_str, event_type_str, type_params, None, false)
-                    })
-                    .collect::<anyhow::Result<Vec<_>>>()
-            })
-            .transpose()?
-            .unwrap_or_default();
-
-        // Transition rules — raw StateRule { ... } literals. Catch-all rules
-        // made unreachable by earlier rules covering every declared variant
-        // of the mailbox's message enum are omitted (see
-        // `topology::catchall_elision`).
-        let elide = crate::topology::catchall_elision(state_trans, event);
-        let rules: Vec<proc_macro2::TokenStream> = state_trans
-            .iter()
-            .zip(elide.iter())
-            .filter(|(_, elided)| !**elided)
-            .map(|(t, _)| {
-                generate_state_rule(
-                    t,
-                    state_enum_ident,
-                    ctx_type_str,
-                    event_type_str,
-                    type_params,
-                    action_resolver,
-                    strip_feature_cfg,
-                    feature_filter,
-                )
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let trans_tokens: proc_macro2::TokenStream = if rules.is_empty() {
-            quote! { &[] }
-        } else {
-            quote! { &[#(#rules),*] }
-        };
-
-        consts.push(quote! {
-            #[allow(unused_variables)]
-            const #fns_ident: ::bloxide_core::spec::StateFns<Self> = ::bloxide_core::spec::StateFns {
-                on_entry: &[#(#entry_tokens),*],
-                on_exit: &[#(#exit_tokens),*],
-                transitions: #trans_tokens,
-            };
-        });
-    }
-
-    // Root-level transition rules (VirtualRoot fallback for domain events).
-    // One associated const per spec (not per state), holding this variant's
-    // root partition. Referenced by the generated `root_transitions()`
-    // override when non-empty (after catch-all elision).
-    let root_elide = crate::topology::catchall_elision(&root_trans, event);
-    let root_rules: Vec<proc_macro2::TokenStream> = root_trans
-        .iter()
-        .zip(root_elide.iter())
-        .filter(|(_, elided)| !**elided)
-        .map(|(t, _)| {
-            generate_state_rule(
-                t,
-                state_enum_ident,
-                ctx_type_str,
-                event_type_str,
-                type_params,
-                action_resolver,
-                strip_feature_cfg,
-                feature_filter,
-            )
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let has_root_rules = !root_rules.is_empty();
-    if has_root_rules {
-        consts.push(quote! {
-            #[allow(unused_variables)]
-            const ROOT_RULES: &'static [::bloxide_core::transition::StateRule<Self>] = &[#(#root_rules),*];
-        });
-    }
-
-    Ok((
-        quote! {
-            impl #spec_impl_generics #spec_ident #spec_ty_generics #spec_where_clause {
-                #(#consts)*
-            }
-        },
-        has_root_rules,
-    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1056,7 +786,7 @@ pub fn generate(
         .map_err(|e| anyhow::anyhow!("syn parsing failed: {}", e))?;
     let formatted = prettyplease::unparse(&file);
 
-    Ok(format!("{}{}", HEADER, formatted))
+    Ok(format!("{}{}{}", HEADER, DOC_FROM_BLOX_TOML, formatted))
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -1065,6 +795,7 @@ pub fn generate(
 mod tests {
     use super::*;
     use crate::schema::BloxConfig;
+    use crate::spec_skeleton::resolve_action;
 
     /// Counter blox without root transitions (mirrors crates/bloxes/counter/blox.toml).
     const COUNTER_TOML: &str = r#"

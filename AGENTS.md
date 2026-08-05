@@ -173,8 +173,8 @@ Then dive deeper as needed:
 | How does the reusable supervisor spec work? | `spec/architecture/07-supervision.md` |
 | How are platform features packaged and consumed? | `spec/architecture/18-platform-feature-pattern.md` |
 | Template for a new blox | `spec/templates/blox-spec.md` |
-| **How do I test a blox in isolation?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
-| **What is TestRuntime for?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
+| **How do I test a blox in isolation?** | `runtimes/bloxide-test-runtime/src/runtime.rs` |
+| **What is TestRuntime for?** | `runtimes/bloxide-test-runtime/src/runtime.rs` |
 | **How do I test timers without an executor?** | `crates/bloxide-timer/src/test_utils.rs` (`VirtualClock`) — crate-internal (`#[cfg(test)]`); the reference pattern for driving a `TimerQueue` with a virtual clock in crate tests |
 | **Where are the proc macro implementations?** | `crates/bloxide-macros/src/` |
 | **What are the key invariants?** | This file (`AGENTS.md` → "Key Invariants") |

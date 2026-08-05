@@ -22,7 +22,7 @@ mod counter_tests {
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     #[test]
-    fn test_start_enters_ready() {
+    fn start_enters_ready() {
         let mut machine = make_machine();
         assert!(matches!(machine.current_state(), MachineState::Init));
 
@@ -34,7 +34,7 @@ mod counter_tests {
     }
 
     #[test]
-    fn test_tick_in_ready_stays() {
+    fn tick_in_ready_stays() {
         let mut machine = make_machine();
         machine.dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start));
 
@@ -50,7 +50,7 @@ mod counter_tests {
     }
 
     #[test]
-    fn test_tick_reaches_done() {
+    fn tick_reaches_done() {
         let mut machine = make_machine();
         machine.dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start));
 
@@ -67,7 +67,7 @@ mod counter_tests {
     }
 
     #[test]
-    fn test_reset_returns_to_ready_without_resetting_count() {
+    fn reset_returns_to_ready_without_resetting_count() {
         let mut machine = make_machine();
         machine.dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start));
 
@@ -93,7 +93,7 @@ mod counter_tests {
     }
 
     #[test]
-    fn test_unhandled_event_in_init_is_dropped() {
+    fn unhandled_event_in_init_is_dropped() {
         // CounterMsg has a single variant (Tick) and Ready handles it, so the
         // only state with no matching rule is Init. Domain events dispatched
         // while in Init are caught by Init's engine-generated catch-all and
@@ -119,7 +119,7 @@ mod counter_tests {
     }
 
     #[test]
-    fn test_increment_count_function() {
+    fn increment_count_function() {
         let mut count = 0u32;
         increment_count(&mut count);
         assert_eq!(count, 1);

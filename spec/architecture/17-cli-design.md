@@ -617,8 +617,7 @@ Tests live in the two tool crates.
 ### `bloxide-codegen`
 
 - **Unit tests** — inline in `src/system_spec.rs` (`#[cfg(test)] mod tests`), covering system.toml parsing and action-config handling.
-- **Integration tests:**
-  - `tests/codegen.rs` — TOML parsing and `generate_from_toml` / `generate_all` against inline TOML fixtures.
+- **Integration tests:** one crate-root file per theme in `tests/` — `codegen_messages_events.rs`, `codegen_topology.rs`, `codegen_ctx.rs`, `codegen_spec_skeleton.rs`, `codegen_transitions.rs`, `codegen_system.rs` — TOML parsing and `generate_from_toml` / `generate_all` against inline TOML fixtures.
   - `tests/system_wiring.rs` — runs `generate_system_wiring_from_toml` and `generate_cargo_toml` against the real workspace manifests (`apps/*/system.toml`) and asserts structural properties of the generated main.rs / Cargo.toml: channel creation, supervisor setup, injection wiring, bootstrap, runtime selection, dynamic-actor handling, dependency resolution, and feature inference.
 
 ### `cargo-blox`

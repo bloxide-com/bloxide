@@ -63,6 +63,13 @@ nostd-members = [
     "bhsm-tst-messages",
 ]
 
+# Shared lint configuration. Member crates opt in with:
+#   [lints]
+#   workspace = true
+# Kept conservative on purpose; tighten per-crate as needed.
+[workspace.lints.rust]
+unsafe_code = "warn"
+
 [workspace.package]
 version = "0.0.3"
 edition = "2021"

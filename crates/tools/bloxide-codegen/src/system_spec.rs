@@ -587,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_concrete_entry_action() {
+    fn resolve_concrete_entry_action() {
         let actions = vec![make_action(
             "s_entry",
             Some("bloxide_core"),
@@ -605,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_concrete_transition_no_payload() {
+    fn resolve_concrete_transition_no_payload() {
         let actions = vec![make_action(
             "increment_round",
             Some("blox_ctx_rounds"),
@@ -632,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_concrete_transition_with_payload() {
+    fn resolve_concrete_transition_with_payload() {
         let actions = vec![make_action(
             "process_work",
             None,
@@ -659,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_concrete_non_self_action() {
+    fn resolve_concrete_non_self_action() {
         let actions = vec![];
         let result =
             resolve_concrete_action("some_function", &actions, None, "TestEvent", None, true)
@@ -668,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_concrete_transition_returns_action_result_skips_wrapper() {
+    fn resolve_concrete_transition_returns_action_result_skips_wrapper() {
         let mut action = make_action(
             "increment_round",
             Some("blox_ctx_rounds"),
@@ -696,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_concrete_unknown_returns_value_errors() {
+    fn resolve_concrete_unknown_returns_value_errors() {
         let mut action = make_action("f", Some("some_crate"), vec![], None, false);
         action.returns = Some("bool".to_string());
         let actions = vec![action];
@@ -710,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_concrete_impl_required_no_impl_crate_errors() {
+    fn resolve_concrete_impl_required_no_impl_crate_errors() {
         let actions = vec![make_action(
             "process_work",
             None,
@@ -737,14 +737,14 @@ mod tests {
     }
 
     #[test]
-    fn test_field_access_modes() {
+    fn field_access_modes() {
         assert_eq!(field_access("round:mut"), "&mut ctx.round");
         assert_eq!(field_access("peer_ref:ref"), "&ctx.peer_ref");
         assert_eq!(field_access("self_id"), "ctx.self_id");
     }
 
     #[test]
-    fn test_strip_self_prefix() {
+    fn strips_self_prefix_from_action() {
         assert_eq!(
             strip_self_prefix("Self::increment_round"),
             Some("increment_round")
@@ -753,7 +753,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_fields_entry_action_calls_declared_fn() {
+    fn empty_fields_entry_action_calls_declared_fn() {
         // bhsm-tst style: empty fields, no event_payload — the action still
         // resolves to the declared crate fn (no stub shortcut): a bogus
         // crate/fn_name is a compile error wherever the spec is compiled.
@@ -774,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_fields_transition_action_calls_declared_fn() {
+    fn empty_fields_transition_action_calls_declared_fn() {
         let actions = vec![make_action(
             "s_i",
             Some("bloxide_core"),
@@ -795,7 +795,7 @@ mod tests {
     // ── Integration test: ping blox ──────────────────────────────────────────
 
     #[test]
-    fn test_generate_concrete_spec_skeleton_ping() {
+    fn generate_concrete_spec_skeleton_ping() {
         // Parse the actual ping blox.toml
         let ping_toml = include_str!("../../../bloxes/ping/blox.toml");
         let blox_config: BloxConfig = toml::from_str(ping_toml).expect("parse ping blox.toml");
@@ -928,7 +928,7 @@ mod tests {
     // ── Integration test: bhsm-tst blox (shared no-op context crate) ─────────
 
     #[test]
-    fn test_generate_concrete_spec_skeleton_bhsm_tst() {
+    fn generate_concrete_spec_skeleton_bhsm_tst() {
         // Parse the actual bhsm-tst blox.toml — every declared action routes to
         // the shared blox-ctx-noop crate (fn_name = "noop").
         let bhsm_toml = include_str!("../../../bloxes/bhsm-tst/blox.toml");

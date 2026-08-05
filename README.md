@@ -158,6 +158,7 @@ cargo install --path crates/tools/cargo-blox
 cargo blox generate   # regenerate all boilerplate from blox.toml specs
 cargo blox build      # generate + cargo build
 cargo blox check      # generate + cargo check
+cargo blox test       # generate + cargo test
 ```
 
 Message enums, event types, and state topology are declared in `blox.toml` and generated into `src/generated/`. See `skills/building-with-bloxide/SKILL.md` for the full workflow.

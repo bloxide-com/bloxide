@@ -43,12 +43,10 @@ jobs:
 
       # Generated artifacts (src/generated/, apps/*/main.rs, apps/*/Cargo.toml)
       # are gitignored — the workspace does not compile from a pristine
-      # checkout until codegen runs. Generate BEFORE any build/test step.
-      - name: Generate code (cargo blox generate)
-        run: cargo blox generate
-
-      - name: Cargo Build
-        run: cargo build
+      # checkout until codegen runs. `cargo blox build` runs `generate` first,
+      # so no separate codegen step is needed.
+      - name: Cargo Build (cargo blox build)
+        run: cargo blox build
 
       # Single source of truth for the check matrix: auto-discovered from the
       # workspace (see #133). Covers: cargo check feature matrix, no_std

@@ -25,4 +25,4 @@ pub mod prelude;
 #[cfg(all(test, feature = "std"))]
 mod tests;
 
-pub use generated::*;
+pub use generated::{WorkerCtx, WorkerEvent, WorkerSpec, WorkerState};

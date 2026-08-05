@@ -16,7 +16,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_json_counter() {
+    fn parse_json_counter() {
         // This test verifies that JSON exported by bloxide-viz-export can be loaded
         // Run `cargo run` in ../bloxide-viz-export to generate the fixture first.
         let json = std::fs::read_to_string("../bloxide-viz-export/bloxide-viz-output/counter.json");

@@ -252,7 +252,7 @@ Any  --Kill-->  abort immediately (permanent death)
 
 ### TestRuntime
 
-Located in `runtimes/bloxide-test-runtime/src/lib.rs`. Provides:
+Located in `runtimes/bloxide-test-runtime/src/runtime.rs`. Provides:
 - In-memory channels with `try_send`/`drain` 
 - `alloc_actor_id()` for unique IDs
 - `SpawnCap` for dynamic-spawn wiring — handles are `usize` spawn ids; `kill` records the id in a thread-local log (TestRuntime does not destroy tasks), asserted via `drain_killed()` / `kill_count()`

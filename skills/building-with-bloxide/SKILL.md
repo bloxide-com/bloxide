@@ -180,11 +180,11 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 ```
 
-After running `cargo blox generate`, use the generated event in `src/events.rs`:
+After running `cargo blox generate`, the event is re-exported at the crate root — `src/lib.rs` carries an explicit re-export of the generated types:
 
 ```rust
-// crates/bloxes/ping/src/events.rs
-pub use crate::generated::events::*;
+// crates/bloxes/ping/src/lib.rs
+pub use generated::{PingCtx, PingEvent, PingSpec, PingState};
 ```
 
 This generates:

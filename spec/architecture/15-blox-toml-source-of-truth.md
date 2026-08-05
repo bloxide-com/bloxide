@@ -289,7 +289,7 @@ children = ["ping", "pong"]
   pong = { stop = true }
 ```
 
-`system_wiring.rs` validates the manifest (in `validate()` and during generation):
+`system_wiring/` validates the manifest (in `validate.rs::validate()` and during generation):
 
 1. **Blox refs exist** — every `[[actors]].blox` names a known blox crate.
 2. **Inject source actors exist** — every `source = "actor"` reference names a declared
@@ -591,7 +591,7 @@ This is the vision behind issue #71: a Simulink-like development flow where the 
 ### Validation rules
 
 Validation happens in three places: the TOML parser, the codegen, and
-`system_wiring.rs::validate` (for `system.toml`). Current rules:
+`system_wiring/validate.rs::validate` (for `system.toml`). Current rules:
 
 **TOML parse (serde):**
 
@@ -617,7 +617,7 @@ Validation happens in three places: the TOML parser, the codegen, and
    non-`impl_required` action, or `impl_required` without an `impl_crate` in
    `system.toml` is a hard codegen error.
 
-**System wiring (`system.toml`) — `system_wiring.rs` (`validate()` plus generation):**
+**System wiring (`system.toml`) — `system_wiring/` (`validate.rs::validate()` plus generation in `emit.rs`):**
 
 6. **Blox refs exist** — every `[[actors]].blox` names a known blox crate.
 7. **Inject source actors exist** — `source = "actor"` must name a declared actor (or
@@ -672,7 +672,7 @@ The key is that every extension is opt-in and schema-driven. The codegen does no
 - `cargo blox generate` and `cargo blox watch` regenerate files from TOML.
 - `bloxide-viz-export` parses `blox.toml` directly (not Rust source) to produce the visualizer model.
 - Round-trip verification is enforced by 9 integration tests and the `cargo blox verify` CLI command, both running in CI.
-- Wiring validation (`system_wiring.rs::validate`) checks blox references, inject source actors, inject target names and coverage, secondary-mailbox bindings, and supervision children.
+- Wiring validation (`system_wiring/validate.rs::validate`) checks blox references, inject source actors, inject target names and coverage, secondary-mailbox bindings, and supervision children.
 
 ## Visual Editor Integration
 

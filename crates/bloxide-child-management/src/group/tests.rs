@@ -1,6 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Tests for `ChildGroup` — confirm-before-record reliability semantics.
 
+use super::*;
 use crate::*;
 use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
 use bloxide_core::messaging::Envelope;

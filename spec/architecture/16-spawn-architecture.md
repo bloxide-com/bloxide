@@ -1735,7 +1735,7 @@ The `dynamic` feature is on the **Pool's** crate, not the supervisor's. The Pool
 
 ### Feature-Aware Wiring
 
-`collect_ctor_fields` in `system_wiring.rs` is feature-aware. It reads the `feature`
+`collect_ctor_fields` in `system_wiring/ctor_fields.rs` is feature-aware. It reads the `feature`
 attribute on context fields (already present in `blox.toml`) and skips fields whose
 feature is not enabled in the current build configuration. The `system.toml` lists all
 inject entries unconditionally — the codegen tolerates an inject entry whose target
