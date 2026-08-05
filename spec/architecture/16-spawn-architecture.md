@@ -23,29 +23,40 @@ never sees the application's concrete spawn request type.
    per-request state flows through a concrete `SpawnRequest` enum. The function is
    monomorphized at the wiring site.
 
-2. **Factory injection via constructor fields.** The `fn` pointer is injected into the
+2. **Spawn is a two-layer composition: build + platform spawn.** The impl-crate
+   factory does pure construction — actor id, channels, context, state machine — and
+   returns `bloxide_spawn::ActorParts`; it never calls `run()`, never names
+   `RunConfig`, never touches `SpawnCap`, and takes no `notify` parameter. The
+   platform helper `bloxide_spawn::spawn_actor_task(parts, notify)` consumes the
+   parts and does all executor mechanics (`RunConfig::supervised_with_abort`,
+   `SpawnCap` task spawn, kill-handle derivation), yielding the `SpawnOutput`. The
+   system codegen emits the composition at the wiring site; `SpawnFn` and
+   `SpawnOutput` are unchanged, so hand-assembled factories that build a
+   `SpawnOutput` directly remain legal.
+
+3. **Factory injection via constructor fields.** The `fn` pointer is injected into the
    requesting blox's context as a constructor field (`foo_factory: fn(...) -> ...`),
    provided by the wiring layer from a Layer 3 impl crate.
 
-3. **Peer introduction for connecting actors.** After spawning, the requesting blox
+4. **Peer introduction for connecting actors.** After spawning, the requesting blox
    introduces the new child to existing peers using `introduce_peers` from the
    `bloxide-peers` crate, which sends bidirectional `AddPeer` messages on each actor's
    control channel.
 
-4. **KillCapability as the ripcord mechanism.** Kill is a type-level property of the runtime,
+5. **KillCapability as the ripcord mechanism.** Kill is a type-level property of the runtime,
    encoded via the `KillCapability<R>` trait. Tokio uses `Kill` (external kill via
    `tokio::task::AbortHandle::abort()`); Embassy uses `NoKill` (no-op, `Handle = ()`). No trait
    objects, no dynamic dispatch, no heap allocation in the kill path. Kill is the
    ripcord — used only for unresponsive actors that can't cooperate. For cooperative
    self-termination, use `ChildPolicy::Abort` (sends `AbortCommand` on the abort mailbox).
 
-5. **Per-child abort mailboxes.** Each dynamically spawned child has a dedicated abort
+6. **Per-child abort mailboxes.** Each dynamically spawned child has a dedicated abort
    mailbox (`ActorRef<AbortCommand, R>`). The supervisor sends `AbortCommand::Abort` on this
    mailbox (cooperative self-termination — the child exits cleanly via its select loop).
    For unresponsive actors, `ChildPolicy::Kill` calls `R::Kill::kill(kill_handle)` (ripcord —
    external kill that bypasses the task entirely).
 
-6. **Spawn lifecycle: create → wire peers → start.** The spawn helper creates the child,
+7. **Spawn lifecycle: create → wire peers → start.** The spawn helper creates the child,
    sends a registration message to the managing blox, and the managing blox sends
    `LifecycleCommand::Start`. The child reports `Started` → `Alive` → `Done`/`Failed`
    through the existing lifecycle event channel.
@@ -121,6 +132,11 @@ bloxide-core              ← engine + runtime capabilities
 bloxide-spawn/            ← spawn capability (separate crate)
   SpawnCap (TaskHandle, KillHandle, spawn, kill_handle, kill)
   Kill (KillCapability impl requiring SpawnCap)
+  ActorParts<S, R>           ← what a domain factory builds (pure construction:
+    child id, machine, mailboxes, lifecycle/abort refs + streams, policy)
+  spawn_actor_task(parts, notify) ← the platform spawn: assembles
+    RunConfig::supervised_with_abort, spawns the run loop via SpawnCap, derives
+    the kill handle → SpawnOutput<R>
   SpawnOutput<R>, SpawnFn<R, Req>, ChildRegistrar<R>, ChildCtrlRegistrar
   spawn_dynamic_child<R, Req, C>
 
@@ -174,14 +190,30 @@ blox-ctx-pool-ref/        ← Pool's domain context crate (carries ActorRefs)
   SpawnRequest<Ctrl, R>    ← concrete spawn request enum
   SpawnedWorker<Ctrl, R>   ← spawn reply with the child's refs
 
-tokio-pool-demo-impl/     ← Pool's impl crate (owns the spawn function)
-  spawn_worker (fn), handle_spawn_worker, handle_spawned_worker, ...
+tokio-pool-demo-impl/     ← Pool's impl crate (owns the domain factory)
+  build_worker (fn), handle_spawn_worker, handle_spawned_worker, ...
 ```
 
-### 3.2 The Spawn Function
+### 3.2 The Spawn Function: Domain Factory + Platform Spawn
 
-The spawn function lives in the **application's impl crate**, not the supervisor's context
-crate. It is a `fn` pointer — concrete, monomorphized, no captured state.
+A dynamically spawned child is created by a **two-layer composition**:
+
+- **The domain factory** lives in the **application's impl crate** (e.g.,
+  tokio-pool-demo-impl). It does **pure construction** — actor id, channels, child
+  context, state machine — and returns `ActorParts<S, R>`. It never calls `run()`,
+  never names `RunConfig`, never touches `SpawnCap`, and takes no `notify`
+  parameter.
+- **The platform spawn** — `bloxide_spawn::spawn_actor_task` — consumes the
+  `ActorParts` and does all executor mechanics in one place: it assembles
+  `RunConfig::supervised_with_abort`, spawns the run loop via `SpawnCap::spawn`,
+  derives the cloneable kill handle, and packs the `SpawnOutput`.
+
+The system codegen composes the two at the wiring site, yielding the
+`SpawnFn<R, Req>` `fn` pointer injected into the requesting blox (§4).
+
+#### The domain factory
+
+The factory is a plain generic `fn` — concrete, monomorphized, no captured state.
 
 ```rust
 // In the application's impl crate (e.g., tokio-pool-demo-impl)
@@ -189,42 +221,38 @@ crate. It is a `fn` pointer — concrete, monomorphized, no captured state.
 use bloxide_child_management::ChildPolicy;
 use bloxide_core::{
     capability::DynamicChannelCap,
-    lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand},
-    messaging::{Envelope, ActorRef},
+    lifecycle::{AbortCommand, LifecycleCommand},
+    messaging::Envelope,
     spec::MachineSpec,
     StateMachine,
 };
 use bloxide_peers::PeerCtrl;
-use bloxide_spawn::{SpawnCap, SpawnOutput};
-use bloxide_tokio::{run, RunConfig, TokioRuntime};
+use bloxide_spawn::ActorParts;
+use bloxide_tokio::TokioRuntime;
 use blox_ctx_pool_ref::{SpawnRequest, SpawnedWorker};
 use pool_messages::WorkerMsg;
 use worker_blox::WorkerCtx;
 
-/// The concrete spawn function. A stateless fn — no captured state.
+/// The concrete factory. A stateless fn — no captured state.
 /// All per-request state comes through SpawnRequest.
 ///
 /// The function:
 ///   1. Allocates an actor ID and creates channels for the child —
 ///      lifecycle, domain, control, and an abort mailbox
-///   2. Constructs the child's context (app-specific)
-///   3. Spawns the child task, running run() with
-///      RunConfig::supervised_with_abort (abort mailbox support)
-///   4. Sends the app-specific reply via the request's reply_to field
-///   5. Returns SpawnOutput for supervisor registration (includes abort_ref
-///      and kill_handle)
+///   2. Constructs the child's context (app-specific) and state machine
+///   3. Sends the app-specific reply via the request's reply_to field
+///   4. Returns ActorParts — everything the platform spawn needs
 ///
-/// The function is fast: channel creation and spawn() are non-blocking. The
-/// child's own initialization (which may be slow) runs in the child's task
-/// and reports back via lifecycle events.
+/// The function is fast: channel creation is non-blocking. The child's own
+/// initialization (which may be slow) runs in the child's task and reports
+/// back via lifecycle events.
 ///
 /// The function is generic over the worker spec type `S`: the system-level
 /// codegen monomorphizes it with the concrete `WorkerSpec` (real action
 /// closures) instead of the blox-crate-level stub spec (invariant #18).
-pub fn spawn_worker<S>(
+pub fn build_worker<S>(
     req: SpawnRequest<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
-    notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
-) -> SpawnOutput<TokioRuntime>
+) -> ActorParts<S, TokioRuntime>
 where
     S: MachineSpec<Ctx = WorkerCtx<TokioRuntime>>,
     S::Event: From<Envelope<PeerCtrl<WorkerMsg, TokioRuntime>>> + From<Envelope<WorkerMsg>>,
@@ -245,28 +273,11 @@ where
             let worker_ctx = WorkerCtx::new(worker_id, pool_ref);
             let machine = StateMachine::<S>::new(worker_ctx);
 
-            // Spawn the child task with abort mailbox support (non-blocking).
-            let notify_sender = notify.sender();
-            let task_handle = TokioRuntime::spawn(async move {
-                run(
-                    machine,
-                    (ctrl_rx, domain_rx),
-                    RunConfig::<TokioRuntime>::supervised_with_abort(
-                        lifecycle_rx,
-                        abort_rx,
-                        notify_sender,
-                    ),
-                    worker_id,
-                )
-                .await
-            });
-
-            // Convert the JoinHandle (not Clone) into a kill handle (Clone)
-            // so it can be stored in RegisterDynamicChild and cloned from
-            // &Event by the supervisor's action function.
-            let kill_handle = TokioRuntime::kill_handle(task_handle);
-
-            // Send app-specific handles back to the requester
+            // Send app-specific handles back to the requester — BEFORE the task
+            // is spawned (the platform spawn runs only after this function
+            // returns). Safe: the pool processes SpawnedWorker in a later
+            // dispatch (run-to-completion), after the synchronous spawn
+            // composition completes.
             let _ = reply_to.try_send(
                 worker_id,
                 SpawnedWorker {
@@ -276,16 +287,18 @@ where
                 },
             );
 
-            // Return what the supervisor needs for lifecycle management + kill.
-            // The kill_handle flows to the managing blox via
-            // SpawnOutput::kill_handle → RegisterDynamicChild::kill_handle →
-            // ChildEntry::kill_handle. The managing blox uses it as the
-            // ripcord for unresponsive children (§3.13).
-            SpawnOutput {
+            // Hand everything to the platform spawn. The send-side refs
+            // (lifecycle_ref, abort_ref) come back out in the SpawnOutput; the
+            // receive-side streams (mailboxes, lifecycle_rx, abort_rx) move
+            // into the run loop.
+            ActorParts {
                 child_id: worker_id,
+                machine,
+                mailboxes: (ctrl_rx, domain_rx),
                 lifecycle_ref,
-                abort_ref,     // abort capability mailbox (send side)
-                kill_handle,   // cloneable ripcord for external kill
+                lifecycle_rx,
+                abort_ref,
+                abort_rx,
                 policy: ChildPolicy::Stop,
             }
         }
@@ -293,12 +306,75 @@ where
 }
 ```
 
-The wiring layer provides this function to the runtime spawn helper (§3.12) as a
-`SpawnFn<R, SpawnRequest<Ctrl, R>>` `fn` pointer — monomorphized at the wiring site. For
-a spawn function generic over the spec type (like `spawn_worker<S>` above), the codegen
-emits a closure wrapper that fills in the system-level concrete spec
-(`(|req, notify| spawn_worker::<WorkerSpec<TokioRuntime>>(req, notify)) as _`); for a
-plain function it emits a path expression with a cast (`spawn_worker as _`).
+`ActorParts<S, R>` (in `bloxide-spawn`) is the boundary between domain construction
+and executor mechanics: child id, the `StateMachine<S>` (constructed in implicit
+Init — silent, no callbacks fire until the supervisor sends Start), the domain
+mailboxes (receive side), the lifecycle/abort refs (send side) and streams (receive
+side), and the `ChildPolicy`. The send-side domain refs are NOT in `ActorParts` —
+they are app-specific handles that go back to the requester via the reply channel,
+exactly as with `SpawnOutput`.
+
+#### The platform spawn
+
+`spawn_actor_task` (in `bloxide-spawn`) consumes the `ActorParts` and performs
+every executor step:
+
+```rust
+// In bloxide-spawn
+
+pub fn spawn_actor_task<R, S>(
+    parts: ActorParts<S, R>,
+    notify: ActorRef<ChildLifecycleEvent, R>,
+) -> SpawnOutput<R>
+where
+    R: BloxRuntime<Kill = Kill> + SpawnCap,
+    S: MachineSpec,
+    S::Ctx: Send,
+{
+    // 1. Supervised-with-abort is the only run mode for dynamically spawned
+    //    children (every dynamic child registers with an abort_ref).
+    let config =
+        RunConfig::<R>::supervised_with_abort(parts.lifecycle_rx, parts.abort_rx, notify.sender());
+
+    // 2. Spawn the run loop; 3. derive the cloneable ripcord (the task keeps
+    //    running — drop does not kill).
+    let task = R::spawn(run(parts.machine, parts.mailboxes, config, parts.child_id));
+    let kill_handle = R::kill_handle(task);
+
+    // 4. Everything the managing blox needs to supervise the child.
+    SpawnOutput {
+        child_id: parts.child_id,
+        lifecycle_ref: parts.lifecycle_ref,
+        abort_ref: parts.abort_ref,
+        kill_handle,
+        policy: parts.policy,
+    }
+}
+```
+
+The `R: BloxRuntime<Kill = Kill> + SpawnCap` bound means the platform spawn exists
+only on runtimes whose kill capability is backed by `SpawnCap` (Tokio, TestRuntime);
+`NoKill` runtimes never spawn dynamically. `S::Ctx: Send` is required because the
+machine crosses the task boundary inside the spawned future.
+
+#### The composition at the wiring site
+
+The wiring layer provides a `SpawnFn<R, SpawnRequest<Ctrl, R>>` `fn` pointer —
+monomorphized at the wiring site. For a factory generic over the spec type (like
+`build_worker<S>` above), the codegen emits a closure that fills in the system-level
+concrete spec and composes the domain build with the platform spawn:
+
+```rust
+(|req, notify| ::bloxide_spawn::spawn_actor_task(
+    ::tokio_pool_demo_impl::build_worker::<WorkerSpec<TokioRuntime>>(req),
+    notify,
+)) as _
+```
+
+`SpawnFn` and `SpawnOutput` are unchanged by the build/spawn split — hand-assembled
+factories that build a `SpawnOutput` directly (channels, `R::spawn`, and kill-handle
+derivation inside the factory body) remain legal; for such a plain function the
+codegen emits a path expression with a cast (`my_factory as _`).
 
 The `SpawnFn` type alias is defined in `bloxide-spawn` (alongside `SpawnCap`) so any blox
 can name the type without depending on a specific runtime:
@@ -393,11 +469,11 @@ use bloxide_child_management::ChildPolicy;
 /// app-specific handles (domain_ref, ctrl_ref, etc.) go back to the requester
 /// via the spawn request's reply-to channel, not through here.
 ///
-/// The `kill_handle` is the cloneable ripcord: the spawn function gets a
-/// `TaskHandle` from `R::spawn()`, converts it to a `KillHandle` via
-/// `R::kill_handle()`, and passes it here so the managing blox can call
-/// `R::Kill::kill(handle)` for unresponsive children. For `NoKill` runtimes
-/// this is `()`.
+/// The `kill_handle` is the cloneable ripcord: the platform spawn
+/// (`spawn_actor_task`, §3.2) gets a `TaskHandle` from `R::spawn()`, converts
+/// it to a `KillHandle` via `R::kill_handle()`, and passes it here so the
+/// managing blox can call `R::Kill::kill(handle)` for unresponsive children.
+/// For `NoKill` runtimes this is `()`.
 pub struct SpawnOutput<R: BloxRuntime> {
     /// The allocated actor ID for the new child.
     pub child_id: ActorId,
@@ -503,10 +579,12 @@ pub enum AbortCommand {
 }
 ```
 
-The abort mailbox is created by the spawn function (§3.2) alongside the lifecycle and
-domain channels. The send side (`abort_ref`) goes into `SpawnOutput` → the managing blox's
-registration message → the managing blox's child list. The receive side (`abort_rx`) goes
-to `run` with `RunConfig::supervised_with_abort` which listens on it in the child's task.
+The abort mailbox is created by the domain factory (§3.2) alongside the lifecycle and
+domain channels. The send side (`abort_ref`) rides through `ActorParts` into
+`SpawnOutput` → the managing blox's registration message → the managing blox's child
+list. The receive side (`abort_rx`) goes through `ActorParts` to `spawn_actor_task`,
+which hands it to `run` via `RunConfig::supervised_with_abort` — the run loop listens
+on it in the child's task.
 
 ### 3.7 ChildCtrl Enum
 
@@ -811,7 +889,7 @@ pub fn spawn_dynamic_child<R, Req, C>(
 ) -> Result<(), R::TrySendError>
 where
     R: BloxRuntime,
-    Req: Send + Clone + 'static,
+    Req: Send + 'static,
     C: ChildRegistrar<R>,
 {
     // 1. Call the spawn function — creates channels, constructs child, spawns task
@@ -853,6 +931,10 @@ let result = spawn_dynamic_child::<_, _, ChildCtrlRegistrar>(
 so any blox can name them without a runtime or supervisor dependency. The `ChildCtrl`
 message type itself comes from `bloxide-child-management::control`.
 
+The `spawn_fn` passed to `spawn_dynamic_child` is usually the codegen-emitted
+composition of an impl-crate factory and `spawn_actor_task` (§3.2), but any `fn`
+matching the alias works — hand-assembled `SpawnOutput` factories remain legal.
+
 ### 3.13 `run()` with `RunConfig::supervised_with_abort`
 
 The abort mailbox's receiving end lives in the unified run loop itself — there is
@@ -885,7 +967,7 @@ mailboxes. This ensures abort is serviced before domain messages so a cooperativ
 abort can be processed promptly when the task next yields.
 
 The `TaskHandle` from `R::spawn()` is converted to a cloneable `KillHandle` via
-`R::kill_handle()` in the spawn function, then flows to the supervisor via
+`R::kill_handle()` in the platform spawn (`spawn_actor_task`), then flows to the supervisor via
 `SpawnOutput::kill_handle` → `RegisterDynamicChild::kill_handle` →
 `ChildEntry::kill_handle`. In the common case, self-termination via the poll cycle
 is sufficient and the external kill is never invoked. The external
@@ -991,14 +1073,18 @@ The wiring layer provides `spawn_fn` via `source = "factory"` in `system.toml`:
 
 ```toml
 [actors.inject]
-spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "spawn_worker" }
+spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "build_worker" }
 ```
 
-The codegen emits a **path expression with a cast** (`::tokio_pool_demo_impl::spawn_worker
-as _`) for a plain function, or a **monomorphizing closure** (`(|req, notify|
-::tokio_pool_demo_impl::spawn_worker::<WorkerSpec<TokioRuntime>>(req, notify)) as _`)
+The codegen emits a **monomorphizing closure** that composes the domain build with the
+platform spawn (`(|req, notify|
+::bloxide_spawn::spawn_actor_task(::tokio_pool_demo_impl::build_worker::<WorkerSpec<TokioRuntime>>(req), notify)) as _`)
 when the factory crate is a dynamic actor's `impl_crate` and the function is generic
-over the spec type. One source declaration, two output shapes, selected automatically.
+over the spec type, or a **path expression with a cast** (`::my_impl_crate::my_factory
+as _`) for a plain function that assembles `SpawnOutput` directly. One source
+declaration, two output shapes, selected automatically. When a factory injection
+exists, the codegen also adds a `bloxide-spawn` dependency to the generated app's
+`Cargo.toml` (the emitted closure names `::bloxide_spawn::spawn_actor_task`).
 
 The factory is a plain field on the context struct; the generated concrete spec passes
 it (and the other fields the action declares) to the action function as individual
@@ -1099,13 +1185,13 @@ The sequence for adding worker N (with N-1 workers already running):
 ```mermaid
 sequenceDiagram
     participant Pool
-    participant Factory as spawn_worker
+    participant Factory as spawn_fn (build_worker + spawn_actor_task)
     participant Sup as Supervisor
     participant NewWorker as Worker N
     participant OldWorker as Workers 1..N-1
 
     Pool->>Factory: spawn_dynamic_child::<_, _, ChildCtrlRegistrar>(spawn_fn, req, ...)
-    Factory->>NewWorker: channels!, WorkerCtx::new, R::spawn
+    Factory->>NewWorker: build_worker → ActorParts; spawn_actor_task → R::spawn
     Factory->>Pool: SpawnedWorker reply via reply_to
     Factory->>Sup: RegisterDynamicChild(SpawnOutput) via control mailbox
     Sup->>NewWorker: LifecycleCommand::Start
@@ -1210,7 +1296,8 @@ it is.
 /// The `Handle` type is the cloneable `KillHandle` from `SpawnCap`, NOT the
 /// `TaskHandle`. This is because the handle must be `Clone` so it can be
 /// extracted from `&Event` in action functions (the HSM engine passes `&Event`,
-/// not `&mut Event`). The spawn function calls `SpawnCap::kill_handle()` to
+/// not `&mut Event`). The platform spawn (`spawn_actor_task`) calls
+/// `SpawnCap::kill_handle()` to
 /// convert the non-Clone `TaskHandle` into the Clone `KillHandle` before
 /// placing it in RegisterDynamicChild.
 pub trait KillCapability<R: BloxRuntime> {
@@ -1399,15 +1486,19 @@ Pool                      Spawn Helper            Managing Blox            Child
   |     self_id)               |                       |                       |
   |--------------------------->|                       |                       |
   |                            |                       |                       |
-  |                            | 3. spawn_fn(req, notify):                     |
-  |                            |    create channels    |                       |
-  |                            |    (lifecycle, domain,|                       |
-  |                            |     ctrl, abort)      |                       |
-  |                            |    construct WorkerCtx|                       |
-  |                            |    R::spawn(task)     |                       |
-  |                            |    R::kill_handle()   |                       |
-  |                            |    → KillHandle in    |                       |
-  |                            |      SpawnOutput      |                       |
+  |                            | 3. spawn_fn(req, notify)                      |
+  |                            |    = codegen composition:                     |
+  |                            |    a. build_worker(req):                      |
+  |                            |       create channels                         |
+  |                            |       (lifecycle, domain,                     |
+  |                            |        ctrl, abort),                          |
+  |                            |       construct WorkerCtx                     |
+  |                            |       → ActorParts                            |
+  |                            |    b. spawn_actor_task(parts, notify):        |
+  |                            |       RunConfig::supervised_                  |
+  |                            |        with_abort, R::spawn,                  |
+  |                            |       R::kill_handle()                        |
+  |                            |       → SpawnOutput                           |
   |                            |---------------------->|                       |
   |                            |                       |                       | 4. Child runs
   |                            |                       |                       |    run() with RunConfig::
@@ -1478,8 +1569,10 @@ Pool                      Spawn Helper            Managing Blox            Child
   |                            |                       |                       |      no cooperation)
 ```
 
-> **Function boundary note:** Steps 3–5 all execute inside the `spawn_fn` call body (the
-> `spawn_worker` function). Step 6 is the `spawn_dynamic_child` helper's code, which runs after
+> **Function boundary note:** Steps 3–5 all execute inside the `spawn_fn` call body —
+> the codegen-emitted composition of `build_worker` (step 3a, step 5) and
+> `spawn_actor_task` (step 3b, which spawns the task that becomes step 4). Step 6 is
+> the `spawn_dynamic_child` helper's code, which runs after
 > `spawn_fn` returns — it calls `C::register(output)` to send the registration message to
 > the managing blox. The boundary between `spawn_fn` and `spawn_dynamic_child` is the `return` of
 > `SpawnOutput`.
@@ -1623,14 +1716,17 @@ children) handles lifecycle reporting automatically — it converts `DispatchOut
 - `spawn_ref` points to supervisor's control mailbox (for `RegisterDynamicChild`)
 - The Pool calls `spawn_dynamic_child::<_, _, ChildCtrlRegistrar>` (from `bloxide-spawn`) directly
 - `R: BloxRuntime + SpawnCap` — runtime supports task spawning
-- Application provides `spawn_fn` at wiring time
-- The spawn helper creates children (including abort mailbox) and sends
-  `RegisterDynamicChild` to the supervisor
+- Application provides `spawn_fn` at wiring time — the codegen composes the impl
+  crate's `build_worker` (builds `ActorParts`: channels including the abort mailbox,
+  context, machine) with `bloxide_spawn::spawn_actor_task` (spawns the task, derives
+  the kill handle)
+- The spawn helper sends `RegisterDynamicChild` to the supervisor
 - Supervisor registers and manages lifecycle — same code path as static, plus stores
   `abort_ref` and `kill_handle` for `ChildPolicy::Abort` and `ChildPolicy::Kill`
 - `ChildPolicy::Abort` sends `AbortCommand::Abort` on `abort_ref` (cooperative self-termination)
 - `ChildPolicy::Kill` calls `R::Kill::kill(kill_handle)` (ripcord — external kill)
-- `run` with `RunConfig::supervised_with_abort` (with abort mailbox support) is used
+- `spawn_actor_task` assembles `RunConfig::supervised_with_abort` and spawns `run()`
+  (abort mailbox support)
 - `type Kill = Kill` — `Handle = tokio::task::AbortHandle`
 
 The `dynamic` feature is on the **Pool's** crate, not the supervisor's. The Pool gates its
@@ -1682,7 +1778,8 @@ A `fn` pointer is the simplest type that works:
    provides the concrete function. No `Box<dyn>`, no dynamic dispatch.
 
 4. **No abort-capability threading in the spawn function.** The abort mailbox is created
-   inside the spawn function (alongside the lifecycle channel). The `KillHandle` from
+   inside the domain factory (alongside the lifecycle channel) and carried in
+   `ActorParts`. The `KillHandle` that `spawn_actor_task` derives via
    `R::kill_handle()` is returned in `SpawnOutput`. The supervisor gets the `abort_ref`
    (send side) and the `kill_handle` (ripcord). No trait object threading, no `&'static`
    hack, no `static` singleton.

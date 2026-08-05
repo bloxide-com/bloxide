@@ -6,6 +6,7 @@ use bloxide_core::{
     capability::{BloxRuntime, GroupChannelCap, NoKill, StaticChannelCap},
     messaging::{ActorId, ActorRef, Envelope},
 };
+use core::future::Future;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 
@@ -47,8 +48,8 @@ impl BloxRuntime for EmbassyRuntime {
         false
     }
 
-    async fn yield_now() {
-        embassy_futures::yield_now().await;
+    fn yield_now() -> impl Future<Output = ()> + Send {
+        embassy_futures::yield_now()
     }
 }
 

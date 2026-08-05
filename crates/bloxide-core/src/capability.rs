@@ -1,4 +1,6 @@
 // Copyright 2025 Bloxide, all rights reserved
+use core::future::Future;
+
 use crate::messaging::{ActorId, ActorRef, Envelope};
 
 /// Base trait for runtime-specific message sending and receiving.
@@ -111,8 +113,15 @@ pub trait BloxRuntime: Clone + Send + 'static {
     /// tasks a chance to run. Default is a no-op — runtimes with cooperative
     /// schedulers (Tokio, Embassy) override this to call their runtime's
     /// `yield_now()`. TestRuntime and bare runtimes use the default.
-    async fn yield_now() {
+    ///
+    /// Declared in desugared form (not `async fn`) with an explicit `Send`
+    /// bound: the run loop awaits this inside spawned tasks, so generic
+    /// spawning (`bloxide-spawn`'s `spawn_actor_task`) must be able to prove
+    /// the future `Send`. An `async fn` in trait would leave the future's
+    /// `Send`-ness unnameable on stable Rust.
+    fn yield_now() -> impl Future<Output = ()> + Send {
         // No-op default
+        async {}
     }
 }
 

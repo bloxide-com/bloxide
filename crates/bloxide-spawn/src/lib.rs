@@ -1,11 +1,21 @@
 // Copyright 2025 Bloxide, all rights reserved
 #![no_std]
-//! Spawn capability for bloxide — `SpawnCap`, `Kill`, and the `spawn_dynamic_child` helper.
+//! Spawn capability for bloxide — `SpawnCap`, `Kill`, the platform spawn API
+//! (`ActorParts` + `spawn_actor_task`), and the `spawn_dynamic_child` helper.
 //!
 //! This crate is a platform primitive: the ability to spawn actor tasks at
 //! runtime. Runtimes that support dynamic spawning (Tokio) implement
 //! `SpawnCap` and use `Kill` as their `KillCapability`. Runtimes that don't
 //! (Embassy) use `NoKill` from `bloxide-core` and never depend on this crate.
+//!
+//! Dynamic spawning is a two-layer composition:
+//!
+//! - **Domain factories** (impl crates) build an [`ActorParts`] — machine,
+//!   mailboxes, lifecycle/abort channels, policy — and never touch `run()`,
+//!   `RunConfig`, or `SpawnCap`.
+//! - **The platform spawn** ([`spawn_actor_task`]) consumes the parts and
+//!   does all executor mechanics: run-loop configuration, task spawn, and
+//!   kill-handle derivation.
 //!
 //! The `spawn_dynamic_child` helper and `ChildRegistrar` trait let any managing blox
 //! (supervisor or custom) register spawned children without depending on
@@ -13,9 +23,12 @@
 
 use bloxide_child_management::ChildPolicy;
 use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
+use bloxide_core::engine::StateMachine;
 use bloxide_core::lifecycle::AbortCommand;
 use bloxide_core::lifecycle::{ChildLifecycleEvent, LifecycleCommand};
 use bloxide_core::messaging::{ActorId, ActorRef};
+use bloxide_core::runloop::{run, RunConfig};
+use bloxide_core::spec::MachineSpec;
 
 use core::fmt;
 use core::future::Future;
@@ -148,6 +161,114 @@ where
 /// The runtime helper is generic over `Req` so it doesn't depend on any
 /// specific app's domain crate.
 pub type SpawnFn<R, Req> = fn(req: Req, notify: ActorRef<ChildLifecycleEvent, R>) -> SpawnOutput<R>;
+
+/// Everything a domain factory builds **before** the platform spawns the
+/// actor task — the "build" half of the dynamic-spawn composition.
+///
+/// A domain factory (impl crate) assembles these parts from its spawn
+/// request: it allocates the child id, creates the domain and
+/// lifecycle/abort channels, and constructs the state machine. It returns
+/// `ActorParts` and **never touches `run()`, `RunConfig`, or `SpawnCap`** —
+/// all executor mechanics are owned by [`spawn_actor_task`]. This keeps impl
+/// crates free of run-loop plumbing, so the same factory code works
+/// unchanged across runtimes and system codegen can emit the composition
+/// mechanically at the wiring layer:
+///
+/// ```text
+/// |req, notify| spawn_actor_task(build_parts(req), notify)   // a SpawnFn<R, Req>
+/// ```
+///
+/// The send-side domain refs are NOT here — they are app-specific handles
+/// that go back to the requester via the spawn request's reply channel,
+/// exactly as with [`SpawnOutput`]'s app-specific handles. Only what the
+/// platform spawn needs is carried.
+///
+/// All fields are concrete, by-value — no `Arc<dyn>`, no dynamic dispatch.
+pub struct ActorParts<S: MachineSpec, R: BloxRuntime> {
+    /// The allocated actor ID for the new child.
+    pub child_id: ActorId,
+    /// The child's state machine, constructed in implicit Init (silent — no
+    /// callbacks fire until the supervisor sends Start).
+    pub machine: StateMachine<S>,
+    /// The child's domain mailboxes (receive side), moved into the run loop.
+    pub mailboxes: S::Mailboxes<R>,
+    /// Channel for sending lifecycle commands (Start, Stop, Reset) —
+    /// returned via [`SpawnOutput`] so the managing blox can drive the child.
+    pub lifecycle_ref: ActorRef<LifecycleCommand, R>,
+    /// Lifecycle command stream (receive side) — moved into the run loop.
+    pub lifecycle_rx: R::Stream<LifecycleCommand>,
+    /// Abort capability mailbox (send side) — returned via [`SpawnOutput`] so
+    /// the managing blox can trigger cooperative self-termination.
+    pub abort_ref: ActorRef<AbortCommand, R>,
+    /// Abort command stream (receive side) — moved into the run loop.
+    pub abort_rx: R::Stream<AbortCommand>,
+    /// Supervision policy the managing blox applies to this child.
+    pub policy: ChildPolicy,
+}
+
+/// The platform spawn — the "executor mechanics" half of the dynamic-spawn
+/// composition. Consumes the [`ActorParts`] a domain factory built, spawns
+/// the run loop as a task via [`SpawnCap`], and returns the handles the
+/// managing blox needs.
+///
+/// This function does ALL executor mechanics, in one place:
+///
+///   1. Assembles the `RunConfig` — always
+///      [`supervised_with_abort`](RunConfig::supervised_with_abort). The mode
+///      is hardcoded because every dynamically spawned child registers via
+///      `RegisterDynamicChild`, which always carries an `abort_ref`: a child
+///      that can receive `AbortCommand` must run a loop that listens for it,
+///      so no per-factory choice exists to expose.
+///   2. Spawns `run()` via `R::spawn()` (the Tier 2 spawn capability).
+///   3. Derives the cloneable kill handle (the ripcord) from the task handle
+///      via `R::kill_handle()`.
+///   4. Packs the [`SpawnOutput`] from the remaining parts.
+///
+/// Handwritten domain factories do not call this directly — system codegen
+/// emits the composition `|req, notify| spawn_actor_task(build_parts(req),
+/// notify)` as the [`SpawnFn`] passed to [`spawn_dynamic_child`].
+///
+/// # Type Parameters
+///
+/// - `R` — the runtime. The `BloxRuntime<Kill = Kill>` bound beyond
+///   `SpawnCap` unifies `R::KillHandle` with [`SpawnOutput`]'s
+///   `<R::Kill as KillCapability<R>>::Handle` — the platform spawn only
+///   exists on runtimes whose kill capability is the `SpawnCap`-backed
+///   [`Kill`]; `NoKill` runtimes never spawn dynamically. The bound is free
+///   at the concrete runtimes this is ever monomorphized with (Tokio,
+///   TestRuntime).
+/// - `S` — the child's `MachineSpec`. `S::Ctx: Send` is required because the
+///   machine crosses the task boundary inside the spawned future; the
+///   `Mailboxes` GAT bound on `MachineSpec` already guarantees
+///   `S::Mailboxes<R>: Mailboxes<S::Event>`, so no further bounds are needed.
+pub fn spawn_actor_task<R, S>(
+    parts: ActorParts<S, R>,
+    notify: ActorRef<ChildLifecycleEvent, R>,
+) -> SpawnOutput<R>
+where
+    R: BloxRuntime<Kill = Kill> + SpawnCap,
+    S: MachineSpec,
+    S::Ctx: Send,
+{
+    // 1. Run loop configuration — supervised-with-abort is the only mode for
+    //    dynamically spawned children (see the doc comment above).
+    let config =
+        RunConfig::<R>::supervised_with_abort(parts.lifecycle_rx, parts.abort_rx, notify.sender());
+
+    // 2. Spawn the run loop; 3. convert the task handle into the cloneable
+    //    ripcord (the task keeps running — drop does not kill).
+    let task = R::spawn(run(parts.machine, parts.mailboxes, config, parts.child_id));
+    let kill_handle = R::kill_handle(task);
+
+    // 4. Everything the managing blox needs to supervise the child.
+    SpawnOutput {
+        child_id: parts.child_id,
+        lifecycle_ref: parts.lifecycle_ref,
+        abort_ref: parts.abort_ref,
+        kill_handle,
+        policy: parts.policy,
+    }
+}
 
 /// A blox that manages spawned children implements this to define how
 /// `SpawnOutput` is wrapped into its own control-plane message type.

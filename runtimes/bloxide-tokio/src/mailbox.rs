@@ -1,4 +1,5 @@
 // Copyright 2025 Bloxide, all rights reserved
+use core::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -64,8 +65,8 @@ impl BloxRuntime for TokioRuntime {
         matches!(err, TokioTrySendError::Closed)
     }
 
-    async fn yield_now() {
-        tokio::task::yield_now().await;
+    fn yield_now() -> impl Future<Output = ()> + Send {
+        tokio::task::yield_now()
     }
 }
 

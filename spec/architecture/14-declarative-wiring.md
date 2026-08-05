@@ -115,8 +115,8 @@ wiring manifest doesn't inject them.
 
 For dynamic spawning, the wiring manifest injects the spawn function itself as a
 constructor param with `source = "factory"`, and declares the dynamically spawned actor
-with `kind = "dynamic"` (no channels/task in `main.rs` — the impl crate's spawn function
-constructs it at runtime):
+with `kind = "dynamic"` (no channels/task in `main.rs` — the impl crate's factory
+builds it at runtime):
 
 ```toml
 [[actors]]
@@ -126,8 +126,10 @@ impl_crate = "tokio_pool_demo_impl"
 features = ["dynamic"]
 
   [actors.inject]
-  spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "spawn_worker" }
-  # The factory returns SpawnOutput for the supervisor and sends a
+  spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "build_worker" }
+  # The factory builds the worker's ActorParts (pure construction); the codegen
+  # composes it with bloxide_spawn::spawn_actor_task, which spawns the task and
+  # returns SpawnOutput for the supervisor. The factory also sends a
   # SpawnedWorker reply (domain_ref, ctrl_ref) which the pool stores
   # in worker_refs and worker_ctrls at runtime
 
@@ -138,12 +140,16 @@ impl_crate = "tokio_pool_demo_impl"
 kind = "dynamic"
 ```
 
-The codegen emits a path expression with a cast (`::tokio_pool_demo_impl::spawn_worker
-as _`) — or, when the factory function is generic over the child's spec type, a
-monomorphizing closure that fills in the system-level concrete spec
-(`(|req, notify| spawn_worker::<WorkerSpec<TokioRuntime>>(req, notify)) as _`). See
+When the factory crate is a dynamic actor's `impl_crate` (the usual case), the codegen
+emits a monomorphizing closure that fills in the system-level concrete spec and
+composes the domain build with the platform spawn
+(`(|req, notify| ::bloxide_spawn::spawn_actor_task(::tokio_pool_demo_impl::build_worker::<WorkerSpec<TokioRuntime>>(req), notify)) as _`);
+for a plain function that assembles `SpawnOutput` directly it emits a path expression
+with a cast (`::my_impl_crate::my_factory as _`). See
 `crates/tools/bloxide-codegen/src/system_wiring.rs` and the real example in
-`apps/tokio-pool-demo/system.toml`.
+`apps/tokio-pool-demo/system.toml`. The codegen also adds a `bloxide-spawn` dependency
+to the generated app's `Cargo.toml` when a factory injection exists (the emitted
+closure names `::bloxide_spawn::spawn_actor_task`).
 
 ### What the codegen produces from the wiring manifest
 

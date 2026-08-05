@@ -329,7 +329,7 @@ blox = "ping-blox"
 [[actors]]
 name = "pool"
 blox = "pool-blox"
-impl_crate = "tokio_pool_demo_impl"  # Provides process_work and spawn functions
+impl_crate = "tokio_pool_demo_impl"  # Provides process_work, the build_worker factory, and pool action handlers
 ```
 
 ```rust

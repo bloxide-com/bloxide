@@ -100,38 +100,6 @@ macro_rules! actor_task_supervised {
     };
 }
 
-// ── actor_task_supervised_with_abort! macro ───────────────────────────────────
-
-/// Generate an async wrapper for a supervised bloxide actor with an abort
-/// channel (dynamic children the supervisor can kill/abort).
-#[macro_export]
-macro_rules! actor_task_supervised_with_abort {
-    ($name:ident, $spec:ty $(,)?) => {
-        async fn $name(
-            machine: ::bloxide_core::StateMachine<$spec>,
-            domain_mailboxes: <$spec as ::bloxide_core::spec::MachineSpec>::Mailboxes<
-                $crate::TokioRuntime,
-            >,
-            lifecycle_rx: $crate::TokioStream<$crate::LifecycleCommand>,
-            abort_rx: $crate::TokioStream<::bloxide_core::AbortCommand>,
-            actor_id: ::bloxide_core::messaging::ActorId,
-            supervisor_notify: $crate::TokioSender<$crate::ChildLifecycleEvent>,
-        ) {
-            $crate::run(
-                machine,
-                domain_mailboxes,
-                $crate::RunConfig::<$crate::TokioRuntime>::supervised_with_abort(
-                    lifecycle_rx,
-                    abort_rx,
-                    supervisor_notify,
-                ),
-                actor_id,
-            )
-            .await;
-        }
-    };
-}
-
 // ── root_task! macro ──────────────────────────────────────────────────────────
 
 /// Generate an async wrapper for a top-level supervisor or root actor.

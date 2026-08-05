@@ -287,8 +287,19 @@ pub struct PoolCtx<R: BloxRuntime> {
     // ... state fields (pending_task_id, spawn_in_flight, spawn_queue, ...)
 }
 
-// Binary provides the factory
-let pool_ctx = PoolCtx::new(pool_id, pool_ref, spawn_worker_tokio, spawn_ref, notify_ref, spawn_reply_ref);
+// Binary provides the factory — the system codegen composes the impl crate's
+// build function (pure construction → ActorParts) with the platform spawn:
+let pool_ctx = PoolCtx::new(
+    pool_id,
+    pool_ref,
+    (|req, notify| ::bloxide_spawn::spawn_actor_task(
+        ::tokio_pool_demo_impl::build_worker::<WorkerSpec<TokioRuntime>>(req),
+        notify,
+    )) as _,
+    spawn_ref,
+    notify_ref,
+    spawn_reply_ref,
+);
 ```
 
 ### Peer Introduction

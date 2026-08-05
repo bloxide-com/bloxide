@@ -110,9 +110,15 @@ fn wiring_minimal_demo_parses_and_builds_counter() {
 fn wiring_pool_demo_injects_spawn_factory() {
     let main_rs = wiring("apps/tokio-pool-demo");
     assert_parses_rust("tokio-pool-demo", &main_rs);
+    // The injected factory is the composition: domain build (impl crate)
+    // + platform spawn (bloxide-spawn).
     assert!(
-        main_rs.contains("::tokio_pool_demo_impl::spawn_worker"),
-        "the impl crate's spawn function should be injected"
+        main_rs.contains("::tokio_pool_demo_impl::build_worker"),
+        "the impl crate's build function should be injected"
+    );
+    assert!(
+        main_rs.contains("::bloxide_spawn::spawn_actor_task"),
+        "the platform spawn helper should wrap the build function"
     );
     // The factory is monomorphized with the system-level concrete worker spec.
     assert!(

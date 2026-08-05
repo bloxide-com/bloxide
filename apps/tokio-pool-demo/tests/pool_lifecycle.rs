@@ -9,7 +9,8 @@
 //!    `GroupShutdown::WhenAllDone`.
 //! 2. The pool (`PoolSpec` with real actions) runs as a supervised child.
 //! 3. Two `SpawnWorker` messages are sent to the pool. The pool's real spawn
-//!    factory (`tokio_pool_demo_impl::spawn_worker`) spawns real worker
+//!    factory (`tokio_pool_demo_impl::build_worker` composed with
+//!    `bloxide_spawn::spawn_actor_task`) spawns real worker
 //!    tasks and registers them with the supervisor via
 //!    `RegisterDynamicChild`.
 //! 4. The pool sends `DoWork` to each worker; the worker computes the result
@@ -194,7 +195,10 @@ async fn pool_lifecycle_spawn_and_done() {
         pool_id,
         pool_ref.clone(),
         (|req, notify| {
-            ::tokio_pool_demo_impl::spawn_worker::<WorkerSpec<TokioRuntime>>(req, notify)
+            ::bloxide_spawn::spawn_actor_task(
+                ::tokio_pool_demo_impl::build_worker::<WorkerSpec<TokioRuntime>>(req),
+                notify,
+            )
         }) as _,
         sup_control_ref.clone(),
         tap_ref.clone(),

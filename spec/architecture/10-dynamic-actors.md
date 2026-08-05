@@ -45,8 +45,11 @@ crates that parallel `bloxide-supervisor` (supervision) and `bloxide-timer`
 (timers):
 
 - **`bloxide-spawn`** — defines the `SpawnCap` Tier 2 trait, `SpawnFn`, `SpawnOutput`,
-  `ChildRegistrar`, `ChildCtrlRegistrar`, and the `spawn_dynamic_child` helper; provides `Kill`
-  and re-exports `KillCapability` / `NoKill`
+  `ChildRegistrar`, `ChildCtrlRegistrar`, and the `spawn_dynamic_child` helper; owns the
+  two-layer spawn composition — `ActorParts` (what impl-crate factories build) and
+  `spawn_actor_task` (the platform spawn that assembles `RunConfig`, spawns the run
+  loop, and derives the kill handle); provides `Kill` and re-exports
+  `KillCapability` / `NoKill`
 - **`bloxide-core`** — defines the `KillCapability` Tier 2 trait (used by the engine)
 - **`bloxide-peers`** — defines peer introduction (`PeerCtrl`, `introduce_peers`,
   `apply_peer_control`, `broadcast_to_peers`)
@@ -85,7 +88,7 @@ action functions only for domain-specific peer logic (e.g. `broadcast_result`).
 flowchart TD
     BloxideCore["bloxide-core\n(BloxRuntime, DynamicChannelCap,\nKillCapability,\nrun + RunConfig)"]
     BloxideChildMgmt["bloxide-child-management\n(ChildPolicy, ChildGroup, ChildCtrl)"]
-    BloxideSpawn["bloxide-spawn\n(SpawnCap, SpawnFn, SpawnOutput,\nChildRegistrar, spawn_dynamic_child)"]
+    BloxideSpawn["bloxide-spawn\n(SpawnCap, SpawnFn, SpawnOutput, ActorParts,\nspawn_actor_task, ChildRegistrar, spawn_dynamic_child)"]
     BloxidePeers["bloxide-peers\n(PeerCtrl, introduce_peers)"]
     TokioRuntime["bloxide-tokio\n(impl SpawnCap —\nKillHandle = AbortHandle)"]
     PoolBlox["pool-blox / worker-blox\n(R: BloxRuntime only)"]
@@ -105,7 +108,8 @@ flowchart TD
 Blox crates depend on `bloxide-core` (for `BloxRuntime`) and `bloxide-peers`
 (for peer introduction) but never on `bloxide-tokio`. Blox crates declare `R: BloxRuntime`
 — not `R: SpawnCap`. The runtime dependency flows only through the wiring binary,
-and `SpawnCap` is used only inside factory functions defined there.
+and `SpawnCap` is used only by the platform spawn (`bloxide_spawn::spawn_actor_task`)
+— impl-crate factories do pure construction and never touch `SpawnCap`.
 
 ---
 
@@ -384,10 +388,18 @@ cooperative termination via the abort mailbox.
 
 The primary dynamic actor pattern in bloxide is **factory injection**: a parent blox
 stores an opaque factory function provided at wiring time. When the parent needs to
-spawn a child, it calls the factory — which allocates channels, constructs and spawns
-the child task, replies with the child's domain `ActorRef`s, and returns the
-lifecycle handles for registration. The parent never references the concrete child
-type.
+spawn a child, it calls the factory — a codegen-emitted composition of two layers:
+
+1. **The domain factory** (impl crate, e.g. `build_worker`) does pure construction —
+   allocates channels, constructs the child's context and state machine, replies
+   with the child's domain `ActorRef`s — and returns `ActorParts`. It never calls
+   `run()`, never names `RunConfig`, and never touches `SpawnCap`.
+2. **The platform spawn** (`bloxide_spawn::spawn_actor_task`) consumes the parts,
+   spawns the child task (`RunConfig::supervised_with_abort` via `SpawnCap`),
+   derives the kill handle, and returns the `SpawnOutput` with the lifecycle
+   handles for registration.
+
+The parent never references the concrete child type.
 
 This keeps the parent blox **decoupled from the child's concrete type** (upholding
 invariant 9: "blox crates never import impl crates") and means the parent does not
@@ -407,10 +419,13 @@ needs for registration.
 /// - `R`: the runtime
 /// - `Req`: the application's spawn request type (carries reply_to + parent refs)
 ///
-/// The factory allocates channels, constructs the child's context and state machine,
-/// spawns the task, sends the app-specific refs back on `req`'s reply channel, and
+/// Typically the codegen-emitted composition `|req, notify| spawn_actor_task(
+/// build_parts(req), notify)`: the impl-crate factory allocates channels,
+/// constructs the child's context and state machine, and sends the app-specific
+/// refs back on `req`'s reply channel; `spawn_actor_task` spawns the task and
 /// returns the SpawnOutput. `spawn_dynamic_child` then wraps the SpawnOutput into the
-/// managing blox's registration message.
+/// managing blox's registration message. Hand-assembled factories that build a
+/// SpawnOutput directly remain legal — the alias is unchanged.
 pub type SpawnFn<R, Req> = fn(req: Req, notify: ActorRef<ChildLifecycleEvent, R>) -> SpawnOutput<R>;
 ```
 
@@ -420,14 +435,15 @@ from `blox-ctx-pool-ref`.
 ### Factory Implementation (Wiring Layer)
 
 The factory lives in a Layer 3 impl crate consumed by the wiring binary — the
-**only** place that knows the concrete child type (`WorkerCtx`, `WorkerSpec`):
+**only** place that knows the concrete child type (`WorkerCtx`, `WorkerSpec`). It
+does pure construction and returns `ActorParts` — no `run()`, no `RunConfig`, no
+`SpawnCap`, no `notify` parameter:
 
 ```rust
 // In crates/impl/tokio-pool-demo-impl/src/lib.rs (abridged)
-pub fn spawn_worker<S>(
+pub fn build_worker<S>(
     req: SpawnRequest<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
-    notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
-) -> SpawnOutput<TokioRuntime>
+) -> ActorParts<S, TokioRuntime>
 where
     S: MachineSpec<Ctx = WorkerCtx<TokioRuntime>>,
 {
@@ -448,41 +464,36 @@ where
             let worker_ctx = WorkerCtx::new(worker_id, pool_ref);
             let machine = StateMachine::<S>::new(worker_ctx);
 
-            let task_handle = <TokioRuntime as SpawnCap>::spawn(async move {
-                run(
-                    machine,
-                    (ctrl_rx, domain_rx),
-                    RunConfig::<TokioRuntime>::supervised_with_abort(
-                        lifecycle_rx, abort_rx, notify.sender(),
-                    ),
-                    worker_id,
-                )
-                .await
-            });
-
-            // Convert the JoinHandle (not Clone) into a kill handle (Clone)
-            // so the supervisor can store and clone it from &Event.
-            let kill_handle = <TokioRuntime as SpawnCap>::kill_handle(task_handle);
-
-            // Phase 1: reply to the requester with the app-specific refs.
+            // Reply to the requester with the app-specific refs — sent BEFORE
+            // the task exists (the platform spawn runs after this function
+            // returns; the pool processes the reply in a later dispatch).
             let _ = reply_to.try_send(worker_id, SpawnedWorker {
                 child_id: worker_id,
                 domain_ref: domain_ref.clone(),
                 ctrl_ref: ctrl_ref.clone(),
             });
 
-            // Phase 2: return the lifecycle handles for registration.
-            SpawnOutput {
+            // Everything the platform spawn needs: the send-side refs come
+            // back out in the SpawnOutput; the receive-side streams move into
+            // the run loop.
+            ActorParts {
                 child_id: worker_id,
+                machine,
+                mailboxes: (ctrl_rx, domain_rx),
                 lifecycle_ref,
+                lifecycle_rx,
                 abort_ref,
-                kill_handle,
+                abort_rx,
                 policy: ChildPolicy::Stop,
             }
         }
     }
 }
 ```
+
+The task spawn itself — `RunConfig::supervised_with_abort`, `SpawnCap::spawn`,
+kill-handle derivation — is performed by `bloxide_spawn::spawn_actor_task(parts,
+notify) -> SpawnOutput<R>`, which the wiring layer composes with this function.
 
 The factory is generic over the worker spec type `S` so the system-level codegen
 can inject the concrete `WorkerSpec` (with real action closures) instead of the
@@ -498,9 +509,12 @@ let pool_ctx = PoolCtx::new(
     pool_id,
     pool_ref.clone(),
     (|req, notify| {
-        ::tokio_pool_demo_impl::spawn_worker::<
-            crate::generated::worker_spec_skeleton::WorkerSpec<TokioRuntime>,
-        >(req, notify)
+        ::bloxide_spawn::spawn_actor_task(
+            ::tokio_pool_demo_impl::build_worker::<
+                crate::generated::worker_spec_skeleton::WorkerSpec<TokioRuntime>,
+            >(req),
+            notify,
+        )
     }) as _,
     sup_control_ref_0.clone(),
     sup_notify_ref_0.clone(),
@@ -512,7 +526,7 @@ In `system.toml` this injection is declared as:
 
 ```toml
 [actors.inject]
-spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "spawn_worker" }
+spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "build_worker" }
 spawn_ref = { source = "actor", actor = "supervisor", field = "control" }
 notify_ref = { source = "actor", actor = "supervisor", field = "notify" }
 spawn_reply_ref = { source = "self_secondary", index = 1 }
@@ -676,7 +690,7 @@ sequenceDiagram
     participant OldWorker as Workers 1..N-1
 
     Pool->>Factory: spawn_dynamic_child(...) invokes spawn_fn(req, notify)
-    Factory->>NewWorker: alloc_actor_id, channels, run(supervised_with_abort), spawn
+    Factory->>NewWorker: build_worker (alloc_actor_id, channels) + spawn_actor_task (run(supervised_with_abort), spawn)
     Factory-->>Pool: SpawnedWorker reply (via reply_to channel)
     Factory-->>Pool: SpawnOutput (return value)
     Pool->>Sup: ChildCtrl::RegisterDynamicChild (spawn_dynamic_child wraps SpawnOutput)
@@ -842,8 +856,11 @@ non-self senders drop.
 
 Since pool-blox stores the spawn factory as a field, tests inject a test factory
 rather than trying to mock `SpawnCap` directly. The test factory uses `TestRuntime`
-(which implements `SpawnCap`) to create channels and spawn the worker, exercising the
-same factory interface the production wiring binary uses.
+(which implements `SpawnCap`) to create channels, exercising the
+same factory interface the production wiring binary uses. It assembles the
+`SpawnOutput` directly — legal because `SpawnFn`/`SpawnOutput` are unchanged by
+the build/`spawn_actor_task` split (the worker task is never actually spawned in
+tests).
 
 ### Pool Blox Tests
 

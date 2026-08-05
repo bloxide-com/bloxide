@@ -185,28 +185,40 @@ Use `bloxide-timer` and `blox-ctx-ping-pong` action functions instead of manual 
 ### Spawn a Child Actor
 
 ```rust
-// In wiring (binary) — factory injection via constructor field:
-let pool_ctx = PoolCtx::new(
-    pool_id,
-    pool_ref,
-    spawn_worker_tokio,  // factory closure
-);
-
-// In impl crate — free function, no struct, no trait impl.
+// In impl crate — pure construction returning ActorParts: no run(), no RunConfig,
+// no SpawnCap, no notify param. Free function, no struct, no trait impl.
 // SpawnRequest/SpawnedWorker live in `blox_ctx_pool_ref` (pool-messages is plain data);
-// SpawnOutput/SpawnFn/SpawnCap live in `bloxide_spawn`.
-pub fn spawn_worker<S>(
+// ActorParts/SpawnOutput/SpawnFn/SpawnCap/spawn_actor_task live in `bloxide_spawn`.
+pub fn build_worker<S>(
     req: SpawnRequest<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
-    notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
-) -> SpawnOutput<TokioRuntime>
+) -> ActorParts<S, TokioRuntime>
 where
     S: MachineSpec<Ctx = WorkerCtx<TokioRuntime>>,
     // ... event bounds ...
 {
-    // ... spawn logic; the generated main.rs monomorphizes S with the
-    // system-level concrete spec via a wrapper ...
+    // ... allocate the actor id, create channels (domain, ctrl, lifecycle, abort),
+    // build the ctx + StateMachine, send the SpawnedWorker reply via the request's
+    // reply_to, and return ActorParts { child_id, machine, mailboxes, lifecycle_ref,
+    // lifecycle_rx, abort_ref, abort_rx, policy } ...
 }
+
+// In wiring (binary) — factory injection via constructor field. The system codegen
+// composes the factory with the platform spawn, monomorphizing S with the
+// system-level concrete spec:
+let pool_ctx = PoolCtx::new(
+    pool_id,
+    pool_ref,
+    (|req, notify| ::bloxide_spawn::spawn_actor_task(
+        ::tokio_pool_demo_impl::build_worker::<WorkerSpec<TokioRuntime>>(req),
+        notify,
+    )) as _,  // a SpawnFn<R, SpawnRequest<...>>
+);
 ```
+
+`spawn_actor_task(parts, notify)` assembles `RunConfig::supervised_with_abort`,
+spawns the run loop via `SpawnCap`, derives the kill handle, and returns the
+`SpawnOutput`. `SpawnFn`/`SpawnOutput` are unchanged — a hand-assembled factory
+that builds a `SpawnOutput` directly is still a legal `spawn_fn`.
 
 ---
 

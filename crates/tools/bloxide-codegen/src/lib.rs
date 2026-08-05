@@ -513,6 +513,11 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
                     let cargo_name = crate_name.replace('_', "-");
                     deps.entry(cargo_name).or_insert_with(|| (vec![], true));
                 }
+                // The generated main.rs composes the factory with the
+                // platform spawn (`::bloxide_spawn::spawn_actor_task`), so
+                // the app needs bloxide-spawn as a direct dependency.
+                deps.entry("bloxide-spawn".to_string())
+                    .or_insert_with(|| (vec!["std".to_string()], true));
             }
         }
     }

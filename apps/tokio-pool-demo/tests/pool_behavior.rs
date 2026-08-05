@@ -10,8 +10,9 @@
 //! Each test drives the state machine synchronously via `dispatch()`:
 //!
 //! - `SpawnWorker` / `WorkDone` messages are dispatched as `PoolMsg` events.
-//! - The pool's real spawn factory (`tokio_pool_demo_impl::spawn_worker`)
-//!   runs inside the actions, spawning actual (never-started) worker tasks
+//! - The pool's real spawn factory (`tokio_pool_demo_impl::build_worker`
+//!   composed with `bloxide_spawn::spawn_actor_task`) runs inside the
+//!   actions, spawning actual (never-started) worker tasks
 //!   and sending `RegisterDynamicChild` to a dummy supervisor control
 //!   channel — no supervisor consumes it.
 //! - `SpawnedWorker` replies are INJECTED manually with test-made worker refs
@@ -19,7 +20,7 @@
 //!   channel), so each test controls exactly when the pool learns about a
 //!   spawned worker.
 //!
-//! The tests are `#[tokio::test]` because the spawn factory calls
+//! The tests are `#[tokio::test]` because the platform spawn helper calls
 //! `tokio::spawn`; the test bodies themselves are fully synchronous.
 //!
 //! Run with: `cargo test -p tokio-pool-demo`
@@ -76,9 +77,13 @@ impl PoolHarness {
             pool_id,
             pool_ref,
             // The real spawn factory, monomorphized with the concrete
-            // system-level WorkerSpec — same wiring as src/main.rs.
+            // system-level WorkerSpec — same wiring as src/main.rs: domain
+            // build (impl crate) composed with the platform spawn helper.
             (|req, notify| {
-                ::tokio_pool_demo_impl::spawn_worker::<WorkerSpec<TokioRuntime>>(req, notify)
+                ::bloxide_spawn::spawn_actor_task(
+                    ::tokio_pool_demo_impl::build_worker::<WorkerSpec<TokioRuntime>>(req),
+                    notify,
+                )
             }) as _,
             control_ref,
             notify_ref,

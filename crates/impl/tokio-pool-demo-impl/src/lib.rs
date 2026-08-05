@@ -1,8 +1,9 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Concrete runtime-specific worker spawn function for the Tokio pool demo.
+//! Concrete runtime-specific worker factory for the Tokio pool demo.
 //!
-//! This crate is the impl layer for `tokio-pool-demo`. It is the only place
-//! that knows about concrete worker context/spec types and task spawning.
+//! This crate is the impl layer for `tokio-pool-demo`. It does domain
+//! construction (channels, worker context, state machine); executor
+//! mechanics (`RunConfig`, task spawn, kill handle) live in bloxide-spawn.
 
 extern crate alloc;
 
@@ -11,16 +12,15 @@ use bloxide_child_management::ChildPolicy;
 #[cfg(feature = "dynamic")]
 use bloxide_core::capability::BloxRuntime;
 use bloxide_core::lifecycle::AbortCommand;
+#[cfg(feature = "dynamic")]
+use bloxide_core::lifecycle::ChildLifecycleEvent;
 use bloxide_core::{
-    capability::DynamicChannelCap,
-    lifecycle::{ChildLifecycleEvent, LifecycleCommand},
-    messaging::ActorRef,
-    transition::ActionResult,
+    capability::DynamicChannelCap, lifecycle::LifecycleCommand, transition::ActionResult,
     StateMachine,
 };
 use bloxide_peers::PeerCtrl;
-use bloxide_spawn::{SpawnCap, SpawnOutput};
-use bloxide_tokio::{run, RunConfig, TokioRuntime};
+use bloxide_spawn::ActorParts;
+use bloxide_tokio::TokioRuntime;
 use pool_messages::{DoWork, WorkerMsg};
 use worker_blox::WorkerCtx;
 
@@ -201,11 +201,12 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
     result
 }
 
-/// Spawn function for the Tokio pool demo.
+/// Build the worker's [`ActorParts`] for the Tokio pool demo.
 ///
-/// Creates a worker actor and returns the handles the supervisor needs.
-/// This is a plain function (not a trait impl) — the wiring layer passes
-/// it to `spawn_dynamic_child()` as a `SpawnFn<R, SpawnRequest<R>>`.
+/// Creates everything the platform spawn needs — actor id, channels, worker
+/// context, and state machine — and returns the parts. The task spawn itself
+/// is performed by `bloxide_spawn::spawn_actor_task`, which the wiring layer
+/// composes with this function into a `SpawnFn<R, SpawnRequest<R>>`.
 ///
 /// Generic over the worker spec type `S` so the system-level codegen can
 /// inject the concrete `WorkerSpec` (with real action closures) instead of
@@ -214,12 +215,22 @@ pub fn handle_spawned_worker<R: BloxRuntime>(
 ///
 /// All state comes from the request — `pool_ref` is in the message, not
 /// captured from a struct field.
-pub fn spawn_worker<S>(
+///
+/// The `Mailboxes<TokioRuntime>` equality binding pins the spec's mailbox
+/// GAT to the concrete channel tuple this factory creates (`ActorParts`
+/// types the field as `S::Mailboxes<R>`, unlike `run()` which was generic
+/// over the tuple).
+pub fn build_worker<S>(
     req: SpawnRequest<PeerCtrl<WorkerMsg, TokioRuntime>, TokioRuntime>,
-    notify: ActorRef<ChildLifecycleEvent, TokioRuntime>,
-) -> SpawnOutput<TokioRuntime>
+) -> ActorParts<S, TokioRuntime>
 where
-    S: bloxide_core::spec::MachineSpec<Ctx = WorkerCtx<TokioRuntime>>,
+    S: bloxide_core::spec::MachineSpec<
+        Ctx = WorkerCtx<TokioRuntime>,
+        Mailboxes<TokioRuntime> = (
+            bloxide_tokio::TokioStream<PeerCtrl<WorkerMsg, TokioRuntime>>,
+            bloxide_tokio::TokioStream<WorkerMsg>,
+        ),
+    >,
     S::Event: From<bloxide_core::messaging::Envelope<PeerCtrl<WorkerMsg, TokioRuntime>>>
         + From<bloxide_core::messaging::Envelope<WorkerMsg>>,
 {
@@ -244,26 +255,11 @@ where
             let worker_ctx = WorkerCtx::new(worker_id, pool_ref);
             let machine = StateMachine::<S>::new(worker_ctx);
 
-            let notify_sender = notify.sender();
-            let task_handle = <TokioRuntime as SpawnCap>::spawn(async move {
-                run(
-                    machine,
-                    (ctrl_rx, domain_rx),
-                    RunConfig::<TokioRuntime>::supervised_with_abort(
-                        lifecycle_rx,
-                        abort_rx,
-                        notify_sender,
-                    ),
-                    worker_id,
-                )
-                .await
-            });
-
-            // Convert the JoinHandle (not Clone) into a Kill Handle (Clone)
-            // so it can be stored in RegisterDynamicChild and cloned from
-            // &Event by the supervisor's action function.
-            let kill_handle = <TokioRuntime as SpawnCap>::kill_handle(task_handle);
-
+            // The reply is sent BEFORE the task is spawned (the platform
+            // helper spawns it only after this function returns). This is
+            // safe: the pool processes `SpawnedWorker` in a later dispatch
+            // (run-to-completion), after the synchronous spawn composition
+            // completes.
             let _ = reply_to.try_send(
                 worker_id,
                 SpawnedWorker {
@@ -273,11 +269,14 @@ where
                 },
             );
 
-            SpawnOutput {
+            ActorParts {
                 child_id: worker_id,
+                machine,
+                mailboxes: (ctrl_rx, domain_rx),
                 lifecycle_ref,
+                lifecycle_rx,
                 abort_ref,
-                kill_handle,
+                abort_rx,
                 policy: ChildPolicy::Stop,
             }
         }

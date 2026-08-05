@@ -11,7 +11,7 @@ features = ["dynamic"]
 
   [actors.inject]
   self_ref = { source = "self" }
-  spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "spawn_worker" }
+  spawn_fn = { source = "factory", crate = "tokio_pool_demo_impl", function = "build_worker" }
   spawn_ref = { source = "actor", actor = "supervisor", field = "control" }
   notify_ref = { source = "actor", actor = "supervisor", field = "notify" }
   spawn_reply_ref = { source = "self_secondary", index = 1 }
@@ -32,10 +32,12 @@ features = ["dynamic"]
 # Worker is kind = "dynamic" — spawned at runtime by the pool via factory
 # injection. It gets a concrete spec generated at the system level, but no
 # channels/task/bootstrap in main.rs. The impl crate (tokio_pool_demo_impl)
-# provides the spawn_worker factory, injected into the pool's spawn_fn (see
-# [actors.inject] above): it constructs the worker context and machine at
-# spawn time, and is generic over the spec type — main.rs monomorphizes it
-# with the system-level concrete spec.
+# provides the build_worker factory, injected into the pool's spawn_fn (see
+# [actors.inject] above): it builds the worker's ActorParts (channels,
+# context, machine) at spawn time, and is generic over the spec type. The
+# platform helper in bloxide-spawn (spawn_actor_task) assembles the
+# RunConfig and spawns the run loop; main.rs composes the two,
+# monomorphized with the system-level concrete spec.
 [[actors]]
 name = "worker"
 blox = "worker-blox"

@@ -1,6 +1,7 @@
 // Copyright 2025 Bloxide, all rights reserved
 //! Direct tests for `bloxide-spawn`: `ChildCtrlRegistrar`, `spawn_dynamic_child`,
-//! `Kill`, and `SpawnOutput`.
+//! `Kill`, `SpawnOutput`, and the platform spawn API (`ActorParts` +
+//! `spawn_actor_task`).
 //!
 //! These are integration tests (not a `#[cfg(test)]` module in `src/`) on purpose:
 //! `bloxide-test-runtime` depends on `bloxide-spawn`, so the dev-dependency below
@@ -17,12 +18,16 @@
 
 use bloxide_child_management::control::ChildCtrl;
 use bloxide_child_management::ChildPolicy;
-use bloxide_core::capability::DynamicChannelCap;
+use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
+use bloxide_core::engine::StateMachine;
+use bloxide_core::event_tag::{EventTag, LifecycleEvent};
 use bloxide_core::lifecycle::{AbortCommand, ChildLifecycleEvent, LifecycleCommand};
-use bloxide_core::messaging::{ActorId, ActorRef};
+use bloxide_core::messaging::{ActorId, ActorRef, Envelope};
+use bloxide_core::spec::{MachineSpec, StateFns};
+use bloxide_core::topology::StateTopology;
 use bloxide_spawn::{
-    spawn_dynamic_child, ChildCtrlRegistrar, ChildRegistrar, Kill, KillCapability, SpawnCap,
-    SpawnOutput,
+    spawn_actor_task, spawn_dynamic_child, ActorParts, ChildCtrlRegistrar, ChildRegistrar, Kill,
+    KillCapability, SpawnCap, SpawnFn, SpawnOutput,
 };
 use bloxide_test_runtime::{
     drain_killed, kill_count, spawned_count, TestRuntime, TestTrySendError,
@@ -201,4 +206,197 @@ fn spawn_output_clone_and_debug() {
     assert!(debug.contains("SpawnOutput"));
     assert!(debug.contains("42"), "child_id missing from {debug}");
     assert!(debug.contains("Reset"), "policy missing from {debug}");
+}
+
+// ── ActorParts + spawn_actor_task ───────────────────────────────────────────
+//
+// The fixture is the same shape as the waker-test fixtures in
+// `bloxide-test-runtime` (StateTopology + EventTag/LifecycleEvent impls +
+// HANDLER_TABLE), trimmed to the smallest `MachineSpec` that
+// `StateMachine::new`'s invariant asserts accept: two states, no transitions,
+// one domain mailbox. Same integration-test placement as the rest of this
+// file (see the header comment) — it exercises `TestRuntime: SpawnCap`.
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
+enum FixtureState {
+    #[default]
+    Init,
+    Running,
+}
+
+impl StateTopology for FixtureState {
+    const STATE_COUNT: usize = 2;
+
+    fn parent(self) -> Option<Self> {
+        None
+    }
+
+    fn is_leaf(self) -> bool {
+        true
+    }
+
+    fn path(self) -> &'static [Self] {
+        match self {
+            FixtureState::Init => &[FixtureState::Init],
+            FixtureState::Running => &[FixtureState::Running],
+        }
+    }
+
+    fn as_index(self) -> usize {
+        self as usize
+    }
+}
+
+// Variants are never constructed: `TestRuntime` records spawned tasks without
+// executing them, so the fixture machine never dispatches. The variants exist
+// to satisfy the `EventTag`/`LifecycleEvent`/`From` trait surface only.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy)]
+enum FixtureEvent {
+    Lifecycle(LifecycleCommand),
+    Msg(u32),
+}
+
+impl EventTag for FixtureEvent {
+    fn event_tag(&self) -> u8 {
+        match self {
+            FixtureEvent::Lifecycle(_) => 254,
+            FixtureEvent::Msg(_) => 0,
+        }
+    }
+}
+
+impl LifecycleEvent for FixtureEvent {
+    fn as_lifecycle_command(&self) -> Option<LifecycleCommand> {
+        match self {
+            FixtureEvent::Lifecycle(cmd) => Some(*cmd),
+            _ => None,
+        }
+    }
+}
+
+impl From<Envelope<u32>> for FixtureEvent {
+    fn from(env: Envelope<u32>) -> Self {
+        FixtureEvent::Msg(env.1)
+    }
+}
+
+/// Unit context — the fixture machine carries no state.
+struct FixtureCtx;
+
+/// Minimal spec: two states (Init → Running), no transitions, a single u32
+/// domain mailbox.
+struct FixtureSpec;
+
+impl MachineSpec for FixtureSpec {
+    type State = FixtureState;
+    type Event = FixtureEvent;
+    type Ctx = FixtureCtx;
+    type Mailboxes<Rt: BloxRuntime> = (Rt::Stream<u32>,);
+
+    const HANDLER_TABLE: &'static [&'static StateFns<Self>] = &[
+        &StateFns {
+            on_entry: &[],
+            on_exit: &[],
+            transitions: &[],
+        },
+        &StateFns {
+            on_entry: &[],
+            on_exit: &[],
+            transitions: &[],
+        },
+    ];
+
+    fn initial_state() -> FixtureState {
+        FixtureState::Running
+    }
+}
+
+/// The domain-factory half of the codegen composition: builds everything the
+/// platform spawn needs from the request — child id, machine, domain and
+/// lifecycle/abort channels — without touching `run()`, `RunConfig`, or
+/// `SpawnCap`. All channels share the child id, mirroring handwritten spawn
+/// factories (e.g. the pool demo's `build_worker`).
+fn build_parts(_req: DummyReq) -> ActorParts<FixtureSpec, TestRuntime> {
+    let child_id = TestRuntime::alloc_actor_id();
+    // In a real factory the domain send-side goes back to the requester via
+    // the spawn request's reply channel; the spawn path itself never sees it.
+    let (_domain_ref, domain_rx) = TestRuntime::channel::<u32>(child_id, 4);
+    let (lifecycle_ref, lifecycle_rx) = TestRuntime::channel::<LifecycleCommand>(child_id, 4);
+    let (abort_ref, abort_rx) = TestRuntime::channel::<AbortCommand>(child_id, 4);
+    ActorParts {
+        child_id,
+        machine: StateMachine::<FixtureSpec>::new(FixtureCtx),
+        mailboxes: (TestRuntime::to_stream(domain_rx),),
+        lifecycle_ref,
+        lifecycle_rx,
+        abort_ref,
+        abort_rx,
+        policy: ChildPolicy::Stop,
+    }
+}
+
+#[test]
+fn spawn_actor_task_spawns_run_loop_and_returns_output() {
+    let spawned_before = spawned_count();
+    let _ = drain_killed();
+    let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(2, 16);
+
+    let parts = build_parts(DummyReq);
+    let child_id = parts.child_id;
+    let output = spawn_actor_task(parts, notify_ref);
+
+    assert_eq!(
+        spawned_count(),
+        spawned_before + 1,
+        "exactly one run-loop task must be spawned"
+    );
+    assert_eq!(output.child_id, child_id);
+    assert_eq!(output.lifecycle_ref.id(), child_id);
+    assert_eq!(output.abort_ref.id(), child_id);
+    assert_eq!(output.policy, ChildPolicy::Stop);
+
+    // The kill handle is the ripcord for the spawned task: killing via the
+    // `Kill` capability must record exactly this handle.
+    <Kill as KillCapability<TestRuntime>>::kill(output.kill_handle);
+    assert_eq!(drain_killed(), vec![output.kill_handle]);
+}
+
+#[test]
+fn codegen_composition_flows_through_spawn_dynamic_child() {
+    let (control_ref, mut control_rx) = TestRuntime::channel::<ChildCtrl<TestRuntime>>(1, 4);
+    let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(2, 16);
+    let spawned_before = spawned_count();
+
+    // The exact shape system codegen emits at the wiring layer: a stateless
+    // closure composing the domain factory with the platform spawn, coerced
+    // to the `SpawnFn` fn-pointer type.
+    let spawn_fn: SpawnFn<TestRuntime, DummyReq> =
+        |req, notify| spawn_actor_task(build_parts(req), notify);
+
+    let result = spawn_dynamic_child::<TestRuntime, DummyReq, ChildCtrlRegistrar>(
+        spawn_fn,
+        DummyReq,
+        &control_ref,
+        &notify_ref,
+        FROM,
+    );
+
+    assert!(result.is_ok(), "spawn_dynamic_child failed: {result:?}");
+    assert_eq!(
+        spawned_count(),
+        spawned_before + 1,
+        "the platform spawn must record exactly one run-loop task"
+    );
+
+    let msgs = control_rx.drain_payloads();
+    assert_eq!(msgs.len(), 1, "exactly one registration message expected");
+    match &msgs[0] {
+        ChildCtrl::RegisterDynamicChild(reg) => {
+            assert_eq!(reg.policy, ChildPolicy::Stop);
+            assert_eq!(reg.lifecycle_ref.id(), reg.id);
+            assert_eq!(reg.abort_ref.id(), reg.id);
+        }
+        other => panic!("expected RegisterDynamicChild, got {other:?}"),
+    }
 }

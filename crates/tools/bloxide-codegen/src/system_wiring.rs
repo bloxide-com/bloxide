@@ -1118,13 +1118,20 @@ pub fn generate(
                             })?;
                         let spec_path =
                             quote! { crate::generated::#spec_module_ident::#spec_ty_tokens };
-                        // Use a closure that monomorphizes the generic spawn
-                        // function with the system-level concrete spec type.
-                        // The `as _` cast on the constructor argument tells
-                        // Rust to infer the closure's parameter types from
-                        // the target field type (a SpawnFn<R, Req>).
+                        // Compose the domain build (impl crate) with the
+                        // platform spawn (bloxide-spawn): the closure
+                        // monomorphizes the generic factory with the
+                        // system-level concrete spec type, then hands the
+                        // resulting ActorParts to `spawn_actor_task`,
+                        // yielding a SpawnFn<R, Req>. The `as _` cast on the
+                        // constructor argument tells Rust to infer the
+                        // closure's parameter types from the target field
+                        // type.
                         ctor_args.push(quote! {
-                            (|req, notify| ::#crate_ident::#fn_ident::<#spec_path>(req, notify)) as _
+                            (|req, notify| ::bloxide_spawn::spawn_actor_task(
+                                ::#crate_ident::#fn_ident::<#spec_path>(req),
+                                notify,
+                            )) as _
                         });
                     } else {
                         ctor_args.push(quote! { ::#crate_ident::#fn_ident as _ });

@@ -25,7 +25,7 @@ bloxide-codegen     TOML-driven code generator library                        (h
 cargo-blox          CLI: see QUICK_REFERENCE.md → "cargo blox Command Reference"  (host-compiled)
 bloxide-log         Feature-gated logging macros                              (no_std)
 bloxide-timer       Timer service: commands, queue, timer action functions     (no_std)
-bloxide-spawn       Spawn capability: SpawnCap, ChildRegistrar, spawn_dynamic_child   (no_std)
+bloxide-spawn       Spawn capability: SpawnCap, ActorParts, spawn_actor_task, SpawnFn, SpawnOutput, ChildRegistrar, spawn_dynamic_child   (no_std)
 bloxide-child-management  Child tracking: ChildGroup, ChildGroupBuilder, ChildPolicy, GroupShutdown, control (ChildCtrl, RegisterChild, RegisterDynamicChild), actions  (no_std)
 bloxide-supervisor  Supervisor blox (reference consumer): SupervisorSpec topology + concrete_spec test fixture; control types and actions live in bloxide-child-management  (no_std)
 bloxide-peers       Peer introduction: PeerCtrl, AddPeer, RemovePeer, introduce_peers, apply_peer_control, broadcast_to_peers  (no_std)
@@ -56,11 +56,18 @@ pub trait BloxRuntime: Clone + Send + 'static {
     fn to_stream<M: Send + 'static>(rx: Self::Receiver<M>) -> Self::Stream<M>;
     async fn send_via<M: Send + 'static>(tx: &Self::Sender<M>, msg: Envelope<M>) -> Result<(), Self::SendError>;
     fn try_send_via<M: Send + 'static>(tx: &Self::Sender<M>, msg: Envelope<M>) -> Result<(), Self::TrySendError>;
-    async fn yield_now() {}  // no-op default; runtimes override
+    fn yield_now() -> impl Future<Output = ()> + Send { async {} }  // no-op default; runtimes override
 }
 ```
 
 (Simplified — see `crates/bloxide-core/src/capability.rs` for the exact definition.)
+
+`yield_now` is declared in desugared form (not `async fn` in trait) with an explicit
+`Send` bound: the run loop awaits it inside spawned tasks, so generic spawning
+(`bloxide-spawn`'s `spawn_actor_task`) must be able to prove the future `Send` — an
+`async fn` in trait would leave the future's `Send`-ness unnameable on stable Rust.
+Custom runtimes override it with the same desugared signature (e.g.
+`fn yield_now() -> impl Future<Output = ()> + Send { tokio::task::yield_now() }`).
 
 Blox crates never use Tier 2 traits as bounds.
 
