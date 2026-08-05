@@ -89,9 +89,10 @@ fn args_use_type_param(args: &syn::PathArguments, type_param_idents: &[String]) 
 fn type_uses_type_param(ty: &syn::Type, type_param_idents: &[String]) -> bool {
     match ty {
         syn::Type::Path(ty) => {
-            ty.qself.as_ref().map_or(false, |qself| {
-                type_uses_type_param(&qself.ty, type_param_idents)
-            }) || path_uses_type_param(&ty.path, type_param_idents)
+            ty.qself
+                .as_ref()
+                .is_some_and(|qself| type_uses_type_param(&qself.ty, type_param_idents))
+                || path_uses_type_param(&ty.path, type_param_idents)
         }
         syn::Type::Reference(ty) => type_uses_type_param(&ty.elem, type_param_idents),
         syn::Type::Paren(ty) => type_uses_type_param(&ty.elem, type_param_idents),

@@ -459,3 +459,100 @@ actions = [\"stop_all_children\", \"send_ping\", \"other_crate::send_pong\"]
         "imported action refs should produce no diagnostics: {stdout}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// End to end: duplicate-transition checks are feature-gate aware.
+// ---------------------------------------------------------------------------
+
+/// Two transitions may share a `(state, event)` pair when their `feature`
+/// gates differ — they are distinct variants, not duplicates.
+#[test]
+fn feature_gated_transition_variants_are_not_duplicates() {
+    let dir = write_lint_fixture_with(
+        "\
+[actor]
+name = \"Foo\"
+
+[topology]
+
+[[topology.states]]
+name = \"Ready\"
+initial = true
+
+[[topology.states]]
+name = \"Active\"
+
+[[topology.transitions]]
+state = \"Ready\"
+event = \"FooMsg::Bar(_)\"
+target = \"Active\"
+
+[[topology.transitions]]
+state = \"Ready\"
+event = \"FooMsg::Bar(_)\"
+target = \"stay\"
+feature = \"dynamic\"
+
+[[topology.transitions]]
+state = \"Active\"
+event = \"FooMsg::Baz(_)\"
+target = \"stay\"
+",
+    );
+
+    let (stdout, stderr, success) = run_lint(&dir);
+    assert!(
+        success,
+        "feature-gated variants must pass the lint run: {stderr}"
+    );
+    assert!(
+        !stderr.contains("duplicate transition"),
+        "feature-differing duplicates must not be flagged: {stderr}"
+    );
+    assert!(
+        stdout.contains("0 error(s), 0 warning(s)"),
+        "no diagnostics expected: {stdout}"
+    );
+}
+
+/// Positive control: an exact duplicate — same state, event, AND feature —
+/// is still flagged.
+#[test]
+fn errors_on_duplicate_transition_with_same_feature() {
+    let dir = write_lint_fixture_with(
+        "\
+[actor]
+name = \"Foo\"
+
+[topology]
+
+[[topology.states]]
+name = \"Ready\"
+initial = true
+
+[[topology.states]]
+name = \"Active\"
+
+[[topology.transitions]]
+state = \"Ready\"
+event = \"FooMsg::Bar(_)\"
+target = \"Active\"
+feature = \"dynamic\"
+
+[[topology.transitions]]
+state = \"Ready\"
+event = \"FooMsg::Bar(_)\"
+target = \"stay\"
+feature = \"dynamic\"
+",
+    );
+
+    let (_stdout, stderr, success) = run_lint(&dir);
+    assert!(!success, "exact duplicates must fail the lint run");
+    assert!(
+        stderr.contains(
+            "duplicate transition in state \"Ready\" for event pattern `FooMsg::Bar(_)` (feature \"dynamic\")"
+        ),
+        "same-feature duplicates should error: {stderr}"
+    );
+}

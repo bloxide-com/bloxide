@@ -91,7 +91,10 @@ fn string_array(items: &[String]) -> Item {
 
 // ── States ──────────────────────────────────────────────────────────────────
 
-/// Add a `[[topology.states]]` entry. Fails if a state with the same name exists.
+/// Add a `[[topology.states]]` entry. Fails if a state with the same name
+/// exists, or if both `composite` and `error` are set — the generated
+/// `StateKind` is exactly one of Leaf/Composite/Error, so the flags are
+/// mutually exclusive.
 pub fn add_state(
     doc: &mut DocumentMut,
     name: &str,
@@ -99,6 +102,13 @@ pub fn add_state(
     composite: bool,
     error: bool,
 ) -> anyhow::Result<()> {
+    if composite && error {
+        anyhow::bail!(
+            "state '{}' cannot be both composite and error (StateKind is one or the other)",
+            name
+        );
+    }
+
     let topology = topology_table_mut(doc)?;
     let states = array_mut(topology, "states")?;
 
@@ -164,8 +174,18 @@ pub fn remove_state(doc: &mut DocumentMut, name: &str) -> anyhow::Result<()> {
 
 // ── Transitions ─────────────────────────────────────────────────────────────
 
+/// Non-state guard/transition target keywords (mirrors the lint vocabulary in
+/// cargo-blox): anything else must be a declared state name.
+const GUARD_TARGET_KEYWORDS: [&str; 5] = ["stay", "reset", "stop", "done", "fail"];
+
 /// Add a `[[topology.transitions]]` entry. Guards are `"condition:target"`
-/// strings (split on the LAST `:` to allow `::` in conditions).
+/// strings, split on the LAST `:` (so `::` path separators in conditions are
+/// fine). The target must be a declared state name or one of "stay",
+/// "reset", "stop", "done", "fail"; anything else is rejected. This also
+/// catches guards whose condition contains `:` but which omit the `:target`
+/// suffix (e.g. `ctx.name == "a:b"`), which would otherwise split
+/// mid-condition and be silently accepted — so do not put `:` inside string
+/// literals in guard conditions.
 #[allow(clippy::too_many_arguments)]
 pub fn add_transition(
     doc: &mut DocumentMut,
@@ -177,17 +197,35 @@ pub fn add_transition(
     feature: Option<&str>,
 ) -> anyhow::Result<()> {
     let topology = topology_table_mut(doc)?;
+    // Declared state names, for validating guard targets below. Collected
+    // before the mutable `transitions` borrow.
+    let state_names: Vec<String> = topology
+        .get("states")
+        .and_then(|s| s.as_array_of_tables())
+        .map(|states| {
+            states
+                .iter()
+                .filter_map(|s| s.get("name").and_then(|v| v.as_str()).map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
     let transitions = array_mut(topology, "transitions")?;
 
+    // Identity is (state, event, feature): a feature-gated variant of an
+    // existing transition is a distinct entry, not a duplicate.
     let duplicate = transitions.iter().any(|t| {
         t.get("state").and_then(|v| v.as_str()) == Some(state)
             && t.get("event").and_then(|v| v.as_str()) == Some(event)
+            && t.get("feature").and_then(|v| v.as_str()) == feature
     });
     if duplicate {
-        anyhow::bail!(conflict(format!(
-            "transition {} + {} already exists",
-            state, event
-        )));
+        anyhow::bail!(conflict(match feature {
+            Some(feat) => format!(
+                "transition {} + {} (feature {}) already exists",
+                state, event, feat
+            ),
+            None => format!("transition {} + {} already exists", state, event),
+        }));
     }
 
     let mut t = Table::new();
@@ -211,6 +249,21 @@ pub fn add_transition(
                     );
                 }
             };
+            // The split lands on the LAST ':', so a guard that omits the
+            // `:target` suffix but has ':' in its condition (e.g. inside a
+            // string literal like `"a:b"`) splits mid-condition. Reject that
+            // here instead of silently writing a broken target.
+            if !GUARD_TARGET_KEYWORDS.contains(&guard_target)
+                && !state_names.iter().any(|s| s == guard_target)
+            {
+                anyhow::bail!(
+                    "invalid guard '{}' — target '{}' is not a declared state or one of {:?}; \
+                     note: guard conditions must not contain ':' inside string literals",
+                    guard_str,
+                    guard_target,
+                    GUARD_TARGET_KEYWORDS
+                );
+            }
             let mut g = Table::new();
             g["condition"] = toml_edit::value(condition);
             g["target"] = toml_edit::value(guard_target);
@@ -227,26 +280,35 @@ pub fn add_transition(
     Ok(())
 }
 
-/// Remove a transition by its natural key (state + event pattern).
-pub fn remove_transition(doc: &mut DocumentMut, state: &str, event: &str) -> anyhow::Result<()> {
+/// Remove a transition by its natural key (state + event pattern + feature
+/// gate). The feature filter matches exactly: `None` targets only the
+/// non-gated transition, `Some(f)` only the variant gated on feature `f`.
+pub fn remove_transition(
+    doc: &mut DocumentMut,
+    state: &str,
+    event: &str,
+    feature: Option<&str>,
+) -> anyhow::Result<()> {
     let topology = topology_table_mut(doc)?;
     let transitions = array_mut(topology, "transitions")?;
 
-    let exists = transitions.iter().any(|t| {
+    let matches = |t: &Table| {
         t.get("state").and_then(|v| v.as_str()) == Some(state)
             && t.get("event").and_then(|v| v.as_str()) == Some(event)
-    });
-    if !exists {
-        anyhow::bail!(not_found(format!(
-            "transition {} + {} not found",
-            state, event
-        )));
+            && t.get("feature").and_then(|v| v.as_str()) == feature
+    };
+
+    if !transitions.iter().any(&matches) {
+        anyhow::bail!(not_found(match feature {
+            Some(feat) => format!(
+                "transition {} + {} (feature {}) not found",
+                state, event, feat
+            ),
+            None => format!("transition {} + {} not found", state, event),
+        }));
     }
 
-    remove_where(transitions, |t| {
-        t.get("state").and_then(|v| v.as_str()) == Some(state)
-            && t.get("event").and_then(|v| v.as_str()) == Some(event)
-    });
+    remove_where(transitions, matches);
     Ok(())
 }
 

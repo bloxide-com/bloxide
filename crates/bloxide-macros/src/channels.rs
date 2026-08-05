@@ -75,3 +75,81 @@ pub(crate) fn channels_inner(input: TokenStream) -> TokenStream {
     }
     .into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ChannelsInput;
+    use quote::ToTokens;
+
+    /// Render a parsed type back to a compact string for comparison.
+    fn type_string(ty: &syn::Type) -> String {
+        ty.to_token_stream().to_string().replace(' ', "")
+    }
+
+    /// Grammar: `channels!(Runtime; Msg(CAP), ...)` — the leading runtime
+    /// type is mandatory, so empty input is rejected at the first parse step.
+    #[test]
+    fn empty_input_is_error() {
+        assert!(syn::parse_str::<ChannelsInput>("").is_err());
+    }
+
+    /// The runtime argument is parsed as `syn::Type`; a non-type token is
+    /// rejected before any channel entries are considered.
+    #[test]
+    fn malformed_runtime_is_error() {
+        assert!(syn::parse_str::<ChannelsInput>("123; Msg(16)").is_err());
+    }
+
+    /// Capacity is a mandatory parenthesized `LitInt` after each message
+    /// type: both `Msg` (no parens at all) and `Msg()` (empty parens) are
+    /// errors.
+    #[test]
+    fn missing_capacity_is_error() {
+        assert!(syn::parse_str::<ChannelsInput>("MockRuntime; Msg").is_err());
+        assert!(syn::parse_str::<ChannelsInput>("MockRuntime; Msg()").is_err());
+    }
+
+    /// A comma after the final entry is accepted: the parser consumes an
+    /// optional comma after every entry and stops once the stream is empty.
+    /// This locks in the current lenient trailing-comma behavior.
+    #[test]
+    fn trailing_comma_is_accepted() {
+        let parsed =
+            syn::parse_str::<ChannelsInput>("MockRuntime; Msg(16),").expect("should parse");
+        assert_eq!(parsed.entries.len(), 1);
+        assert_eq!(
+            parsed.entries[0].capacity.base10_parse::<usize>().unwrap(),
+            16
+        );
+    }
+
+    /// Valid multi-channel input parses into the runtime type plus one entry
+    /// per `Msg(CAP)` pair, preserving order.
+    #[test]
+    fn multi_channel_input_parses() {
+        let parsed = syn::parse_str::<ChannelsInput>("MockRuntime; PingPongMsg(16), SomeMsg(8)")
+            .expect("valid input should parse");
+        assert_eq!(type_string(&parsed.runtime), "MockRuntime");
+        assert_eq!(parsed.entries.len(), 2);
+        assert_eq!(type_string(&parsed.entries[0].msg_type), "PingPongMsg");
+        assert_eq!(
+            parsed.entries[0].capacity.base10_parse::<usize>().unwrap(),
+            16
+        );
+        assert_eq!(type_string(&parsed.entries[1].msg_type), "SomeMsg");
+        assert_eq!(
+            parsed.entries[1].capacity.base10_parse::<usize>().unwrap(),
+            8
+        );
+    }
+
+    /// The parser itself does not require any entries; rejecting an empty
+    /// entry list is `channels_inner`'s job ("channels! requires at least
+    /// one message type"), which runs after parsing.
+    #[test]
+    fn runtime_without_entries_parses_to_empty_list() {
+        let parsed = syn::parse_str::<ChannelsInput>("MockRuntime;").expect("should parse");
+        assert_eq!(type_string(&parsed.runtime), "MockRuntime");
+        assert!(parsed.entries.is_empty());
+    }
+}

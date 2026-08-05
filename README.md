@@ -52,7 +52,7 @@ bloxide_tokio::actor_task_supervised!(pong_task, PongSpec<TokioRuntime>);
 bloxide_tokio::root_task!(supervisor_task, SupervisorSpec<TokioRuntime>);
 
 // Supervise both actors
-let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone, 2);
 let sup_notify_ref = group.notify_ref();
 bloxide_tokio::spawn_static_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
 bloxide_tokio::spawn_static_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
@@ -171,7 +171,7 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 | `bloxide-core` | `crates/bloxide-core` | ✅ | HSM engine, `MachineSpec`, `BloxRuntime`, `StateMachine`, `KillCapability`, `run`/`RunConfig` |
 | `bloxide-macros` | `crates/bloxide-macros` | ✅¹ | `channels!`, `dyn_channels!`, `next_actor_id!` |
 | `bloxide-log` | `crates/bloxide-log` | ✅ | Feature-gated logging macros (`log` / `defmt` / no-op) |
-| `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `cancel_timer_by_id`, `VirtualClock` |
+| `bloxide-timer` | `crates/bloxide-timer` | ✅ | `TimerCommand`, `TimerQueue`, `set_timer`, `cancel_timer`, `cancel_timer_by_id`, `VirtualClock` (crate-internal, `#[cfg(test)]`) |
 | `bloxide-child-management` | `crates/bloxide-child-management` | ✅ | `ChildGroup`, `ChildEntry`, `ChildPhase`, `ChildGroupBuilder`, `ChildPolicy`, `GroupShutdown`, `ChildCtrl`/`RegisterChild`/`RegisterDynamicChild`, action functions |
 | `bloxide-supervisor` | `crates/bloxide-supervisor` | ✅ | Supervisor blox (reference consumer): `SupervisorSpec`, `SupervisorCtx`; `blox.toml` + generated + `concrete_spec.rs` test fixture + tests only |
 | `bloxide-spawn` | `crates/bloxide-spawn` | ✅ | `SpawnCap`, `SpawnFn`, `SpawnOutput`, `ChildCtrlRegistrar`, `spawn_dynamic_child` |
@@ -182,9 +182,10 @@ Message enums, event types, and state topology are declared in `blox.toml` and g
 | `blox-ctx-ticks` | `crates/context/blox-ctx-ticks` | ✅ | `increment_count` action function |
 | `bloxide-embassy` | `runtimes/bloxide-embassy` | ✅ | Embassy runtime: `EmbassyRuntime`, `channels!`, `spawn_static_child!`, `spawn_timer!`, task macros |
 | `bloxide-tokio` | `runtimes/bloxide-tokio` | — | Tokio runtime: `TokioRuntime`, `channels!`, `spawn_static_child!`, `spawn_timer!`, `SpawnCap`, `KillCapability`, task macros |
-| `bloxide-test-runtime` | `runtimes/bloxide-test-runtime` | — | `TestRuntime`: executor-free unit testing; implements `DynamicChannelCap` + `SpawnCap` (kill is a documented no-op) |
+| `bloxide-test-runtime` | `runtimes/bloxide-test-runtime` | ✅² | `TestRuntime`: executor-free unit testing; implements `DynamicChannelCap` + `SpawnCap` (kill is a documented no-op) |
 
 ¹ Proc-macro crates compile for the host; they have no `no_std` impact on the target binary.
+² `no_std` + alloc; the default `std` feature enables thread-local test utilities.
 
 ---
 

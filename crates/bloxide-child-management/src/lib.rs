@@ -110,13 +110,6 @@ pub use builder::ChildGroupBuilder;
 // Re-export the control-plane message types
 pub use control::{ChildCtrl, RegisterChild, RegisterDynamicChild};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
-pub enum ChildAction {
-    #[default]
-    Continue,
-    BeginShutdown,
-}
-
 /// Why a registration was rejected. Registration is fallible everywhere —
 /// the managing blox's action functions warn-and-drop on `Err` instead of
 /// panicking (a bad `ChildCtrl` message must not reset an MCU).
@@ -218,6 +211,12 @@ pub struct ChildGroup<R: BloxRuntime> {
     children: Vec<ChildEntry<R>>,
     shutdown: GroupShutdown,
     max_misses: u8,
+    /// A `Done` child was deregistered. The entry was removed (dropping its
+    /// refs so the child's channels close), so this bit is the remaining
+    /// evidence that a terminal report arrived — `should_begin_shutdown`
+    /// would otherwise lose it. Like terminal phases, it is kept by
+    /// `clear_counters`: a cleanly completed child never comes back.
+    done_deregistered: bool,
 }
 
 impl<R: BloxRuntime> ChildGroup<R> {
@@ -234,6 +233,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             children: Vec::new(),
             shutdown,
             max_misses,
+            done_deregistered: false,
         }
     }
 
@@ -333,9 +333,13 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// task while the group still records it terminal would desynchronize
     /// the bookkeeping (the `Started` ack is guarded out for terminal
     /// phases). Task-gone phases have dead mailboxes — doubly skipped.
+    /// `Aborting` children are skipped too: their abort is already in
+    /// flight, so `Start` would race the child run loop's cooperative
+    /// self-termination (the same coalescing `handle_done_or_failed`
+    /// applies).
     pub fn start_all(&mut self, from: ActorId) {
         for entry in &mut self.children {
-            if entry.phase.is_terminal() {
+            if entry.phase.is_terminal() || entry.phase == ChildPhase::Aborting {
                 continue;
             }
             match entry.lifecycle_ref.try_send(from, LifecycleCommand::Start) {
@@ -410,12 +414,12 @@ impl<R: BloxRuntime> ChildGroup<R> {
     ///   `ResetPending` + restart counted; Abort → `Aborting`; Start/Stop →
     ///   nothing — the child's report drives the phase).
     /// - Full — stays queued.
-    /// - Closed — the child is `Gone`.
+    /// - Closed — the child is `Gone` (terminal; visible to
+    ///   `should_begin_shutdown`/`all_stopped` on the next guard evaluation).
     ///
     /// Terminal entries drop their queued command (a pending remedy is moot
     /// once the child has stopped/ended).
-    pub fn flush_pending(&mut self, from: ActorId) -> ChildAction {
-        let mut any_gone = false;
+    pub fn flush_pending(&mut self, from: ActorId) {
         for entry in &mut self.children {
             let Some(cmd) = entry.pending_cmd else {
                 continue;
@@ -466,7 +470,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
                     if !entry.phase.is_terminal() {
                         entry.phase = ChildPhase::Gone;
                         entry.ping_outstanding = false;
-                        any_gone = true;
                         bloxide_log::blox_log_warn!(
                             from,
                             "flush of pending command to child {} failed (channel closed) — child task is gone",
@@ -479,36 +482,32 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 }
             }
         }
-        if any_gone {
-            self.check_shutdown()
-        } else {
-            ChildAction::Continue
-        }
     }
 
     /// Handle a `Stopped` or `Failed` lifecycle event for a child.
     ///
     /// Applies the child's `ChildPolicy`, confirm-before-record:
     /// - `Reset { max }` → if the consecutive-restart cap is exhausted, give
-    ///   up (`Stopped`, terminal) and evaluate shutdown. Otherwise send
-    ///   `Reset`: Ok → `ResetPending`; Full → queued in `pending_cmd`;
-    ///   Closed → `Gone`.
-    /// - `Stop` → set `Stopped` (task alive, terminal for epoch) → `check_shutdown()`
+    ///   up (`Stopped`, terminal). Otherwise send `Reset`: Ok →
+    ///   `ResetPending`; Full → queued in `pending_cmd`; Closed → `Gone`.
+    /// - `Stop` → set `Stopped` (task alive, terminal for epoch).
     /// - `Abort` → send `AbortCommand`: Ok → `Aborting` (the `Aborted` report
     ///   finalizes); Full → queued; Closed → `Gone`.
-    /// - `Kill` → `KillCapability::kill(handle)` (synchronous), set `Killed`
-    ///   → `check_shutdown()`. Only reachable on `CAN_KILL` runtimes —
-    ///   enforced at registration.
+    /// - `Kill` → `KillCapability::kill(handle)` (synchronous), set `Killed`.
+    ///   Only reachable on `CAN_KILL` runtimes — enforced at registration.
     ///
     /// Children with a queued policy remedy (`pending_cmd` Reset/Abort), an
     /// in-flight transition (`ResetPending`/`Aborting`), or a terminal phase
     /// are coalesced: the policy is already in motion.
+    ///
+    /// Terminal outcomes are recorded in the child's phase; the managing
+    /// blox's guards read them via `should_begin_shutdown`/`all_stopped`.
     pub fn handle_done_or_failed(
         &mut self,
         child_id: ActorId,
         from: ActorId,
         notify: &ActorRef<ChildLifecycleEvent, R>,
-    ) -> ChildAction {
+    ) {
         let idx = match self.children.iter().position(|e| e.id == child_id) {
             Some(idx) => idx,
             None => {
@@ -517,7 +516,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
                     "lifecycle event for unknown child {} — ignored",
                     child_id
                 );
-                return ChildAction::Continue;
+                return;
             }
         };
 
@@ -539,7 +538,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
             || phase == ChildPhase::Aborting
             || has_pending_remedy
         {
-            return ChildAction::Continue;
+            return;
         }
 
         // Handle Kill policy: call R::Kill::kill(kill_handle) — the ripcord.
@@ -570,7 +569,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
 
             self.children[idx].phase = ChildPhase::Killed;
             self.children[idx].ping_outstanding = false;
-            return self.check_shutdown();
+            return;
         }
 
         // Handle Abort policy: send AbortCommand on the abort mailbox.
@@ -585,11 +584,11 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 Ok(()) => {
                     self.children[idx].phase = ChildPhase::Aborting;
                     self.children[idx].ping_outstanding = false;
-                    return ChildAction::Continue;
+                    return;
                 }
                 Err(e) if R::try_send_error_is_closed(&e) => {
                     Self::mark_gone(&mut self.children[idx], from, "Abort");
-                    return self.check_shutdown();
+                    return;
                 }
                 Err(_) => {
                     bloxide_log::blox_log_warn!(
@@ -598,7 +597,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
                         child_id
                     );
                     self.children[idx].pending_cmd = Some(PendingCmd::Abort);
-                    return ChildAction::Continue;
+                    return;
                 }
             }
         }
@@ -614,7 +613,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 );
                 self.children[idx].phase = ChildPhase::Stopped;
                 self.children[idx].ping_outstanding = false;
-                return self.check_shutdown();
+                return;
             }
             match self.children[idx]
                 .lifecycle_ref
@@ -627,7 +626,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 }
                 Err(e) if R::try_send_error_is_closed(&e) => {
                     Self::mark_gone(&mut self.children[idx], from, "Reset");
-                    return self.check_shutdown();
                 }
                 Err(_) => {
                     bloxide_log::blox_log_warn!(
@@ -638,31 +636,36 @@ impl<R: BloxRuntime> ChildGroup<R> {
                     self.children[idx].pending_cmd = Some(PendingCmd::Reset);
                 }
             }
-            return ChildAction::Continue;
+            return;
         }
 
         // Handle Stop policy: the child is already stopping (Stopped event)
-        // or has failed. Mark Stopped and check group shutdown.
+        // or has failed. Mark Stopped (terminal for this epoch).
         // Stop means the child goes to Init, suspended (task alive) — it can
         // be restarted with `Start` later, but from the ChildGroup's
         // perspective it is done for this epoch (terminal).
         self.children[idx].phase = ChildPhase::Stopped;
         self.children[idx].ping_outstanding = false;
-
-        self.check_shutdown()
     }
 
-    fn check_shutdown(&self) -> ChildAction {
+    /// Should the managing blox begin group shutdown now?
+    ///
+    /// Pure query over the group's current bookkeeping — the managing blox's
+    /// guards call it after the actions ran, so terminal evidence recorded by
+    /// ANY action on the pass (a policy remedy, a report, or a Closed channel
+    /// observed by `flush_pending`) is seen directly and can never be lost.
+    ///
+    /// - `GroupShutdown::WhenAnyDone` → any child is terminal
+    ///   (`Stopped`/`Aborted`/`Killed`/`Gone`) or a `Done` child was
+    ///   deregistered.
+    /// - `GroupShutdown::WhenAllDone` → every child is terminal (same as
+    ///   `all_stopped`; the empty group qualifies vacuously).
+    pub fn should_begin_shutdown(&self) -> bool {
         match self.shutdown {
-            GroupShutdown::WhenAnyDone => ChildAction::BeginShutdown,
-            GroupShutdown::WhenAllDone => {
-                // Empty group: vacuously true (Done-deregistration shutdown).
-                if self.children.iter().all(|e| e.phase.is_terminal()) {
-                    ChildAction::BeginShutdown
-                } else {
-                    ChildAction::Continue
-                }
+            GroupShutdown::WhenAnyDone => {
+                self.done_deregistered || self.children.iter().any(|e| e.phase.is_terminal())
             }
+            GroupShutdown::WhenAllDone => self.all_stopped(),
         }
     }
 
@@ -718,11 +721,7 @@ impl<R: BloxRuntime> ChildGroup<R> {
         }
     }
 
-    pub fn watchdog_tick(
-        &mut self,
-        from: ActorId,
-        notify: &ActorRef<ChildLifecycleEvent, R>,
-    ) -> ChildAction {
+    pub fn watchdog_tick(&mut self, from: ActorId, notify: &ActorRef<ChildLifecycleEvent, R>) {
         // 1. Verdict pass: children with a Ping still outstanding from a
         // previous tick have missed it. `MAX_MISSES` consecutive misses →
         // rogue → normal child policy applies.
@@ -743,17 +742,13 @@ impl<R: BloxRuntime> ChildGroup<R> {
             }
         }
 
-        let mut action = ChildAction::Continue;
         for child_id in rogue_ids {
-            if self.handle_done_or_failed(child_id, from, notify) == ChildAction::BeginShutdown {
-                action = ChildAction::BeginShutdown;
-            }
+            self.handle_done_or_failed(child_id, from, notify);
         }
 
         // 2. Ping pass: monitored children get one Ping. Confirm-before-
         // record: only a delivered Ping is outstanding (a Full channel is not
         // a miss — the child was never asked); Closed marks the child Gone.
-        let mut any_gone = false;
         for entry in &mut self.children {
             if !Self::is_health_monitored(entry) {
                 continue;
@@ -766,7 +761,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
                     if !entry.phase.is_terminal() {
                         entry.phase = ChildPhase::Gone;
                         entry.ping_outstanding = false;
-                        any_gone = true;
                         bloxide_log::blox_log_warn!(
                             from,
                             "try_send Ping to child {} failed (channel closed) — child task is gone",
@@ -781,11 +775,6 @@ impl<R: BloxRuntime> ChildGroup<R> {
                 }
             }
         }
-
-        if any_gone && self.check_shutdown() == ChildAction::BeginShutdown {
-            action = ChildAction::BeginShutdown;
-        }
-        action
     }
 
     fn is_health_monitored(entry: &ChildEntry<R>) -> bool {
@@ -845,48 +834,46 @@ impl<R: BloxRuntime> ChildGroup<R> {
     }
 
     /// Record that a child was aborted (cooperative self-termination via
-    /// `AbortCommand`). The child's task has ended. Returns the group
-    /// shutdown decision: externally-originated aborts (not just policy-
-    /// driven ones) count toward group shutdown.
-    pub fn record_aborted(&mut self, child_id: ActorId, from: ActorId) -> ChildAction {
+    /// `AbortCommand`). The child's task has ended. Externally-originated
+    /// aborts (not just policy-driven ones) count as terminal evidence, so
+    /// they participate in `should_begin_shutdown`/`all_stopped` like every
+    /// other terminal signal.
+    pub fn record_aborted(&mut self, child_id: ActorId, from: ActorId) {
         match self.children.iter_mut().find(|e| e.id == child_id) {
             Some(entry) if !entry.phase.is_terminal() => {
                 entry.phase = ChildPhase::Aborted;
                 entry.ping_outstanding = false;
                 entry.pending_cmd = None;
-                self.check_shutdown()
             }
-            Some(_) => ChildAction::Continue,
+            Some(_) => {}
             None => {
                 bloxide_log::blox_log_warn!(
                     from,
                     "Aborted for unknown child {} — ignored",
                     child_id
                 );
-                ChildAction::Continue
             }
         }
     }
 
     /// Record that a child was killed (external task destruction via
     /// `KillCapability::kill`). The child's task is gone. Permanently dead.
-    /// Returns the group shutdown decision, like `record_aborted`.
-    pub fn record_killed(&mut self, child_id: ActorId, from: ActorId) -> ChildAction {
+    /// Participates in `should_begin_shutdown`/`all_stopped`, like
+    /// `record_aborted`.
+    pub fn record_killed(&mut self, child_id: ActorId, from: ActorId) {
         match self.children.iter_mut().find(|e| e.id == child_id) {
             Some(entry) if !entry.phase.is_terminal() => {
                 entry.phase = ChildPhase::Killed;
                 entry.ping_outstanding = false;
                 entry.pending_cmd = None;
-                self.check_shutdown()
             }
-            Some(_) => ChildAction::Continue,
+            Some(_) => {}
             None => {
                 bloxide_log::blox_log_warn!(
                     from,
                     "Killed for unknown child {} — ignored",
                     child_id
                 );
-                ChildAction::Continue
             }
         }
     }
@@ -900,19 +887,19 @@ impl<R: BloxRuntime> ChildGroup<R> {
     /// (`ChildLifecycleEvent::Done` — normal completion).
     ///
     /// The entry is removed from the group, dropping its refs so the child's
-    /// channels can close. No restart policy is applied — Done is success,
-    /// not a fault. Returns the group shutdown decision **only when an entry
-    /// was actually removed**: a `Done` from an unknown child is a wiring or
-    /// messaging bug and must not trigger shutdown (it warns instead).
-    pub fn deregister(&mut self, child_id: ActorId, from: ActorId) -> ChildAction {
+    /// channels can close, and `done_deregistered` is set so
+    /// `should_begin_shutdown` still sees the terminal report under
+    /// `GroupShutdown::WhenAnyDone`. No restart policy is applied — Done is
+    /// success, not a fault. A `Done` from an unknown child is a wiring or
+    /// messaging bug: it warns and never counts toward shutdown.
+    pub fn deregister(&mut self, child_id: ActorId, from: ActorId) {
         match self.children.iter().position(|e| e.id == child_id) {
             Some(idx) => {
                 self.children.remove(idx);
-                self.check_shutdown()
+                self.done_deregistered = true;
             }
             None => {
                 bloxide_log::blox_log_warn!(from, "Done for unknown child {} — ignored", child_id);
-                ChildAction::Continue
             }
         }
     }

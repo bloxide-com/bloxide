@@ -407,9 +407,9 @@ mod hsm_engine {
 
     #[test]
     #[should_panic]
-    fn error_state_composite_panics_in_debug() {
-        // error_state() = Some(EState::Top) — StateMachine::new debug_asserts
-        // the error state is a leaf (same pattern as the LeafState assert).
+    fn error_state_composite_panics() {
+        // error_state() = Some(EState::Top) — StateMachine::new asserts the
+        // error state is a leaf in every profile, not just debug builds.
         let _m = StateMachine::<BadESpec>::new(ECtx);
     }
 
@@ -437,7 +437,7 @@ mod hsm_engine {
 
     #[test]
     #[should_panic]
-    fn leaf_state_new_with_composite_state_panics_in_debug() {
+    fn leaf_state_new_with_composite_state_panics() {
         use crate::topology::LeafState;
         let _ = LeafState::new(TState::Top);
     }

@@ -85,7 +85,11 @@ impl GroupChannelCap for EmbassyRuntime {
         // constant, so every call returns the same baked ID and the notify
         // and control channels share one ID: they are both mailboxes of the
         // one logical group actor.
-        bloxide_macros::next_actor_id!()
+        //
+        // Goes through the crate's re-exported macro (`lib.rs`), which
+        // forwards to the `__next_actor_id_proc_macro` proc-macro shim —
+        // the same counter `channels!` uses.
+        crate::next_actor_id!()
     }
 
     fn group_channel<M: Send + 'static, const N: usize>(

@@ -15,3 +15,8 @@ bloxide-macros = { workspace = true }
 bloxide-timer = { workspace = true, features = ["std"] }
 futures-core = { version = "0.3", default-features = false }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
+
+[dev-dependencies]
+# `test-util` (paused clock) is not part of tokio's `full` feature set; the
+# timer service tests in `src/timer.rs` need `time::pause`/`advance`.
+tokio = { workspace = true, features = ["test-util"] }

@@ -31,8 +31,9 @@ pub enum TimerCommand {
     },
     /// Cancel a previously scheduled timer.
     Cancel { id: TimerId },
-    /// Shut down the timer service. All pending timers are drained (expired
-    /// ones fire their callbacks) and the service loop exits.
+    /// Signal the timer service to shut down. `TimerQueue::handle_command`
+    /// only reports the request (returns `true`); the runtime's service loop
+    /// then drains expired timers (firing their callbacks) before exiting.
     Shutdown,
 }
 

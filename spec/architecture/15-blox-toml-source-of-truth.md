@@ -102,6 +102,8 @@ message_path = "ping_pong_messages::PingPongMsg"
 
 The event enum wraps each mailbox as a variant. `message_path` tells the codegen where to import the message type from. `generics` controls the enum declaration, and `derives` is the derive list — an optional list of trait paths that defaults to `["Debug"]` when omitted (an empty list means no derives at all). `feature` / `feature_generics` enable paired `#[cfg]` generation, and each mailbox can carry its own `feature` gate.
 
+A mailbox may also declare `variants = [...]`, the full variant set of its message enum (e.g. `variants = ["Started", "Stopped", "Done"]`). This is used for exhaustiveness analysis only: when a state's earlier rules already cover every declared variant, the codegen omits that state's catch-all rule for the event variant (e.g. `SupervisorEvent::Child(_)`) from the emitted `StateFns` — the catch-all shares the `event_tag` of the specific rules, is evaluated after them, and could never match. With partial coverage, or no declared `variants`, catch-alls are always kept. Coverage is positional: only rules *before* the catch-all count, so a catch-all placed ahead of the specific rules is kept. Keeping the catch-all declared in the TOML means a newly added message variant automatically re-enables it in states that lack a matching rule.
+
 #### `[topology]` — states and transitions
 
 From `crates/bloxes/pool/blox.toml`:
@@ -252,6 +254,8 @@ max_arity = 4
 ```
 
 This controls how many mailbox tuple variants the generated `mailboxes_impls.rs` covers.
+This section exists only in bloxide-core's `blox.toml`, where it is consumed by the
+crate's `build.rs` at build time (generated into `$OUT_DIR`, not `src/generated/`).
 
 #### System wiring — `system.toml` (not part of `BloxConfig`)
 
@@ -317,7 +321,7 @@ See `spec/architecture/14-declarative-wiring.md` for the full manifest reference
 | `topology.rs` | `[topology]` + `[actor]` | State enum, `StateTopology` impl, and `StateFns` constants or handler table. |
 | `ctx.rs` | `[context]` | Context struct with imports and plain fields. |
 | `spec_skeleton.rs` | `[actor]` + `[topology]` + `[event]` + `[context]` | `MachineSpec` impl skeleton. |
-| `mailboxes_impls.rs` | `[mailboxes]` | Mailbox tuple impls up to `max_arity`. |
+| `mailboxes_impls.rs` | `[mailboxes]` | Mailbox tuple impls up to `max_arity`. (bloxide-core only; emitted by its `build.rs` into `$OUT_DIR`, not by `cargo blox generate`.) |
 | `wiring_main.rs` | `system.toml` | Complete binary `main.rs`. |
 | `mod.rs` | All of the above | Re-exports every generated submodule. |
 
@@ -660,7 +664,7 @@ The key is that every extension is opt-in and schema-driven. The codegen does no
 ### What works today
 
 - `blox.toml` is the primary input for `cargo blox generate`.
-- The codegen produces `ctx.rs`, `topology.rs`, `spec_skeleton.rs`, `events.rs`, `messages_*.rs`, `mailboxes_impls.rs`, and `wiring_main.rs`.
+- The codegen produces `ctx.rs`, `topology.rs`, `spec_skeleton.rs`, `events.rs`, `messages_*.rs`, and `wiring_main.rs`. (`mailboxes_impls.rs` is the exception: bloxide-core generates it at build time via its `build.rs` into `$OUT_DIR`.)
 - Generated files carry the "Do not edit manually" header and are **not committed** —
   `src/generated/`, `apps/*/src/main.rs`, and `apps/*/Cargo.toml` are gitignored, so
   `cargo blox generate` (which runs lint first) is the mandatory first step after

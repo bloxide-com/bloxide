@@ -473,7 +473,7 @@ checkout of this repo, run the CLI as `cargo run -p cargo-blox -- blox ...` — 
 | `add-state <blox> <state> [--parent P] [--composite] [--error]` | Add a state to a topology |
 | `remove-state <blox> <state>` | Remove a state |
 | `add-transition <blox> --state S --event E --target T [--action ...] [--guard ...]` | Add a transition |
-| `remove-transition <blox> --state S --event E` | Remove a transition |
+| `remove-transition <blox> --state S --event E [--feature F]` | Remove a transition (`--feature` targets a gated variant) |
 | `add-entry <blox> --state S [--action ...]` | Add an entry hook to a state |
 | `remove-entry <blox> --state S` | Remove an entry hook |
 | `add-exit <blox> --state S [--action ...]` | Add an exit hook to a state |

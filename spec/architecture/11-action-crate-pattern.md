@@ -259,7 +259,7 @@ by codegen). State fields come from `[[context.fields]]` entries (or
 
 The supervisor follows the same layering model:
 
-- `bloxide-supervisor` provides action functions taking concrete params
+- `bloxide-child-management` provides action functions taking concrete params
 - `SupervisorSpec<R>` is the reusable `MachineSpec`
 - the wiring layer builds a `ChildGroup<R>` and injects it into `SupervisorCtx<R>`
 

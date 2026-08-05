@@ -90,13 +90,14 @@ mod ping_tests {
     }
 
     #[test]
-    fn pong_response_advances_round() {
+    fn pong_response_stays_in_active_with_stub_actions() {
         let mut h = PingHarness::new();
         h.start();
         h.drain_to_pong_rx();
 
         h.send_pong();
 
+        assert_eq!(h.current_state(), MachineState::State(PingState::Active));
         // stub actions don't increment round
         assert_eq!(h.ctx().round, 0);
 

@@ -91,6 +91,12 @@ impl<M: Send + 'static, R: BloxRuntime> fmt::Debug for PeerCtrl<M, R> {
 }
 
 /// Introduce two actors to each other by sending `AddPeer` on both control channels.
+///
+/// Best-effort: both sends are always attempted and the combined result is
+/// returned, but a failure is not rolled back. If the second send fails
+/// after the first succeeded, the peers are left asymmetrically introduced
+/// (`a` knows `b`, but `b` does not know `a`) — callers that need symmetry
+/// must retry or unwind the first introduction themselves.
 pub fn introduce_peers<M, R>(
     from: ActorId,
     a_id: ActorId,

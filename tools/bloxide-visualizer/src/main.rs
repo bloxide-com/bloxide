@@ -8,9 +8,6 @@ use dioxus_fullstack::ServerFnError;
 use model::*;
 use std::collections::{HashMap, HashSet};
 
-#[cfg(feature = "server")]
-use bloxide_viz_export;
-
 /// Server function: scan a workspace path and return all discovered blox specs.
 #[server(endpoint = "api/scan")]
 async fn scan_workspace(path: String) -> Result<Vec<BloxSpec>, ServerFnError> {
@@ -85,12 +82,22 @@ where
     bloxide_codegen::edit::save_blox_toml(path, &doc)
         .map_err(|e| server_err(format!("failed to save {}: {}", blox_toml_path, e)))?;
 
-    // Regenerate code from the edited manifest (non-fatal — the visual
-    // round-trip completes via re-export either way).
-    let _ = std::process::Command::new("cargo")
+    // Regenerate code from the edited manifest. A codegen failure is fatal:
+    // re-exporting anyway would show a spec whose generated code does not
+    // compile.
+    let output = std::process::Command::new("cargo")
         .args(["blox", "generate"])
         .current_dir(path.parent().unwrap_or(std::path::Path::new(".")))
-        .output();
+        .output()
+        .map_err(|e| server_err(format!("failed to run `cargo blox generate`: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(server_err(format!(
+            "`cargo blox generate` failed ({}): {}",
+            output.status,
+            stderr.trim()
+        )));
+    }
 
     // Re-export fresh specs from the workspace ROOT (nearest ancestor
     // containing a Cargo.toml with [workspace]) — not the crate dir itself.
@@ -144,9 +151,7 @@ async fn viz_add_state(
 async fn viz_remove_state(path: String, name: String) -> Result<Vec<BloxSpec>, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        apply_edit_and_reexport(&path, |doc| {
-            bloxide_codegen::edit::remove_state(doc, &name)
-        })
+        apply_edit_and_reexport(&path, |doc| bloxide_codegen::edit::remove_state(doc, &name))
     }
     #[cfg(not(feature = "server"))]
     {
@@ -202,7 +207,7 @@ async fn viz_remove_transition(
     #[cfg(feature = "server")]
     {
         apply_edit_and_reexport(&path, |doc| {
-            bloxide_codegen::edit::remove_transition(doc, &state, &event)
+            bloxide_codegen::edit::remove_transition(doc, &state, &event, None)
         })
     }
     #[cfg(not(feature = "server"))]
@@ -237,7 +242,7 @@ async fn default_specs() -> Result<Vec<BloxSpec>, ServerFnError> {
         let mut found = None;
         for _ in 0..6 {
             let Some(d) = dir else { break };
-            if bloxide_viz_export::find_blox_tomls(d).first().is_some() {
+            if !bloxide_viz_export::find_blox_tomls(d).is_empty() {
                 found = Some(d.to_path_buf());
                 break;
             }
@@ -321,7 +326,7 @@ fn App() -> Element {
     let mut selected_cell = use_signal(|| None::<(String, String)>);
     let mut view_mode = use_signal(|| ViewMode::Heatmap);
     let mut selected_diagram = use_signal(|| None::<DiagramSelection>);
-    let collapsed_composites = use_signal(|| HashSet::<String>::new());
+    let collapsed_composites = use_signal(HashSet::<String>::new);
 
     if specs.read().is_empty() {
         return rsx! {
@@ -391,7 +396,7 @@ fn App() -> Element {
                 style: "display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;",
                 for (idx, s) in specs.read().iter().enumerate() {
                     button {
-                        style: if selected_spec.read().clone() == idx {
+                        style: if *selected_spec.read() == idx {
                             "padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer;"
                         } else {
                             "padding: 8px 16px; background: white; color: #333; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;"
@@ -491,7 +496,7 @@ fn App() -> Element {
                                 div {
                                     EditorPanel {
                                         spec: spec.clone(),
-                                        specs: specs.clone(),
+                                        specs: specs,
                                     }
                                     StateDiagram {
                                         spec: spec.clone(),
@@ -502,7 +507,7 @@ fn App() -> Element {
                             },
                             ViewMode::System => rsx! {
                                 SystemView {
-                                    specs: specs.clone(),
+                                    specs: specs,
                                     selected_spec: selected_spec,
                                     view_mode: view_mode,
                                     selected_cell: selected_cell,
@@ -526,7 +531,7 @@ fn App() -> Element {
                     Some((state, event)) => rsx! {
                         SidePanel {
                             spec: spec.clone(),
-                            specs: specs.clone(),
+                            specs: specs,
                             state,
                             event: Some(event),
                             on_close: move |_| selected_cell.set(None),
@@ -536,7 +541,7 @@ fn App() -> Element {
                         Some(DiagramSelection::State(state)) => rsx! {
                             SidePanel {
                                 spec: spec.clone(),
-                                specs: specs.clone(),
+                                specs: specs,
                                 state,
                                 event: None,
                                 on_close: move |_| selected_diagram.set(None),
@@ -545,7 +550,7 @@ fn App() -> Element {
                         Some(DiagramSelection::Transition { state, event }) => rsx! {
                             SidePanel {
                                 spec: spec.clone(),
-                                specs: specs.clone(),
+                                specs: specs,
                                 state,
                                 event: Some(event),
                                 on_close: move |_| selected_diagram.set(None),
@@ -638,7 +643,7 @@ fn HeatmapGrid(
     let total_columns: usize = message_sets.iter().map(|ms| ms.variants.len()).sum();
     let grid_template = format!(
         "display: inline-grid; gap: 1px; background: #e5e7eb; border: 1px solid #d1d5db; border-radius: 4px; overflow: hidden; grid-template-columns: auto {};",
-        std::iter::repeat("minmax(100px, max-content)").take(total_columns).collect::<Vec<_>>().join(" ")
+        std::iter::repeat_n("minmax(100px, max-content)", total_columns).collect::<Vec<_>>().join(" ")
     );
 
     // Build header cells
@@ -1788,10 +1793,10 @@ fn ActorNode(
     let instance_name = actor.name.clone();
 
     // Find matching spec by blox name for drill-down.
-    let mut selected_spec_clone = selected_spec.clone();
-    let mut view_mode_clone = view_mode.clone();
-    let mut selected_cell_clone = selected_cell.clone();
-    let mut selected_diagram_clone = selected_diagram.clone();
+    let mut selected_spec_clone = selected_spec;
+    let mut view_mode_clone = view_mode;
+    let mut selected_cell_clone = selected_cell;
+    let mut selected_diagram_clone = selected_diagram;
 
     rsx! {
         g {

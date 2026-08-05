@@ -21,6 +21,9 @@ impl<M: Send + 'static> Clone for TokioSender<M> {
     }
 }
 
+// SAFETY: TokioSender wraps an Arc<mpsc::Sender<Envelope<M>>>, which is
+// already Send + Sync when M: Send (Envelope is a plain data tuple struct).
+// The manual impls therefore weaken no invariant.
 unsafe impl<M: Send + 'static> Send for TokioSender<M> {}
 unsafe impl<M: Send + 'static> Sync for TokioSender<M> {}
 
@@ -36,6 +39,9 @@ pub struct TokioStream<M: Send + 'static> {
 }
 
 impl<M: Send + 'static> Unpin for TokioStream<M> {}
+
+// SAFETY: TokioStream wraps an mpsc::Receiver<Envelope<M>>, which is
+// already Send when M: Send. The manual impl weakens no invariant.
 unsafe impl<M: Send + 'static> Send for TokioStream<M> {}
 
 impl<M: Send + 'static> Stream for TokioStream<M> {

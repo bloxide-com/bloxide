@@ -69,7 +69,7 @@ pub(crate) fn resolve_action(
     type_params: &[String],
     _event_pattern: Option<&str>,
     is_transition: bool,
-) -> proc_macro2::TokenStream {
+) -> anyhow::Result<proc_macro2::TokenStream> {
     let resolved = replace_placeholders(action, ctx_type_str, event_type_str, type_params);
 
     if resolved.starts_with("Self::") {
@@ -79,29 +79,34 @@ pub(crate) fn resolve_action(
         // crates) and are tested there, not through the generated spec.
         let name = resolved.strip_prefix("Self::").unwrap_or(&resolved);
         if is_transition {
-            quote! {
+            Ok(quote! {
                 |_ctx, _ev| { let _stub = #name; ::bloxide_core::transition::ActionResult::Ok }
-            }
+            })
         } else {
-            quote! {
+            Ok(quote! {
                 |_ctx| { let _stub = #name; }
-            }
+            })
         }
     } else {
         // Real function path reference — parse as a path.
-        syn::parse_str::<syn::Path>(&resolved)
+        Ok(syn::parse_str::<syn::Path>(&resolved)
             .map(|p| p.to_token_stream())
             .unwrap_or_else(|_| {
                 let ident = format_ident!("{}", resolved);
                 quote! { #ident }
-            })
+            }))
     }
 }
 
 /// Generate the StateFns associated constants for a variant.
+///
+/// Returns the impl-block tokens plus a flag telling whether a non-empty
+/// `ROOT_RULES` const was emitted (after catch-all elision) — the caller uses
+/// it to decide whether to generate the `root_transitions()` override.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn generate_state_fns_impl(
     topology: &TopologyConfig,
+    event: Option<&EventConfig>,
     state_enum_ident: &syn::Ident,
     spec_ident: &syn::Ident,
     ctx_type_str: &str,
@@ -113,7 +118,7 @@ pub(crate) fn generate_state_fns_impl(
     feature_filter: Option<&str>,
     strip_feature_cfg: bool,
     action_resolver: crate::ActionResolver<'_>,
-) -> anyhow::Result<proc_macro2::TokenStream> {
+) -> anyhow::Result<(proc_macro2::TokenStream, bool)> {
     use crate::schema::{EntryExitConfig, TransitionConfig, ROOT_STATE_KEYWORD};
     use crate::topology::generate_state_rule;
     use std::collections::HashMap;
@@ -199,8 +204,9 @@ pub(crate) fn generate_state_fns_impl(
                     .map(|a| {
                         action_resolver(a, ctx_type_str, event_type_str, type_params, None, false)
                     })
-                    .collect()
+                    .collect::<anyhow::Result<Vec<_>>>()
             })
+            .transpose()?
             .unwrap_or_default();
 
         // on_exit actions
@@ -212,29 +218,36 @@ pub(crate) fn generate_state_fns_impl(
                     .map(|a| {
                         action_resolver(a, ctx_type_str, event_type_str, type_params, None, false)
                     })
-                    .collect()
+                    .collect::<anyhow::Result<Vec<_>>>()
             })
+            .transpose()?
             .unwrap_or_default();
 
-        // Transition rules — raw StateRule { ... } literals
-        let trans_tokens: proc_macro2::TokenStream = if state_trans.is_empty() {
+        // Transition rules — raw StateRule { ... } literals. Catch-all rules
+        // made unreachable by earlier rules covering every declared variant
+        // of the mailbox's message enum are omitted (see
+        // `topology::catchall_elision`).
+        let elide = crate::topology::catchall_elision(state_trans, event);
+        let rules: Vec<proc_macro2::TokenStream> = state_trans
+            .iter()
+            .zip(elide.iter())
+            .filter(|(_, elided)| !**elided)
+            .map(|(t, _)| {
+                generate_state_rule(
+                    t,
+                    state_enum_ident,
+                    ctx_type_str,
+                    event_type_str,
+                    type_params,
+                    action_resolver,
+                    strip_feature_cfg,
+                    feature_filter,
+                )
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let trans_tokens: proc_macro2::TokenStream = if rules.is_empty() {
             quote! { &[] }
         } else {
-            let rules: Vec<proc_macro2::TokenStream> = state_trans
-                .iter()
-                .map(|t| {
-                    generate_state_rule(
-                        t,
-                        state_enum_ident,
-                        ctx_type_str,
-                        event_type_str,
-                        type_params,
-                        action_resolver,
-                        strip_feature_cfg,
-                        feature_filter,
-                    )
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?;
             quote! { &[#(#rules),*] }
         };
 
@@ -251,34 +264,41 @@ pub(crate) fn generate_state_fns_impl(
     // Root-level transition rules (VirtualRoot fallback for domain events).
     // One associated const per spec (not per state), holding this variant's
     // root partition. Referenced by the generated `root_transitions()`
-    // override when non-empty.
-    if !root_trans.is_empty() {
-        let root_rules: Vec<proc_macro2::TokenStream> = root_trans
-            .iter()
-            .map(|t| {
-                generate_state_rule(
-                    t,
-                    state_enum_ident,
-                    ctx_type_str,
-                    event_type_str,
-                    type_params,
-                    action_resolver,
-                    strip_feature_cfg,
-                    feature_filter,
-                )
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+    // override when non-empty (after catch-all elision).
+    let root_elide = crate::topology::catchall_elision(&root_trans, event);
+    let root_rules: Vec<proc_macro2::TokenStream> = root_trans
+        .iter()
+        .zip(root_elide.iter())
+        .filter(|(_, elided)| !**elided)
+        .map(|(t, _)| {
+            generate_state_rule(
+                t,
+                state_enum_ident,
+                ctx_type_str,
+                event_type_str,
+                type_params,
+                action_resolver,
+                strip_feature_cfg,
+                feature_filter,
+            )
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let has_root_rules = !root_rules.is_empty();
+    if has_root_rules {
         consts.push(quote! {
             #[allow(unused_variables)]
             const ROOT_RULES: &'static [::bloxide_core::transition::StateRule<Self>] = &[#(#root_rules),*];
         });
     }
 
-    Ok(quote! {
-        impl #spec_impl_generics #spec_ident #spec_ty_generics #spec_where_clause {
-            #(#consts)*
-        }
-    })
+    Ok((
+        quote! {
+            impl #spec_impl_generics #spec_ident #spec_ty_generics #spec_where_clause {
+                #(#consts)*
+            }
+        },
+        has_root_rules,
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -833,17 +853,9 @@ pub fn generate(
     // ── Generate each variant ─────────────────────────────────────────────────
     // Root-level transitions (state = "root"): a variant emits the
     // `root_transitions()` override only when its feature-filtered partition
-    // contains at least one root rule. The rules live in the `ROOT_RULES`
-    // associated const emitted by `generate_state_fns_impl`.
-    let has_root_rules = |feature_filter: Option<&str>| {
-        topology.transitions.iter().any(|t| {
-            t.state == crate::schema::ROOT_STATE_KEYWORD
-                && match feature_filter {
-                    None => t.feature.is_none(),
-                    Some(_) => true,
-                }
-        })
-    };
+    // still contains at least one root rule after catch-all elision. The rules
+    // live in the `ROOT_RULES` associated const emitted by
+    // `generate_state_fns_impl`, which reports the post-elision emptiness.
 
     let mut variant_tokens = Vec::new();
 
@@ -896,8 +908,9 @@ pub fn generate(
         // StateFns associated constants — always generated as associated constants
         // inside the impl block using raw StateRule literals. This handles both
         // feature-gated and non-feature-gated specs uniformly.
-        let state_fns_impl = generate_state_fns_impl(
+        let (state_fns_impl, has_root_rules) = generate_state_fns_impl(
             topology,
+            event,
             &state_ident,
             &spec_ident,
             &ctx_type_str,
@@ -912,7 +925,7 @@ pub fn generate(
         )?;
 
         // MachineSpec impl
-        let root_transitions_fn = if has_root_rules(var.feature_filter.as_deref()) {
+        let root_transitions_fn = if has_root_rules {
             quote! {
                 fn root_transitions() -> &'static [::bloxide_core::transition::StateRule<Self>] {
                     Self::ROOT_RULES

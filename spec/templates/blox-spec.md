@@ -14,7 +14,7 @@
 - Blox crate: `crates/bloxes/<blox-name>/`
 - Messages crate: `crates/messages/<blox-name>-messages/` _(if new messages are needed; share with peers using the same protocol)_
 - Context crate: `crates/context/blox-ctx-<blox-name>/` _(plain context struct + generic action functions; no concrete types)_
-- Impl crate: a separate crate consumed by the wiring binary (e.g. `crates/impl/ping-pong-impl/`); contains concrete action function implementations injected into the blox context
+- Impl crate (optional): only for runtime-specific behavior such as spawn factories or platform-specific effects (e.g. `crates/impl/tokio-pool-demo-impl/`); most action functions go in the context crate
 
 ## State Hierarchy
 
@@ -257,4 +257,4 @@ Each listed action is a free function from the context crate with signature `fn(
 
 - [ ] Should completion trigger `Decision::Stop` (self-suspend) or `Decision::Transition` to another running state?
 - [ ] What is the correct mailbox capacity for this actor?
-- [ ] Which `bloxide-log` backend does the wiring crate enable?
+- [ ] Which `bloxide-log` backend does the runtime/wiring crate enable? (Applies to the wiring crate only — `bloxide-log` must never be a blox-crate dependency; AGENTS.md invariant #15)

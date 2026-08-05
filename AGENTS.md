@@ -169,13 +169,13 @@ Then dive deeper as needed:
 | Spec for the Counter actor | `spec/bloxes/counter.md` |
 | Spec for the Pool actor | `spec/bloxes/pool.md` |
 | Spec for the Worker actor | `spec/bloxes/worker.md` |
-| Spec for the BHSM test actor | `spec/bloxes/bhsm.md` |
+| Spec for the BHSM test actor | `spec/bloxes/bhsm-tst.md` |
 | How does the reusable supervisor spec work? | `spec/architecture/07-supervision.md` |
 | How are platform features packaged and consumed? | `spec/architecture/18-platform-feature-pattern.md` |
 | Template for a new blox | `spec/templates/blox-spec.md` |
 | **How do I test a blox in isolation?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
 | **What is TestRuntime for?** | `runtimes/bloxide-test-runtime/src/lib.rs` |
-| **How do I test timers without an executor?** | `crates/bloxide-timer/src/test_utils.rs` (`VirtualClock`) |
+| **How do I test timers without an executor?** | `crates/bloxide-timer/src/test_utils.rs` (`VirtualClock`) — crate-internal (`#[cfg(test)]`); the reference pattern for driving a `TimerQueue` with a virtual clock in crate tests |
 | **Where are the proc macro implementations?** | `crates/bloxide-macros/src/` |
 | **What are the key invariants?** | This file (`AGENTS.md` → "Key Invariants") |
 | **Decision trees for common tasks?** | `QUICK_REFERENCE.md` |

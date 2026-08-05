@@ -13,7 +13,6 @@ bloxide-child-management = { workspace = true, features = ["std"] }
 bloxide-spawn = { workspace = true, features = ["std"] }
 bloxide-peers = { workspace = true }
 bloxide-tokio = { workspace = true }
-bloxide-supervisor = { workspace = true, features = ["std"] }
 blox-ctx-pool-ref = { workspace = true }
 pool-messages = { workspace = true }
 worker-blox = { workspace = true, features = ["std"] }
@@ -24,7 +23,6 @@ dynamic = []
 [dev-dependencies]
 bloxide-core = { workspace = true, features = ["std"] }
 bloxide-child-management = { workspace = true, features = ["std"] }
-bloxide-supervisor = { workspace = true, features = ["std"] }
 bloxide-tokio = { workspace = true }
 pool-blox = { workspace = true, features = ["std", "dynamic"] }
 pool-messages = { workspace = true }

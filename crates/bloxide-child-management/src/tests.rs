@@ -172,8 +172,8 @@ fn reset_policy_sends_reset_and_continues() {
     let (mut group, mut rx, notify_ref, _notify_rx) =
         setup_one_child(ChildPolicy::Reset { max: 3 });
 
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::Continue);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(!group.should_begin_shutdown());
     let cmds = rx.drain_payloads();
     assert_eq!(cmds.len(), 1, "exactly one Reset command expected");
     assert!(matches!(cmds[0], LifecycleCommand::Reset));
@@ -186,13 +186,13 @@ fn duplicate_done_while_reset_pending_is_coalesced() {
     let (mut group, mut rx, notify_ref, _notify_rx) =
         setup_one_child(ChildPolicy::Reset { max: 3 });
 
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::Continue);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(!group.should_begin_shutdown());
     assert_eq!(rx.drain_payloads().len(), 1); // Reset sent
 
     // Second failure while ResetPending → coalesced (no second Reset)
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::Continue);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(!group.should_begin_shutdown());
     assert_eq!(rx.drain_payloads().len(), 0); // nothing sent
 }
 
@@ -211,8 +211,8 @@ fn reset_cap_gives_up_after_max_consecutive_restarts() {
     // Third consecutive failure — cap exhausted: give up (terminal Stopped),
     // no Reset sent, group shutdown triggered (WhenAnyDone).
     group.handle_started(1, FROM);
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(group.should_begin_shutdown());
     assert_eq!(rx.drain_payloads().len(), 0, "no Reset after cap exhausted");
     assert_eq!(group.children[0].phase, ChildPhase::Stopped);
 }
@@ -232,8 +232,8 @@ fn alive_after_started_resets_consecutive_restart_counter() {
     assert_eq!(group.children[0].restarts, 0);
 
     // A later failure restarts the count from zero — Reset allowed again.
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::Continue);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(!group.should_begin_shutdown());
     assert_eq!(rx.drain_payloads().len(), 1);
     assert_eq!(group.children[0].restarts, 1);
 }
@@ -250,8 +250,8 @@ fn started_alone_does_not_reset_restart_counter() {
     assert_eq!(group.children[0].restarts, 1);
 
     // Second consecutive failure with max = 1 → give up.
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(group.should_begin_shutdown());
     assert_eq!(rx.drain_payloads().len(), 1, "only one Reset total");
     assert_eq!(group.children[0].phase, ChildPhase::Stopped);
 }
@@ -269,8 +269,8 @@ fn failed_reset_send_is_queued_not_reset_pending() {
         .unwrap();
     group.handle_started(1, FROM);
 
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::Continue);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(!group.should_begin_shutdown());
     assert_eq!(
         group.children[0].phase,
         ChildPhase::Running,
@@ -302,14 +302,14 @@ fn flush_pending_delivers_queued_reset_and_counts_restart() {
     assert_eq!(group.children[0].phase, ChildPhase::Running);
 
     // Flush while still full — stays queued, still Running.
-    let action = group.flush_pending(FROM);
-    assert_eq!(action, ChildAction::Continue);
+    group.flush_pending(FROM);
+    assert!(!group.should_begin_shutdown());
     assert_eq!(group.children[0].pending_cmd, Some(PendingCmd::Reset));
 
     // Drain; flush now delivers — ResetPending and restart counted.
     rx.drain_payloads();
-    let action = group.flush_pending(FROM);
-    assert_eq!(action, ChildAction::Continue);
+    group.flush_pending(FROM);
+    assert!(!group.should_begin_shutdown());
     assert_eq!(group.children[0].pending_cmd, None);
     assert_eq!(group.children[0].phase, ChildPhase::ResetPending);
     assert_eq!(group.children[0].restarts, 1);
@@ -350,11 +350,10 @@ fn failed_reset_send_on_closed_channel_marks_gone() {
     group.handle_started(1, FROM);
 
     drop(rx); // child task dead — channel closed
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
     assert_eq!(group.children[0].phase, ChildPhase::Gone);
-    assert_eq!(
-        action,
-        ChildAction::BeginShutdown,
+    assert!(
+        group.should_begin_shutdown(),
         "Gone is terminal — WhenAllDone completes when the last child is gone"
     );
 }
@@ -366,8 +365,8 @@ fn stop_policy_sets_stopped_and_triggers_shutdown() {
     let (mut group, mut rx, notify_ref, _notify_rx) = setup_one_child(ChildPolicy::Stop);
 
     group.handle_started(1, FROM);
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(group.should_begin_shutdown());
     assert_eq!(group.children[0].phase, ChildPhase::Stopped);
     assert_eq!(rx.drain_payloads().len(), 0);
 }
@@ -384,11 +383,11 @@ fn stop_policy_with_when_all_done_waits_for_others() {
     group.handle_started(1, FROM);
     group.handle_started(2, FROM);
 
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::Continue);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(!group.should_begin_shutdown());
 
-    let action = group.handle_done_or_failed(2, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    group.handle_done_or_failed(2, FROM, &notify_ref);
+    assert!(group.should_begin_shutdown());
 }
 
 #[test]
@@ -399,8 +398,8 @@ fn abort_policy_sends_abort_and_waits_in_aborting() {
 
     // Confirm-before-record: delivered Abort → Aborting (NOT terminal) and
     // no shutdown yet — the Aborted report finalizes.
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::Continue);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(!group.should_begin_shutdown());
     assert_eq!(group.children[0].phase, ChildPhase::Aborting);
 
     let cmds = abort_rx.drain_payloads();
@@ -408,13 +407,13 @@ fn abort_policy_sends_abort_and_waits_in_aborting() {
     assert!(matches!(cmds[0], AbortCommand::Abort { child_id: 1 }));
 
     // Policy must not re-fire while the abort is in flight.
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::Continue);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(!group.should_begin_shutdown());
     assert_eq!(abort_rx.drain_payloads().len(), 0);
 
     // The Aborted report finalizes → terminal → shutdown (WhenAnyDone).
-    let action = group.record_aborted(1, FROM);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    group.record_aborted(1, FROM);
+    assert!(group.should_begin_shutdown());
     assert_eq!(group.children[0].phase, ChildPhase::Aborted);
 }
 
@@ -434,8 +433,8 @@ fn failed_abort_send_is_queued_then_flushed() {
     abort_ref
         .try_send(FROM, AbortCommand::Abort { child_id: 999 })
         .unwrap();
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::Continue);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(!group.should_begin_shutdown());
     assert_eq!(group.children[0].phase, ChildPhase::Running);
     assert_eq!(group.children[0].pending_cmd, Some(PendingCmd::Abort));
 
@@ -462,8 +461,8 @@ fn abort_send_on_closed_channel_marks_gone() {
     group.handle_started(1, FROM);
 
     drop(abort_rx); // abort mailbox dead → child task gone
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(group.should_begin_shutdown());
     assert_eq!(group.children[0].phase, ChildPhase::Gone);
 }
 
@@ -474,8 +473,8 @@ fn kill_policy_kills_task_and_emits_killed_event() {
     group.handle_started(1, FROM);
     bloxide_test_runtime::drain_killed();
 
-    let action = group.handle_done_or_failed(1, FROM, &notify_ref);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert!(group.should_begin_shutdown());
     assert_eq!(group.children[0].phase, ChildPhase::Killed);
 
     // The ripcord actually fired (observable kill).
@@ -567,9 +566,9 @@ fn closed_ping_channel_marks_child_gone() {
     group.handle_started(1, FROM);
 
     drop(rx);
-    let action = group.watchdog_tick(FROM, &notify_ref);
+    group.watchdog_tick(FROM, &notify_ref);
     assert_eq!(group.children[0].phase, ChildPhase::Gone);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    assert!(group.should_begin_shutdown());
 }
 
 #[test]
@@ -630,21 +629,24 @@ fn record_aborted_and_killed_guard_terminal_and_evaluate_shutdown() {
     group.handle_started(2, FROM);
 
     // Externally-originated Aborted participates in group shutdown.
-    let action = group.record_aborted(1, FROM);
-    assert_eq!(action, ChildAction::Continue); // child 2 still running
+    group.record_aborted(1, FROM);
+    assert!(!group.should_begin_shutdown()); // child 2 still running
 
     // record_stopped on the Aborted child is a no-op (terminal guard).
     group.record_stopped(1, FROM);
     assert_eq!(group.children[0].phase, ChildPhase::Aborted);
 
     // Last child killed externally → shutdown.
-    let action = group.record_killed(2, FROM);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    group.record_killed(2, FROM);
+    assert!(group.should_begin_shutdown());
     assert!(group.all_stopped());
 
-    // A duplicate Killed on a terminal child: no state change, no re-eval.
-    let action = group.record_killed(2, FROM);
-    assert_eq!(action, ChildAction::Continue);
+    // A duplicate Killed on a terminal child: no state change. The shutdown
+    // query keeps returning true — it is a pure read of the group's phases;
+    // idempotence lives in the terminal guard, not in the evaluation.
+    group.record_killed(2, FROM);
+    assert_eq!(group.children[1].phase, ChildPhase::Killed);
+    assert!(group.should_begin_shutdown());
 }
 
 #[test]
@@ -665,15 +667,13 @@ fn unknown_child_events_are_ignored_without_shutdown_eval() {
 
     // Unknown-child events must never trigger shutdown — WhenAnyDone would
     // otherwise fire on a forged or miswired report.
-    assert_eq!(
-        group.handle_done_or_failed(999, FROM, &notify_ref),
-        ChildAction::Continue
-    );
-    assert_eq!(group.record_aborted(999, FROM), ChildAction::Continue);
-    assert_eq!(group.record_killed(999, FROM), ChildAction::Continue);
-    assert_eq!(group.deregister(999, FROM), ChildAction::Continue);
+    group.handle_done_or_failed(999, FROM, &notify_ref);
+    group.record_aborted(999, FROM);
+    group.record_killed(999, FROM);
+    group.deregister(999, FROM);
     assert_eq!(group.children.len(), 1);
     assert!(!group.all_stopped());
+    assert!(!group.should_begin_shutdown());
 }
 
 #[test]
@@ -682,8 +682,8 @@ fn deregister_known_child_evaluates_shutdown() {
     group.handle_started(1, FROM);
 
     // Known Done → removed → WhenAnyDone shutdown. Unknown Done (above) does not.
-    let action = group.deregister(1, FROM);
-    assert_eq!(action, ChildAction::BeginShutdown);
+    group.deregister(1, FROM);
+    assert!(group.should_begin_shutdown());
     assert!(group.children.is_empty());
 }
 
@@ -775,4 +775,20 @@ fn start_all_skips_terminal_children() {
     group.record_stopped(1, FROM);
     group.start_all(FROM);
     assert_eq!(rx.drain_payloads().len(), 0);
+}
+
+#[test]
+fn start_all_skips_aborting_children() {
+    let (mut group, mut lc_rx, mut abort_rx, notify_ref, _notify_rx, _kh) =
+        setup_dynamic_child(ChildPolicy::Abort);
+    group.handle_started(1, FROM);
+    group.handle_done_or_failed(1, FROM, &notify_ref);
+    assert_eq!(group.children[0].phase, ChildPhase::Aborting);
+    lc_rx.drain_payloads();
+    abort_rx.drain_payloads();
+
+    // The abort is already in flight — Start must not race the child run
+    // loop's cooperative self-termination.
+    group.start_all(FROM);
+    assert_eq!(lc_rx.drain_payloads().len(), 0);
 }

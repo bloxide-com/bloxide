@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: statically wired actor limit exceeded: compile-time actor IDs must stay below DYNAMIC_ACTOR_ID_BASE
+   --> tests/ui/next_actor_id_overflow.rs:264:13
+    |
+264 |     let _ = bloxide_core::next_actor_id!();
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ evaluation of `main::_` failed here

@@ -342,7 +342,7 @@ let timer_ref = bloxide_tokio::spawn_timer!(8);
 ```rust
 bloxide_tokio::actor_task_supervised!(my_task, MySpec<TokioRuntime>);
 
-let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone, 2);
 bloxide_tokio::spawn_static_child!(
     group,
     my_task(machine, mbox, actor_id),
@@ -399,9 +399,24 @@ assert_eq!(result, 4);
 
 ### Virtual Clock (for timers)
 
-```rust
-use bloxide_timer::test_utils::VirtualClock;
+`bloxide_timer::test_utils::VirtualClock` is `#[cfg(test)]`-gated inside
+`bloxide-timer` and cannot be imported by other crates. Treat it as the
+reference pattern and drive a `TimerQueue` with a manual clock in your own
+crate tests:
 
-let clock = VirtualClock::new(timer_rx);
-clock.advance(100);  // Advance 100ms, fire ready timers
+```rust
+use bloxide_timer::TimerQueue;
+
+let mut queue = TimerQueue::new();
+let mut now_ms = 0u64;
+
+// Drain pending TimerCommands as they arrive:
+for cmd in timer_rx.drain_payloads() {
+    queue.handle_command(cmd, now_ms);
+}
+
+now_ms += 100;  // Advance 100ms
+for deliver in queue.drain_expired(now_ms) {
+    deliver();  // Fire ready timers
+}
 ```

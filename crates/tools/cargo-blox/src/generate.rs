@@ -31,8 +31,6 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
         let src_dir = crate_dir.join("src");
         let generated_dir = src_dir.join("generated");
 
-        std::fs::create_dir_all(&generated_dir)?;
-
         let files = match bloxide_codegen::generate_from_toml(toml_path) {
             Ok(files) => files,
             Err(e) => {
@@ -44,6 +42,16 @@ pub fn generate(workspace: Option<PathBuf>) -> anyhow::Result<()> {
                 continue;
             }
         };
+
+        // Nothing to emit for this crate (e.g. bloxide-core, whose
+        // `[mailboxes]`-only blox.toml is consumed by its build.rs at build
+        // time). Skip entirely: do not create src/generated/ or touch lib.rs.
+        if files.is_empty() {
+            continue;
+        }
+
+        std::fs::create_dir_all(&generated_dir)?;
+
         for (filename, content) in &files {
             // mod.rs is owned by `ensure_generated_mod` below (single writer —
             // two writers with different formatting would ping-pong the file).

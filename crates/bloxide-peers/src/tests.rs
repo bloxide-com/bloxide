@@ -83,6 +83,38 @@ fn introduce_peers_returns_err_if_first_send_fails() {
     assert_eq!(b_ctrl_msgs.len(), 1);
 }
 
+#[test]
+fn introduce_peers_returns_err_if_second_send_fails() {
+    let a_id = 1usize;
+    let b_id = 2usize;
+
+    let (a_ref, _a_rx) = TestRuntime::channel::<TestMsg>(a_id, 4);
+    let (b_ref, _b_rx) = TestRuntime::channel::<TestMsg>(b_id, 4);
+    let (a_ctrl, mut a_ctrl_rx) =
+        TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(a_id + 100, 4);
+    // Fill b_ctrl so the second send fails.
+    let (b_ctrl, _b_ctrl_rx) =
+        TestRuntime::channel::<PeerCtrl<TestMsg, TestRuntime>>(b_id + 100, 0);
+
+    let result = introduce_peers(0, a_id, a_ref, a_ctrl, b_id, b_ref, b_ctrl);
+    assert_eq!(
+        result,
+        ActionResult::Err,
+        "introduce_peers should fail when second send fails"
+    );
+    // The first send still landed (best-effort, asymmetric outcome).
+    let a_ctrl_msgs = a_ctrl_rx.drain_payloads();
+    assert_eq!(a_ctrl_msgs.len(), 1);
+    assert!(
+        matches!(
+            &a_ctrl_msgs[0],
+            PeerCtrl::AddPeer(AddPeer { peer_id, .. }) if *peer_id == b_id
+        ),
+        "a_ctrl should receive AddPeer for b, got {:?}",
+        a_ctrl_msgs
+    );
+}
+
 // ── apply_peer_control ───────────────────────────────────────────────────────
 
 #[test]

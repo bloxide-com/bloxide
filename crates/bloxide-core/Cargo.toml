@@ -17,3 +17,10 @@ bloxide-log = { workspace = true }
 bloxide-macros = { workspace = true }
 futures-core = { version = "0.3", default-features = false }
 tracing = { version = "0.1", default-features = false, optional = true }
+
+[dev-dependencies]
+trybuild = "1"
+
+[build-dependencies]
+bloxide-codegen = { path = "../tools/bloxide-codegen" }
+toml = "0.8"

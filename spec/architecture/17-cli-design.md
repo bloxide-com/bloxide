@@ -73,7 +73,7 @@ All scaffolding commands register new crates in the workspace `Cargo.toml` (memb
 | `cargo blox add-state <blox> <state> [--parent <state>] [--composite] [--error]` | Add a state |
 | `cargo blox remove-state <blox> <state>` | Remove a state |
 | `cargo blox add-transition <blox> --state <s> --event <e> --target <t> [--action <path>]... [--guard <cond>:<target>]... [--feature <f>] [--if-not-exists]` | Add a transition |
-| `cargo blox remove-transition <blox> --state <s> --event <e>` | Remove a transition |
+| `cargo blox remove-transition <blox> --state <s> --event <e> [--feature <f>]` | Remove a transition |
 | `cargo blox add-entry <blox> --state <s> [--action <path>]... [--feature <f>] [--if-not-exists]` | Add an entry hook |
 | `cargo blox remove-entry <blox> --state <s>` | Remove an entry hook |
 | `cargo blox add-exit <blox> --state <s> [--action <path>]... [--feature <f>] [--if-not-exists]` | Add an exit hook |
@@ -202,7 +202,7 @@ cargo blox add-transition <BLOX_NAME> --state <STATE> --event <EVENT> --target <
 --guard "ctx.spawn_in_flight:Spawning" --guard "ctx.pending == 0:AllDone"
 ```
 
-**Dedup key:** `state` + `event` pair (exact string comparison). If this pair already exists in the blox's transitions, exit code 5 (conflict) unless `--if-not-exists`, in which case the command exits 0 with no output and the TOML unchanged.
+**Dedup key:** `state` + `event` + `feature` triple (exact string comparison) — a feature-gated variant of an existing `state` + `event` pair is a distinct entry, not a duplicate. If this triple already exists in the blox's transitions, exit code 5 (conflict) unless `--if-not-exists`, in which case the command exits 0 with no output and the TOML unchanged.
 
 **Output (stdout):** `Added transition <state> + <event> -> <target> to <blox>`
 
@@ -250,7 +250,7 @@ target = "AllDone"
 Remove a `[[topology.transitions]]` entry from a blox's `blox.toml`. The nested `[[topology.transitions.guards]]` entries go with it.
 
 ```
-cargo blox remove-transition <BLOX_NAME> --state <STATE> --event <EVENT>
+cargo blox remove-transition <BLOX_NAME> --state <STATE> --event <EVENT> [--feature <FEATURE>]
 ```
 
 **Arguments:**
@@ -260,10 +260,11 @@ cargo blox remove-transition <BLOX_NAME> --state <STATE> --event <EVENT>
 | `blox_name` | yes (positional) | Name of the blox crate |
 | `--state` | yes | Source state name |
 | `--event` | yes | Event pattern |
+| `--feature` | no | Target only the variant gated on this feature |
 
-**Match key:** `state` + `event` pair (exact string comparison). If not found, exit code 3 (not found).
+**Match key:** `state` + `event` + `feature` triple (exact string comparison). Without `--feature`, only the non-gated transition matches; a feature-gated variant of the same `state` + `event` pair is left intact. If not found, exit code 3 (not found).
 
-**Output (stdout):** `Removed transition <state> + <event> from <blox>`
+**Output (stdout):** `Removed transition <state> + <event> from <blox>` (`Removed transition <state> + <event> (feature <f>) from <blox>` with `--feature`)
 
 **Exit codes:**
 
@@ -627,7 +628,7 @@ Integration tests only, in `tests/` — one file per command group:
 | File | Covers |
 |------|--------|
 | `tests/add_transition.rs` | Basic add, actions, guards (including `::` in the condition), feature, all options combined, duplicate rejection, `--if-not-exists`, blox not found, missing required arg |
-| `tests/remove_transition.rs` | Remove, non-existent pair, remove with nested guards, preserving other transitions, blox not found |
+| `tests/remove_transition.rs` | Remove, non-existent pair, remove with nested guards, preserving other transitions, blox not found, `--feature` targeting a gated variant (leaves the non-gated one and vice versa), missing feature variant |
 | `tests/list_bloxes.rs` | Table and JSON output, summary counts, empty workspace, missing `crates/bloxes/` dir |
 | `tests/list_states.rs` | Table and JSON output, columns, empty blox, blox not found |
 | `tests/list_transitions.rs` | Table and JSON output, guards, features, empty blox, blox not found |
@@ -644,7 +645,7 @@ Integration tests only, in `tests/` — one file per command group:
 - Confirmations and list output go to stdout; errors go to stderr.
 - Exit codes are semantic: 0=success, 1=error, 2=usage, 3=not found, 5=conflict.
 - Guard parsing splits on the **last** `:` to handle `::` in Rust paths.
-- Transition matching uses exact string comparison on `state` and `event` fields.
+- Transition matching uses exact string comparison on `state`, `event`, and `feature` fields (the feature filter matches exactly: no `--feature` targets only the non-gated transition).
 - All TOML edits go through `toml_edit::DocumentMut` — comments and formatting are preserved. Topology edits share the single write path in `bloxide_codegen::edit`.
 - Paths resolve from the workspace root, so commands work from any subdirectory.
 - `generate` runs lint first, formats generated files individually with rustfmt, and is idempotent — re-running it with no changes rewrites nothing.

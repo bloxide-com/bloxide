@@ -126,7 +126,7 @@ bloxide-spawn/            ← spawn capability (separate crate)
 
 bloxide-child-management/ ← reusable child tracking (separate crate)
   ChildGroup<R>             ← per-child tracking, policy application, phase management
-  ChildEntry<R>, ChildPhase, ChildAction
+  ChildEntry<R>, ChildPhase
   ChildPolicy, GroupShutdown
   ChildGroupBuilder (via GroupChannelCap)
   control module: ChildCtrl, RegisterChild, RegisterDynamicChild
@@ -635,13 +635,13 @@ pub struct SupervisorCtx<R: BloxRuntime> {
     pub self_id: ActorId,
     pub children: ChildGroup<R>,
     pub child_notify: ActorRef<ChildLifecycleEvent, R>,
-    pub pending: ChildAction,
 }
 ```
 
 `self_id` is the auto-emitted first field; `children` and `child_notify` are constructor
-params; `pending` is a zero-initialized state field (`SupervisorCtx::new(self_id,
-children, child_notify)`).
+params (`SupervisorCtx::new(self_id, children, child_notify)`). The guards query
+`ctx.children.should_begin_shutdown()`/`all_children_stopped()` directly — there is no
+pending-decision state field.
 
 No `spawn_fn` field. No factory field. No spawn-request generic. No
 `#[cfg(feature = "dynamic")]` on any field. The supervisor context is the same for static
@@ -731,7 +731,7 @@ if policy == ChildPolicy::Kill {
     // Kill is synchronous — emit the Killed event directly.
     let _ = notify.try_send(from, ChildLifecycleEvent::Killed { child_id });
     self.children[idx].phase = ChildPhase::Killed;
-    return self.check_shutdown();
+    return; // terminal — the guards see it via should_begin_shutdown()
 }
 if policy == ChildPolicy::Abort {
     // Cooperative: send abort message. The child self-terminates
@@ -742,30 +742,29 @@ if policy == ChildPolicy::Abort {
     // Confirmed send — mark Aborting; the run loop's Aborted report
     // finalizes the phase (record_aborted).
     self.children[idx].phase = ChildPhase::Aborting;
-    return ChildAction::Continue;
+    return;
 }
 if let ChildPolicy::Reset { max } = policy {
     // Capped at max consecutive restarts — the counter resets on a healthy
     // Alive after Started; exhaustion marks the child Stopped (terminal).
     if self.children[idx].restarts >= max {
         self.children[idx].phase = ChildPhase::Stopped;
-        return self.check_shutdown();
+        return; // terminal — visible to should_begin_shutdown()
     }
     // Reset goes directly to initial_state() — no separate Start needed.
     let _ = lifecycle_ref.try_send(from, LifecycleCommand::Reset);
     self.children[idx].phase = ChildPhase::ResetPending;
     self.children[idx].restarts += 1;
-    return ChildAction::Continue;
+    return;
 }
 // Stop: the child is already stopping or has failed — mark done for this epoch.
 self.children[idx].phase = ChildPhase::Stopped;
-self.check_shutdown()
 ```
 
 A child that reports `Done` (clean self-termination via `Decision::Done`) bypasses the
 policy entirely: `ChildGroup::deregister` removes the entry — `Done` is success, not a
-fault — and returns the group shutdown decision so shutdown still progresses when the
-last child completes.
+fault — and records the terminal report so `should_begin_shutdown()` still fires under
+`GroupShutdown::WhenAnyDone` when other children remain.
 
 All other `ChildGroup` methods (shutdown logic, phase tracking, health
 check) are standard lifecycle management. The `ChildGroup` sends a message instead of

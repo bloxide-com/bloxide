@@ -14,8 +14,6 @@ std = ["bloxide-core/std", "bloxide-timer/std"]
 [dependencies]
 bloxide-core        = { workspace = true }
 bloxide-timer       = { workspace = true }
-blox-ctx-ping-pong = { workspace = true }
-blox-ctx-rounds     = { workspace = true }
 ping-pong-messages  = { workspace = true }
 
 [dev-dependencies]

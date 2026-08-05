@@ -197,20 +197,23 @@ impl<S: MachineSpec> StateMachine<S> {
     /// setting the initial state. `on_init_entry` only fires when entering
     /// Init due to Stop. `on_init_exit` only fires when leaving Init via Start.
     pub fn new(ctx: S::Ctx) -> Self {
-        // Asserted in every profile (not debug-only): codegen derives table
-        // and enum from the same TOML, but hand-written specs can drift, and
-        // a short table makes per-dispatch indexing UB in release builds.
+        // All three invariants are asserted in every profile (not debug-only):
+        // codegen derives table and enum from the same TOML, but hand-written
+        // specs can drift, and a short table makes per-dispatch indexing UB in
+        // release builds. Likewise, a non-leaf initial or error state breaks
+        // the engine's invariant that the active state is always a leaf, so
+        // that is checked in every profile too.
         assert!(
             S::HANDLER_TABLE.len() == S::State::STATE_COUNT,
             "HANDLER_TABLE len {} must equal State::STATE_COUNT {}",
             S::HANDLER_TABLE.len(),
             S::State::STATE_COUNT
         );
-        debug_assert!(
+        assert!(
             S::initial_state().is_leaf(),
             "initial_state() must return a leaf state"
         );
-        debug_assert!(
+        assert!(
             S::error_state().is_none_or(|s| s.is_leaf()),
             "error_state() must return a leaf state when it returns Some"
         );

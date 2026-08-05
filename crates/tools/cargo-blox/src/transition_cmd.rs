@@ -37,15 +37,26 @@ pub fn add_transition(
     Ok(())
 }
 
-pub fn remove_transition(blox_name: &str, state: &str, event: &str) -> anyhow::Result<()> {
+pub fn remove_transition(
+    blox_name: &str,
+    state: &str,
+    event: &str,
+    feature: Option<&str>,
+) -> anyhow::Result<()> {
     let path = blox_toml_path_for_blox(blox_name);
     let mut doc = load_toml(&path)?;
-    bloxide_codegen::edit::remove_transition(&mut doc, state, event)
+    bloxide_codegen::edit::remove_transition(&mut doc, state, event, feature)
         .with_context(|| format!("in {}", blox_name))?;
     save_toml(&path, &doc)?;
-    println!(
-        "Removed transition {} + {} from {}",
-        state, event, blox_name
-    );
+    match feature {
+        Some(feat) => println!(
+            "Removed transition {} + {} (feature {}) from {}",
+            state, event, feat, blox_name
+        ),
+        None => println!(
+            "Removed transition {} + {} from {}",
+            state, event, blox_name
+        ),
+    }
     Ok(())
 }

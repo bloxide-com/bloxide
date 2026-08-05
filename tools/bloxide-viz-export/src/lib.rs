@@ -612,9 +612,7 @@ pub fn parse_event_pattern(pattern: &str) -> (String, String) {
     // Cut at the first `(` (payload start) or `|` (or-pattern separator). A
     // `|` inside parens is always preceded by its `(`, so the first of the
     // two characters also ends the first top-level alternative.
-    let end = pattern
-        .find(|c| c == '(' || c == '|')
-        .unwrap_or(pattern.len());
+    let end = pattern.find(['(', '|']).unwrap_or(pattern.len());
     let path = pattern[..end].trim();
     if let Some(pos) = path.rfind("::") {
         let message_set = path[..pos].trim().to_string();

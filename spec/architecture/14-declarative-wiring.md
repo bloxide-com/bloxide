@@ -181,7 +181,7 @@ async fn main() {
     let pong_machine = bloxide_core::StateMachine::new(pong_ctx);
 
     // Wire supervisor
-    let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone, 2);
     bloxide_tokio::spawn_static_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
     bloxide_tokio::spawn_static_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
     // ... finish group, construct SupervisorCtx, start supervisor

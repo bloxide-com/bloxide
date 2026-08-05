@@ -119,6 +119,13 @@ fn test_all_blox_tomls_codegen() {
     for toml_path in &tomls {
         let files = generate_from_toml(toml_path)
             .unwrap_or_else(|e| panic!("codegen failed for {}: {}", toml_path.display(), e));
+        let (_name, config) = parse_blox_toml(toml_path);
+        if files.is_empty() && config.actor.is_none() {
+            // No [actor] section and nothing to emit — e.g. bloxide-core's
+            // [mailboxes]-only blox.toml, which is consumed by that crate's
+            // build.rs at build time instead of `cargo blox generate`.
+            continue;
+        }
         assert!(
             !files.is_empty(),
             "codegen produced no files for {}",

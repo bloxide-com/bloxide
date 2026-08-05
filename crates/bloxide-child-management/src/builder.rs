@@ -29,8 +29,13 @@ use bloxide_core::{
 /// "full" a bug rather than routine backpressure (confirm-before-record still
 /// handles Full correctly when it happens).
 ///
-/// Created with `::new(shutdown)`, children are added via `add_child()`, and the
-/// group is consumed via `finish()`.
+/// Created with `::new(shutdown, max_misses)`, children are added via
+/// `add_child()`, and the group is consumed via `finish()`. `max_misses` is
+/// the number of consecutive unanswered **delivered** health-check Pings
+/// before a child is declared rogue and its `ChildPolicy` is applied — an
+/// undelivered Ping (full channel) is never counted as a miss. Generated
+/// wiring passes `2` by default (overridable via `[supervision.watchdog]`
+/// `max_misses` in system.toml).
 pub struct ChildGroupBuilder<
     R: GroupChannelCap,
     Ctrl: Send + 'static,

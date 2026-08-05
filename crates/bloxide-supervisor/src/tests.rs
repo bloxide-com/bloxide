@@ -882,3 +882,59 @@ fn shutting_down_completes_when_pending_stop_target_dies() {
         "Closed channel while flushing must mark the child Gone and complete shutdown"
     );
 }
+
+/// Regression test for the lost-shutdown-signal bug: the old design carried
+/// the flush's shutdown discovery in a `pending: ChildAction` ctx field that
+/// later actions (and the Started rule's unconditional `Stay` guard) silently
+/// dropped. Guards now query `ChildGroup::should_begin_shutdown()` directly,
+/// so terminal evidence recorded by the flush on ANY event pass is acted on
+/// immediately and can never be overwritten.
+#[test]
+fn flush_finding_dead_child_during_unrelated_event_begins_shutdown() {
+    let mut group = ChildGroup::new(GroupShutdown::WhenAnyDone, 2);
+    let (lc1, rx1) = TestRuntime::channel::<LifecycleCommand>(1, 16);
+    let (lc2, rx2) = TestRuntime::channel::<LifecycleCommand>(2, 1); // capacity 1
+    group.try_add(1, lc1, ChildPolicy::Stop).unwrap();
+    group
+        .try_add(2, lc2, ChildPolicy::Reset { max: 3 })
+        .unwrap();
+    let (notify_ref, _notify_rx) = TestRuntime::channel::<ChildLifecycleEvent>(100, 16);
+    let ctx = SupervisorCtx::new(100, group, notify_ref);
+    let mut machine = StateMachine::new(ctx);
+    let mut receivers = vec![rx1, rx2];
+
+    // Start: child 2's capacity-1 channel now holds [Start].
+    machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
+    receivers[0].drain_payloads();
+
+    // Child 2 reports Stopped → Reset policy fires, but its channel is full →
+    // the Reset is queued as a pending command. Nothing terminal yet.
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 2 });
+    assert_eq!(outcome, DispatchOutcome::HandledNoTransition);
+
+    // Child 2's task dies with the Reset still queued — its channel closes.
+    drop(receivers.remove(1));
+
+    // An unrelated event arrives: child 1 reports Started. The flush retries
+    // child 2's queued Reset, observes the Closed channel, and marks it Gone.
+    // The Started rule's guard reads that terminal evidence from the group and
+    // transitions immediately — the old code stayed in Running and the pending
+    // flag was overwritten on the next event pass, wedging the supervisor.
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Started { child_id: 1 });
+    assert_eq!(
+        outcome,
+        DispatchOutcome::Transition(MachineState::State(SupervisorState::ShuttingDown)),
+        "a dead child discovered by the flush during an unrelated Started event must begin shutdown"
+    );
+
+    // ShuttingDown's entry stops the remaining live child; its Stopped ack
+    // completes the shutdown.
+    let cmds = receivers[0].drain_payloads();
+    assert!(
+        cmds.iter().any(|c| matches!(c, LifecycleCommand::Stop)),
+        "child 1 must be stopped, got {:?}",
+        cmds
+    );
+    let outcome = dispatch_child_event(&mut machine, ChildLifecycleEvent::Stopped { child_id: 1 });
+    assert_eq!(outcome, DispatchOutcome::Stopped);
+}

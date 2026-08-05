@@ -12,6 +12,14 @@ pub const WILDCARD_TAG: u8 = u8::MAX;
 
 /// Reserved event tag for lifecycle commands.
 /// Must be less than WILDCARD_TAG.
+///
+/// # Tag space limit
+///
+/// [`WILDCARD_TAG`] (255) and `LIFECYCLE_TAG` (254) reserve the top two `u8`
+/// values, so domain event enums are limited to **254 variants**: tags are
+/// assigned by declaration order starting at 0 and must stay within
+/// `0..=253`. An event enum with more variants collides with the reserved
+/// lifecycle/wildcard tags and breaks the engine's fast-reject routing.
 pub const LIFECYCLE_TAG: u8 = 254;
 
 /// A fast discriminant tag for event enums, used by the engine to skip
@@ -39,11 +47,10 @@ pub trait EventTag {
 /// so they flow through dispatch() and are handled at the VirtualRoot level.
 ///
 /// For supervised actors using the unified lifecycle model, the event type
-/// should have a variant that wraps `LifecycleCommand` and implement both
-/// `as_lifecycle_command` and `from_lifecycle`.
+/// should have a variant that wraps `LifecycleCommand` and implement
+/// `as_lifecycle_command` to return it.
 ///
-/// For domain-only actors, `as_lifecycle_command` returns None and
-/// `from_lifecycle` is not applicable.
+/// For domain-only actors, `as_lifecycle_command` returns None.
 pub trait LifecycleEvent: EventTag {
     /// Returns the lifecycle command if this event wraps one.
     /// Returns None for domain events.

@@ -7,7 +7,7 @@
 //! Platform Feature Pattern).
 
 use crate::control::ChildCtrl;
-use crate::{ChildAction, ChildGroup};
+use crate::ChildGroup;
 use bloxide_core::{lifecycle::ChildLifecycleEvent, messaging::ActorRef, transition::ActionResult};
 
 /// Start all children in the group and clear lifecycle counters.
@@ -20,13 +20,11 @@ use bloxide_core::{lifecycle::ChildLifecycleEvent, messaging::ActorRef, transiti
 pub fn start_children<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
-    pending: &mut ChildAction,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     children.clear_counters();
-    *pending = ChildAction::default();
     children.start_all(self_id);
     ActionResult::Ok
 }
@@ -46,18 +44,17 @@ where
 /// Retry every queued undelivered command (confirm-before-record).
 ///
 /// Wired as the first action on the managing blox's transitions so a command
-/// lost to a full channel is retried on every event pass. The group shutdown
-/// decision is written to `pending` — a flush can complete a shutdown (a
-/// Closed channel observed here marks the child `Gone`).
+/// lost to a full channel is retried on every event pass. A Closed channel
+/// observed while flushing marks the child `Gone` — terminal evidence the
+/// managing blox's guards read directly via `ChildGroup::should_begin_shutdown`.
 pub fn flush_pending<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
-    pending: &mut ChildAction,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
-    *pending = children.flush_pending(self_id);
+    children.flush_pending(self_id);
     ActionResult::Ok
 }
 
@@ -70,7 +67,6 @@ pub fn handle_done_or_failed<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
     child_notify: &ActorRef<ChildLifecycleEvent, R>,
-    pending: &mut ChildAction,
     ev: &ChildLifecycleEvent,
 ) -> ActionResult
 where
@@ -78,8 +74,7 @@ where
 {
     if let ChildLifecycleEvent::Stopped { child_id } | ChildLifecycleEvent::Failed { child_id } = ev
     {
-        let action = children.handle_done_or_failed(*child_id, self_id, child_notify);
-        *pending = action;
+        children.handle_done_or_failed(*child_id, self_id, child_notify);
     }
     ActionResult::Ok
 }
@@ -141,19 +136,18 @@ where
 ///
 /// Aborted means the child's task self-terminated cooperatively via
 /// `AbortCommand`. The task is gone — restarting requires respawning.
-/// Externally-originated aborts participate in group shutdown: the decision
-/// is written to `pending`.
+/// Externally-originated aborts are terminal evidence: the managing blox's
+/// guards see them via `ChildGroup::should_begin_shutdown`/`all_stopped`.
 pub fn record_aborted<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
-    pending: &mut ChildAction,
     ev: &ChildLifecycleEvent,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let ChildLifecycleEvent::Aborted { child_id } = ev {
-        *pending = children.record_aborted(*child_id, self_id);
+        children.record_aborted(*child_id, self_id);
     }
     ActionResult::Ok
 }
@@ -162,19 +156,17 @@ where
 ///
 /// Killed means the child's task was destroyed externally via
 /// `KillCapability::kill(handle)`. Permanently dead — cannot be restarted
-/// without respawning the task. Participates in group shutdown: the decision
-/// is written to `pending`.
+/// without respawning the task. Terminal evidence, like `record_aborted`.
 pub fn record_killed<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
-    pending: &mut ChildAction,
     ev: &ChildLifecycleEvent,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let ChildLifecycleEvent::Killed { child_id } = ev {
-        *pending = children.record_killed(*child_id, self_id);
+        children.record_killed(*child_id, self_id);
     }
     ActionResult::Ok
 }
@@ -193,20 +185,20 @@ where
 /// Deregister a child that self-terminated cleanly (`ChildLifecycleEvent::Done`).
 ///
 /// Done is normal completion: the entry is removed (no restart policy), and
-/// the group shutdown decision is recorded in `pending` so the managing blox
+/// the terminal report stays visible to the managing blox's guards via
+/// `ChildGroup::should_begin_shutdown`/`all_stopped`, so the managing blox
 /// can still progress to shutdown when the last child completes. A `Done`
 /// from an unknown child is ignored (and never triggers shutdown).
 pub fn deregister_done<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
-    pending: &mut ChildAction,
     ev: &ChildLifecycleEvent,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let ChildLifecycleEvent::Done { child_id } = ev {
-        *pending = children.deregister(*child_id, self_id);
+        children.deregister(*child_id, self_id);
     }
     ActionResult::Ok
 }
@@ -286,15 +278,13 @@ pub fn handle_watchdog_tick<R>(
     self_id: bloxide_core::ActorId,
     children: &mut ChildGroup<R>,
     child_notify: &ActorRef<ChildLifecycleEvent, R>,
-    pending: &mut ChildAction,
     ctrl: &ChildCtrl<R>,
 ) -> ActionResult
 where
     R: bloxide_core::capability::BloxRuntime,
 {
     if let ChildCtrl::WatchdogTick = ctrl {
-        let action = children.watchdog_tick(self_id, child_notify);
-        *pending = action;
+        children.watchdog_tick(self_id, child_notify);
     }
     ActionResult::Ok
 }

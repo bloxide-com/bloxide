@@ -6,8 +6,10 @@
 //! tests without an Embassy or Tokio executor.
 //!
 //! Timer simulation is intentionally not part of `TestRuntime` itself.
-//! Tests that use timers should pair `TestRuntime` with `bloxide_timer::test_utils`
-//! instead.
+//! Tests that use timers should drive `TimerCommand`s into a `TimerQueue`
+//! directly; `bloxide-timer`'s internal `VirtualClock` helper
+//! (`crates/bloxide-timer/src/test_utils.rs`, `#[cfg(test)]`-only) shows the
+//! pattern.
 //!
 //! # Fidelity model (issue #135)
 //!
@@ -64,6 +66,8 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};
 use futures_core::Stream;
 use spin::Mutex;
+
+pub mod prelude;
 
 // ── Unique actor ID generator ────────────────────────────────────────────
 
@@ -138,6 +142,10 @@ impl<M: Send + 'static> TestReceiver<M> {
 impl<M: Send + 'static> Drop for TestReceiver<M> {
     fn drop(&mut self) {
         // Receiver gone — the send side observes Closed on the next try_send.
+        // Take the queue lock so the close is atomic with respect to
+        // try_send's check-and-enqueue critical section: a message can never
+        // be queued after the receiver is gone.
+        let _lock = self.shared.queue.lock();
         self.shared.receiver_alive.store(false, Ordering::SeqCst);
     }
 }
@@ -249,10 +257,13 @@ impl BloxRuntime for TestRuntime {
         sender: &Self::Sender<M>,
         envelope: Envelope<M>,
     ) -> Result<(), Self::TrySendError> {
+        // The liveness check must be inside the queue lock: `TestReceiver::drop`
+        // takes the same lock before clearing `receiver_alive`, so the check and
+        // the enqueue are atomic with respect to the receiver going away.
+        let mut lock = sender.shared.queue.lock();
         if !sender.shared.receiver_alive.load(Ordering::SeqCst) {
             return Err(TestTrySendError::Closed);
         }
-        let mut lock = sender.shared.queue.lock();
         if lock.len() >= sender.shared.capacity {
             return Err(TestTrySendError::Full);
         }
@@ -464,10 +475,6 @@ mod spawn_helper_tests;
 // ── Waker tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
-// TODO: wire these up — several `WEvent` variants/fields below exist only to
-// satisfy the `EventTag`/`LifecycleEvent`/`From<Envelope>` trait impls and are
-// not directly constructed or read in the waker tests yet.
-#[allow(dead_code)]
 mod waker_tests {
     use bloxide_core::capability::{BloxRuntime, DynamicChannelCap};
     use bloxide_core::engine::StateMachine;
@@ -535,11 +542,10 @@ mod waker_tests {
         #[default]
         Init,
         Running,
-        Done,
     }
 
     impl StateTopology for WState {
-        const STATE_COUNT: usize = 3;
+        const STATE_COUNT: usize = 2;
         fn parent(self) -> Option<Self> {
             None
         }
@@ -550,7 +556,6 @@ mod waker_tests {
             match self {
                 WState::Init => &[WState::Init],
                 WState::Running => &[WState::Running],
-                WState::Done => &[WState::Done],
             }
         }
         fn as_index(self) -> usize {
@@ -612,7 +617,7 @@ mod waker_tests {
                 on_exit: &[],
                 transitions: &[TransitionRule {
                     event_tag: 0,
-                    matches: |ev| matches!(ev, WEvent::Msg(_)),
+                    matches: |ev| matches!(ev, WEvent::Msg(_payload)),
                     actions: &[|ctx, _ev| {
                         ctx.processed.fetch_add(1, Ordering::SeqCst);
                         ActionResult::Ok
@@ -625,11 +630,6 @@ mod waker_tests {
                         }
                     },
                 }],
-            },
-            &bloxide_core::spec::StateFns {
-                on_entry: &[],
-                on_exit: &[],
-                transitions: &[],
             },
         ];
 
@@ -650,7 +650,7 @@ mod waker_tests {
             threshold: 1,
         };
         let mut machine = StateMachine::<WSpec<TestRuntime>>::new(ctx);
-        machine.handle_lifecycle(LifecycleCommand::Start);
+        machine.dispatch(WEvent::Lifecycle(LifecycleCommand::Start));
 
         let sender_clone = sender_ref.clone();
         let handle = std::thread::spawn(move || {
@@ -675,7 +675,7 @@ mod waker_tests {
             threshold: 5,
         };
         let mut machine = StateMachine::<WSpec<TestRuntime>>::new(ctx);
-        machine.handle_lifecycle(LifecycleCommand::Start);
+        machine.dispatch(WEvent::Lifecycle(LifecycleCommand::Start));
 
         let sender_clone = sender_ref.clone();
         let handle = std::thread::spawn(move || {
@@ -743,10 +743,6 @@ mod lifecycle_dispatch {
     #[derive(Debug, Clone, Copy)]
     enum TestEvent {
         Lifecycle(LifecycleCommand),
-        // TODO: wire this up — `Msg` is constructed by `From<Envelope<u32>>`
-        // (required for the mailbox type) but no test in this module dispatches
-        // a domain `Msg` event, so the payload field is never read.
-        #[allow(dead_code)]
         Msg(u32),
         Complete,
         GoRunning,
@@ -756,7 +752,7 @@ mod lifecycle_dispatch {
         fn event_tag(&self) -> u8 {
             match self {
                 TestEvent::Lifecycle(_) => 254,
-                TestEvent::Msg(_) => 0,
+                TestEvent::Msg(_payload) => 0,
                 TestEvent::Complete => 1,
                 TestEvent::GoRunning => 2,
             }

@@ -79,6 +79,14 @@ pub struct MailboxConfig {
     /// `#[cfg(feature = "...")]`. When `None`, the mailbox is always emitted.
     #[serde(default)]
     pub feature: Option<String>,
+    /// Full variant set of the message enum carried by this mailbox
+    /// (e.g. `["Started", "Stopped", ...]`). Used for exhaustiveness
+    /// analysis only: when a state's earlier rules already cover every
+    /// declared variant, the codegen omits that state's catch-all rule for
+    /// this event variant (e.g. `SupervisorEvent::Child(_)`) as unreachable
+    /// dead code. When empty or absent, catch-alls are always kept.
+    #[serde(default)]
+    pub variants: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

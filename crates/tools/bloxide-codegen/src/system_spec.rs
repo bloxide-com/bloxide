@@ -96,9 +96,10 @@ fn field_access(field_spec: &str) -> String {
 /// * `is_transition` - Whether this is a transition action (vs entry/exit)
 ///
 /// # Returns
-/// A token stream for the concrete closure, or `None` if the action is not
-/// a `Self::` prefixed action (in which case the caller should use the default
-/// `resolve_action` from `spec_skeleton.rs`).
+/// `Ok(Some(..))` with a token stream for the concrete closure, or `Ok(None)`
+/// if the action is not a `Self::` prefixed action (in which case the caller
+/// should use the default `resolve_action` from `spec_skeleton.rs`).
+/// Malformed action declarations are reported as errors, never panics.
 pub fn resolve_concrete_action(
     action: &str,
     actions: &[ContextActionConfig],
@@ -106,11 +107,15 @@ pub fn resolve_concrete_action(
     event_type_str: &str,
     event_pattern: Option<&str>,
     is_transition: bool,
-) -> Option<proc_macro2::TokenStream> {
-    let name = strip_self_prefix(action)?;
+) -> anyhow::Result<Option<proc_macro2::TokenStream>> {
+    let Some(name) = strip_self_prefix(action) else {
+        return Ok(None);
+    };
 
     // Find the action declaration by name.
-    let config = actions.iter().find(|a| a.name == name)?;
+    let Some(config) = actions.iter().find(|a| a.name == name) else {
+        return Ok(None);
+    };
 
     // Validate the declared return type first.
     // Only "ActionResult" is recognized; anything else is a hard error
@@ -118,9 +123,10 @@ pub fn resolve_concrete_action(
     let skip_wrap = match config.returns.as_deref() {
         None => false,
         Some("ActionResult") => true,
-        Some(other) => panic!(
+        Some(other) => anyhow::bail!(
             "action '{}' has returns = \"{}\" — the only recognized value is \"ActionResult\"",
-            config.name, other
+            config.name,
+            other
         ),
     };
 
@@ -129,24 +135,24 @@ pub fn resolve_concrete_action(
         // Use the impl crate from the system.toml. `validate_concrete_actions`
         // rejects impl_required actions without an impl_crate before generation,
         // so a missing value here is a caller bug.
-        let crate_name = impl_crate.unwrap_or_else(|| {
-            panic!(
+        let crate_name = impl_crate.ok_or_else(|| {
+            anyhow::anyhow!(
                 "action '{}' is impl_required = true but no impl_crate was provided",
                 config.name
             )
-        });
+        })?;
         format!("::{}", crate_name.replace('-', "_"))
     } else {
         // Use the crate from the [[context.actions]] entry.
         // The crate_name may already be an absolute path (e.g. "::bloxide_supervisor")
         // if it was translated by generate_concrete_spec_skeleton. In that case,
         // don't prepend another "::".
-        let crate_name = config.crate_name.as_deref().unwrap_or_else(|| {
-            panic!(
+        let crate_name = config.crate_name.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
                 "action '{}' has no crate = \"...\" and is not impl_required",
                 config.name
             )
-        });
+        })?;
         if crate_name.starts_with("::") {
             crate_name.replace('-', "_")
         } else {
@@ -177,11 +183,12 @@ pub fn resolve_concrete_action(
         // value (e.g. ActionResult) is fine here too.
         let args = field_args.join(", ");
         let code = format!("|ctx| {{ {fn_full_path}({args}); }}");
-        Some(
-            syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|e| {
-                panic!("codegen produced unparseable entry/exit closure for action '{name}': {e}")
-            }),
-        )
+        let tokens = syn::parse_str::<proc_macro2::TokenStream>(&code).map_err(|e| {
+            anyhow::anyhow!(
+                "codegen produced unparseable entry/exit closure for action '{name}': {e}"
+            )
+        })?;
+        Ok(Some(tokens))
     } else if !has_payload {
         // Transition without event payload.
         // When event_arg is true, pass the full event reference as the last arg:
@@ -211,11 +218,12 @@ pub fn resolve_concrete_action(
                 "|ctx, {ev_param}| {{ ::bloxide_core::transition::ActionResult::from({call}) }}"
             )
         };
-        Some(
-            syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|e| {
-                panic!("codegen produced unparseable transition closure for action '{name}': {e}")
-            }),
-        )
+        let tokens = syn::parse_str::<proc_macro2::TokenStream>(&code).map_err(|e| {
+            anyhow::anyhow!(
+                "codegen produced unparseable transition closure for action '{name}': {e}"
+            )
+        })?;
+        Ok(Some(tokens))
     } else {
         // Transition with event payload.
         //
@@ -232,7 +240,16 @@ pub fn resolve_concrete_action(
         // The distinction: if the pattern path starts with the event type name
         // (e.g. "PoolEvent"), it's an event-variant pattern. Otherwise it's a
         // message-variant pattern.
-        let payload_var = config.event_payload.as_ref().unwrap().replace('-', "_");
+        let payload_var = config
+            .event_payload
+            .as_ref()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "action '{}' reached payload codegen without an event_payload declared",
+                    config.name
+                )
+            })?
+            .replace('-', "_");
         let args_with_payload = if field_args.is_empty() {
             payload_var.clone()
         } else {
@@ -304,11 +321,10 @@ pub fn resolve_concrete_action(
              }} \
              }}"
         );
-        Some(
-            syn::parse_str::<proc_macro2::TokenStream>(&code).unwrap_or_else(|e| {
-                panic!("codegen produced unparseable payload closure for action '{name}': {e}")
-            }),
-        )
+        let tokens = syn::parse_str::<proc_macro2::TokenStream>(&code).map_err(|e| {
+            anyhow::anyhow!("codegen produced unparseable payload closure for action '{name}': {e}")
+        })?;
+        Ok(Some(tokens))
     }
 }
 
@@ -374,7 +390,7 @@ pub fn generate_concrete_spec_skeleton(
                          type_params: &[String],
                          event_pattern: Option<&str>,
                          is_transition: bool|
-          -> proc_macro2::TokenStream {
+          -> anyhow::Result<proc_macro2::TokenStream> {
         if let Some(concrete) = resolve_concrete_action(
             action,
             &actions,
@@ -382,8 +398,8 @@ pub fn generate_concrete_spec_skeleton(
             event_type_str,
             event_pattern,
             is_transition,
-        ) {
-            concrete
+        )? {
+            Ok(concrete)
         } else {
             // Fall back to the default stub/path resolver for non-Self:: actions.
             spec_skeleton::resolve_action(
@@ -580,7 +596,8 @@ mod tests {
             false,
         )];
         let result =
-            resolve_concrete_action("Self::s_entry", &actions, None, "TestEvent", None, false);
+            resolve_concrete_action("Self::s_entry", &actions, None, "TestEvent", None, false)
+                .expect("resolve");
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         // Entry action: bare call to the declared crate fn, return discarded.
@@ -603,7 +620,8 @@ mod tests {
             "TestEvent",
             None,
             true,
-        );
+        )
+        .expect("resolve");
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         assert!(tokens.contains("blox_ctx_rounds"));
@@ -629,7 +647,8 @@ mod tests {
             "WorkerEvent",
             Some("WorkerMsg::DoWork(_)"),
             true,
-        );
+        )
+        .expect("resolve");
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         assert!(tokens.contains("tokio_pool_demo_impl"));
@@ -643,7 +662,8 @@ mod tests {
     fn test_resolve_concrete_non_self_action() {
         let actions = vec![];
         let result =
-            resolve_concrete_action("some_function", &actions, None, "TestEvent", None, true);
+            resolve_concrete_action("some_function", &actions, None, "TestEvent", None, true)
+                .expect("resolve");
         assert!(result.is_none());
     }
 
@@ -665,7 +685,8 @@ mod tests {
             "TestEvent",
             None,
             true,
-        );
+        )
+        .expect("resolve");
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         assert!(tokens.contains("increment_round"));
@@ -675,17 +696,21 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "the only recognized value is \"ActionResult\"")]
-    fn test_resolve_concrete_unknown_returns_value_panics() {
+    fn test_resolve_concrete_unknown_returns_value_errors() {
         let mut action = make_action("f", Some("some_crate"), vec![], None, false);
         action.returns = Some("bool".to_string());
         let actions = vec![action];
-        resolve_concrete_action("Self::f", &actions, None, "TestEvent", None, true);
+        let err = resolve_concrete_action("Self::f", &actions, None, "TestEvent", None, true)
+            .expect_err("unknown returns value must error");
+        assert!(
+            err.to_string()
+                .contains("the only recognized value is \"ActionResult\""),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
-    #[should_panic(expected = "impl_required = true but no impl_crate")]
-    fn test_resolve_concrete_impl_required_no_impl_crate_panics() {
+    fn test_resolve_concrete_impl_required_no_impl_crate_errors() {
         let actions = vec![make_action(
             "process_work",
             None,
@@ -695,13 +720,19 @@ mod tests {
         )];
         // Without an impl_crate, resolution is a hard failure (validation
         // catches this in the real flow before generation).
-        let _ = resolve_concrete_action(
+        let err = resolve_concrete_action(
             "Self::process_work",
             &actions,
             None,
             "TestEvent",
             None,
             true,
+        )
+        .expect_err("missing impl_crate must error");
+        assert!(
+            err.to_string()
+                .contains("impl_required = true but no impl_crate"),
+            "unexpected error: {err}"
         );
     }
 
@@ -734,7 +765,8 @@ mod tests {
             false,
         )];
         let result =
-            resolve_concrete_action("Self::s_entry", &actions, None, "TestEvent", None, false);
+            resolve_concrete_action("Self::s_entry", &actions, None, "TestEvent", None, false)
+                .expect("resolve");
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         // Should call the declared function: |ctx| { ::bloxide_core::s_entry(); }
@@ -750,7 +782,8 @@ mod tests {
             None,
             false,
         )];
-        let result = resolve_concrete_action("Self::s_i", &actions, None, "TestEvent", None, true);
+        let result = resolve_concrete_action("Self::s_i", &actions, None, "TestEvent", None, true)
+            .expect("resolve");
         assert!(result.is_some());
         let tokens = result.unwrap().to_string();
         // Should call the declared function, normalized via ActionResult::from:

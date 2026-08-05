@@ -213,13 +213,6 @@ impl BloxSpec {
         self.states.iter().filter(|s| s.kind.is_leaf()).collect()
     }
 
-    pub fn composite_states(&self) -> Vec<&State> {
-        self.states
-            .iter()
-            .filter(|s| matches!(s.kind, StateKind::Composite))
-            .collect()
-    }
-
     pub fn state_by_name(&self, name: &str) -> Option<&State> {
         self.states.iter().find(|s| s.name == name)
     }
@@ -228,13 +221,6 @@ impl BloxSpec {
         self.handlers
             .iter()
             .find(|h| h.state == state && h.event == event)
-    }
-
-    pub fn events_for_set(&self, set_name: &str) -> Vec<&Event> {
-        self.events
-            .iter()
-            .filter(|e| e.message_set == set_name)
-            .collect()
     }
 
     pub fn message_sets_for_events(&self) -> Vec<MessageSet> {

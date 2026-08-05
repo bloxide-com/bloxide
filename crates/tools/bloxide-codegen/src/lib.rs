@@ -4,7 +4,10 @@
 pub mod ctx;
 pub mod edit;
 mod events;
-mod mailboxes;
+// Public so bloxide-core's build.rs can generate the tuple mailbox impls
+// into `OUT_DIR` at build time (they are no longer emitted into
+// `src/generated/` by `cargo blox generate`).
+pub mod mailboxes;
 mod messages;
 pub mod schema;
 pub mod spec_skeleton;
@@ -19,8 +22,16 @@ use std::path::Path;
 
 /// Callback that maps an action reference to wrapper-closure tokens for its
 /// use site. Threaded through topology and spec-skeleton generation.
-pub(crate) type ActionResolver<'a> =
-    &'a dyn Fn(&str, &str, &str, &[String], Option<&str>, bool) -> proc_macro2::TokenStream;
+/// Resolution can fail on malformed action declarations — errors propagate
+/// up through generation rather than panicking.
+pub(crate) type ActionResolver<'a> = &'a dyn Fn(
+    &str,
+    &str,
+    &str,
+    &[String],
+    Option<&str>,
+    bool,
+) -> anyhow::Result<proc_macro2::TokenStream>;
 
 /// Generate all artifacts from a parsed `BloxConfig`.
 ///
@@ -84,10 +95,9 @@ pub fn generate_all(
         }
     }
 
-    if let Some(mailboxes) = &config.mailboxes {
-        let code = mailboxes::generate(mailboxes)?;
-        files.push(("mailboxes_impls.rs".to_string(), code));
-    }
+    // Note: `[mailboxes]` is intentionally NOT emitted here. The tuple
+    // mailbox impls exist only for bloxide-core, whose build.rs generates
+    // them into `OUT_DIR` at build time via `mailboxes::generate`.
 
     // Generate mod.rs that re-exports all generated submodules
     if !files.is_empty() {
@@ -360,7 +370,7 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
         (vec!["std".to_string()], true),
     );
     // The system-level generated supervisor spec imports types from
-    // bloxide-child-management (ChildAction, ChildGroup), so it must be
+    // bloxide-child-management (ChildGroup, ChildCtrl), so it must be
     // a dependency of every app that uses the supervisor.
     deps.insert(
         "bloxide-child-management".to_string(),
@@ -430,7 +440,9 @@ pub fn generate_cargo_toml(system_path: &Path, workspace_root: &Path) -> anyhow:
         if is_timer {
             // bloxide-timer is already added as the blox crate.
             // Ensure std feature is included.
-            let entry = deps.get_mut("bloxide-timer").unwrap();
+            let entry = deps
+                .get_mut("bloxide-timer")
+                .ok_or_else(|| anyhow::anyhow!("timer actor requires bloxide-timer dependency"))?;
             if !entry.0.contains(&"std".to_string()) {
                 entry.0.push("std".to_string());
             }

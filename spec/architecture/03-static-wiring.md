@@ -8,7 +8,7 @@ All actors are allocated at compile time. `ActorRef`s are wired together before 
 flowchart TD
     A["channels! per domain actor\nreturns refs_tuple + mailboxes_tuple"] --> B
     B["Ctx::new() per actor\ninject ActorRefs"] --> C
-    C["ChildGroupBuilder::new(strategy)\ncapture control_ref() + notify_ref()\n(before finish() consumes the builder)"] --> D
+    C["ChildGroupBuilder::new(strategy, max_misses)\ncapture control_ref() + notify_ref()\n(before finish() consumes the builder)"] --> D
     D["spawn_static_child! per child task\n(lifecycle channel hidden inside)"] --> E
     E["sup_id = next_actor_id!()\ngroup.finish()\nreturns ChildGroup + sup_notify_rx + sup_control_rx"] --> F
     F["SupervisorCtx::new(sup_id, children, sup_notify_ref)\nStateMachine::new(sup_ctx)"] --> G
@@ -170,7 +170,7 @@ Expands to: `let (lc_rx, sup_notify) = group.add_child(id, policy)` (which creat
 
 ### `ChildGroupBuilder`
 
-Two-phase builder for the supervised group. `new(strategy)` creates both
+Two-phase builder for the supervised group. `new(strategy, max_misses)` creates both
 supervisor mailbox streams up front:
 
 - child lifecycle events (`sup_notify_rx`)
@@ -182,7 +182,7 @@ supervisor context) and register children via `spawn_static_child!`. Phase two:
 supervisor's own `ActorId` is allocated separately via `next_actor_id!()`:
 
 ```rust
-let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone, 2);
 let _sup_control_ref = group.control_ref();
 let sup_notify_ref = group.notify_ref();
 spawn_static_child!(spawner, group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
@@ -219,7 +219,7 @@ fn setup(spawner: Spawner) {
     let pong_id = pong_ref.id();
 
     // Supervised group — capture both supervisor refs before finish() consumes the builder
-    let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+    let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone, 2);
     let _sup_control_ref = group.control_ref();
     let sup_notify_ref = group.notify_ref();
 

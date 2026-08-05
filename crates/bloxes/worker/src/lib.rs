@@ -6,7 +6,9 @@
 //!
 //! When `DoWork` is received, the transition actions process the work,
 //! broadcast the result to peers, and notify the pool. The guard then
-//! returns `Decision::Stop`, returning the machine to `Init`.
+//! returns `Decision::Done`: the machine runs the same cleanup ritual as
+//! `Stop` (exit chain + `on_init_entry`), and the run loop ends the task —
+//! clean completion.
 //!
 //! The ctrl stream (`PeerCtrl<WorkerMsg, R>`) is polled at higher priority
 //! than the domain stream (`WorkerMsg`) so all `AddPeer` messages are

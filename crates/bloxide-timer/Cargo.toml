@@ -8,15 +8,14 @@ repository.workspace = true
 license.workspace = true
 
 [features]
-std = ["bloxide-core/std", "dep:bloxide-test-runtime"]
+std = ["bloxide-core/std"]
 
 [dependencies]
 bloxide-core = { workspace = true }
 bloxide-log = { workspace = true }
 critical-section = "1.2.0"
-bloxide-test-runtime = { workspace = true, optional = true }
 
 [dev-dependencies]
-# Also a dev-dependency so the VirtualClock unit tests run under plain
-# `cargo test -p bloxide-timer` (the std feature stays off by default).
+# VirtualClock (`src/test_utils.rs`) is `#[cfg(test)]`-gated, so
+# bloxide-test-runtime is only needed here, for its unit tests.
 bloxide-test-runtime = { workspace = true }

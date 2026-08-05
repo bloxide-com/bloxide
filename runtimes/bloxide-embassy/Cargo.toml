@@ -26,3 +26,9 @@ std = ["bloxide-core/std", "bloxide-child-management/std", "bloxide-timer/std"]
 # so provide the std impl for this crate's tests only.
 [dev-dependencies]
 critical-section = { version = "1.2", features = ["std"] }
+# The timer service tests need a working `embassy_time::Timer`: the `std`
+# feature provides a self-initializing host time driver, and `generic-queue-8`
+# selects the generic timer queue (the default integrated queue would drag in
+# embassy-executor internals needing an arch backend). Dev-dependency only —
+# production (no_std) builds bring their own driver.
+embassy-time = { version = "0.5", features = ["std", "generic-queue-8"] }

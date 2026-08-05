@@ -43,15 +43,15 @@
         "Self::handle_done_or_failed"
       ],
       "guard": {
-        "description": "ctx.all_children_stopped() => stop\nctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
-        "raw": "if ctx.all_children_stopped() { stop } else if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
         "branches": [
           {
             "condition": "ctx.all_children_stopped()",
             "target": "Stop"
           },
           {
-            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "condition": "ctx.children.should_begin_shutdown()",
             "target": {
               "Transition": "ShuttingDown"
             }
@@ -74,15 +74,15 @@
         "Self::handle_done_or_failed"
       ],
       "guard": {
-        "description": "ctx.all_children_stopped() => stop\nctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
-        "raw": "if ctx.all_children_stopped() { stop } else if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
         "branches": [
           {
             "condition": "ctx.all_children_stopped()",
             "target": "Stop"
           },
           {
-            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "condition": "ctx.children.should_begin_shutdown()",
             "target": {
               "Transition": "ShuttingDown"
             }
@@ -105,9 +105,20 @@
         "Self::record_started"
       ],
       "guard": {
-        "description": "stay",
-        "raw": "",
-        "branches": []
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.all_children_stopped()",
+            "target": "Stop"
+          },
+          {
+            "condition": "ctx.children.should_begin_shutdown()",
+            "target": {
+              "Transition": "ShuttingDown"
+            }
+          }
+        ]
       },
       "target": "Stay",
       "source": "Explicit",
@@ -125,15 +136,15 @@
         "Self::record_aborted"
       ],
       "guard": {
-        "description": "ctx.all_children_stopped() => stop\nctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
-        "raw": "if ctx.all_children_stopped() { stop } else if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
         "branches": [
           {
             "condition": "ctx.all_children_stopped()",
             "target": "Stop"
           },
           {
-            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "condition": "ctx.children.should_begin_shutdown()",
             "target": {
               "Transition": "ShuttingDown"
             }
@@ -156,15 +167,15 @@
         "Self::record_killed"
       ],
       "guard": {
-        "description": "ctx.all_children_stopped() => stop\nctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
-        "raw": "if ctx.all_children_stopped() { stop } else if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
         "branches": [
           {
             "condition": "ctx.all_children_stopped()",
             "target": "Stop"
           },
           {
-            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "condition": "ctx.children.should_begin_shutdown()",
             "target": {
               "Transition": "ShuttingDown"
             }
@@ -187,9 +198,20 @@
         "Self::record_alive"
       ],
       "guard": {
-        "description": "stay",
-        "raw": "",
-        "branches": []
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.all_children_stopped()",
+            "target": "Stop"
+          },
+          {
+            "condition": "ctx.children.should_begin_shutdown()",
+            "target": {
+              "Transition": "ShuttingDown"
+            }
+          }
+        ]
       },
       "target": "Stay",
       "source": "Explicit",
@@ -207,15 +229,15 @@
         "Self::deregister_done"
       ],
       "guard": {
-        "description": "ctx.all_children_stopped() => stop\nctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
-        "raw": "if ctx.all_children_stopped() { stop } else if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
         "branches": [
           {
             "condition": "ctx.all_children_stopped()",
             "target": "Stop"
           },
           {
-            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "condition": "ctx.children.should_begin_shutdown()",
             "target": {
               "Transition": "ShuttingDown"
             }
@@ -238,9 +260,20 @@
         "Self::register_child"
       ],
       "guard": {
-        "description": "stay",
-        "raw": "",
-        "branches": []
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.all_children_stopped()",
+            "target": "Stop"
+          },
+          {
+            "condition": "ctx.children.should_begin_shutdown()",
+            "target": {
+              "Transition": "ShuttingDown"
+            }
+          }
+        ]
       },
       "target": "Stay",
       "source": "Explicit",
@@ -258,9 +291,20 @@
         "Self::handle_register_dynamic_child"
       ],
       "guard": {
-        "description": "stay",
-        "raw": "",
-        "branches": []
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
+        "branches": [
+          {
+            "condition": "ctx.all_children_stopped()",
+            "target": "Stop"
+          },
+          {
+            "condition": "ctx.children.should_begin_shutdown()",
+            "target": {
+              "Transition": "ShuttingDown"
+            }
+          }
+        ]
       },
       "target": "Stay",
       "source": "Explicit",
@@ -278,15 +322,15 @@
         "Self::handle_watchdog_tick"
       ],
       "guard": {
-        "description": "ctx.all_children_stopped() => stop\nctx.pending == ChildAction::BeginShutdown => ShuttingDown\n_ => stay",
-        "raw": "if ctx.all_children_stopped() { stop } else if ctx.pending == ChildAction::BeginShutdown { ShuttingDown } else { stay }",
+        "description": "ctx.all_children_stopped() => stop\nctx.children.should_begin_shutdown() => ShuttingDown\n_ => stay",
+        "raw": "if ctx.all_children_stopped() { stop } else if ctx.children.should_begin_shutdown() { ShuttingDown } else { stay }",
         "branches": [
           {
             "condition": "ctx.all_children_stopped()",
             "target": "Stop"
           },
           {
-            "condition": "ctx.pending == ChildAction::BeginShutdown",
+            "condition": "ctx.children.should_begin_shutdown()",
             "target": {
               "Transition": "ShuttingDown"
             }
@@ -544,7 +588,7 @@
     {
       "crate_name": "bloxide_child_management",
       "function_name": "start_children",
-      "signature": "fn start_children(self_id: ActorId, children: &mut ChildGroup<R>, pending: &mut ChildAction)"
+      "signature": "fn start_children(self_id: ActorId, children: &mut ChildGroup<R>)"
     },
     {
       "crate_name": "bloxide_child_management",
@@ -554,12 +598,12 @@
     {
       "crate_name": "bloxide_child_management",
       "function_name": "flush_pending",
-      "signature": "fn flush_pending(self_id: ActorId, children: &mut ChildGroup<R>, pending: &mut ChildAction) -> ActionResult"
+      "signature": "fn flush_pending(self_id: ActorId, children: &mut ChildGroup<R>) -> ActionResult"
     },
     {
       "crate_name": "bloxide_child_management",
       "function_name": "handle_done_or_failed",
-      "signature": "fn handle_done_or_failed(self_id: ActorId, children: &mut ChildGroup<R>, child_notify: &ActorRef<ChildLifecycleEvent, R>, pending: &mut ChildAction, ev: &_) -> ActionResult"
+      "signature": "fn handle_done_or_failed(self_id: ActorId, children: &mut ChildGroup<R>, child_notify: &ActorRef<ChildLifecycleEvent, R>, ev: &_) -> ActionResult"
     },
     {
       "crate_name": "bloxide_child_management",
@@ -579,12 +623,12 @@
     {
       "crate_name": "bloxide_child_management",
       "function_name": "record_aborted",
-      "signature": "fn record_aborted(self_id: ActorId, children: &mut ChildGroup<R>, pending: &mut ChildAction, ev: &_) -> ActionResult"
+      "signature": "fn record_aborted(self_id: ActorId, children: &mut ChildGroup<R>, ev: &_) -> ActionResult"
     },
     {
       "crate_name": "bloxide_child_management",
       "function_name": "record_killed",
-      "signature": "fn record_killed(self_id: ActorId, children: &mut ChildGroup<R>, pending: &mut ChildAction, ev: &_) -> ActionResult"
+      "signature": "fn record_killed(self_id: ActorId, children: &mut ChildGroup<R>, ev: &_) -> ActionResult"
     },
     {
       "crate_name": "bloxide_child_management",
@@ -594,7 +638,7 @@
     {
       "crate_name": "bloxide_child_management",
       "function_name": "deregister_done",
-      "signature": "fn deregister_done(self_id: ActorId, children: &mut ChildGroup<R>, pending: &mut ChildAction, ev: &_) -> ActionResult"
+      "signature": "fn deregister_done(self_id: ActorId, children: &mut ChildGroup<R>, ev: &_) -> ActionResult"
     },
     {
       "crate_name": "bloxide_child_management",
@@ -609,7 +653,7 @@
     {
       "crate_name": "bloxide_child_management",
       "function_name": "handle_watchdog_tick",
-      "signature": "fn handle_watchdog_tick(self_id: ActorId, children: &mut ChildGroup<R>, child_notify: &ActorRef<ChildLifecycleEvent, R>, pending: &mut ChildAction, ctrl: &_) -> ActionResult"
+      "signature": "fn handle_watchdog_tick(self_id: ActorId, children: &mut ChildGroup<R>, child_notify: &ActorRef<ChildLifecycleEvent, R>, ctrl: &_) -> ActionResult"
     }
   ],
   "context": {
@@ -640,11 +684,6 @@
       {
         "name": "child_notify",
         "ty": "ActorRef<ChildLifecycleEvent, R>",
-        "annotations": []
-      },
-      {
-        "name": "pending",
-        "ty": "ChildAction",
         "annotations": []
       }
     ]

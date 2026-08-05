@@ -77,7 +77,7 @@ runtime observes `DispatchOutcome` after every dispatch in `run()` and reports
 2. `channels! { MsgType(cap), ... }` per domain actor → `(refs, mailboxes)`
 3. `Ctx::new(self_id, ...refs)` per actor — refs injected, internal state defaulted
 4. `StateMachine::new(ctx)` per actor — construction is silent (in implicit Init)
-5. `ChildGroupBuilder::new(GroupShutdown::...)`; `spawn_static_child!(group, task(machine, mbox, id), ChildPolicy::...)` per supervised child — creates the per-child lifecycle channel and registers the child
+5. `ChildGroupBuilder::new(GroupShutdown::..., max_misses)`; `spawn_static_child!(group, task(machine, mbox, id), ChildPolicy::...)` per supervised child — creates the per-child lifecycle channel and registers the child
 6. `group.finish()` → `(ChildGroup, sup_notify_rx, sup_control_rx)`
 7. `SupervisorCtx::new(sup_id, children, sup_notify_ref)` → supervisor machine
 8. `sup_machine.dispatch(Lifecycle(Start))` → `Running::on_entry` starts all children

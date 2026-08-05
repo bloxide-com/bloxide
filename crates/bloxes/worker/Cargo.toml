@@ -17,7 +17,6 @@ std = [
 bloxide-core    = { workspace = true }
 bloxide-peers   = { workspace = true }
 pool-messages   = { workspace = true }
-blox-ctx-pool-ref     = { workspace = true }
 
 [dev-dependencies]
 bloxide-core    = { workspace = true, features = ["std"] }

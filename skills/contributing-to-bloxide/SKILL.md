@@ -26,8 +26,8 @@ cargo-blox          CLI: see QUICK_REFERENCE.md → "cargo blox Command Referenc
 bloxide-log         Feature-gated logging macros                              (no_std)
 bloxide-timer       Timer service: commands, queue, timer action functions     (no_std)
 bloxide-spawn       Spawn capability: SpawnCap, ChildRegistrar, spawn_dynamic_child   (no_std)
-bloxide-child-management  Child tracking: ChildGroup, ChildGroupBuilder, ChildPolicy, GroupShutdown  (no_std)
-bloxide-supervisor  Supervisor blox: SupervisorSpec, ChildCtrl, actions  (no_std)
+bloxide-child-management  Child tracking: ChildGroup, ChildGroupBuilder, ChildPolicy, GroupShutdown, control (ChildCtrl, RegisterChild, RegisterDynamicChild), actions  (no_std)
+bloxide-supervisor  Supervisor blox (reference consumer): SupervisorSpec topology + concrete_spec test fixture; control types and actions live in bloxide-child-management  (no_std)
 bloxide-peers       Peer introduction: PeerCtrl, AddPeer, RemovePeer, introduce_peers, apply_peer_control, broadcast_to_peers  (no_std)
 blox-ctx-ping-pong   Messaging helpers: send_ping, send_pong, send_initial_ping, schedule_resume  (no_std)
 bloxide-embassy     Embassy runtime: channels, tasks, timer bridge            (no_std)
@@ -253,7 +253,7 @@ Located in `runtimes/bloxide-test-runtime/src/lib.rs`. Provides:
 
 ### VirtualClock
 
-Located in `bloxide-timer/src/test_utils.rs`. Provides:
+Located in `bloxide-timer/src/test_utils.rs` (`#[cfg(test)]`-gated, crate-internal — other crates replicate the pattern in their own tests rather than importing it). Provides:
 - Manual time advancement
 - Fires timers when duration elapsed
 - No native timer needed

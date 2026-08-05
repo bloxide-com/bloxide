@@ -17,11 +17,19 @@ fn blox_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_cargo-blox"))
 }
 
-/// Minimal valid blox.toml (no topology → no diagnostics; codegen emits no
-/// files but still counts the manifest).
+/// Minimal valid blox.toml (no topology → no diagnostics). The `[[messages]]`
+/// section makes codegen emit one file: manifests that produce no files at
+/// all (e.g. bloxide-core's `[mailboxes]`-only blox.toml, consumed by its
+/// build.rs) are skipped by generate and would not exercise discovery.
 const BLOX_FIXTURE: &str = "\
 [actor]
 name = \"Foo\"
+
+[[messages]]
+name = \"FooMsg\"
+
+[[messages.variants]]
+name = \"Ping\"
 ";
 
 /// Writes a fixture workspace with a blox.toml at the standard layout depth

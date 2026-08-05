@@ -7,9 +7,10 @@ on:
   pull_request:
     paths:
       - ".github/**"
+      - "apps/**"
       - "crates/**"
       - "runtimes/**"
-      - "examples/**"
+      - "spec/**"
       - "tools/**"
       - "Cargo.toml"
       - "Cargo.lock"

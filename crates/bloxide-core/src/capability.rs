@@ -236,11 +236,12 @@ mod tests {
     /// actors per system; dynamic IDs start at the base.
     ///
     /// The compile-fail side of the wiring-macro guard (an expansion baking
-    /// an ID ≥ 256 fails the const assert) is not testable in-tree:
-    /// `trybuild` is not a dependency and proc-macro counter state cannot be
-    /// forced to the limit from a unit test. The pass side is covered by
-    /// every workspace build — all existing `channels!` / `dyn_channels!` /
-    /// `next_actor_id!` expansions carry the guard and compile.
+    /// an ID ≥ 256 fails the const assert) is covered by the `trybuild` UI
+    /// test `tests/ui/next_actor_id_overflow.rs`: the proc-macro counter
+    /// starts at 1 per compilation, so 256 expansion sites in one crate drive
+    /// it past the limit. The pass side is covered by every workspace build —
+    /// all existing `channels!` / `dyn_channels!` / `next_actor_id!`
+    /// expansions carry the guard and compile.
     #[test]
     fn dynamic_actor_id_base_caps_static_space_at_255() {
         assert_eq!(DYNAMIC_ACTOR_ID_BASE, 256);

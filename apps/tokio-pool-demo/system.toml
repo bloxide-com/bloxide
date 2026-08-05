@@ -29,14 +29,6 @@ features = ["dynamic"]
   message = "PoolMsg::SpawnWorker"
   payload = { task_id = 2 }
 
-[[supervision]]
-supervisor = "bloxide-supervisor"
-strategy = "when_all_done"
-children = ["pool"]
-
-  [supervision.policies]
-  pool = { stop = true }
-
 # Worker is kind = "dynamic" — spawned at runtime by the pool via factory
 # injection. It gets a concrete spec generated at the system level, but no
 # channels/task/bootstrap in main.rs. The impl crate (tokio_pool_demo_impl)
@@ -49,3 +41,11 @@ name = "worker"
 blox = "worker-blox"
 impl_crate = "tokio_pool_demo_impl"
 kind = "dynamic"
+
+[[supervision]]
+supervisor = "bloxide-supervisor"
+strategy = "when_all_done"
+children = ["pool"]
+
+  [supervision.policies]
+  pool = { stop = true }

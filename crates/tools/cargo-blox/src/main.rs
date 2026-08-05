@@ -212,6 +212,9 @@ enum BloxSubcommand {
         target: String,
         #[arg(long)]
         action: Vec<String>,
+        /// Guard rule 'condition:target'; the target must be a declared state
+        /// or stay/reset/stop/done/fail. Split is on the LAST ':' — do not
+        /// put ':' inside string literals in the condition.
         #[arg(long)]
         guard: Vec<String>,
         #[arg(long)]
@@ -226,6 +229,9 @@ enum BloxSubcommand {
         state: String,
         #[arg(long)]
         event: String,
+        /// Target only the variant gated on this feature
+        #[arg(long)]
+        feature: Option<String>,
     },
     /// Add an entry hook to a blox state
     AddEntry {
@@ -530,7 +536,8 @@ fn dispatch() -> anyhow::Result<()> {
                 blox_name,
                 state,
                 event,
-            } => transition_cmd::remove_transition(&blox_name, &state, &event),
+                feature,
+            } => transition_cmd::remove_transition(&blox_name, &state, &event, feature.as_deref()),
             BloxSubcommand::AddEntry {
                 blox_name,
                 state,

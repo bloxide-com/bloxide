@@ -14,4 +14,6 @@ std = ["bloxide-core/std"]
 [dependencies]
 bloxide-core = { workspace = true }
 bhsm-tst-messages = { workspace = true }
+
+[dev-dependencies]
 blox-ctx-noop = { workspace = true }

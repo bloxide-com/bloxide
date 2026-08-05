@@ -2,7 +2,7 @@
 
 > **When would I use this?** Use this document when implementing timer
 > patterns, understanding how capabilities flow through the action layer, or
-> working with `TestRuntime` and `VirtualClock` for deterministic testing.
+> working with `TestRuntime` and a virtual clock for deterministic testing.
 > For the two-tier trait system overview, see `00-layered-architecture.md`.
 
 The capability system is how Bloxide exposes runtime effects (timers, I/O, storage,
@@ -260,10 +260,12 @@ feature) and provides:
   `drain_killed()` / `kill_count()`. The `Kill` adapter in `bloxide-spawn`
   reports `CAN_KILL = true` for this runtime.
 
-Timer testing is not built into `TestRuntime` itself, but `bloxide-timer`
-provides a reusable std-only helper: `bloxide_timer::test_utils::VirtualClock`.
-It owns the timer command receiver, drains pending `TimerCommand`s into a
-`TimerQueue`, and fires ready callbacks when time advances. This keeps timer
+Timer testing is not built into `TestRuntime` itself. The reference pattern is
+`bloxide-timer`'s `VirtualClock` (`crates/bloxide-timer/src/test_utils.rs`):
+it owns the timer command receiver, drains pending `TimerCommand`s into a
+`TimerQueue`, and fires ready callbacks when time advances. `VirtualClock` is
+`#[cfg(test)]`-gated and crate-internal — other crates cannot import it, so
+blox tests replicate the same few lines inline (shown below). This keeps timer
 simulation deterministic without requiring any executor or creating a circular
 dependency from `bloxide-core` back to `bloxide-timer`.
 
@@ -272,7 +274,7 @@ dependency from `bloxide-core` back to `bloxide-timer`.
 ```rust
 use bloxide_core::DynamicChannelCap;
 use bloxide_test_runtime::TestRuntime;
-use bloxide_timer::{test_utils::VirtualClock, TimerCommand};
+use bloxide_timer::{TimerCommand, TimerQueue};
 
 #[test]
 fn paused_state_resumes_after_timeout() {
@@ -292,10 +294,18 @@ fn paused_state_resumes_after_timeout() {
     machine.dispatch(PingEvent::Lifecycle(LifecycleCommand::Start));
     // ... drive rounds until Paused ...
 
-    // Manually advance the virtual clock past the scheduled resume
-    // (schedule_resume computes 2000 + round × 500 ms from the round).
-    let mut clock = VirtualClock::new(timer_rx);
-    clock.advance(2000 + PAUSE_AT_ROUND as u64 * 500);
+    // Drive a virtual clock (mirrors bloxide-timer's crate-internal
+    // VirtualClock): drain pending TimerCommands into a TimerQueue, advance
+    // a manual clock past the scheduled resume (schedule_resume computes
+    // 2000 + round × 500 ms from the round), and fire ready callbacks.
+    let mut queue = TimerQueue::new();
+    for cmd in timer_rx.drain_payloads() {
+        queue.handle_command(cmd, 0);
+    }
+    let now_ms = 2000 + PAUSE_AT_ROUND as u64 * 500;
+    for deliver in queue.drain_expired(now_ms) {
+        deliver();
+    }
 
     // Resume should now be in the mailbox
     let msgs = to_ping_rx.drain_payloads();

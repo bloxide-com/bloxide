@@ -65,7 +65,7 @@ spec/
     counter.md                       ← spec for the Counter blox
     pool.md                          ← spec for the Pool blox
     worker.md                        ← spec for the Worker blox
-    bhsm.md                          ← spec for the Miro Samek HSM test blox
+    bhsm-tst.md                      ← spec for the Miro Samek HSM test blox
     (supervisor is documented in architecture/07-supervision.md)
 ```
 
@@ -99,7 +99,7 @@ spec/
 | Read the Counter spec | [bloxes/counter.md](bloxes/counter.md) |
 | Read the Pool spec | [bloxes/pool.md](bloxes/pool.md) |
 | Read the Worker spec | [bloxes/worker.md](bloxes/worker.md) |
-| Read the BHSM test spec | [bloxes/bhsm.md](bloxes/bhsm.md) |
+| Read the BHSM test spec | [bloxes/bhsm-tst.md](bloxes/bhsm-tst.md) |
 | Read the Supervisor spec | [architecture/07-supervision.md](architecture/07-supervision.md) |
 
 ## Creating a New Blox
@@ -107,7 +107,7 @@ spec/
 1. Copy `spec/templates/blox-spec.md` → `spec/bloxes/<your-blox-name>.md`
 2. Fill in every section (delete the instructional blockquotes as you go)
 3. Get the spec reviewed before creating any Rust code
-4. Create crates under `crates/`: `crates/bloxes/<your-blox-name>/`, and when needed `crates/messages/<your-blox-name>-messages/`, `crates/context/blox-ctx-<name>/` (action functions), and an impl crate such as `crates/impl/<name>/` consumed by the wiring binary
+4. Create crates under `crates/`: `crates/bloxes/<your-blox-name>/`, and when needed `crates/messages/<your-blox-name>-messages/`, `crates/context/blox-ctx-<name>/` (action functions), and — only for runtime-specific behavior such as spawn factories — an impl crate such as `crates/impl/<name>-impl/` consumed by the wiring binary
 5. Write unit tests in the blox crate using `TestRuntime`, one test per acceptance criterion
 6. Implement `MachineSpec` to make the tests pass
 7. Add wiring in the application crate

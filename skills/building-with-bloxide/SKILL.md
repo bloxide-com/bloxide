@@ -345,7 +345,7 @@ let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_r
 let ping_machine = StateMachine::new(ping_ctx);
 
 // Supervised spawning
-let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone);
+let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone, 2);
 bloxide_tokio::spawn_static_child!(
     group,
     ping_task(ping_machine, ping_mbox, ping_id),

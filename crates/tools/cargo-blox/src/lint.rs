@@ -11,7 +11,8 @@
 //! - transition `state` / `target` / guard `target` / entry / exit / parent
 //!   referencing undeclared states (`state = "root"` is the VirtualRoot
 //!   keyword, not a state reference; no user state may be named `root`)
-//! - duplicate state names and duplicate transitions (same state + event)
+//! - duplicate state names and duplicate transitions (same state + event +
+//!   feature gate — feature-gated variants of a transition are distinct)
 //! - duplicate `[[context.actions]]` names, duplicate `[[context.fields]]`
 //!   names, and duplicate `[[context.uses]]` field names
 //! - action `returns` values other than "ActionResult" (anything else is a
@@ -268,13 +269,19 @@ fn lint_topology(
             &state_names,
             diags,
         );
-        if !transition_keys.insert((t.state.clone(), t.event.clone())) {
+        if !transition_keys.insert((t.state.clone(), t.event.clone(), t.feature.clone())) {
             diags.push(Diagnostic::error(
                 path,
-                format!(
-                    "duplicate transition in state \"{}\" for event pattern `{}`",
-                    t.state, t.event
-                ),
+                match &t.feature {
+                    Some(feat) => format!(
+                        "duplicate transition in state \"{}\" for event pattern `{}` (feature \"{}\")",
+                        t.state, t.event, feat
+                    ),
+                    None => format!(
+                        "duplicate transition in state \"{}\" for event pattern `{}`",
+                        t.state, t.event
+                    ),
+                },
             ));
         }
         check_event_pattern(path, &t.event, &event_variants, message_enums, diags);

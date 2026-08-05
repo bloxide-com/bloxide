@@ -195,7 +195,14 @@ mod tests {
     fn action_result_from_conversions() {
         // Transition action fns may return ActionResult, Result<(), E>, or ();
         // the codegen wrapper normalizes all three via ActionResult::from.
-        assert_eq!(ActionResult::from(ActionResult::Err), ActionResult::Err);
+        // The ActionResult → ActionResult case goes through a generic helper:
+        // a direct `ActionResult::from(ActionResult)` trips
+        // clippy::useless_conversion, even though the codegen wrapper relies
+        // on exactly that blanket identity `From<T> for T` impl.
+        fn normalize<T: Into<ActionResult>>(v: T) -> ActionResult {
+            v.into()
+        }
+        assert_eq!(normalize(ActionResult::Err), ActionResult::Err);
         assert_eq!(
             ActionResult::from(Ok::<(), &'static str>(())),
             ActionResult::Ok

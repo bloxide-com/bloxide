@@ -53,6 +53,13 @@ pub fn report_outcome<S, R>(
         // The engine normalizes Started(error-state) to Failed at the source
         // (see StateMachine::started_or_failed), so a plain Started is always
         // a healthy start here.
+        //
+        // Note: `Started(MachineState::Init)` (and `Transition(MachineState::Init)`)
+        // is permitted by the types but never produced by the engine — every
+        // code path that yields `Started`/`Transition` has just entered a
+        // concrete user state (`started_or_failed` and `apply_guard` both
+        // wrap `MachineState::State(..)`). Any such value therefore falls
+        // through to the wildcard arm below and is silently ignored.
         DispatchOutcome::Started(MachineState::State(_)) => {
             send(ChildLifecycleEvent::Started { child_id: actor_id });
         }

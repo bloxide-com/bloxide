@@ -9,13 +9,16 @@ name = "Supervisor"
 [context]
 name = "SupervisorCtx"
 generics = "<R: BloxRuntime>"
-on_init = "ctx.children.clear_counters(); ctx.pending = ChildAction::default();"
+# No `on_init`: Reset skips Init entirely (engine goes straight to
+# initial_state), and Running's on_entry (start_children) clears the child
+# counters on every entry — initial Start, re-Start after Stop, and Reset
+# alike — so Init-entry cleanup can never observe stale counters.
 
 # Explicit imports — only non-framework crates. Framework types (ActorId,
 # ActorRef, BloxRuntime) are auto-detected by the codegen from field types.
 imports = [
     "bloxide_core::lifecycle::ChildLifecycleEvent",
-    "bloxide_child_management::{ChildAction, ChildGroup}",
+    "bloxide_child_management::ChildGroup",
 ]
 
 # Extra impl blocks emitted after the struct. {ctx} is replaced with the
@@ -31,13 +34,13 @@ extra_impls = [
 # `flush_pending` is the first action on nearly every transition: commands
 # lost to a full channel are retried on every event pass (confirm-before-
 # record), and a Closed channel observed while flushing marks the child Gone
-# — which can itself complete a shutdown.
+# — terminal evidence the guards read directly from the child group.
 
 [[context.actions]]
 name = "start_children"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["self_id", "children:mut", "pending:mut"]
+fields = ["self_id", "children:mut"]
 returns = "ActionResult"
 
 [[context.actions]]
@@ -51,14 +54,14 @@ returns = "ActionResult"
 name = "flush_pending"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["self_id", "children:mut", "pending:mut"]
+fields = ["self_id", "children:mut"]
 returns = "ActionResult"
 
 [[context.actions]]
 name = "handle_done_or_failed"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["self_id", "children:mut", "child_notify:ref", "pending:mut"]
+fields = ["self_id", "children:mut", "child_notify:ref"]
 event_payload = "ev"
 returns = "ActionResult"
 
@@ -90,7 +93,7 @@ returns = "ActionResult"
 name = "record_aborted"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["self_id", "children:mut", "pending:mut"]
+fields = ["self_id", "children:mut"]
 event_payload = "ev"
 returns = "ActionResult"
 
@@ -98,7 +101,7 @@ returns = "ActionResult"
 name = "record_killed"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["self_id", "children:mut", "pending:mut"]
+fields = ["self_id", "children:mut"]
 event_payload = "ev"
 returns = "ActionResult"
 
@@ -114,7 +117,7 @@ returns = "ActionResult"
 name = "deregister_done"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["self_id", "children:mut", "pending:mut"]
+fields = ["self_id", "children:mut"]
 event_payload = "ev"
 returns = "ActionResult"
 
@@ -138,7 +141,7 @@ returns = "ActionResult"
 name = "handle_watchdog_tick"
 crate = "bloxide_child_management"
 module = "actions"
-fields = ["self_id", "children:mut", "child_notify:ref", "pending:mut"]
+fields = ["self_id", "children:mut", "child_notify:ref"]
 event_payload = "ctrl"
 returns = "ActionResult"
 
@@ -152,11 +155,18 @@ generics = "<R: BloxRuntime>"
 variant = "Child"
 message = "ChildLifecycleEvent"
 message_path = "bloxide_core::lifecycle::ChildLifecycleEvent"
+# Full variant set of the message enum. Lets the codegen omit a state's
+# `SupervisorEvent::Child(_)` catch-all when the state's specific rules
+# already cover every variant (unreachable dead code); the catch-alls stay
+# declared below so a newly added variant automatically re-enables them in
+# states that lack a matching rule.
+variants = ["Started", "Failed", "Stopped", "Done", "Aborted", "Killed", "Alive"]
 
 [[event.mailboxes]]
 variant = "Control"
 message = "ChildCtrl"
 message_path = "bloxide_child_management::control::ChildCtrl<R>"
+variants = ["RegisterChild", "RegisterDynamicChild", "WatchdogTick"]
 
 # ── Context fields (via composable context crates) ──────────────────────────
 
@@ -172,30 +182,24 @@ field = "child_notify"
 field_type = "ActorRef<ChildLifecycleEvent, R>"
 role = "ctor"
 
-# pending: ChildAction — state field
-[[context.uses]]
-fields = [
-    { name = "pending", ty = "ChildAction", role = "state" },
-]
-
 # ── Topology ─────────────────────────────────────────────────────────────────
 # 2 states, fully declarative — no handler_fns.
 
 [topology]
-spec_imports = [
-    "bloxide_child_management::ChildAction",
-]
 
 # Running state — lifecycle handling
 #
 # Shutdown guard chain (ordered): if the group is already fully terminal after
 # the action ran — all children Stopped/Aborted/Killed/Gone, or empty after
 # Done-deregistration — there is nothing left to stop and the supervisor
-# self-stops immediately ("stop"). Otherwise, when the trigger fired
-# (pending == BeginShutdown), it enters ShuttingDown to stop the remaining
-# live children. The direct-stop path is what makes Done-of-last-child and
-# all-task-gone cases complete instead of wedging in an event-less
-# ShuttingDown.
+# self-stops immediately ("stop"). Otherwise, when the group's shutdown
+# condition holds (ctx.children.should_begin_shutdown()), it enters
+# ShuttingDown to stop the remaining live children. The guard reads the child
+# group directly, so terminal evidence recorded by ANY action on the pass —
+# including a Closed channel observed by flush_pending — is seen and can never
+# be overwritten by a later action. The direct-stop path is what makes
+# Done-of-last-child and all-task-gone cases complete instead of wedging in
+# an event-less ShuttingDown.
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Stopped { .. }))"
@@ -207,7 +211,7 @@ condition = "ctx.all_children_stopped()"
 target = "stop"
 
 [[topology.transitions.guards]]
-condition = "ctx.pending == ChildAction::BeginShutdown"
+condition = "ctx.children.should_begin_shutdown()"
 target = "ShuttingDown"
 
 [[topology.transitions]]
@@ -221,7 +225,7 @@ condition = "ctx.all_children_stopped()"
 target = "stop"
 
 [[topology.transitions.guards]]
-condition = "ctx.pending == ChildAction::BeginShutdown"
+condition = "ctx.children.should_begin_shutdown()"
 target = "ShuttingDown"
 
 [[topology.transitions]]
@@ -229,6 +233,17 @@ state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Started { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::record_started"]
+
+# flush_pending may have observed a Closed channel (child Gone) on this very
+# pass — the guard chain must see that terminal evidence immediately; it
+# cannot wait for a later event.
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.children.should_begin_shutdown()"
+target = "ShuttingDown"
 
 [[topology.transitions]]
 state = "Running"
@@ -241,7 +256,7 @@ condition = "ctx.all_children_stopped()"
 target = "stop"
 
 [[topology.transitions.guards]]
-condition = "ctx.pending == ChildAction::BeginShutdown"
+condition = "ctx.children.should_begin_shutdown()"
 target = "ShuttingDown"
 
 [[topology.transitions]]
@@ -255,7 +270,7 @@ condition = "ctx.all_children_stopped()"
 target = "stop"
 
 [[topology.transitions.guards]]
-condition = "ctx.pending == ChildAction::BeginShutdown"
+condition = "ctx.children.should_begin_shutdown()"
 target = "ShuttingDown"
 
 [[topology.transitions]]
@@ -263,6 +278,14 @@ state = "Running"
 event = "SupervisorEvent::Child(Envelope(_, ChildLifecycleEvent::Alive { .. }))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::record_alive"]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.children.should_begin_shutdown()"
+target = "ShuttingDown"
 
 [[topology.transitions]]
 state = "Running"
@@ -275,7 +298,7 @@ condition = "ctx.all_children_stopped()"
 target = "stop"
 
 [[topology.transitions.guards]]
-condition = "ctx.pending == ChildAction::BeginShutdown"
+condition = "ctx.children.should_begin_shutdown()"
 target = "ShuttingDown"
 
 [[topology.transitions]]
@@ -284,11 +307,27 @@ event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterChild(_)))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::register_child"]
 
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.children.should_begin_shutdown()"
+target = "ShuttingDown"
+
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Control(Envelope(_, ChildCtrl::RegisterDynamicChild(_)))"
 target = "stay"
 actions = ["Self::flush_pending", "Self::handle_register_dynamic_child"]
+
+[[topology.transitions.guards]]
+condition = "ctx.all_children_stopped()"
+target = "stop"
+
+[[topology.transitions.guards]]
+condition = "ctx.children.should_begin_shutdown()"
+target = "ShuttingDown"
 
 [[topology.transitions]]
 state = "Running"
@@ -301,10 +340,14 @@ condition = "ctx.all_children_stopped()"
 target = "stop"
 
 [[topology.transitions.guards]]
-condition = "ctx.pending == ChildAction::BeginShutdown"
+condition = "ctx.children.should_begin_shutdown()"
 target = "ShuttingDown"
 
-# Running state — catch-alls
+# Running state — catch-alls. Declared for robustness, but OMITTED from the
+# generated spec: the rules above cover every declared ChildLifecycleEvent
+# and ChildCtrl variant, so these share the event_tag of the specific rules,
+# are evaluated last, and can never match. The codegen reinstates them
+# automatically if coverage ever becomes partial (e.g. a new variant).
 [[topology.transitions]]
 state = "Running"
 event = "SupervisorEvent::Child(_)"
@@ -383,7 +426,9 @@ actions = ["Self::flush_pending"]
 condition = "ctx.all_children_stopped()"
 target = "stop"
 
-# ShuttingDown state — catch-alls (Started/Alive/registrations are absorbed)
+# ShuttingDown state — catch-alls (Started/Alive/registrations are absorbed).
+# Coverage here is partial (no Started/Alive Child rules, no registration
+# Control rules), so the codegen keeps these in the emitted spec.
 [[topology.transitions]]
 state = "ShuttingDown"
 event = "SupervisorEvent::Child(_)"

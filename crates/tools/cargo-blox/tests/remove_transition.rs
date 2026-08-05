@@ -265,3 +265,160 @@ fn blox_not_found() {
         run_remove_transition(&dir, "nonexistent", "Idle", "TestMsg::Ping(_)");
     assert!(!success, "command should fail for missing blox");
 }
+
+// ---------------------------------------------------------------------------
+// Test 6/7: Feature-gated variants — `--feature` targets exactly one of two
+// transitions sharing a (state, event) pair.
+// ---------------------------------------------------------------------------
+
+/// Fixture with two transitions on the same (state, event) pair: one
+/// non-gated, one gated on `feature = "dynamic"`.
+const FIXTURE_GATED_PAIR: &str = "\
+[actor]
+name = \"Test\"
+
+[[messages]]
+name = \"TestMsg\"
+visibility = \"pub\"
+copy = true
+
+[[messages.variants]]
+name = \"Ping\"
+
+[[messages.variants.fields]]
+name = \"round\"
+ty = \"u32\"
+
+[topology]
+
+[[topology.states]]
+name = \"Idle\"
+initial = true
+
+[[topology.states]]
+name = \"Active\"
+
+[[topology.transitions]]
+state = \"Idle\"
+event = \"TestMsg::Ping(_)\"
+target = \"Active\"
+
+[[topology.transitions]]
+state = \"Idle\"
+event = \"TestMsg::Ping(_)\"
+target = \"stay\"
+feature = \"dynamic\"
+";
+
+/// Like `run_remove_transition`, with an optional `--feature` argument.
+fn run_remove_transition_feature(
+    dir: &TempDir,
+    blox_name: &str,
+    state: &str,
+    event: &str,
+    feature: Option<&str>,
+) -> (String, String, bool) {
+    let mut cmd = Command::new(blox_bin());
+    cmd.current_dir(dir.path());
+    cmd.arg("blox")
+        .arg("remove-transition")
+        .arg(blox_name)
+        .arg("--state")
+        .arg(state)
+        .arg("--event")
+        .arg(event);
+    if let Some(feat) = feature {
+        cmd.arg("--feature").arg(feat);
+    }
+    let output = cmd.output().expect("spawn cargo-blox");
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    let success = output.status.success();
+    (stdout, stderr, success)
+}
+
+/// (state, event, feature) triples of the transitions in the read-back TOML.
+fn gated_keys(doc: &toml::Value) -> Vec<(String, String, Option<String>)> {
+    transitions_array(doc)
+        .expect("transitions array exists")
+        .iter()
+        .map(|t| {
+            let tbl = t.as_table().expect("transition is table");
+            (
+                tbl["state"].as_str().expect("state").to_string(),
+                tbl["event"].as_str().expect("event").to_string(),
+                tbl.get("feature")
+                    .and_then(|f| f.as_str())
+                    .map(str::to_string),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn remove_feature_gated_variant_leaves_non_gated() {
+    let dir = write_fixture("testblox", FIXTURE_GATED_PAIR);
+    let (stdout, _stderr, success) = run_remove_transition_feature(
+        &dir,
+        "testblox",
+        "Idle",
+        "TestMsg::Ping(_)",
+        Some("dynamic"),
+    );
+    assert!(success, "command should succeed");
+    assert!(
+        stdout
+            .contains("Removed transition Idle + TestMsg::Ping(_) (feature dynamic) from testblox"),
+        "stdout should mention the feature gate: {stdout}"
+    );
+
+    let doc = read_back_toml(&dir, "testblox");
+    assert_eq!(
+        gated_keys(&doc),
+        vec![("Idle".to_string(), "TestMsg::Ping(_)".to_string(), None)],
+        "only the non-gated transition should remain"
+    );
+}
+
+#[test]
+fn remove_without_feature_leaves_gated_variant() {
+    let dir = write_fixture("testblox", FIXTURE_GATED_PAIR);
+    let (_stdout, _stderr, success) =
+        run_remove_transition_feature(&dir, "testblox", "Idle", "TestMsg::Ping(_)", None);
+    assert!(success, "command should succeed");
+
+    let doc = read_back_toml(&dir, "testblox");
+    assert_eq!(
+        gated_keys(&doc),
+        vec![(
+            "Idle".to_string(),
+            "TestMsg::Ping(_)".to_string(),
+            Some("dynamic".to_string())
+        )],
+        "only the feature-gated transition should remain"
+    );
+}
+
+#[test]
+fn remove_missing_feature_variant_fails() {
+    let dir = write_fixture("testblox", FIXTURE_GATED_PAIR);
+    let (_stdout, stderr, success) = run_remove_transition_feature(
+        &dir,
+        "testblox",
+        "Idle",
+        "TestMsg::Ping(_)",
+        Some("nonexistent-feature"),
+    );
+    assert!(
+        !success,
+        "command should fail for a missing feature variant"
+    );
+    assert!(
+        stderr.contains("not found"),
+        "stderr should mention not found: {stderr}"
+    );
+
+    // Both transitions untouched.
+    let doc = read_back_toml(&dir, "testblox");
+    assert_eq!(gated_keys(&doc).len(), 2, "nothing should be removed");
+}

@@ -1,3 +1,7 @@
 # Copyright 2025 Bloxide, all rights reserved
+# Consumed by bloxide-core's `build.rs` (not `cargo blox generate`): the
+# `[mailboxes]` section drives build-time generation of the tuple mailbox
+# impls (`impl Mailboxes<E>` for tuples of arity 1..=max_arity) into
+# `$OUT_DIR/mailboxes_impls.rs`, included from `src/lib.rs`.
 [mailboxes]
 max_arity = 16
