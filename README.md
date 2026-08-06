@@ -13,6 +13,7 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 ## Features
 
 - **Hierarchical state machines** — composite states, event bubbling, entry/exit callbacks, run-to-completion dispatch
+- **Declare, don't wire** — state topology, transitions, and actor wiring are declared in `blox.toml` / `system.toml`; `cargo blox` generates the crates, channels, tasks, and `main()`. You write TOML plus plain action functions, never boilerplate
 - **Runtime-agnostic actors** — blox code depends only on `bloxide-core`; never imports a runtime
 - **Built-in supervision** — reusable OTP-inspired `SupervisorSpec<R>` and `bloxide-supervisor` primitives manage child actor lifecycle out of the box
 - **Tokio + Embassy runtimes** — `bloxide-tokio` and `bloxide-embassy` (`no_std`) ship ready to use; each provides async channels, supervision, and timer services wired to its executor
@@ -31,44 +32,65 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 
 ## Quick look
 
-A blox implements `MachineSpec` to define states, transitions, and context. At startup the runtime creates channels, builds `StateMachine` instances, and spawns tasks. Here is a trimmed view of the Tokio demo wiring two supervised ping-pong actors:
+You never hand-write actor wiring. You declare the state machine in `blox.toml`, write plain action functions, and wire actors in `system.toml` — `cargo blox` generates everything else.
 
-```rust
-// Create typed channels for each actor
-let ((ping_ref,), ping_mbox) = bloxide_tokio::channels! { PingPongMsg(16) };
-let ((pong_ref,), pong_mbox) = bloxide_tokio::channels! { PingPongMsg(16) };
-let ping_id = ping_ref.id();
-let pong_id = pong_ref.id();
+**1. Declare the state machine** (`bloxes/counter/blox.toml`):
 
-// Build state machines — PingSpec and PongSpec are runtime-agnostic MachineSpec impls
-let ping_ctx = PingCtx::new(ping_id, pong_ref.clone(), ping_ref.clone(), timer_ref);
-let pong_ctx = PongCtx::new(pong_id, ping_ref.clone());
-let ping_machine = StateMachine::new(ping_ctx);
-let pong_machine = StateMachine::new(pong_ctx);
+```toml
+[[topology.states]]
+name = "Ready"
+initial = true
 
-// Define task wrappers (typically in a prelude or near main)
-bloxide_tokio::actor_task_supervised!(ping_task, PingSpec<TokioRuntime>);
-bloxide_tokio::actor_task_supervised!(pong_task, PongSpec<TokioRuntime>);
-bloxide_tokio::root_task!(supervisor_task, SupervisorSpec<TokioRuntime>);
+# On every Tick: run count_tick, then let guards decide the target
+[[topology.transitions]]
+state = "Ready"
+event = "CounterMsg::Tick(_)"
+target = "stay"
+actions = ["Self::count_tick"]
 
-// Supervise both actors
-let mut group = ChildGroupBuilder::new(GroupShutdown::WhenAnyDone, 2);
-let sup_notify_ref = group.notify_ref();
-bloxide_tokio::spawn_static_child!(group, ping_task(ping_machine, ping_mbox, ping_id), ChildPolicy::Stop);
-bloxide_tokio::spawn_static_child!(group, pong_task(pong_machine, pong_mbox, pong_id), ChildPolicy::Stop);
+[[topology.transitions.guards]]
+condition = "ctx.count >= DONE_AT_COUNT"
+target = "done"
 
-// Build and start the supervisor
-let (children, sup_notify_rx, sup_control_rx) = group.finish();
-let sup_id = bloxide_tokio::next_actor_id!();
-let sup_ctx = SupervisorCtx::new(sup_id, children, sup_notify_ref);
-let mut sup_machine = StateMachine::<SupervisorSpec<TokioRuntime>>::new(sup_ctx);
-sup_machine.dispatch(SupervisorEvent::Lifecycle(LifecycleCommand::Start));
-
-// Run until shutdown
-supervisor_task(sup_machine, (sup_notify_rx, sup_control_rx)).await;
+[[topology.transitions.guards]]
+condition = "_"
+target = "stay"
 ```
 
-The blox crates (`PingSpec`, `PongSpec`) are generic over `R: BloxRuntime` — the same code runs on Embassy by swapping `TokioRuntime` for `EmbassyRuntime`.
+**2. Write the action logic** — plain Rust free functions in a context crate; concrete params, no framework traits in the signature:
+
+```rust
+// crates/context/blox-ctx-ticks/src/lib.rs
+pub fn increment_count(count: &mut u32) -> ActionResult {
+    *count += 1;
+    ActionResult::Ok
+}
+```
+
+**3. Wire the system** (`examples/tokio-minimal-demo/system.toml`):
+
+```toml
+[system]
+runtime = "tokio"
+name = "tokio-minimal-demo"
+
+[[actors]]
+name = "counter"
+blox = "counter-blox"
+
+[[supervision]]
+supervisor = "bloxide-supervisor"
+strategy = "when_any_done"
+children = ["counter"]
+```
+
+**4. Generate and run:**
+
+```bash
+cargo blox run --example tokio-minimal-demo
+```
+
+`cargo blox generate` materializes the channels, `StateMachine` construction, task spawning, supervisor wiring, and `main()` into `target/bloxide-generated/` — generated code you never edit. Each generated crate re-syncs from its TOML source on every build, so plain `cargo` commands work there too. The generated blox crates are generic over `R: BloxRuntime`; the same blox runs on Embassy by setting `runtime = "embassy"` in `system.toml`.
 
 **Key insight:** Lifecycle commands (Start/Reset/Stop) flow through `dispatch()`, not through direct `start()` calls. Supervised actors wait for `LifecycleCommand::Start` from the supervisor before entering their initial operational state.
 
@@ -89,7 +111,7 @@ bloxide/
 │   ├── bloxide-spawn/     # spawn capability: SpawnCap, SpawnFn, SpawnOutput, ChildCtrlRegistrar, spawn_dynamic_child
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer / cancel_timer_by_id
 │   ├── messages/          # shared message crates (ping-pong, pool, counter, bhsm-tst)
-│   ├── context/           # composable context crates (blox-ctx-ping-pong, -pool-ref, -rounds, -ticks)
+│   ├── context/           # composable context crates (blox-ctx-noop, -ping-pong, -pool-ref, -rounds, -ticks)
 │   ├── impl/              # concrete behavior/factory crates for wiring demos (tokio-pool-demo-impl)
 │   └── tools/             # codegen and CLI tools
 │       ├── bloxide-codegen/ # TOML-driven code generator library
@@ -160,11 +182,11 @@ RUST_LOG=trace cargo blox run --example embassy-demo
 
 ## Building with `cargo blox`
 
-Bloxide uses `cargo blox` for code generation. After defining schemas in `blox.toml` files:
+Bloxide uses `cargo blox` for code generation. After declaring actors in `blox.toml` and wiring in `system.toml`:
 
 ```bash
 cargo install --path crates/tools/cargo-blox
-cargo blox generate   # regenerate all boilerplate from blox.toml specs
+cargo blox generate   # regenerate all boilerplate from blox.toml / system.toml sources
 cargo blox build      # generate + cargo build
 cargo blox check      # generate + cargo check
 cargo blox test       # generate + cargo test
