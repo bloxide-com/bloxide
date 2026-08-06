@@ -1,29 +1,38 @@
 # Copyright 2025 Bloxide, all rights reserved
 [package]
 name = "tokio-pool-demo-impl"
-version.workspace = true
-edition.workspace = true
+version = "0.0.3"
+edition = "2021"
 description = "Concrete worker factory for the Tokio pool demo"
 publish = false
-license.workspace = true
+license = "MIT"
+
+# This crate is NOT a root-workspace member (root Cargo.toml `exclude`): it
+# path-depends into target/bloxide-generated/, which only exists after
+# `cargo blox generate`, and the root workspace must load before that. Cargo
+# forbids membership in the generated workspace too (members must be
+# hierarchically below the workspace root), so it builds as a path dependency
+# of the generated example crates and `cargo blox test` runs its tests via
+# --manifest-path. Not being in any workspace, it cannot use
+# `workspace = true` inheritance — versions and paths are explicit.
 
 [dependencies]
-bloxide-core = { workspace = true, features = ["std"] }
-bloxide-child-management = { workspace = true, features = ["std"] }
-bloxide-spawn = { workspace = true, features = ["std"] }
-bloxide-peers = { workspace = true }
-bloxide-tokio = { workspace = true }
-blox-ctx-pool-ref = { workspace = true }
-pool-messages = { workspace = true }
-worker-blox = { workspace = true, features = ["std"] }
+bloxide-core = { path = "../../bloxide-core", features = ["std"] }
+bloxide-child-management = { path = "../../bloxide-child-management", features = ["std"] }
+bloxide-spawn = { path = "../../bloxide-spawn", features = ["std"] }
+bloxide-peers = { path = "../../bloxide-peers" }
+bloxide-tokio = { path = "../../../runtimes/bloxide-tokio" }
+blox-ctx-pool-ref = { path = "../../context/blox-ctx-pool-ref" }
+pool-messages = { path = "../../messages/pool-messages" }
+worker-blox = { path = "../../../target/bloxide-generated/crates/worker-blox", features = ["std"] }
 
 [features]
 dynamic = []
 
 [dev-dependencies]
-bloxide-core = { workspace = true, features = ["std"] }
-bloxide-child-management = { workspace = true, features = ["std"] }
-bloxide-tokio = { workspace = true }
-pool-blox = { workspace = true, features = ["std", "dynamic"] }
-pool-messages = { workspace = true }
-tokio = { workspace = true }
+bloxide-core = { path = "../../bloxide-core", features = ["std"] }
+bloxide-child-management = { path = "../../bloxide-child-management", features = ["std"] }
+bloxide-tokio = { path = "../../../runtimes/bloxide-tokio" }
+pool-blox = { path = "../../../target/bloxide-generated/crates/pool-blox", features = ["std", "dynamic"] }
+pool-messages = { path = "../../messages/pool-messages" }
+tokio = { version = "1", features = ["full"] }

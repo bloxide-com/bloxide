@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-Today, the wiring binary (e.g., `apps/tokio-demo/src/main.rs`) is hand-written Rust that knows:
+Today, the wiring binary (e.g., `target/bloxide-generated/examples/tokio-demo/src/main.rs`) is hand-written Rust that knows:
 1. Which channels to create
 2. Which actors to construct
 3. Which `ActorRef`s to pass to which constructor
@@ -147,8 +147,8 @@ composes the domain build with the platform spawn
 for a plain function that assembles `SpawnOutput` directly it emits a path expression
 with a cast (`::my_impl_crate::my_factory as _`). See
 `crates/tools/bloxide-codegen/src/system_wiring/emit.rs` and the real example in
-`apps/tokio-pool-demo/system.toml`. The codegen also adds a `bloxide-spawn` dependency
-to the generated app's `Cargo.toml` when a factory injection exists (the emitted
+`examples/tokio-pool-demo/system.toml`. The codegen also adds a `bloxide-spawn` dependency
+to the materialized example crate's `Cargo.toml` when a factory injection exists (the emitted
 closure names `::bloxide_spawn::spawn_actor_task`).
 
 ### What the codegen produces from the wiring manifest
@@ -162,7 +162,7 @@ A wiring binary `main.rs` that:
 5. **Starts the supervisor** — dispatches `LifecycleCommand::Start`
 
 ```rust
-// Generated main.rs (sketch — see apps/tokio-pool-demo/src/main.rs for real output)
+// Generated main.rs (sketch — see target/bloxide-generated/examples/tokio-pool-demo/src/main.rs for real output)
 #[tokio::main]
 async fn main() {
     // Create channels
@@ -249,7 +249,7 @@ added **after** the machines exist. So `ChildGroupBuilder` is used in two phases
 The generated `main` body is ordered accordingly:
 
 ```rust
-// Generated main (simplified — real output: apps/tokio-pool-demo/src/main.rs)
+// Generated main (simplified — real output: target/bloxide-generated/examples/tokio-pool-demo/src/main.rs)
 #(#channel_stmts)*              // 1. Create channels for all actors
 #(#supervisor_setup_stmts)*     // 2. Builder + control_ref + notify_ref (symbol table)
 #(#ctx_stmts)*                  // 3. PoolCtx injects supervisor refs from symbol table

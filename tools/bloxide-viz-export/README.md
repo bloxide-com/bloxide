@@ -28,7 +28,7 @@ Output goes to `./bloxide-viz-output/` by default (or `[output-dir]` if provided
    - State topology (states, composite/parent attributes, initial/error flags)
    - `[[topology.transitions]]` entries (events, targets, actions, guards)
    - Event/message definitions and context fields
-3. **Parses** each `system.toml` (application wiring manifest, e.g. `apps/tokio-demo/system.toml`) into a system spec whose `wiring` field carries the actor graph:
+3. **Parses** each `system.toml` (application wiring manifest, e.g. `examples/tokio-demo/system.toml`) into a system spec whose `wiring` field carries the actor graph:
    - `actors` — actor instances and their blox crates
    - `connections` — channel connections (from/to actor, message type, capacity)
    - `supervisors` — supervision strategy and children

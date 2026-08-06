@@ -1,0 +1,65 @@
+# Copyright 2025 Bloxide, all rights reserved
+[actor]
+name = "Pong"
+
+# Crate packaging for the materialized crate
+# (target/bloxide-generated/crates/pong-blox). Dependencies are derived from
+# the message paths / context imports / action crates below; only features
+# and dev-dependencies need declaring here.
+[package]
+description = "Pong actor blox — runtime-agnostic"
+
+[package.features]
+default = ["std"]
+std = ["bloxide-core/std"]
+
+# Dev-dependencies of the integration tests in tests/ (integration tests do
+# not see the crate's regular dependencies — declare everything they import).
+[package.dev-dependencies]
+bloxide-core = { features = ["std"] }
+ping-pong-messages = {}
+bloxide-test-runtime = {}
+
+[context]
+name = "PongCtx"
+generics = "<R: BloxRuntime>"
+imports = [
+    "ping_pong_messages::PingPongMsg",
+]
+
+# Accessor traits removed — fields are now plain struct fields.
+[[context.uses]]
+field = "peer_ref"
+field_type = "ActorRef<PingPongMsg, R>"
+role = "ctor"
+
+# --- Action declarations (Phase 3 system codegen) ---
+
+[[context.actions]]
+name = "reply_pong_action"
+fn_name = "send_pong"
+crate = "blox_ctx_ping_pong"
+fields = ["self_id", "peer_ref:ref"]
+event_payload = "ping"
+impl_required = false
+returns = "ActionResult"
+
+[event]
+name = "PongEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PingPongMsg"
+message_path = "ping_pong_messages::PingPongMsg"
+
+[topology]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+[[topology.transitions]]
+state = "Ready"
+event = "PingPongMsg::Ping(_)"
+target = "stay"
+actions = ["Self::reply_pong_action"]

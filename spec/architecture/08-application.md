@@ -8,14 +8,15 @@ the concrete specs. See
 [14-declarative-wiring.md](14-declarative-wiring.md) and
 [15-blox-toml-source-of-truth.md](15-blox-toml-source-of-truth.md).
 
-The canonical examples are the demo apps: `apps/tokio-demo/`,
-`apps/tokio-minimal-demo/`, `apps/tokio-pool-demo/`, `apps/embassy-demo/` —
-each has a `system.toml` plus generated `src/main.rs`.
+The canonical examples are the demo apps: `examples/tokio-demo/`,
+`examples/tokio-minimal-demo/`, `examples/tokio-pool-demo/`, `examples/embassy-demo/` —
+each holds only a `system.toml`; the crate with the generated `src/main.rs` is
+materialized under `target/bloxide-generated/examples/`.
 
 ## system.toml Drives Everything
 
 ```toml
-# apps/tokio-demo/system.toml (abridged)
+# examples/tokio-demo/system.toml (abridged)
 [system]
 runtime = "tokio"
 name = "tokio-demo"
@@ -56,7 +57,7 @@ flow through `dispatch()` and are intercepted at the VirtualRoot level
 supervisor itself at boot:
 
 ```rust
-// From apps/tokio-demo/src/main.rs (generated)
+// From target/bloxide-generated/examples/tokio-demo/src/main.rs (generated)
 let mut sup_machine = ::bloxide_core::StateMachine::<
     crate::generated::bloxide_supervisor_spec_skeleton::SupervisorSpec<TokioRuntime>,
 >::new(sup_ctx);

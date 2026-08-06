@@ -67,11 +67,11 @@ condition = \"ctx.round > 5\"
 target = \"Done\"
 ";
 
-/// Writes a fixture to `<temp>/crates/bloxes/<blox_name>/blox.toml` and returns
+/// Writes a fixture to `<temp>/bloxes/<blox_name>/blox.toml` and returns
 /// the temp dir (kept alive for the duration of the test).
 fn write_fixture(blox_name: &str, content: &str) -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
-    let blox_dir = dir.path().join("crates/bloxes").join(blox_name);
+    let blox_dir = dir.path().join("bloxes").join(blox_name);
     fs::create_dir_all(&blox_dir).expect("create blox dir");
     fs::write(blox_dir.join("blox.toml"), content).expect("write blox.toml");
     dir
@@ -103,11 +103,7 @@ fn run_remove_transition(
 
 /// Reads back the blox.toml from the temp dir and parses it as a `toml::Value`.
 fn read_back_toml(dir: &TempDir, blox_name: &str) -> toml::Value {
-    let path = dir
-        .path()
-        .join("crates/bloxes")
-        .join(blox_name)
-        .join("blox.toml");
+    let path = dir.path().join("bloxes").join(blox_name).join("blox.toml");
     let content = fs::read_to_string(&path).expect("read blox.toml back");
     toml::from_str(&content).expect("parse blox.toml back")
 }
@@ -122,11 +118,7 @@ fn transitions_array(doc: &toml::Value) -> Option<&Vec<toml::Value>> {
 
 /// Returns the raw text of the blox.toml in the temp dir (for substring checks).
 fn read_back_text(dir: &TempDir, blox_name: &str) -> String {
-    let path = dir
-        .path()
-        .join("crates/bloxes")
-        .join(blox_name)
-        .join("blox.toml");
+    let path = dir.path().join("bloxes").join(blox_name).join("blox.toml");
     fs::read_to_string(&path).expect("read blox.toml back")
 }
 

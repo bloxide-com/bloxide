@@ -11,6 +11,64 @@ pub struct BloxConfig {
     pub topology: Option<TopologyConfig>,
     pub context: Option<ContextConfig>,
     pub mailboxes: Option<MailboxesConfig>,
+    /// Crate packaging for pure-TOML bloxes (blox.toml-only sources under
+    /// `bloxes/`): features, extra dependencies, and dev-dependencies for the
+    /// crate materialized into `target/bloxide-generated/crates/<name>`.
+    /// Ignored for in-crate blox.toml files (stdlib crates with their own
+    /// hand-written Cargo.toml).
+    #[serde(default)]
+    pub package: Option<PackageConfig>,
+    /// Crate-root constants emitted into the generated lib.rs (referenced by
+    /// guards via `spec_imports` entries like `crate::MAX_ROUNDS`).
+    #[serde(default)]
+    pub consts: Vec<ConstConfig>,
+}
+
+/// A `[package]` table — packaging metadata for a materialized blox crate.
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(deny_unknown_fields)]
+pub struct PackageConfig {
+    /// Crate description: emitted as the Cargo.toml `description` and the
+    /// lib.rs `//!` doc line.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Cargo features (`[features]` table): feature name → list of feature
+    /// strings (e.g. `std = ["bloxide-core/std", "bloxide-timer/std"]`).
+    #[serde(default)]
+    pub features: BTreeMap<String, Vec<String>>,
+    /// Extra dependencies not derivable from the blox.toml sections
+    /// (message paths, context imports, spec imports, action crates).
+    /// Resolved as path dependencies via the workspace root's
+    /// `[workspace.dependencies]` table.
+    #[serde(default)]
+    pub dependencies: BTreeMap<String, DepSpec>,
+    /// Dev-dependencies for the crate's integration tests (the blox's
+    /// `tests/` directory). Resolved as path dependencies the same way.
+    #[serde(default, rename = "dev-dependencies")]
+    pub dev_dependencies: BTreeMap<String, DepSpec>,
+}
+
+/// A dependency spec in `[package.dependencies]` / `[package.dev-dependencies]`.
+#[derive(Debug, Deserialize, Clone, Default)]
+#[serde(deny_unknown_fields)]
+pub struct DepSpec {
+    /// Features to enable on the dependency.
+    #[serde(default)]
+    pub features: Vec<String>,
+}
+
+/// A `[[consts]]` entry — a crate-root constant in the generated lib.rs.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct ConstConfig {
+    pub name: String,
+    pub ty: String,
+    /// Literal value, emitted verbatim (e.g. `"5"`, `"2"`).
+    pub value: String,
+    /// Optional doc comment emitted above the const (one line; emitted as
+    /// `/// ...`).
+    #[serde(default)]
+    pub doc: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

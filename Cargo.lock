@@ -68,15 +68,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
-name = "bhsm-tst-blox"
-version = "0.0.3"
-dependencies = [
- "bhsm-tst-messages",
- "blox-ctx-noop",
- "bloxide-core",
-]
-
-[[package]]
 name = "bhsm-tst-messages"
 version = "0.0.3"
 
@@ -135,27 +126,21 @@ dependencies = [
 name = "bloxide"
 version = "0.0.3"
 dependencies = [
- "bhsm-tst-blox",
  "bhsm-tst-messages",
  "bloxide-core",
  "bloxide-embassy",
  "bloxide-log",
  "bloxide-timer",
  "bloxide-tokio",
- "counter-blox",
  "counter-messages",
  "critical-section",
  "embassy-executor",
  "embassy-sync",
  "embassy-time",
- "ping-blox",
  "ping-pong-messages",
- "pong-blox",
- "pool-blox",
  "pool-messages",
  "static_cell",
  "tokio",
- "tokio-pool-demo-impl",
  "tracing",
  "tracing-log",
  "tracing-subscriber",
@@ -460,15 +445,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "counter-blox"
-version = "0.0.3"
-dependencies = [
- "blox-ctx-ticks",
- "bloxide-core",
- "counter-messages",
-]
-
-[[package]]
 name = "counter-messages"
 version = "0.0.3"
 
@@ -575,30 +551,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
-]
-
-[[package]]
-name = "embassy-demo"
-version = "0.0.3"
-dependencies = [
- "blox-ctx-ping-pong",
- "blox-ctx-rounds",
- "bloxide-child-management",
- "bloxide-core",
- "bloxide-embassy",
- "bloxide-log",
- "bloxide-supervisor",
- "bloxide-timer",
- "critical-section",
- "embassy-executor",
- "embassy-sync",
- "embassy-time",
- "ping-blox",
- "ping-pong-messages",
- "pong-blox",
- "static_cell",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1092,40 +1044,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
-name = "ping-blox"
-version = "0.0.3"
-dependencies = [
- "bloxide-core",
- "bloxide-test-runtime",
- "bloxide-timer",
- "ping-pong-messages",
-]
-
-[[package]]
 name = "ping-pong-messages"
 version = "0.0.3"
-
-[[package]]
-name = "pong-blox"
-version = "0.0.3"
-dependencies = [
- "bloxide-core",
- "bloxide-test-runtime",
- "ping-pong-messages",
-]
-
-[[package]]
-name = "pool-blox"
-version = "0.0.3"
-dependencies = [
- "blox-ctx-pool-ref",
- "bloxide-child-management",
- "bloxide-core",
- "bloxide-peers",
- "bloxide-spawn",
- "bloxide-test-runtime",
- "pool-messages",
-]
 
 [[package]]
 name = "pool-messages"
@@ -1470,27 +1390,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio-demo"
-version = "0.0.3"
-dependencies = [
- "blox-ctx-ping-pong",
- "blox-ctx-rounds",
- "bloxide-child-management",
- "bloxide-core",
- "bloxide-log",
- "bloxide-supervisor",
- "bloxide-timer",
- "bloxide-tokio",
- "ping-blox",
- "ping-pong-messages",
- "pong-blox",
- "tokio",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "tokio-macros"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1499,62 +1398,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "tokio-minimal-demo"
-version = "0.0.3"
-dependencies = [
- "blox-ctx-ticks",
- "bloxide-child-management",
- "bloxide-core",
- "bloxide-log",
- "bloxide-supervisor",
- "bloxide-tokio",
- "counter-blox",
- "counter-messages",
- "tokio",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "tokio-pool-demo"
-version = "0.0.3"
-dependencies = [
- "blox-ctx-pool-ref",
- "bloxide-child-management",
- "bloxide-core",
- "bloxide-log",
- "bloxide-peers",
- "bloxide-spawn",
- "bloxide-supervisor",
- "bloxide-tokio",
- "pool-blox",
- "pool-messages",
- "tokio",
- "tokio-pool-demo-impl",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "worker-blox",
-]
-
-[[package]]
-name = "tokio-pool-demo-impl"
-version = "0.0.3"
-dependencies = [
- "blox-ctx-pool-ref",
- "bloxide-child-management",
- "bloxide-core",
- "bloxide-peers",
- "bloxide-spawn",
- "bloxide-tokio",
- "pool-blox",
- "pool-messages",
- "tokio",
- "worker-blox",
 ]
 
 [[package]]
@@ -1872,16 +1715,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b97319f7b8343df12cc98938e5c3eb436064524c8d2b4e30a1d3a36eecdf81"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "worker-blox"
-version = "0.0.3"
-dependencies = [
- "bloxide-core",
- "bloxide-peers",
- "bloxide-test-runtime",
- "pool-messages",
 ]
 
 [[package]]

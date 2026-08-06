@@ -35,10 +35,10 @@ fn blox_bin() -> PathBuf {
 
 #[test]
 fn extract_finds_inline_workspace_paths() {
-    let md = "The blox lives in `crates/bloxes/ping/` and the app in `apps/tokio-demo`.";
+    let md = "The blox lives in `crates/bloxes/ping/` and the example in `examples/tokio-demo`.";
     let refs = lint::extract_doc_refs(md);
     let spans: Vec<&str> = refs.iter().map(|(_, s)| s.as_str()).collect();
-    assert_eq!(spans, vec!["crates/bloxes/ping/", "apps/tokio-demo"]);
+    assert_eq!(spans, vec!["crates/bloxes/ping/", "examples/tokio-demo"]);
     assert_eq!(refs[0].0, 1, "1-based line number");
 }
 
@@ -76,8 +76,8 @@ fn normalize_strips_suffixes() {
         Some("crates/bloxes/ping/blox.toml".to_string())
     );
     assert_eq!(
-        lint::normalize_doc_path("apps/tokio-demo#main"),
-        Some("apps/tokio-demo".to_string())
+        lint::normalize_doc_path("examples/tokio-demo#main"),
+        Some("examples/tokio-demo".to_string())
     );
     assert_eq!(
         lint::normalize_doc_path("crates/blox-ctx-ping-pong/"),
@@ -99,7 +99,7 @@ name = \"Foo\"
 ";
 
 /// Writes a lint fixture workspace: `[workspace]` Cargo.toml +
-/// `crates/bloxes/foo/blox.toml`. Returns the temp dir.
+/// `bloxes/foo/blox.toml`. Returns the temp dir.
 fn write_lint_fixture() -> TempDir {
     write_lint_fixture_with(BLOX_FIXTURE)
 }
@@ -109,7 +109,7 @@ fn write_lint_fixture_with(blox_toml: &str) -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
     fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = []\n")
         .expect("write workspace Cargo.toml");
-    let blox_dir = dir.path().join("crates/bloxes/foo");
+    let blox_dir = dir.path().join("bloxes/foo");
     fs::create_dir_all(&blox_dir).expect("create blox dir");
     fs::write(blox_dir.join("blox.toml"), blox_toml).expect("write blox.toml");
     dir
@@ -168,8 +168,8 @@ fn warns_on_dead_doc_references_only() {
         &dir,
         "spec/architecture/notes.md",
         "# Notes\n\nSee `crates/blox-ctx-ping-pong/` for the context crate. \
-The blox lives in `crates/bloxes/foo/`.\n\n```rust\n// crates/fake/in-fence/ must not be flagged\n```\n\
-Placeholder `crates/bloxes/<name>/` and glob `runtimes/*/src/` must not be flagged.\n",
+The blox lives in `bloxes/foo/`.\n\n```rust\n// crates/fake/in-fence/ must not be flagged\n```\n\
+Placeholder `bloxes/<name>/` and glob `runtimes/*/src/` must not be flagged.\n",
     );
 
     let (stdout, _stderr, success) = run_lint(&dir);
@@ -187,7 +187,7 @@ Placeholder `crates/bloxes/<name>/` and glob `runtimes/*/src/` must not be flagg
         "placeholders and globs must not warn: {stdout}"
     );
     assert!(
-        !stdout.contains("`crates/bloxes/foo/` which does not exist"),
+        !stdout.contains("`bloxes/foo/` which does not exist"),
         "existing paths must not warn: {stdout}"
     );
 }
@@ -203,7 +203,7 @@ fn clean_workspace_has_no_warnings() {
     write_spec(
         &dir,
         "spec/architecture/notes.md",
-        "# Notes\n\nThe blox lives in `crates/bloxes/foo/`.\n",
+        "# Notes\n\nThe blox lives in `bloxes/foo/`.\n",
     );
 
     let (stdout, _stderr, success) = run_lint(&dir);

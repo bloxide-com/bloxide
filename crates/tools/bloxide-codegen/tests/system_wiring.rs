@@ -1,15 +1,13 @@
 // Copyright 2025 Bloxide, all rights reserved
-//! Integration tests for `generate_system_wiring_from_toml` and
-//! `generate_cargo_toml` (issue #130) — the two most complex functions in
-//! the codegen, previously with zero test coverage.
+//! Integration tests for `generate_system_wiring_from_toml` (issue #130).
 //!
-//! Strategy: run both against the REAL workspace manifests
-//! (`apps/*/system.toml`, workspace root `../../`) and assert structural
-//! properties of the generated main.rs / Cargo.toml — channel creation,
-//! supervisor setup, injection wiring, bootstrap, runtime selection,
-//! dynamic-actor handling, dependency resolution, and feature inference.
-//! The generated app `src/generated/` skeletons these functions write are
-//! gitignored, so the side effects are harmless.
+//! Strategy: run against the REAL workspace manifests
+//! (`examples/*/system.toml`, workspace root `../../`) and assert structural
+//! properties of the generated main.rs — channel creation, supervisor setup,
+//! injection wiring, bootstrap, runtime selection, and dynamic-actor
+//! handling. The function is pure (no file writes). Example-crate
+//! materialization (Cargo.toml, build.rs, src/generated/, tests/) is covered
+//! by `tests/example_crate.rs`.
 
 use std::path::PathBuf;
 
@@ -24,12 +22,6 @@ fn wiring(app: &str) -> String {
         .unwrap_or_else(|e| panic!("wiring generation failed for {}: {}", app, e))
 }
 
-fn cargo_toml(app: &str) -> String {
-    let system_path = workspace_root().join(app).join("system.toml");
-    bloxide_codegen::generate_cargo_toml(&system_path, &workspace_root())
-        .unwrap_or_else(|e| panic!("Cargo.toml generation failed for {}: {}", app, e))
-}
-
 fn assert_parses_rust(app: &str, code: &str) {
     syn::parse_str::<syn::File>(code)
         .unwrap_or_else(|e| panic!("generated main.rs for {} is not valid Rust: {}", app, e));
@@ -39,7 +31,7 @@ fn assert_parses_rust(app: &str, code: &str) {
 
 #[test]
 fn wiring_tokio_demo_parses_and_selects_tokio_runtime() {
-    let main_rs = wiring("apps/tokio-demo");
+    let main_rs = wiring("examples/tokio-demo");
     assert_parses_rust("tokio-demo", &main_rs);
     assert!(
         main_rs.contains("bloxide_tokio") || main_rs.contains("TokioRuntime"),
@@ -53,7 +45,7 @@ fn wiring_tokio_demo_parses_and_selects_tokio_runtime() {
 
 #[test]
 fn wiring_tokio_demo_creates_channels_and_supervisor() {
-    let main_rs = wiring("apps/tokio-demo");
+    let main_rs = wiring("examples/tokio-demo");
     assert!(
         main_rs.contains("bloxide_supervisor_spec_skeleton"),
         "should reference the generated supervisor spec"
@@ -70,7 +62,7 @@ fn wiring_tokio_demo_creates_channels_and_supervisor() {
 
 #[test]
 fn wiring_tokio_demo_wires_peer_injection() {
-    let main_rs = wiring("apps/tokio-demo");
+    let main_rs = wiring("examples/tokio-demo");
     // ping's peer_ref comes from pong (and vice versa): pong's channel ref is
     // cloned into PingCtx as a constructor argument (multi-line form), and
     // ping's ref goes into PongCtx (single-line form).
@@ -92,7 +84,7 @@ fn wiring_tokio_demo_wires_peer_injection() {
 
 #[test]
 fn wiring_minimal_demo_parses_and_builds_counter() {
-    let main_rs = wiring("apps/tokio-minimal-demo");
+    let main_rs = wiring("examples/tokio-minimal-demo");
     assert_parses_rust("tokio-minimal-demo", &main_rs);
     assert!(
         main_rs.contains("counter_spec_skeleton"),
@@ -108,7 +100,7 @@ fn wiring_minimal_demo_parses_and_builds_counter() {
 
 #[test]
 fn wiring_pool_demo_injects_spawn_factory() {
-    let main_rs = wiring("apps/tokio-pool-demo");
+    let main_rs = wiring("examples/tokio-pool-demo");
     assert_parses_rust("tokio-pool-demo", &main_rs);
     // The injected factory is the composition: domain build (impl crate)
     // + platform spawn (bloxide-spawn).
@@ -129,7 +121,7 @@ fn wiring_pool_demo_injects_spawn_factory() {
 
 #[test]
 fn wiring_pool_demo_dynamic_actor_gets_spec_but_no_static_task() {
-    let main_rs = wiring("apps/tokio-pool-demo");
+    let main_rs = wiring("examples/tokio-pool-demo");
     assert_parses_rust("tokio-pool-demo", &main_rs);
     // The dynamic worker gets a concrete spec at system level…
     assert!(
@@ -146,7 +138,7 @@ fn wiring_pool_demo_dynamic_actor_gets_spec_but_no_static_task() {
 
 #[test]
 fn wiring_pool_demo_multi_mailbox_actor() {
-    let main_rs = wiring("apps/tokio-pool-demo");
+    let main_rs = wiring("examples/tokio-pool-demo");
     // Pool has multiple mailboxes (domain + spawn-reply + peer control).
     // The channels! call should create more than one channel for the pool.
     assert!(
@@ -159,7 +151,7 @@ fn wiring_pool_demo_multi_mailbox_actor() {
 
 #[test]
 fn wiring_embassy_demo_selects_embassy_runtime() {
-    let main_rs = wiring("apps/embassy-demo");
+    let main_rs = wiring("examples/embassy-demo");
     assert_parses_rust("embassy-demo", &main_rs);
     assert!(
         main_rs.contains("bloxide_embassy") || main_rs.contains("embassy_executor"),
@@ -171,88 +163,10 @@ fn wiring_embassy_demo_selects_embassy_runtime() {
     );
 }
 
-// ── generate_cargo_toml: dependency resolution + features ──────────────────
-
-#[test]
-fn cargo_toml_tokio_demo_resolves_dependencies() {
-    let out = cargo_toml("apps/tokio-demo");
-    for dep in [
-        "bloxide-core",
-        "bloxide-tokio",
-        "tokio",
-        "ping-blox",
-        "pong-blox",
-        "ping-pong-messages",
-        "blox-ctx-ping-pong",
-        "bloxide-supervisor",
-        "bloxide-child-management",
-    ] {
-        assert!(
-            out.contains(dep),
-            "tokio-demo Cargo.toml missing dep {}",
-            dep
-        );
-    }
-    assert!(
-        out.contains("license.workspace = true"),
-        "app Cargo.toml must inherit the workspace license"
-    );
-}
-
-#[test]
-fn cargo_toml_pool_demo_infers_dynamic_feature() {
-    let out = cargo_toml("apps/tokio-pool-demo");
-    // Factory injection (source = "factory") must infer the `dynamic`
-    // feature on the affected deps.
-    assert!(
-        out.contains("pool-blox = { workspace = true, features = [\"dynamic\""),
-        "pool-blox should carry the inferred dynamic feature"
-    );
-    assert!(
-        out.contains("tokio-pool-demo-impl = { workspace = true, features = [\"dynamic\"] }"),
-        "impl crate should carry the inferred dynamic feature"
-    );
-    assert!(
-        out.contains("tokio-pool-demo-impl"),
-        "pool demo must depend on the impl crate (which wraps bloxide-spawn)"
-    );
-}
-
-#[test]
-fn cargo_toml_embassy_demo_uses_embassy_deps() {
-    let out = cargo_toml("apps/embassy-demo");
-    assert!(
-        out.contains("bloxide-embassy"),
-        "embassy-demo must depend on bloxide-embassy"
-    );
-    // Embassy crates are NOT workspace deps — they get inline version specs.
-    assert!(
-        out.contains("embassy-executor = { version ="),
-        "embassy-executor should be an inline version dep, got:\n{}",
-        out
-    );
-    assert!(
-        !out.contains("bloxide-tokio"),
-        "embassy-demo must not depend on bloxide-tokio"
-    );
-}
-
-#[test]
-fn cargo_toml_minimal_demo_discovers_message_crates() {
-    let out = cargo_toml("apps/tokio-minimal-demo");
-    for dep in ["counter-messages", "blox-ctx-ticks", "counter-blox"] {
-        assert!(
-            out.contains(dep),
-            "tokio-minimal-demo Cargo.toml missing dep {}",
-            dep
-        );
-    }
-}
-
 // ── supervision policy + capacities emission ───────────────────────────────
 
 fn tokio_demo_manifest() -> String {
-    let path = workspace_root().join("apps/tokio-demo/system.toml");
+    let path = workspace_root().join("examples/tokio-demo/system.toml");
     std::fs::read_to_string(path).expect("read tokio-demo manifest")
 }
 
@@ -351,9 +265,10 @@ fn wiring_emits_watchdog_driver_for_tokio() {
 
 #[test]
 fn wiring_emits_watchdog_driver_for_embassy() {
-    let manifest = std::fs::read_to_string(workspace_root().join("apps/embassy-demo/system.toml"))
-        .expect("read embassy-demo manifest")
-        + "\n  [supervision.watchdog]\n  interval_ms = 1000\n";
+    let manifest =
+        std::fs::read_to_string(workspace_root().join("examples/embassy-demo/system.toml"))
+            .expect("read embassy-demo manifest")
+            + "\n  [supervision.watchdog]\n  interval_ms = 1000\n";
     let main_rs = wiring_from_manifest(&manifest, "watchdog-embassy")
         .unwrap_or_else(|e| panic!("wiring failed: {}", e));
     assert_parses_rust("watchdog-embassy", &main_rs);

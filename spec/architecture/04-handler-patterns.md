@@ -371,7 +371,7 @@ actions = ["record_child_done"]
 Every `[[topology.transitions]]` entry requires `state`, `event`, and `target`.
 When `guards` are present, the transition-level `target` is the fallback arm
 (taken when no guard condition matches); a last guard with `condition = "_"` is
-an explicit wildcard fallback (see `crates/bloxes/counter/blox.toml`).
+an explicit wildcard fallback (see `bloxes/counter/blox.toml`).
 In guard conditions, `ctx` is `&Ctx` (read-only — direct field access, no mutation)
 and `results` is `&ActionResults`.
 In `actions = ["fn1", "fn2"]` lists, each function receives `(&mut Ctx, &Event)` and returns `ActionResult`.

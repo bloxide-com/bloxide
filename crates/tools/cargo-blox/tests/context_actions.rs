@@ -63,13 +63,13 @@ name = "Worker"
 name = "WorkerCtx"
 "#;
 
-/// Writes the fixture to `<temp>/crates/bloxes/<blox_name>/blox.toml` plus
+/// Writes the fixture to `<temp>/bloxes/<blox_name>/blox.toml` plus
 /// a workspace-root Cargo.toml, and returns the temp dir.
 fn write_fixture(blox_name: &str, content: &str) -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
     fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = []\n")
         .expect("write workspace Cargo.toml");
-    let blox_dir = dir.path().join("crates/bloxes").join(blox_name);
+    let blox_dir = dir.path().join("bloxes").join(blox_name);
     fs::create_dir_all(&blox_dir).expect("create blox dir");
     fs::write(blox_dir.join("blox.toml"), content).expect("write blox.toml");
     dir
@@ -77,11 +77,7 @@ fn write_fixture(blox_name: &str, content: &str) -> TempDir {
 
 /// Reads back the fixture blox.toml as a raw string.
 fn read_back(dir: &TempDir, blox_name: &str) -> String {
-    let path = dir
-        .path()
-        .join("crates/bloxes")
-        .join(blox_name)
-        .join("blox.toml");
+    let path = dir.path().join("bloxes").join(blox_name).join("blox.toml");
     fs::read_to_string(&path).expect("read blox.toml back")
 }
 

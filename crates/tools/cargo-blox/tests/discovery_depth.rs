@@ -34,17 +34,22 @@ name = \"Ping\"
 
 /// Writes a fixture workspace with a blox.toml at the standard layout depth
 /// and one nested one level deeper:
-///   Cargo.toml ([workspace])
-///   crates/bloxes/foo/blox.toml          (walkdir depth 4 — standard layout)
-///   crates/bloxes/nested/deep/blox.toml  (walkdir depth 5 — nested layout)
+///   Cargo.toml ([workspace] + [workspace.dependencies])
+///   bloxes/foo/blox.toml          (walkdir depth 3 — pure-TOML layout)
+///   crates/nested/deep/deeper/blox.toml  (walkdir depth 5 — nested in-crate layout)
 fn write_nested_fixture() -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
-    fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = []\n")
-        .expect("write workspace Cargo.toml");
-    let blox_dir = dir.path().join("crates/bloxes/foo");
+    // bloxes/foo is a pure-TOML source: the materializer resolves the
+    // derived bloxide-core dependency via [workspace.dependencies].
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[workspace]\nmembers = []\n\n[workspace.dependencies]\nbloxide-core = { path = \"crates/bloxide-core\" }\n",
+    )
+    .expect("write workspace Cargo.toml");
+    let blox_dir = dir.path().join("bloxes/foo");
     fs::create_dir_all(&blox_dir).expect("create blox dir");
     fs::write(blox_dir.join("blox.toml"), BLOX_FIXTURE).expect("write blox.toml");
-    let nested_dir = dir.path().join("crates/bloxes/nested/deep");
+    let nested_dir = dir.path().join("crates/nested/deep/deeper");
     fs::create_dir_all(&nested_dir).expect("create nested blox dir");
     fs::write(nested_dir.join("blox.toml"), BLOX_FIXTURE).expect("write nested blox.toml");
     dir
@@ -86,8 +91,14 @@ fn generate_and_lint_discover_the_same_blox_tomls() {
     );
     assert!(
         dir.path()
-            .join("crates/bloxes/nested/deep/src/generated/mod.rs")
+            .join("crates/nested/deep/deeper/src/generated/mod.rs")
             .exists(),
         "generate should have written src/generated for the nested crate"
+    );
+    assert!(
+        dir.path()
+            .join("target/bloxide-generated/crates/foo-blox/src/generated/mod.rs")
+            .exists(),
+        "generate should have materialized the pure-TOML blox crate"
     );
 }

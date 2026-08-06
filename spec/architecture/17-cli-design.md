@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-The `cargo-blox` CLI is the primary interface for creating, modifying, and inspecting blox topology and app wiring. It is used by both humans and AI agents. It covers four areas:
+The `cargo-blox` CLI is the primary interface for creating, modifying, and inspecting blox topology and example wiring. It is used by both humans and AI agents. It covers four areas:
 
 - **Codegen and cargo loops** — `generate`, `build`, `check`, `test`, `run`, `watch`.
 - **Scaffolding** — `new`, `new-messages`, `new-context`, `new-impl`, `new-binary`, `new-all`, `init`.
@@ -43,30 +43,32 @@ Research across actor frameworks (Erlang/OTP, Akka, XState, Boost.SML), CLI-driv
 
 | Command | Purpose |
 |---------|---------|
-| `cargo blox generate [--workspace <dir>]` | Lint, then regenerate all blox crates and app wiring |
-| `cargo blox build [cargo-args...]` | Generate + `cargo build` |
-| `cargo blox check [cargo-args...]` | Generate + `cargo check` |
-| `cargo blox test [cargo-args...]` | Generate + `cargo test` |
-| `cargo blox run [cargo-args...]` | Generate + `cargo run` |
+| `cargo blox generate [--workspace <dir>]` | Lint, then materialize the generated workspace (`target/bloxide-generated/`: blox crates + example crates) and emit `.vscode/settings.json` |
+| `cargo blox build [--example <name>] [cargo-args...]` | Generate + `cargo build` |
+| `cargo blox check [--example <name>] [cargo-args...]` | Generate + `cargo check` |
+| `cargo blox test [--example <name>] [cargo-args...]` | Generate + `cargo test` |
+| `cargo blox run --example <name> [-- args]` | Generate + `cargo run` an example crate |
 | `cargo blox watch` | Regenerate + `cargo check` on blox.toml/system.toml changes |
 
-`build` / `check` / `test` / `run` accept the standard cargo feature flags (`--features`, `--no-default-features`, `--all-features` via `clap_cargo::Features`) and forward any trailing arguments to cargo. `watch` accepts the cargo feature flags.
+`build` / `check` / `test` / `run` accept the standard cargo feature flags (`--features`, `--no-default-features`, `--all-features` via `clap_cargo::Features`) and forward any trailing arguments to cargo (for `run`, after `--` to the binary). `watch` accepts the cargo feature flags.
+
+**`--example` semantics.** Without `--example`, `build` / `check` / `test` cover **both** workspaces: the repo workspace (`cargo <cmd> --workspace` — feature flags and extra args apply here) and the generated workspace (`cargo <cmd> --workspace --manifest-path target/bloxide-generated/Cargo.toml`). With `--example <name>`, the command is scoped to that one materialized example crate (`cargo <cmd> -p <name>` in the generated workspace). `run` **requires** `--example` — examples are not repo workspace members; bare `cargo blox run` errors and lists the available examples. `embassy-demo` is host-runnable like any other example.
 
 #### Scaffolding
 
 | Command | Purpose |
 |---------|---------|
-| `cargo blox new <name> [--messages <crate>] [--context <crate>]` | Scaffold a blox crate + `spec/bloxes/<name>.md` |
+| `cargo blox new <name> [--messages <crate>] [--context <crate>]` | Scaffold a blox source (`bloxes/<name>/blox.toml`) + `spec/bloxes/<name>.md` |
 | `cargo blox new-messages <name>` | Scaffold a messages crate (`crates/messages/<name>-messages/`) |
 | `cargo blox new-context <name>` | Scaffold a context crate (`crates/context/blox-ctx-<name>/`) |
 | `cargo blox new-impl <name> --blox <blox>` | Scaffold an impl crate from the blox's `impl_required` actions |
-| `cargo blox new-binary <name> [--runtime <tokio\|embassy>]` | Scaffold an app: `apps/<name>/system.toml` (main.rs and Cargo.toml are generated) |
-| `cargo blox new-all <name> [--runtime <tokio\|embassy>]` | Scaffold all layers (messages, context, blox, impl, app), then generate |
+| `cargo blox new-binary <name> [--runtime <tokio\|embassy>]` | Scaffold an example: `examples/<name>/system.toml` (the crate itself is materialized by `generate`) |
+| `cargo blox new-all <name> [--runtime <tokio\|embassy>]` | Scaffold all layers (messages, context, blox, impl, example), then generate |
 | `cargo blox init <dir> [--runtime <tokio\|embassy>]` | Bootstrap a new bloxide workspace |
 
-All scaffolding commands register new crates in the workspace `Cargo.toml` (members + dependencies). `--runtime` defaults to `tokio`.
+Scaffolding for real crates (`new-messages`, `new-context`, `new-impl`) registers them in the workspace `Cargo.toml` (members + dependencies). `new` and `new-binary` register nothing — blox sources and example manifests are pure TOML; `cargo blox generate` materializes the corresponding crates into `target/bloxide-generated/`. `--runtime` defaults to `tokio`.
 
-#### Blox topology edits (`crates/bloxes/<blox>/blox.toml`)
+#### Blox topology edits (`bloxes/<blox>/blox.toml`)
 
 | Command | Purpose |
 |---------|---------|
@@ -86,7 +88,7 @@ All scaffolding commands register new crates in the workspace `Cargo.toml` (memb
 | `cargo blox add-message <crate> <variant> [name:ty ...]` | Add a message variant |
 | `cargo blox remove-message <crate> <variant>` | Remove a message variant |
 
-#### Context edits (`crates/bloxes/<blox>/blox.toml` `[context]` section)
+#### Context edits (`bloxes/<blox>/blox.toml` `[context]` section)
 
 | Command | Purpose |
 |---------|---------|
@@ -98,7 +100,7 @@ All scaffolding commands register new crates in the workspace `Cargo.toml` (memb
 | `cargo blox add-action <blox> --name <n> [--field <f>]... [--crate-name <c>] [--module <m>] [--fn-name <f>] [--event-payload <ty>] [--impl-required] [--returns ActionResult] [--feature <f>] [--if-not-exists]` | Add a `[[context.actions]]` entry |
 | `cargo blox remove-action <blox> --name <n>` | Remove a `[[context.actions]]` entry |
 
-#### System wiring edits (`apps/<app>/system.toml`)
+#### System wiring edits (`examples/<app>/system.toml`)
 
 | Command | Purpose |
 |---------|---------|
@@ -134,13 +136,19 @@ All scaffolding commands register new crates in the workspace `Cargo.toml` (memb
 
 Runs lint first (issues #114/#122): invalid TOML fails fast with friendly diagnostics instead of surfacing as codegen errors or Rust compile errors downstream.
 
-Then, for every `blox.toml` in the workspace (walk skipping `target/`):
+Then, for every `blox.toml` in the workspace (walk skipping `target/`), one of two source kinds applies:
 
-1. Runs `bloxide_codegen::generate_from_toml` and writes the files into the crate's `src/generated/`.
-2. Each generated file is formatted individually with `rustfmt --edition 2021` (best effort — an unavailable or failing rustfmt leaves the content unformatted). There is deliberately **no** workspace-wide `cargo fmt`, which would also rewrite hand-written files.
-3. Files are written **only when their content changed** — re-running `generate` with no changes prints no `generated ...` lines and preserves mtimes for cargo caching. `src/generated/mod.rs` is owned by the CLI (single writer) and lists exactly the files generated this run.
+1. **Pure-TOML bloxes** (`bloxes/<name>/blox.toml`) — materializes a complete crate at `target/bloxide-generated/crates/<crate-name>-blox/` (Cargo.toml, build.rs, src/lib.rs, `src/generated/`, tests/). The generated `build.rs` re-syncs the crate from the source blox.toml at build time, so plain cargo commands work inside `target/bloxide-generated/` after a single `generate`.
+2. **In-crate bloxes** (stdlib crates with a hand-written Cargo.toml, e.g. bloxide-supervisor) — regenerates the crate's `src/generated/` in place.
 
-Then, for every `system.toml` in the workspace, it regenerates the app's `src/main.rs` (system wiring) and `Cargo.toml` (dependencies), with the same write-only-if-changed behavior.
+Formatting and write behavior (both kinds):
+
+- Each generated file is formatted individually with `rustfmt --edition 2021` (best effort — an unavailable or failing rustfmt leaves the content unformatted). There is deliberately **no** workspace-wide `cargo fmt`, which would also rewrite hand-written files.
+- Files are written **only when their content changed** — re-running `generate` with no changes prints no `generated ...` lines and preserves mtimes for cargo caching. `src/generated/mod.rs` is owned by the CLI (single writer) and lists exactly the files generated this run.
+
+Then, for every `system.toml` in the workspace, it materializes the example crate at `target/bloxide-generated/examples/<name>/` (Cargo.toml, build.rs, `src/main.rs` from the system wiring, tests/), with the same write-only-if-changed behavior, and (re)writes the generated workspace root manifest listing all materialized members.
+
+Finally, it emits a gitignored `.vscode/settings.json` declaring `rust-analyzer.linkedProjects` for both the repo manifest and `target/bloxide-generated/Cargo.toml` (rust-analyzer only auto-discovers the root manifest; existing unrelated settings are preserved).
 
 `--workspace <dir>` overrides root discovery; by default the root is found by walking up from `CARGO_MANIFEST_DIR`.
 
@@ -150,13 +158,13 @@ Watches the workspace recursively (ignoring `target/`) for `blox.toml` and `syst
 
 #### Scaffolding commands
 
-- **`new <name>`** — creates `crates/bloxes/<name>/` (Cargo.toml, src, blox.toml) and a spec skeleton `spec/bloxes/<name>.md` from `spec/templates/blox-spec.md`. `--messages` / `--context` wire the named dependency crates into the new blox crate.
+- **`new <name>`** — creates the pure-TOML blox source `bloxes/<name>/blox.toml` (nothing else — no Cargo.toml, no src/, no workspace registration; `cargo blox generate` materializes the crate into `target/bloxide-generated/crates/<name>-blox/`) and a spec skeleton `spec/bloxes/<name>.md` from `spec/templates/blox-spec.md`. `--messages` / `--context` wire the named dependency crates into the new blox.
 - **`new-messages <name>`** — creates `crates/messages/<name>-messages/` with a stub `XxxMsg` enum in blox.toml.
 - **`new-context <name>`** — creates `crates/context/blox-ctx-<name>/` (free action functions, `#![no_std]`, no traits).
 - **`new-impl <name> --blox <blox>`** — reads the blox's blox.toml, finds `[[context.actions]]` entries with `impl_required = true`, and creates `crates/impl/<name>/` with matching function stubs. Missing blox.toml → exit 3.
-- **`new-binary <name>`** — writes only `apps/<name>/system.toml`; the app's `Cargo.toml` and `src/main.rs` are generated by `cargo blox generate` (system.toml is the single source of truth for wiring).
-- **`new-all <name>`** — runs the five scaffolds in order (messages → context → blox → impl → binary), then `generate`.
-- **`init <dir>`** — creates a fresh workspace: directory layout (`crates/{messages,context,bloxes,impl}`, `apps`, `spec/...`), a root Cargo.toml with path dependencies on the bloxide checkout this CLI runs from, the blox-spec template, the `building-with-bloxide` skill, an `AGENTS.md`, and a runnable hello-world `counter` app (via the `new-all` code path). An existing non-empty target directory → exit 5 (conflict).
+- **`new-binary <name>`** — writes only `examples/<name>/system.toml`; the example's crate (`target/bloxide-generated/examples/<name>/` — Cargo.toml, build.rs, src/main.rs) is materialized by `cargo blox generate` (system.toml is the single source of truth for wiring).
+- **`new-all <name>`** — runs the five scaffolds in order (messages → context → blox → impl → example), then `generate`.
+- **`init <dir>`** — creates a fresh workspace: directory layout (`crates/{messages,context,impl}`, `examples`, `spec/...`), a root Cargo.toml with path dependencies on the bloxide checkout this CLI runs from, the blox-spec template, the `building-with-bloxide` skill, an `AGENTS.md`, and a runnable hello-world `counter` example (via the `new-all` code path). An existing non-empty target directory → exit 5 (conflict).
 
 #### `cargo blox add-state` / `remove-state`
 
@@ -327,7 +335,7 @@ All three add commands support `--if-not-exists` (exit 0 silently on duplicate).
 
 #### System commands
 
-The system commands edit `apps/<app>/system.toml`. A missing system.toml → exit 3. On success each prints a reminder to run `cargo blox generate` (which regenerates main.rs and Cargo.toml).
+The system commands edit `examples/<app>/system.toml`. A missing system.toml → exit 3. On success each prints a reminder to run `cargo blox generate` (which re-materializes the example crate).
 
 - **`add-actor <app> --name <n> --blox <crate>`** — appends an `[[actors]]` entry with `name`, `blox`, optional `impl_crate`, optional `kind`, and `--feature` (repeatable, stored as a string array). Duplicate actor name → exit 5 unless `--if-not-exists`.
 - **`remove-actor <app> --name <n>`** — removes the actor and cleans dangling references: the name is dropped from every supervision group's `children` list and from `[supervision.policies]`. Actor not found → exit 3.
@@ -383,7 +391,7 @@ pong        1       1            3
 ]
 ```
 
-`messages` counts the total variants across the `crates/messages/*` crates referenced by the blox's `[[event.mailboxes]]` `message_path` entries (message enums live in dedicated messages crates, not in the blox's own blox.toml); each messages crate is counted at most once. Note: unlike the other commands, the `crates/bloxes/` scan (and the `crates/messages/` lookup) is relative to the current directory — run `list-bloxes` from the workspace root.
+`messages` counts the total variants across the `crates/messages/*` crates referenced by the blox's `[[event.mailboxes]]` `message_path` entries (message enums live in dedicated messages crates, not in the blox's own blox.toml); each messages crate is counted at most once. Note: unlike the other commands, the `bloxes/` scan (and the `crates/messages/` lookup) is relative to the current directory — run `list-bloxes` from the workspace root.
 
 #### `cargo blox list-states <blox>`
 
@@ -509,7 +517,7 @@ Round-trip verification: parse and codegen every blox.toml in the workspace, viz
 
 #### `cargo blox wire`
 
-Generates a main.rs from a single system.toml manifest: `--system` (default `<workspace>/system.toml`), `--output` (default `<system dir>/src/main.rs`), `--run` to also run the generated binary crate via `cargo run -p`. Missing system.toml → exit 3. (`cargo blox generate` already regenerates wiring for every system.toml in the workspace; `wire` is the single-manifest form.)
+Materializes the example crate for a single system.toml manifest into `target/bloxide-generated/examples/<name>/`: `--system` (default `<workspace>/system.toml`), `--run` to also run the materialized example. Missing system.toml → exit 3. (`cargo blox generate` already materializes wiring for every system.toml in the workspace; `wire` is the single-manifest form.)
 
 #### `cargo blox viz`
 
@@ -569,9 +577,9 @@ Errors print to stderr as `Error: <message>`; confirmations and all `list-*` out
 
 ### Workspace Root Resolution
 
-Commands resolve their paths from the **workspace root**, not the current directory: `toml_helpers` walks up from the current directory to the first `Cargo.toml` containing a `[workspace]` section (`find_workspace_root`), falling back to the current directory outside a workspace. All `blox.toml` / `system.toml` paths are built from that root (`crates/bloxes/<name>/blox.toml`, `crates/messages/<name>/blox.toml`, `apps/<name>/system.toml`), so the `add-*` / `remove-*` / `list-states` / `list-transitions` / `list-messages` commands work from any subdirectory.
+Commands resolve their paths from the **workspace root**, not the current directory: `toml_helpers` walks up from the current directory to the first `Cargo.toml` containing a `[workspace]` section (`find_workspace_root`), falling back to the current directory outside a workspace. All `blox.toml` / `system.toml` paths are built from that root (`bloxes/<name>/blox.toml`, plus `crates/messages/<name>/blox.toml` and `examples/<name>/system.toml`), so the `add-*` / `remove-*` / `list-states` / `list-transitions` / `list-messages` commands work from any subdirectory.
 
-`generate`, `verify`, and `viz` anchor differently: they start from `CARGO_MANIFEST_DIR` and likewise walk up to the workspace root (overridable with `--workspace` on `generate` / `verify`). `wire`, `watch`, and the `new-*` scaffolding commands resolve the workspace root from the current directory; `wire` defaults `--system` to `<workspace>/system.toml`. `new-all` resolves the root once and threads it through every layer (including its internal `generate` call), so a `new-all` from a subdirectory never mixes roots; `init` creates the target workspace first, then scaffolds inside it. `list-bloxes` is the one exception: its `crates/bloxes/` scan is relative to the current directory.
+`generate`, `verify`, and `viz` anchor differently: they start from `CARGO_MANIFEST_DIR` and likewise walk up to the workspace root (overridable with `--workspace` on `generate` / `verify`). `wire`, `watch`, and the `new-*` scaffolding commands resolve the workspace root from the current directory; `wire` defaults `--system` to `<workspace>/system.toml`. `new-all` resolves the root once and threads it through every layer (including its internal `generate` call), so a `new-all` from a subdirectory never mixes roots; `init` creates the target workspace first, then scaffolds inside it. `list-bloxes` is the one exception: its `bloxes/` scan is relative to the current directory.
 
 ### TOML Manipulation Convention
 
@@ -618,7 +626,7 @@ Tests live in the two tool crates.
 
 - **Unit tests** — inline in `src/system_spec.rs` (`#[cfg(test)] mod tests`), covering system.toml parsing and action-config handling.
 - **Integration tests:** one crate-root file per theme in `tests/` — `codegen_messages_events.rs`, `codegen_topology.rs`, `codegen_ctx.rs`, `codegen_spec_skeleton.rs`, `codegen_transitions.rs`, `codegen_system.rs` — TOML parsing and `generate_from_toml` / `generate_all` against inline TOML fixtures.
-  - `tests/system_wiring.rs` — runs `generate_system_wiring_from_toml` and `generate_cargo_toml` against the real workspace manifests (`apps/*/system.toml`) and asserts structural properties of the generated main.rs / Cargo.toml: channel creation, supervisor setup, injection wiring, bootstrap, runtime selection, dynamic-actor handling, dependency resolution, and feature inference.
+  - `tests/system_wiring.rs` — runs `generate_system_wiring_from_toml` and `generate_cargo_toml` against the real workspace manifests (`examples/*/system.toml`) and asserts structural properties of the generated main.rs / Cargo.toml: channel creation, supervisor setup, injection wiring, bootstrap, runtime selection, dynamic-actor handling, dependency resolution, and feature inference.
 
 ### `cargo-blox`
 
@@ -628,12 +636,12 @@ Integration tests only, in `tests/` — one file per command group:
 |------|--------|
 | `tests/add_transition.rs` | Basic add, actions, guards (including `::` in the condition), feature, all options combined, duplicate rejection, `--if-not-exists`, blox not found, missing required arg |
 | `tests/remove_transition.rs` | Remove, non-existent pair, remove with nested guards, preserving other transitions, blox not found, `--feature` targeting a gated variant (leaves the non-gated one and vice versa), missing feature variant |
-| `tests/list_bloxes.rs` | Table and JSON output, summary counts, empty workspace, missing `crates/bloxes/` dir |
+| `tests/list_bloxes.rs` | Table and JSON output, summary counts, empty workspace, missing `bloxes/` dir |
 | `tests/list_states.rs` | Table and JSON output, columns, empty blox, blox not found |
 | `tests/list_transitions.rs` | Table and JSON output, guards, features, empty blox, blox not found |
 | `tests/list_messages.rs` | Table and JSON output, fields, empty crate, crate not found |
 
-**Approach:** each test builds a minimal blox.toml fixture in a `tempfile::TempDir` (under `crates/bloxes/<name>/` or `crates/messages/<name>/`), spawns the compiled binary (`env!("CARGO_BIN_EXE_cargo-blox")`) as a subprocess with the temp dir as its working directory — outside a workspace, path resolution falls back to the current directory — captures stdout/stderr, and asserts on the output and exit status. The add/remove tests additionally read back the mutated blox.toml and assert on its structure (parsed as `toml::Value` in the test, and as raw text where guard removal must be verified). Dev-dependencies: `tempfile`, `toml`.
+**Approach:** each test builds a minimal blox.toml fixture in a `tempfile::TempDir` (under `bloxes/<name>/` or `crates/messages/<name>/`), spawns the compiled binary (`env!("CARGO_BIN_EXE_cargo-blox")`) as a subprocess with the temp dir as its working directory — outside a workspace, path resolution falls back to the current directory — captures stdout/stderr, and asserts on the output and exit status. The add/remove tests additionally read back the mutated blox.toml and assert on its structure (parsed as `toml::Value` in the test, and as raw text where guard removal must be verified). Dev-dependencies: `tempfile`, `toml`.
 
 ## Invariants
 
@@ -648,3 +656,4 @@ Integration tests only, in `tests/` — one file per command group:
 - All TOML edits go through `toml_edit::DocumentMut` — comments and formatting are preserved. Topology edits share the single write path in `bloxide_codegen::edit`.
 - Paths resolve from the workspace root, so commands work from any subdirectory.
 - `generate` runs lint first, formats generated files individually with rustfmt, and is idempotent — re-running it with no changes rewrites nothing.
+- `generate` materializes pure-TOML blox and example sources into `target/bloxide-generated/` and emits `.vscode/settings.json`; `build` / `check` / `test` cover both workspaces, and `run` requires `--example`.

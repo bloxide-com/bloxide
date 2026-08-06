@@ -834,7 +834,7 @@ See `12-factory-injection-and-supervision.md` for the full factory-injection wal
 
 ## Wiring a Supervised Group
 
-The wiring layer uses `ChildGroupBuilder` and the runtime's `spawn_static_child!` macro — no custom blox is needed. This example mirrors the generated `apps/tokio-demo/src/main.rs`:
+The wiring layer uses `ChildGroupBuilder` and the runtime's `spawn_static_child!` macro — no custom blox is needed. This example mirrors the generated `target/bloxide-generated/examples/tokio-demo/src/main.rs`:
 
 ```rust
 use bloxide_tokio::prelude::*;  // ChildGroupBuilder, GroupShutdown, ChildPolicy, ...
@@ -896,7 +896,7 @@ Important details:
 
 - The spec type is the **system-generated concrete spec** (`crate::generated::bloxide_supervisor_spec_skeleton::SupervisorSpec`) — the system-level codegen emits it with real action closures wired to `bloxide-child-management::actions`. Apps never use the blox-crate-level stub spec.
 - `SupervisorCtx::new` takes three args: `(sup_id, children, sup_notify_ref)`.
-- Embassy wiring is identical in shape (`apps/embassy-demo/src/main.rs`): the same `ChildGroupBuilder::new(...)` call resolves to the shared `bloxide_child_management::ChildGroupBuilder` (re-exported by `bloxide-embassy`), which reaches Embassy channels via `GroupChannelCap`; `spawn_static_child!` additionally takes the Embassy `spawner`.
+- Embassy wiring is identical in shape (`target/bloxide-generated/examples/embassy-demo/src/main.rs`): the same `ChildGroupBuilder::new(...)` call resolves to the shared `bloxide_child_management::ChildGroupBuilder` (re-exported by `bloxide-embassy`), which reaches Embassy channels via `GroupChannelCap`; `spawn_static_child!` additionally takes the Embassy `spawner`.
 
 ### One `ChildGroupBuilder` Across Runtimes
 

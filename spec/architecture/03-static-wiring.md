@@ -206,7 +206,7 @@ identical across runtimes.
 
 ## Full Wiring Example
 
-Mirrors the generated `main.rs` of `apps/embassy-demo`:
+Mirrors the generated `main.rs` of `examples/embassy-demo`:
 
 ```rust
 fn setup(spawner: Spawner) {

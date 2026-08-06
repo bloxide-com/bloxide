@@ -37,59 +37,128 @@ pub fn parse_package_name(cargo_toml_path: &Path) -> Option<String> {
     })
 }
 
+/// How a discovered `blox.toml` is turned into a crate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BloxSourceKind {
+    /// Stdlib/messages crate with a hand-written Cargo.toml — codegen writes
+    /// `src/generated/` in-crate (e.g. bloxide-timer, bloxide-supervisor,
+    /// ping-pong-messages).
+    InCrate,
+    /// Pure-TOML blox (a `blox.toml`-only source under a `bloxes/`
+    /// directory — the top-level `bloxes/` layout). `cargo blox generate`
+    /// materializes a complete crate into
+    /// `target/bloxide-generated/crates/<crate-name>`.
+    PureToml,
+}
+
+/// A `blox.toml` discovered in the workspace, with its crate identity and
+/// source kind.
+pub struct DiscoveredBlox {
+    pub config: BloxConfig,
+    pub toml_path: PathBuf,
+    pub kind: BloxSourceKind,
+}
+
+/// Derive the crate name for a pure-TOML blox: kebab-case actor name +
+/// `"-blox"` (e.g. actor `Ping` → `ping-blox`, `BhsmTst` → `bhsm-tst-blox`).
+pub fn pure_toml_crate_name(config: &BloxConfig) -> Option<String> {
+    let actor = config.actor.as_ref()?;
+    Some(format!("{}-blox", to_kebab_case(&actor.name)))
+}
+
+/// Convert PascalCase to kebab-case (via snake_case).
+pub fn to_kebab_case(s: &str) -> String {
+    to_snake_case(s).replace('_', "-")
+}
+
+/// Classify a blox.toml path: pure-TOML when it lives directly under a
+/// directory named `bloxes` (top-level `bloxes/<name>/`), in-crate otherwise.
+fn classify_blox_toml(toml_path: &Path) -> BloxSourceKind {
+    let is_pure_toml = toml_path
+        .parent()
+        .and_then(|dir| dir.parent())
+        .and_then(|grand| grand.file_name())
+        .is_some_and(|name| name == "bloxes");
+    if is_pure_toml {
+        BloxSourceKind::PureToml
+    } else {
+        BloxSourceKind::InCrate
+    }
+}
+
 /// Discover all `blox.toml` files under `workspace_root` (excluding `target/`),
-/// parse each, and return a map keyed by the crate name from the sibling
-/// `Cargo.toml` (falling back to the directory name).
+/// keyed by crate name, with source-kind classification.
 ///
 /// Also searches the source directories of path dependencies declared in the
 /// workspace's root `Cargo.toml` — apps whose blox crates live OUTSIDE the
 /// workspace (e.g. `bloxide-supervisor` from a separate bloxide checkout, as
 /// produced by `cargo blox init`) get their blox.toml discovered the same way.
-pub fn discover_blox_configs(
-    workspace_root: &Path,
-) -> anyhow::Result<BTreeMap<String, BloxConfig>> {
-    let mut blox_configs = BTreeMap::new();
+pub fn discover_bloxes(workspace_root: &Path) -> anyhow::Result<BTreeMap<String, DiscoveredBlox>> {
+    let mut bloxes = BTreeMap::new();
+    let mut insert = |toml_path: PathBuf, kind: BloxSourceKind| -> anyhow::Result<()> {
+        let content = std::fs::read_to_string(&toml_path)?;
+        let config: BloxConfig = toml::from_str(&content)?;
+        let dir = toml_path.parent().unwrap();
+        let key = match kind {
+            BloxSourceKind::PureToml => pure_toml_crate_name(&config).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "pure-TOML blox {} has no [actor] section — cannot derive a crate name",
+                    toml_path.display()
+                )
+            })?,
+            BloxSourceKind::InCrate => {
+                let cargo_toml_path = dir.join("Cargo.toml");
+                if cargo_toml_path.exists() {
+                    parse_package_name(&cargo_toml_path)
+                        .unwrap_or_else(|| dir.file_name().unwrap().to_string_lossy().to_string())
+                } else {
+                    dir.file_name().unwrap().to_string_lossy().to_string()
+                }
+            }
+        };
+        bloxes.entry(key).or_insert(DiscoveredBlox {
+            config,
+            toml_path,
+            kind,
+        });
+        Ok(())
+    };
+
     for entry in walkdir::WalkDir::new(workspace_root)
         .into_iter()
         .filter_entry(|e| e.file_name() != "target")
         .filter_map(|e| e.ok())
     {
         if entry.file_name() == "blox.toml" {
-            let blox_content = std::fs::read_to_string(entry.path())?;
-            let blox_config: BloxConfig = toml::from_str(&blox_content)?;
-            let dir = entry.path().parent().unwrap();
-            let cargo_toml_path = dir.join("Cargo.toml");
-            let key = if cargo_toml_path.exists() {
-                parse_package_name(&cargo_toml_path)
-                    .unwrap_or_else(|| dir.file_name().unwrap().to_string_lossy().to_string())
-            } else {
-                dir.file_name().unwrap().to_string_lossy().to_string()
-            };
-            blox_configs.insert(key, blox_config);
+            let kind = classify_blox_toml(entry.path());
+            insert(entry.into_path(), kind)?;
         }
     }
 
     // Path-dependency source dirs from [workspace.dependencies] (and any
     // member's [dependencies] with a `path`). Each dep dir is a crate root —
-    // look for its blox.toml directly.
+    // look for its blox.toml directly. External deps are always in-crate.
     for dep_dir in path_dependency_dirs(workspace_root) {
         let blox_path = dep_dir.join("blox.toml");
-        if !blox_path.exists() {
-            continue;
+        if blox_path.exists() {
+            insert(blox_path, BloxSourceKind::InCrate)?;
         }
-        let blox_content = std::fs::read_to_string(&blox_path)?;
-        let blox_config: BloxConfig = toml::from_str(&blox_content)?;
-        let cargo_toml_path = dep_dir.join("Cargo.toml");
-        let key = if cargo_toml_path.exists() {
-            parse_package_name(&cargo_toml_path)
-                .unwrap_or_else(|| dep_dir.file_name().unwrap().to_string_lossy().to_string())
-        } else {
-            dep_dir.file_name().unwrap().to_string_lossy().to_string()
-        };
-        blox_configs.entry(key).or_insert(blox_config);
     }
 
-    Ok(blox_configs)
+    Ok(bloxes)
+}
+
+/// Discover all `blox.toml` files under `workspace_root` (excluding `target/`),
+/// parse each, and return a map keyed by crate name (pure-TOML bloxes derive
+/// their crate name from `[actor]`; in-crate blox.toml files key on the
+/// sibling `Cargo.toml` package name, falling back to the directory name).
+pub fn discover_blox_configs(
+    workspace_root: &Path,
+) -> anyhow::Result<BTreeMap<String, BloxConfig>> {
+    Ok(discover_bloxes(workspace_root)?
+        .into_iter()
+        .map(|(k, v)| (k, v.config))
+        .collect())
 }
 
 /// Collect the source directories of path dependencies declared in the

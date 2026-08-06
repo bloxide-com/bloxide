@@ -25,10 +25,11 @@ fn layout_root() -> PathBuf {
     find_workspace_root().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-/// Returns `<workspace>/crates/bloxes/<blox_name>/blox.toml`.
+/// Returns the blox.toml path for a blox: `<workspace>/bloxes/<blox_name>/blox.toml`
+/// (pure-TOML layout).
 pub(crate) fn blox_toml_path_for_blox(blox_name: &str) -> PathBuf {
     layout_root()
-        .join("crates/bloxes")
+        .join("bloxes")
         .join(blox_name)
         .join("blox.toml")
 }
@@ -41,10 +42,10 @@ pub(crate) fn blox_toml_path_for_messages(crate_name: &str) -> PathBuf {
         .join("blox.toml")
 }
 
-/// Returns `<workspace>/apps/<app_name>/system.toml`.
+/// Returns `<workspace>/examples/<app_name>/system.toml`.
 pub(crate) fn system_toml_path_for_app(app_name: &str) -> PathBuf {
     layout_root()
-        .join("apps")
+        .join("examples")
         .join(app_name)
         .join("system.toml")
 }

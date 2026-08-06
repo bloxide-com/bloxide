@@ -673,11 +673,21 @@ fn levenshtein(a: &str, b: &str) -> usize {
 /// (spec/templates/blox-spec.md).
 const REQUIRED_SPEC_SECTIONS: [&str; 2] = ["blox.toml", "Open Questions"];
 
-/// Workspace path prefixes considered checkable doc references.
-const DOC_PATH_PREFIXES: [&str; 4] = ["crates/", "apps/", "runtimes/", "tools/"];
+/// Workspace path prefixes considered checkable doc references. `apps/` is
+/// kept deliberately: the directory is gone, so any remaining reference to it
+/// is a dead doc reference worth flagging.
+const DOC_PATH_PREFIXES: [&str; 6] = [
+    "bloxes/",
+    "crates/",
+    "examples/",
+    "apps/",
+    "runtimes/",
+    "tools/",
+];
 
-/// Spec template conformance: for each `crates/bloxes/<name>/blox.toml` that
-/// has a spec at `spec/bloxes/<name>.md`, warn when the spec lacks a
+/// Spec template conformance: for each `bloxes/<name>/blox.toml` that has a
+/// spec at `spec/bloxes/<name>.md`,
+/// warn when the spec lacks a
 /// template-required section or uses stale `Guard::` vocabulary (the current
 /// vocabulary is `Decision::`). Specs without a matching blox.toml (and blox
 /// crates without a spec) are not checked.
@@ -720,14 +730,13 @@ fn lint_spec_conformance(root: &Path, blox_tomls: &[PathBuf], diags: &mut Vec<Di
     }
 }
 
-/// Extract the blox name from a `…/crates/bloxes/<name>/blox.toml` path.
-/// Returns None for blox.toml files outside the bloxes layout (messages,
-/// context, framework crates).
+/// Extract the blox name from a `…/bloxes/<name>/blox.toml` path. Returns
+/// None for blox.toml files outside a bloxes layout (messages, context,
+/// framework crates).
 fn blox_crate_name(path: &Path) -> Option<String> {
     let dir = path.parent()?;
     let bloxes = dir.parent()?;
-    let crates = bloxes.parent()?;
-    if crates.file_name()?.to_str()? == "crates" && bloxes.file_name()?.to_str()? == "bloxes" {
+    if bloxes.file_name()?.to_str()? == "bloxes" {
         Some(dir.file_name()?.to_str()?.to_string())
     } else {
         None

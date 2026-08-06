@@ -6,7 +6,7 @@ The BhsmTst (Bloxide HSM Test) actor is a pedagogical demonstration of deep hier
 
 ## Crate Location
 
-- Blox crate: `crates/bloxes/bhsm-tst/`
+- Blox crate: `bloxes/bhsm-tst/`
 - Messages crate: `crates/messages/bhsm-tst-messages/`
 - Context crate: `crates/context/blox-ctx-noop/` — shared no-op action functions (no mutable state; bhsm-tst is its first consumer)
 
@@ -184,7 +184,7 @@ Decision::Stop: fires exit chain from current state to root, enters Init. Superv
 
 ## Acceptance Criteria
 
-> Verified by `crates/bloxes/bhsm-tst/src/tests.rs` (15 tests) —
+> Verified by `bloxes/bhsm-tst/tests/bhsm-tst.rs` (15 tests) —
 > a recording spec over the **generated** topology asserts the exact
 > exit/entry chain order per transition. Its action closures call
 > `blox_ctx_noop::noop()` in the same shapes the system-level codegen emits
@@ -211,7 +211,7 @@ Decision::Stop: fires exit chain from current state to root, enters Init. Superv
 
 ## blox.toml
 
-The full declarative source is `crates/bloxes/bhsm-tst/blox.toml`; representative excerpts:
+The full declarative source is `bloxes/bhsm-tst/blox.toml`; representative excerpts:
 
 ```toml
 # S: top-level catch-all — H→S11, I stays, K→Error, X→stop

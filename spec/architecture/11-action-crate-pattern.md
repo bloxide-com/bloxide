@@ -148,8 +148,8 @@ closures inlined from context/impl crates.
 ## Two-Stage Codegen
 
 Both stages run under `cargo blox generate` (which lints first and is
-idempotent); all generated artifacts (`src/generated/`, `apps/*/main.rs`,
-`apps/*/Cargo.toml`) are gitignored.
+idempotent); all generated artifacts (the whole `target/bloxide-generated/`
+tree — blox crates and example crates) are gitignored.
 
 ### Stage 1 — Blox-level
 
@@ -159,7 +159,7 @@ functional with stubs; only side-effecting actions are stubs. A stub is a
 marker plus a no-op `ActionResult::Ok`:
 
 ```rust
-// src/generated/spec_skeleton.rs — stub actions
+// target/bloxide-generated/crates/ping-blox/src/generated/spec_skeleton.rs — stub actions
 |_ctx, _ev| {
     let _stub = "forward_ping";
     ActionResult::Ok
@@ -178,7 +178,7 @@ verbatim (the uniform contract — the guard can react to failure via
 `results.any_failed()`):
 
 ```rust
-// apps/<app>/src/generated/ping_spec_skeleton.rs — concrete, impl inlined
+// examples/<app> → target/bloxide-generated/examples/<app>/src/generated/ping_spec_skeleton.rs — concrete, impl inlined
 |ctx, _ev| blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round)
 ```
 

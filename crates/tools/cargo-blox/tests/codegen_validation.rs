@@ -16,23 +16,20 @@ use std::fs;
 
 use tempfile::TempDir;
 
-/// Writes a blox.toml to `<temp>/crates/bloxes/<name>/blox.toml` (the parent
+/// Writes a blox.toml to `<temp>/bloxes/<name>/blox.toml` (the parent
 /// dir name doubles as the crate name for codegen) and returns the temp dir.
 fn write_blox(dir: &TempDir, name: &str, content: &str) {
-    let blox_dir = dir.path().join("crates/bloxes").join(name);
+    let blox_dir = dir.path().join("bloxes").join(name);
     fs::create_dir_all(&blox_dir).expect("create blox dir");
     fs::write(blox_dir.join("blox.toml"), content).expect("write blox.toml");
 }
 
 fn blox_toml_path(dir: &TempDir, name: &str) -> std::path::PathBuf {
-    dir.path()
-        .join("crates/bloxes")
-        .join(name)
-        .join("blox.toml")
+    dir.path().join("bloxes").join(name).join("blox.toml")
 }
 
 fn write_system(dir: &TempDir, app: &str, content: &str) -> std::path::PathBuf {
-    let app_dir = dir.path().join("apps").join(app);
+    let app_dir = dir.path().join("examples").join(app);
     fs::create_dir_all(&app_dir).expect("create app dir");
     let path = app_dir.join("system.toml");
     fs::write(&path, content).expect("write system.toml");

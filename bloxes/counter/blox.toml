@@ -1,0 +1,78 @@
+# Copyright 2025 Bloxide, all rights reserved
+[actor]
+name = "Counter"
+
+# Crate packaging for the materialized crate
+# (target/bloxide-generated/crates/counter-blox). Dependencies are derived from
+# the message paths / context imports / action crates below; only features
+# and dev-dependencies need declaring here.
+[package]
+description = "Counter actor blox — runtime-agnostic layered demo"
+
+[package.features]
+default = ["std"]
+std = ["bloxide-core/std"]
+
+# Dev-dependencies of the integration tests in tests/ (integration tests do
+# not see the crate's regular dependencies — declare everything they import).
+[package.dev-dependencies]
+bloxide-core = { features = ["std"] }
+counter-messages = {}
+blox-ctx-ticks = {}
+
+# Crate-root constants (referenced by guards via spec_imports `crate::...`).
+[[consts]]
+name = "DONE_AT_COUNT"
+ty = "u32"
+value = "2"
+doc = "Number of ticks after which the counter completes (`Decision::Done`)."
+
+[context]
+name = "CounterCtx"
+on_init = "ctx.count = 0;"
+
+# State fields (moved from B into Ctx)
+[[context.fields]]
+name = "count"
+type = "u32"
+
+# --- Action declarations (Phase 3 system codegen) ---
+
+[[context.actions]]
+name = "count_tick"
+fn_name = "increment_count"
+crate = "blox_ctx_ticks"
+fields = ["count:mut"]
+impl_required = false
+returns = "ActionResult"
+
+[event]
+name = "CounterEvent"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "CounterMsg"
+message_path = "counter_messages::CounterMsg"
+
+[topology]
+spec_imports = ["crate::DONE_AT_COUNT"]
+
+[[topology.states]]
+name = "Ready"
+initial = true
+
+# --- Declarative transitions ---
+
+[[topology.transitions]]
+state = "Ready"
+event = "CounterMsg::Tick(_)"
+target = "stay"
+actions = ["Self::count_tick"]
+
+[[topology.transitions.guards]]
+condition = "ctx.count >= DONE_AT_COUNT"
+target = "done"
+
+[[topology.transitions.guards]]
+condition = "_"
+target = "stay"

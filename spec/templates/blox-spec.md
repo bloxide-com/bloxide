@@ -11,7 +11,7 @@
 
 > Where does this blox live in the workspace?
 
-- Blox crate: `crates/bloxes/<blox-name>/`
+- Blox source: `bloxes/<blox-name>/` — pure TOML plus tests (`blox.toml` + `tests/<blox-name>.rs`); `cargo blox generate` materializes the crate into `target/bloxide-generated/crates/<blox-name>-blox/`
 - Messages crate: `crates/messages/<blox-name>-messages/` _(if new messages are needed; share with peers using the same protocol)_
 - Context crate: `crates/context/blox-ctx-<blox-name>/` _(plain context struct + generic action functions; no concrete types)_
 - Impl crate (optional): only for runtime-specific behavior such as spawn factories or platform-specific effects (e.g. `crates/impl/tokio-pool-demo-impl/`); most action functions go in the context crate
@@ -45,7 +45,7 @@ stateDiagram-v2
 
 ## blox.toml
 
-> The blox.toml file drives code generation via `cargo blox generate`. It declares the event type, state topology, and declarative transitions that the codegen tool turns into Rust source files.
+> The blox.toml file lives at `bloxes/<blox-name>/blox.toml` and drives code generation via `cargo blox generate` (which materializes the crate under `target/bloxide-generated/`). It declares the event type, state topology, and declarative transitions that the codegen tool turns into Rust source files. Integration tests live next to it at `bloxes/<blox-name>/tests/<blox-name>.rs`.
 
 ```toml
 [actor]

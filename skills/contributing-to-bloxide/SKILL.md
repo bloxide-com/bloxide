@@ -21,7 +21,7 @@ This guide is for modifying the bloxide framework itself — the HSM engine, pro
 ```
 bloxide-core        HSM engine, BloxRuntime, channel traits, KillCapability, run/RunConfig  (no_std)
 bloxide-macros      Proc macros: channels!, dyn_channels!, next_actor_id!     (host-compiled)
-bloxide-codegen     TOML-driven code generator library                        (host-compiled)
+bloxide-codegen     TOML-driven code generator library; `blox_crate.rs` materializes blox crates, `example_crate.rs` materializes example crates  (host-compiled)
 cargo-blox          CLI: see QUICK_REFERENCE.md → "cargo blox Command Reference"  (host-compiled)
 bloxide-log         Feature-gated logging macros                              (no_std)
 bloxide-timer       Timer service: commands, queue, timer action functions     (no_std)
@@ -35,6 +35,8 @@ bloxide-tokio       Tokio runtime: channels, tasks, SpawnCap, KillCapability  (s
 ```
 
 **Dependency direction:** `bloxide-core` is the root. Standard library crates depend on `bloxide-core`. Runtime crates depend on `bloxide-core` + standard library crates. Domain crates (bloxes) depend only on `bloxide-core` and standard library crates — never on runtime crates.
+
+**Blox and example sources are not workspace members.** Bloxes are pure-TOML sources at `bloxes/<name>/` (only `blox.toml` + `tests/<name>.rs`); examples are `examples/<name>/system.toml`. `cargo blox generate` materializes both as real crates under `target/bloxide-generated/` (gitignored): `crates/<name>-blox/` and `examples/<name>/`, each with a generated `build.rs` that re-syncs from the source TOML so plain cargo works there after one generate. Only stdlib crates (`bloxide-supervisor`, `bloxide-core` mailboxes) still generate `src/generated/` in-crate. To add a blox, scaffold with `cargo blox new <name>` (creates `bloxes/<name>/blox.toml` + spec file — no workspace registration); to add a binary, `cargo blox new-binary <name>` (creates `examples/<name>/system.toml`).
 
 ## Two-Tier Trait System
 
@@ -219,6 +221,8 @@ mod tests {
     }
 }
 ```
+
+Codegen (`bloxide-codegen`) is tested with integration tests under `crates/tools/bloxide-codegen/tests/` — one file per concern (`codegen_messages_events.rs`, `codegen_topology.rs`, `codegen_transitions.rs`, `codegen_spec_skeleton.rs`, `codegen_system.rs`, `system_wiring.rs`, ...). The materialization pipeline has its own files: `tests/blox_crate.rs` (blox.toml → materialized blox crate) and `tests/example_crate.rs` (system.toml → materialized example crate). Fixtures are a mix of inline TOML/source strings and the real repo sources (e.g. `bloxes/ping/blox.toml`, loaded via the workspace root) — extend them there when changing the blox.toml schema or the materialized-crate layout.
 
 ## Engine Invariants
 

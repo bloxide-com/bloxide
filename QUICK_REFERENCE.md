@@ -112,10 +112,10 @@ State fields are plain fields on the context struct. There is no `B` generic, no
 
 | Test Type | Location |
 |-----------|----------|
-| Blox unit tests (TestRuntime) | `crates/bloxes/*/src/tests.rs` |
+| Blox integration tests (TestRuntime) | `bloxes/<name>/tests/<name>.rs` — run from the materialized crate `target/bloxide-generated/crates/<name>-blox/` |
 | Context crate tests | `crates/context/*/src/tests.rs` |
 | Impl crate tests | `crates/impl/*/src/tests.rs` |
-| Integration tests (full runtime) | `apps/*-demo/` (system.toml + generated main.rs); app integration tests live in `apps/<app>/tests/` |
+| Integration tests (full runtime) | `examples/<name>/` (system.toml; binaries materialized into `target/bloxide-generated/examples/`); example integration tests live in `examples/<name>/tests/` |
 
 ---
 
@@ -140,11 +140,13 @@ Use `bloxide-timer` and `blox-ctx-ping-pong` action functions instead of manual 
 
 #### Setup
 
-1. Add dependency:
+1. Declare features in `blox.toml` (regular dependencies are derived from the
+   `[[context.uses]]` / `[[context.actions]]` crates below — only features and
+   dev-dependencies need declaring):
    ```toml
-   [dependencies]
-   bloxide-timer = { version = "0.0.3", features = ["std"] }
-   blox-ctx-ping-pong = { path = "..." }
+   [package.features]
+   default = ["std"]
+   std = ["bloxide-core/std", "bloxide-timer/std"]
    ```
 
 2. Add timer fields to context in `blox.toml`:
@@ -419,11 +421,12 @@ including `{ .. }` (rest, no binding), `{ id }` (bind one field), and
 
 | File Type | Location Pattern |
 |-----------|------------------|
-| Blox crate | `crates/bloxes/<name>/` |
+| Blox source (pure TOML) | `bloxes/<name>/` (`blox.toml` + `tests/<name>.rs`) |
+| Materialized blox crate (build artifact, gitignored) | `target/bloxide-generated/crates/<name>-blox/` |
 | Messages crate | `crates/messages/<name>-messages/` |
 | Context crate | `crates/context/<name>/` or `crates/bloxide-<service>/` |
 | Impl crate (optional) | `crates/impl/<name>-impl/` |
-| Binary | `apps/<name>-demo/` (system.toml + generated main.rs) |
+| Example (binary wiring) | `examples/<name>/` (system.toml; main.rs materialized into `target/bloxide-generated/examples/<name>/`) |
 | Blox spec | `spec/bloxes/<name>.md` |
 
 ---
@@ -463,8 +466,9 @@ checkout of this repo, run the CLI as `cargo run -p cargo-blox -- blox ...` — 
 
 | Command | Purpose |
 |---|---|
-| `generate [--workspace <path>]` | Lint, then generate code from all blox.toml + system.toml files in the workspace |
-| `build` / `check` / `test` / `run` | `generate`, then the corresponding cargo command |
+| `generate [--workspace <path>]` | Lint, then materialize the generated workspace at `target/bloxide-generated/` (`crates/*` + `examples/*`) from all blox.toml + system.toml files; also writes `.vscode/settings.json` for rust-analyzer |
+| `build` / `check` / `test` `[--example <name>]` | `generate`, then the corresponding cargo command on BOTH the repo workspace and the generated workspace (`--example` scopes to one example) |
+| `run --example <name> [-- args]` | `generate`, then build and run an example (`--example` is required — without it the command errors and lists the examples) |
 | `watch` | Watch and regenerate on changes |
 | `wire --system <path>` | Generate a binary `main.rs` from a system.toml wiring manifest (`--run` to execute after) |
 | `verify` | Round-trip check: blox.toml → codegen → viz-export → JSON → compare |
@@ -472,11 +476,11 @@ checkout of this repo, run the CLI as `cargo run -p cargo-blox -- blox ...` — 
 | `ci` | Full CI feature matrix |
 | `init <dir> [--runtime tokio\|embassy]` | Bootstrap a new bloxide workspace |
 | `viz [--export <dir>] [--port N] [--open]` | Launch the visualizer (or export specs as JSON) |
-| `new <name> [--messages M] [--context C]` | Scaffold a new blox crate (+ `spec/bloxes/<name>.md`) |
+| `new <name> [--messages M] [--context C]` | Scaffold a new blox source at `bloxes/<name>/` (+ `spec/bloxes/<name>.md`); does not register a workspace member in root Cargo.toml |
 | `new-messages <name>` | Scaffold a new messages crate |
 | `new-context <name>` | Scaffold a new context (action-functions) crate |
 | `new-impl <name> --blox <blox>` | Scaffold a new impl crate for a blox |
-| `new-binary <name> [--runtime tokio\|embassy]` | Scaffold a new wiring binary crate |
+| `new-binary <name> [--runtime tokio\|embassy]` | Scaffold a new example at `examples/<name>/system.toml`; does not register a workspace member in root Cargo.toml |
 | `new-all <name> [--runtime ...]` | Scaffold all layers (messages, context, blox, impl, binary) |
 | `list-bloxes [--json]` | List all blox crates in the workspace |
 | `list-states <blox> [--json]` | List states in a blox |

@@ -9,7 +9,7 @@ The Counter actor is the simplest possible bloxide actor, designed for teaching 
 
 ## Crate Location
 
-- Blox crate: `crates/bloxes/counter/`
+- Blox crate: `bloxes/counter/`
 - Messages crate: `crates/messages/counter-messages/`
 - Context crate: `crates/context/blox-ctx-ticks/` (provides `increment_count`)
 - No impl crate needed — behavior is simple enough for context-crate actions
@@ -75,7 +75,7 @@ None — Counter is a sink actor.
 
 | Name | Value | Description |
 |------|-------|-------------|
-| `DONE_AT_COUNT` | 2 | Ticks required to trigger `Decision::Done`; defined in `crates/bloxes/counter/src/lib.rs`, imported into the guard via `spec_imports` |
+| `DONE_AT_COUNT` | 2 | Ticks required to trigger `Decision::Done`; declared in `bloxes/counter/blox.toml` (`[[consts]]`), emitted at the generated crate root, imported into the guard via `spec_imports` |
 
 ## Acceptance Criteria
 
@@ -99,7 +99,7 @@ None — Counter is a sink actor.
 
 ## blox.toml
 
-The full declarative source is `crates/bloxes/counter/blox.toml`:
+The full declarative source is `bloxes/counter/blox.toml`:
 
 ```toml
 [topology]

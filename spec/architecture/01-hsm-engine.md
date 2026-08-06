@@ -251,7 +251,7 @@ name = "Ready"
 name = "Active"
 ```
 
-Run `cargo blox generate` to produce `src/generated/topology.rs` with `CounterState` and the `counter_state_handler_table!` macro:
+Run `cargo blox generate` to produce `src/generated/topology.rs` (in the materialized crate under `target/bloxide-generated/crates/counter-blox/`) with `CounterState` and the `counter_state_handler_table!` macro:
 
 ```rust
 pub use crate::generated::topology::CounterState;
@@ -774,7 +774,7 @@ the rule-level sentinel.
 In `[[topology.transitions.guards]]`, `condition = "_"` is the explicit wildcard
 fallback arm. When guards are present, the transition-level `target` is already
 the implicit fallback — use `condition = "_"` only when you want the fallback
-written as a guard arm (see `crates/bloxes/counter/blox.toml`).
+written as a guard arm (see `bloxes/counter/blox.toml`).
 
 ### `[[topology.entry]]` / `[[topology.exit]]`
 

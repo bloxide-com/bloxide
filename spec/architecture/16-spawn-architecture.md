@@ -1033,7 +1033,7 @@ kill handle (no orphaned live tasks) and returns `Err` — the resulting
 `ActionResult` carries the failure and the transition's guard can route it (e.g. to an
 error state).
 
-The Pool's spawn-related context fields (from `crates/bloxes/pool/blox.toml`, gated by
+The Pool's spawn-related context fields (from `bloxes/pool/blox.toml`, gated by
 the Pool's `dynamic` feature):
 
 ```rust
@@ -1757,7 +1757,7 @@ behind it (the ref symbol table and the supervisor two-phase wiring split, moved
 from this document). [15-blox-toml-source-of-truth.md](15-blox-toml-source-of-truth.md)
 defines the schema and the round-trip contract (`cargo blox generate` is the mandatory
 first step after checkout — generated files are not committed). The running example in
-both is the real `apps/tokio-pool-demo/system.toml`.
+both is the real `examples/tokio-pool-demo/system.toml`.
 
 ---
 

@@ -30,9 +30,9 @@ pub fn new_all(name: &str, runtime: &str) -> Result<()> {
     new_blox_in(&root, name, Some(&msg_crate), Some(&ctx_crate))?;
     // 4. impl crate (concrete behavior for impl_required actions)
     new_impl_in(&root, &name_snake, &name_snake)?;
-    // 5. app: system.toml wiring manifest
+    // 5. example: system.toml wiring manifest
     new_binary_in(&root, name, runtime)?;
-    // 6. generate blox boilerplate + app main.rs + Cargo.toml
+    // 6. generate blox boilerplate + materialize the example crate
     crate::generate::generate(Some(root))?;
 
     println!("\nScaffolded all layers for '{}'", name);
@@ -42,9 +42,9 @@ pub fn new_all(name: &str, runtime: &str) -> Result<()> {
         name_snake
     );
     println!(
-        "  2. Edit crates/bloxes/{}/blox.toml to declare the topology",
+        "  2. Edit bloxes/{}/blox.toml to declare the topology",
         name_snake
     );
-    println!("  3. cargo blox run -- -p {}", name_snake);
+    println!("  3. cargo blox run --example {}", name_snake);
     Ok(())
 }

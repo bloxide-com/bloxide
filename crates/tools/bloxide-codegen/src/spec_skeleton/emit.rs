@@ -797,7 +797,7 @@ mod tests {
     use crate::schema::BloxConfig;
     use crate::spec_skeleton::resolve_action;
 
-    /// Counter blox without root transitions (mirrors crates/bloxes/counter/blox.toml).
+    /// Counter blox without root transitions (mirrors bloxes/counter/blox.toml).
     const COUNTER_TOML: &str = r#"
 [actor]
 name = "Counter"
@@ -989,7 +989,7 @@ actions = ["Self::note_unhandled"]
     }
 
     /// Feature-gated blox exercising `feature_on_init` (mirrors the shape of
-    /// crates/bloxes/pool/blox.toml): the feature variant resets the
+    /// bloxes/pool/blox.toml): the feature variant resets the
     /// feature-gated state fields, the base variant must not see them.
     const FEATURE_ON_INIT_TOML: &str = r#"
 [actor]

@@ -65,6 +65,9 @@ enum BloxSubcommand {
     Build {
         #[command(flatten)]
         cargo: clap_cargo::Features,
+        /// Scope to one example crate in the generated workspace
+        #[arg(long)]
+        example: Option<String>,
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
@@ -72,6 +75,9 @@ enum BloxSubcommand {
     Check {
         #[command(flatten)]
         cargo: clap_cargo::Features,
+        /// Scope to one example crate in the generated workspace
+        #[arg(long)]
+        example: Option<String>,
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
@@ -79,6 +85,9 @@ enum BloxSubcommand {
     Test {
         #[command(flatten)]
         cargo: clap_cargo::Features,
+        /// Scope to one example crate in the generated workspace
+        #[arg(long)]
+        example: Option<String>,
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
@@ -86,6 +95,9 @@ enum BloxSubcommand {
     Run {
         #[command(flatten)]
         cargo: clap_cargo::Features,
+        /// Example crate to run (required — examples live in the generated workspace)
+        #[arg(long)]
+        example: Option<String>,
         #[arg(trailing_var_arg = true)]
         args: Vec<String>,
     },
@@ -443,10 +455,26 @@ fn dispatch() -> anyhow::Result<()> {
     match cli.command {
         BloxCommand::Blox(args) => match args.command {
             BloxSubcommand::Generate { workspace } => generate::generate(workspace),
-            BloxSubcommand::Build { cargo, args } => build::build(cargo, args),
-            BloxSubcommand::Check { cargo, args } => check::check(cargo, args),
-            BloxSubcommand::Test { cargo, args } => test::test(cargo, args),
-            BloxSubcommand::Run { cargo, args } => run::run(cargo, args),
+            BloxSubcommand::Build {
+                cargo,
+                example,
+                args,
+            } => build::build(cargo, example, args),
+            BloxSubcommand::Check {
+                cargo,
+                example,
+                args,
+            } => check::check(cargo, example, args),
+            BloxSubcommand::Test {
+                cargo,
+                example,
+                args,
+            } => test::test(cargo, example, args),
+            BloxSubcommand::Run {
+                cargo,
+                example,
+                args,
+            } => run::run(cargo, example, args),
             BloxSubcommand::Watch { cargo } => watch::watch(cargo),
             BloxSubcommand::New {
                 name,

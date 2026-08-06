@@ -86,7 +86,7 @@ fn write_fixture() -> TempDir {
     let msg_dir = dir.path().join("crates/messages/test-messages");
     fs::create_dir_all(&msg_dir).expect("create messages dir");
     fs::write(msg_dir.join("blox.toml"), MESSAGES_FIXTURE).expect("write blox.toml");
-    let app_dir = dir.path().join("apps/demo");
+    let app_dir = dir.path().join("examples/demo");
     fs::create_dir_all(&app_dir).expect("create app dir");
     fs::write(app_dir.join("system.toml"), SYSTEM_FIXTURE).expect("write system.toml");
     dir

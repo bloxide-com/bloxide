@@ -5,7 +5,7 @@
 ///
 /// Falls back to the unformatted input if `rustfmt` is not available,
 /// so the codegen still works in environments without rustfmt installed.
-pub(crate) fn rustfmt_source(source: &str) -> anyhow::Result<String> {
+pub fn rustfmt_source(source: &str) -> anyhow::Result<String> {
     use std::io::Write;
     use std::process::Command;
 

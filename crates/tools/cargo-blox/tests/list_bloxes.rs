@@ -2,7 +2,7 @@
 //! Integration tests for the `cargo-blox list-bloxes` command.
 //!
 //! Each test creates a temporary directory mirroring the real workspace
-//! layout — blox.toml fixtures under `crates/bloxes/`, message enums in
+//! layout — blox.toml fixtures under `bloxes/`, message enums in
 //! dedicated messages crates under `crates/messages/` — spawns the
 //! `cargo-blox` binary as a subprocess (so that stdout can be captured),
 //! and asserts on the printed output.
@@ -155,9 +155,9 @@ copy = true
 name = \"Tick\"
 ";
 
-/// Writes a fixture to `<temp>/crates/bloxes/<blox_name>/blox.toml`.
+/// Writes a fixture to `<temp>/bloxes/<blox_name>/blox.toml`.
 fn write_blox_fixture(dir: &TempDir, blox_name: &str, content: &str) {
-    let blox_dir = dir.path().join("crates/bloxes").join(blox_name);
+    let blox_dir = dir.path().join("bloxes").join(blox_name);
     fs::create_dir_all(&blox_dir).expect("create blox dir");
     fs::write(blox_dir.join("blox.toml"), content).expect("write blox.toml");
 }
@@ -295,8 +295,8 @@ fn list_three_bloxes_json() {
 #[test]
 fn list_empty_bloxes_table() {
     let dir = TempDir::new().expect("create temp dir");
-    // Create the crates/bloxes directory but with no subdirectories.
-    fs::create_dir_all(dir.path().join("crates/bloxes")).expect("create bloxes dir");
+    // Create the bloxes directory but with no subdirectories.
+    fs::create_dir_all(dir.path().join("bloxes")).expect("create bloxes dir");
     let (stdout, success) = run_list_bloxes(&dir, false);
     assert!(success, "command should succeed");
     // Header should be printed even with no bloxes.
@@ -309,8 +309,8 @@ fn list_empty_bloxes_table() {
 #[test]
 fn list_empty_bloxes_json() {
     let dir = TempDir::new().expect("create temp dir");
-    // Create the crates/bloxes directory but with no subdirectories.
-    fs::create_dir_all(dir.path().join("crates/bloxes")).expect("create bloxes dir");
+    // Create the bloxes directory but with no subdirectories.
+    fs::create_dir_all(dir.path().join("bloxes")).expect("create bloxes dir");
     let (stdout, success) = run_list_bloxes(&dir, true);
     assert!(success, "command should succeed");
     let parsed: Vec<serde_json::Value> =
@@ -321,7 +321,7 @@ fn list_empty_bloxes_json() {
 #[test]
 fn list_no_bloxes_dir_table() {
     let dir = TempDir::new().expect("create temp dir");
-    // Don't create crates/bloxes at all — should still succeed with empty output.
+    // Don't create bloxes at all — should still succeed with empty output.
     let (stdout, success) = run_list_bloxes(&dir, false);
     assert!(success, "command should succeed with no bloxes dir");
     assert!(stdout.contains("NAME"), "header should be present");

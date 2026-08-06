@@ -6,7 +6,7 @@ The Pong actor responds to every `PingPongMsg::Ping` it receives by sending `Pin
 
 ## Crate Location
 
-- Blox crate: `crates/bloxes/pong/`
+- Blox crate: `bloxes/pong/`
 - Messages crate: `crates/messages/ping-pong-messages/`
 - Context crate: `crates/context/blox-ctx-ping-pong/` (provides `send_pong` action function)
 
@@ -106,7 +106,7 @@ they verify topology and lifecycle semantics, not action side effects.
 
 ## Acceptance Criteria → Test Mapping
 
-All tests live in `crates/bloxes/pong/src/tests.rs` and use `TestRuntime`:
+All tests live in `bloxes/pong/tests/pong.rs` and use `TestRuntime`:
 
 | Acceptance Criterion | Test Function |
 |---|---|
@@ -118,7 +118,7 @@ All tests live in `crates/bloxes/pong/src/tests.rs` and use `TestRuntime`:
 
 ## blox.toml
 
-The full declarative source is `crates/bloxes/pong/blox.toml`:
+The full declarative source is `bloxes/pong/blox.toml`:
 
 ```toml
 [[context.actions]]

@@ -112,6 +112,30 @@ pub fn discover_blox_configs(
     Ok(blox_configs)
 }
 
+/// List the available examples: `<root>/examples/<name>/system.toml`
+/// sources, by crate name (`[system] name`, falling back to the directory
+/// name). Used for `--example` error messages.
+pub fn available_examples(root: &Path) -> Vec<String> {
+    let examples_dir = root.join("examples");
+    let mut names = Vec::new();
+    if let Ok(entries) = fs::read_dir(&examples_dir) {
+        for entry in entries.flatten() {
+            let system_toml = entry.path().join("system.toml");
+            if !system_toml.exists() {
+                continue;
+            }
+            let name = fs::read_to_string(&system_toml)
+                .ok()
+                .and_then(|c| toml::from_str::<bloxide_codegen::schema::SystemConfig>(&c).ok())
+                .and_then(|config| config.system.name)
+                .unwrap_or_else(|| entry.file_name().to_string_lossy().to_string());
+            names.push(name);
+        }
+    }
+    names.sort();
+    names
+}
+
 pub fn to_camel_case(name: &str) -> String {
     name.split(['-', '_'])
         .map(|part| {
@@ -268,7 +292,7 @@ One paragraph. What does this actor do?
 
 ## Crate Location
 
-- Blox crate: `crates/bloxes/<blox-name>/`
+- Blox crate: `bloxes/<blox-name>/`
 - Messages crate: `crates/messages/<blox-name>-messages/`
 - Context crate: `crates/context/blox-ctx-<name>/` _(action functions; no concrete types)_
 

@@ -83,7 +83,7 @@ pub struct SpawnOutput<R: BloxRuntime> {
 
 `bloxide-spawn` also owns the **two-layer spawn composition**: impl-crate factories do pure construction and return `ActorParts<S, R>` (child id, machine, mailboxes, lifecycle/abort refs + streams, policy), while the platform helper `spawn_actor_task(parts, notify)` consumes the parts — it assembles `RunConfig::supervised_with_abort`, spawns the run loop via `SpawnCap`, derives the kill handle, and packs the `SpawnOutput` above. The system codegen composes the two at the wiring site (Layer 6); `SpawnFn`/`SpawnOutput` themselves are unchanged, so a hand-assembled factory that builds a `SpawnOutput` directly is still legal.
 
-**Layer 4 (blox)**: `crates/bloxes/pool/blox.toml` declares the injected fields as `[[context.uses]]` entries with `role = "ctor"` (gated by the Pool's `dynamic` feature):
+**Layer 4 (blox)**: `bloxes/pool/blox.toml` declares the injected fields as `[[context.uses]]` entries with `role = "ctor"` (gated by the Pool's `dynamic` feature):
 
 ```toml
 [[context.uses]]
@@ -186,7 +186,7 @@ This crate is the **only place** that:
 
 The executor mechanics the factory would otherwise perform — `RunConfig` assembly, `SpawnCap::spawn`, kill-handle derivation — live in one platform function, `bloxide_spawn::spawn_actor_task(parts, notify) -> SpawnOutput<R>` (Layer 3), shared by every factory composition.
 
-**Layer 6 (system wiring)**: `apps/tokio-pool-demo/system.toml` binds the constructor params:
+**Layer 6 (system wiring)**: `examples/tokio-pool-demo/system.toml` binds the constructor params:
 
 ```toml
 [actors.inject]
@@ -205,7 +205,7 @@ impl_crate = "tokio_pool_demo_impl"
 kind = "dynamic"
 ```
 
-The generated `main.rs` injects the factory as a closure that monomorphizes `build_worker` with the system-generated concrete worker spec and composes it with the platform spawn (the codegen also adds a `bloxide-spawn` dependency to the app's `Cargo.toml` for this):
+The generated `main.rs` injects the factory as a closure that monomorphizes `build_worker` with the system-generated concrete worker spec and composes it with the platform spawn (the codegen also adds a `bloxide-spawn` dependency to the materialized example crate's `Cargo.toml` for this):
 
 ```rust
 let pool_ctx = PoolCtx::new(

@@ -25,7 +25,7 @@ Bloxide is a hierarchical state machine (HSM) + actor messaging framework. Domai
 - Read [AGENTS.md](AGENTS.md) for the three-layer principle, four-layer application structure, and two-tier trait system in one place.
 - Use [skills/building-with-bloxide/SKILL.md](skills/building-with-bloxide/SKILL.md) as the step-by-step build workflow.
 - Keep [skills/building-with-bloxide/reference.md](skills/building-with-bloxide/reference.md) open as the API reference while you build.
-- For the smallest runnable app, start with `cargo run -p tokio-minimal-demo` (now fully four-layered via `counter-*` crates).
+- For the smallest runnable example, start with `cargo blox run --example tokio-minimal-demo` (now fully four-layered via `counter-*` crates).
 
 ---
 
@@ -90,7 +90,6 @@ bloxide/
 │   ├── bloxide-timer/     # timer service: set_timer / cancel_timer / cancel_timer_by_id
 │   ├── messages/          # shared message crates (ping-pong, pool, counter, bhsm-tst)
 │   ├── context/           # composable context crates (blox-ctx-ping-pong, -pool-ref, -rounds, -ticks)
-│   ├── bloxes/            # ping, pong, worker, pool, counter, bhsm-tst
 │   ├── impl/              # concrete behavior/factory crates for wiring demos (tokio-pool-demo-impl)
 │   └── tools/             # codegen and CLI tools
 │       ├── bloxide-codegen/ # TOML-driven code generator library
@@ -99,7 +98,8 @@ bloxide/
 │   ├── bloxide-embassy/   # Embassy runtime (embedded target)
 │   ├── bloxide-tokio/     # Tokio runtime (std target)
 │   └── bloxide-test-runtime/ # executor-free test runtime (TestRuntime)
-├── apps/             # declarative wiring manifests + generated binaries
+├── bloxes/            # pure-TOML blox sources (blox.toml + tests): ping, pong, worker, pool, counter, bhsm-tst
+├── examples/          # declarative wiring manifests (system.toml) + tests
 │   ├── embassy-demo/
 │   ├── tokio-demo/
 │   ├── tokio-minimal-demo/
@@ -120,31 +120,40 @@ bloxide/
 
 ---
 
-## Running the apps
+## Running the examples
 
-> **Getting started — generate first.** Generated artifacts (`src/generated/`,
-> `apps/*/main.rs`, `apps/*/Cargo.toml`) are **gitignored** — a fresh checkout
-> contains only the `blox.toml` / `system.toml` sources. Run
+> **Getting started — generate first.** Generated artifacts (in-crate
+> `src/generated/` for stdlib crates like bloxide-supervisor,
+> `target/bloxide-generated/` for bloxes and examples, `.vscode/settings.json`)
+> are **gitignored** — a
+> fresh checkout contains only the `blox.toml` / `system.toml` sources. Run
 > `cargo blox generate` (or `cargo run -p cargo-blox -- blox generate` when
 > working from a source checkout of this repo — the `cargo blox` on PATH is an
 > installed binary and may be stale) before the first build. `generate` runs
 > the spec-to-code lint first and is idempotent, and all `cargo blox` commands
 > resolve the workspace root, so they work from any subdirectory.
+>
+> **IDE setup.** `cargo blox generate` also emits `.vscode/settings.json`
+> declaring `rust-analyzer.linkedProjects` for both the root `Cargo.toml` and
+> `target/bloxide-generated/Cargo.toml`, so after the one-time generate step
+> rust-analyzer indexes both workspaces — no manual editor configuration.
 
-Each app has a `system.toml` wiring manifest and a generated `main.rs`.
+Each example has a `system.toml` wiring manifest and committed tests;
+`cargo blox generate` materializes a runnable crate per example into
+`target/bloxide-generated/examples/<name>/`.
 
 ```bash
 # Minimal single-actor Tokio example (4-layer architecture)
-cargo run -p tokio-minimal-demo
+cargo blox run --example tokio-minimal-demo
 
 # Ping-pong with OTP supervision, timer-driven pause, and full HSM tracing
-RUST_LOG=trace cargo run -p tokio-demo
+RUST_LOG=trace cargo blox run --example tokio-demo
 
 # Worker pool with dynamic spawning
-RUST_LOG=info cargo run -p tokio-pool-demo
+RUST_LOG=info cargo blox run --example tokio-pool-demo
 
 # Embassy (std target, simulates embedded)
-RUST_LOG=trace cargo run -p embassy-demo
+RUST_LOG=trace cargo blox run --example embassy-demo
 ```
 
 ---
@@ -161,7 +170,7 @@ cargo blox check      # generate + cargo check
 cargo blox test       # generate + cargo test
 ```
 
-Message enums, event types, and state topology are declared in `blox.toml` and generated into `src/generated/`. See `skills/building-with-bloxide/SKILL.md` for the full workflow.
+Message enums, event types, and state topology are declared in `blox.toml`; blox and example crates are materialized under `target/bloxide-generated/`, while stdlib crates (bloxide-supervisor, messages crates) generate in-crate into `src/generated/`. See `skills/building-with-bloxide/SKILL.md` for the full workflow.
 
 ---
 

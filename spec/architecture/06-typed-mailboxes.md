@@ -44,7 +44,7 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 ```
 
-Run `cargo blox generate` to produce `src/generated/events.rs` with `From<Envelope<M>>` impls,
+Run `cargo blox generate` to produce `src/generated/events.rs` (in the materialized crate under `target/bloxide-generated/`) with `From<Envelope<M>>` impls,
 `EventTag`, tag constants, and payload accessor methods. Then use `pub use crate::generated::events::*;`.
 
 ## `MachineSpec::Mailboxes<R>` Associated Type

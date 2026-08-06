@@ -72,7 +72,7 @@ pub fn init(dir: &str, runtime: &str) -> Result<()> {
     println!("\nInitialized bloxide workspace at {}", target.display());
     println!("Next steps:");
     println!("  cd {}", target.display());
-    println!("  cargo blox run -- -p counter");
+    println!("  cargo blox run --example counter");
     Ok(())
 }
 
@@ -80,9 +80,9 @@ fn create_workspace_layout(target: &Path, runtime: &str, bloxide_root: &Path) ->
     for d in [
         "crates/messages",
         "crates/context",
-        "crates/bloxes",
+        "bloxes",
         "crates/impl",
-        "apps",
+        "examples",
         "spec/architecture",
         "spec/bloxes",
         "spec/templates",
@@ -178,19 +178,19 @@ A bloxide application workspace (HSM + actor messaging, runtime-agnostic bloxes)
 
 ```
 spec/                 ← blox specs (source of truth for design)
+bloxes/               ← pure-TOML blox sources (blox.toml → codegen)
 crates/
   messages/           ← shared plain-data message enums
   context/            ← domain context crates (action functions)
-  bloxes/             ← declarative blox crates (blox.toml → codegen)
   impl/               ← impl crates (concrete behavior for impl_required actions)
-apps/                 ← system.toml wiring manifests (main.rs is generated)
+examples/             ← system.toml wiring manifests (the example crate is materialized)
 ```
 
 ## Rules
 
 - Spec first: write `spec/bloxes/<name>.md` before implementing.
-- Never hand-edit generated code (`src/generated/`, `apps/*/src/main.rs`,
-  `apps/*/Cargo.toml`) — edit `blox.toml` / `system.toml` and run
+- Never hand-edit generated code (`src/generated/`,
+  `target/bloxide-generated/`) — edit `blox.toml` / `system.toml` and run
   `cargo blox generate` (it runs lint first).
 - Run `cargo blox ci` before committing.
 "#;

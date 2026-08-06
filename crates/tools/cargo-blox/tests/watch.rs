@@ -36,13 +36,18 @@ name = \"Active\"
 ";
 
 /// Writes a fixture workspace:
-///   Cargo.toml ([workspace])
-///   crates/bloxes/wsblox/blox.toml
+///   Cargo.toml ([workspace] + [workspace.dependencies])
+///   bloxes/wsblox/blox.toml
 fn write_fixture() -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
-    fs::write(dir.path().join("Cargo.toml"), "[workspace]\nmembers = []\n")
-        .expect("write workspace Cargo.toml");
-    let blox_dir = dir.path().join("crates/bloxes/wsblox");
+    // bloxes/wsblox is a pure-TOML source: the materializer resolves
+    // the derived bloxide-core dependency via [workspace.dependencies].
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[workspace]\nmembers = []\n\n[workspace.dependencies]\nbloxide-core = { path = \"crates/bloxide-core\" }\n",
+    )
+    .expect("write workspace Cargo.toml");
+    let blox_dir = dir.path().join("bloxes/wsblox");
     fs::create_dir_all(&blox_dir).expect("create blox dir");
     fs::write(blox_dir.join("blox.toml"), BLOX_FIXTURE).expect("write blox.toml");
     dir
@@ -51,7 +56,7 @@ fn write_fixture() -> TempDir {
 #[test]
 fn watch_regenerates_in_invocation_workspace() {
     let dir = write_fixture();
-    let blox_dir = dir.path().join("crates/bloxes/wsblox");
+    let blox_dir = dir.path().join("bloxes/wsblox");
     // Decoy: stands in for the cargo-blox crate dir that CARGO_MANIFEST_DIR
     // points at under `cargo run`. watch must ignore it entirely.
     let decoy = TempDir::new().expect("create decoy dir");
@@ -66,7 +71,11 @@ fn watch_regenerates_in_invocation_workspace() {
         .spawn()
         .expect("spawn cargo-blox watch");
 
-    let generated_mod = blox_dir.join("src/generated/mod.rs");
+    // Pure-TOML bloxes are materialized into target/bloxide-generated
+    // (crate name = kebab-case actor name + "-blox").
+    let generated_mod = dir
+        .path()
+        .join("target/bloxide-generated/crates/ws-blox/src/generated/mod.rs");
     let blox_toml = blox_dir.join("blox.toml");
 
     // watch debounces regeneration at 500 ms from startup, so keep editing

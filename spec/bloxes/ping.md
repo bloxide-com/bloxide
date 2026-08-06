@@ -14,7 +14,7 @@ The Ping actor initiates and drives a ping-pong exchange with the Pong actor. It
 
 ## Crate Location
 
-- Blox crate: `crates/bloxes/ping/`
+- Blox crate: `bloxes/ping/`
 - Messages crate: `crates/messages/ping-pong-messages/`
 - Context crates: `crates/context/blox-ctx-rounds/`, `crates/context/blox-ctx-ping-pong/`
 
@@ -199,8 +199,8 @@ Runtime emits: ChildLifecycleEvent::Started to supervisor
 
 | Name | Value | Description |
 |------|-------|-------------|
-| `MAX_ROUNDS` | 5 (`u8`) | Total ping-pong exchanges before `Decision::Done` (clean self-termination); defined in `crates/bloxes/ping/src/lib.rs`, imported into guards via `spec_imports` |
-| `PAUSE_AT_ROUND` | 2 (`u8`) | Round at which Active internally pauses itself; defined in `crates/bloxes/ping/src/lib.rs` |
+| `MAX_ROUNDS` | 5 (`u8`) | Total ping-pong exchanges before `Decision::Done` (clean self-termination); declared in `bloxes/ping/blox.toml` (`[[consts]]`), imported into guards via `spec_imports` |
+| `PAUSE_AT_ROUND` | 2 (`u8`) | Round at which Active internally pauses itself; declared in `bloxes/ping/blox.toml` (`[[consts]]`) |
 
 The pause duration is not a constant: `schedule_resume` derives it from the current round as `2000 + round * 500` ms.
 
@@ -209,7 +209,7 @@ The pause duration is not a constant: `schedule_resume` derives it from the curr
 Blox-crate unit tests run against the blox-level **stub** spec (per invariant #18,
 concrete actions are wired only at the system level). The tests therefore verify
 topology, guards, and lifecycle semantics — not action side effects. Action
-behavior is covered by the runnable demos (`apps/tokio-demo`).
+behavior is covered by the runnable demos (`examples/tokio-demo`).
 
 - [x] `dispatch(PingEvent::Lifecycle(LifecycleCommand::Start))` exits Init and enters `Active`
 - [x] `PingPongMsg::Pong(n)` in `Active` stays (`Decision::Stay`, no re-entry) when round guards don't fire
@@ -236,7 +236,7 @@ behavior is covered by the runnable demos (`apps/tokio-demo`).
 
 ## Acceptance Criteria → Test Mapping
 
-All tests live in `crates/bloxes/ping/src/tests.rs` and use `TestRuntime`:
+All tests live in `bloxes/ping/tests/ping.rs` and use `TestRuntime`:
 
 | Acceptance Criterion | Test Function |
 |---|---|
@@ -255,7 +255,7 @@ The `Error` path has a two-level story: at the **blox level** the stub actions a
 
 ## blox.toml
 
-The full declarative source is `crates/bloxes/ping/blox.toml`; the topology-relevant parts:
+The full declarative source is `bloxes/ping/blox.toml`; the topology-relevant parts:
 
 ```toml
 [topology]

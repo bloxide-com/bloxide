@@ -1,0 +1,216 @@
+# Copyright 2025 Bloxide, all rights reserved
+[actor]
+name = "Pool"
+
+# Crate packaging for the materialized crate
+# (target/bloxide-generated/crates/pool-blox). Dependencies are derived from
+# the message paths / context imports / action crates below; only features
+# and dev-dependencies need declaring here.
+[package]
+description = "Pool actor blox for the worker pool example — runtime-agnostic"
+
+[package.features]
+default = ["std", "dynamic"]
+std = ["bloxide-core/std"]
+# Dynamic spawning support: gates spawn_fn, spawn_ref, notify_ref, and
+# spawn-related transitions. The Pool is the example of a conditionally-
+# dynamic blox — without this feature it compiles but cannot spawn workers.
+dynamic = []
+
+# Dev-dependencies of the integration tests in tests/ (integration tests do
+# not see the crate's regular dependencies — declare everything they import).
+[package.dev-dependencies]
+blox-ctx-pool-ref = {}
+bloxide-child-management = {}
+bloxide-core = { features = ["std"] }
+bloxide-peers = {}
+bloxide-spawn = { features = ["std"] }
+bloxide-test-runtime = {}
+pool-messages = {}
+
+# ── Event type (standard codegen-generated event enum) ──────────────────────
+# The SpawnReply mailbox is dynamic-only (carries SpawnedWorker replies from
+# spawned child workers). The Msg mailbox is always present.
+[event]
+name = "PoolEvent"
+generics = "<R: BloxRuntime>"
+feature = "dynamic"
+feature_generics = "<R: BloxRuntime>"
+
+[[event.mailboxes]]
+variant = "Msg"
+message = "PoolMsg"
+message_path = "pool_messages::PoolMsg"
+
+[[event.mailboxes]]
+variant = "SpawnReply"
+message = "SpawnedWorker"
+message_path = "blox_ctx_pool_ref::SpawnedWorker<bloxide_peers::PeerCtrl<pool_messages::WorkerMsg, R>, R>"
+feature = "dynamic"
+
+# ── Context struct ───────────────────────────────────────────────────────────
+# Paired #[cfg] generation: the non-dynamic variant excludes spawn fields,
+# spawn imports, and spawn transitions. The dynamic variant includes everything.
+
+[context]
+name = "PoolCtx"
+generics = "<R: BloxRuntime>"
+feature = "dynamic"
+feature_generics = "<R: BloxRuntime>"
+on_init = "ctx.worker_refs.clear(); ctx.worker_ctrls.clear(); ctx.pending = 0;"
+# The dynamic variant also resets the dynamic spawn state — a restart after
+# Stop must not leak stale spawn bookkeeping into the next run. (These fields
+# only exist under feature = "dynamic", so they need a feature-gated on_init.)
+feature_on_init = "ctx.worker_refs.clear(); ctx.worker_ctrls.clear(); ctx.pending = 0; ctx.pending_task_id = 0; ctx.spawn_in_flight = false; ctx.spawn_queue.clear();"
+imports = [
+    "pool_messages::{PoolMsg, WorkerMsg}",
+    "bloxide_peers::PeerCtrl",
+    "alloc::vec::Vec",
+]
+feature_imports = [
+    "blox_ctx_pool_ref::{SpawnRequest, SpawnedWorker}",
+    "bloxide_spawn::SpawnFn",
+    "bloxide_core::lifecycle::ChildLifecycleEvent",
+    "bloxide_child_management::control::ChildCtrl",
+]
+
+# Accessor traits removed — fields are now plain struct fields.
+[[context.uses]]
+field = "self_ref"
+field_type = "ActorRef<PoolMsg, R>"
+role = "ctor"
+
+# Direct context fields for worker tracking and spawn state.
+[[context.fields]]
+name = "worker_refs"
+type = "Vec<ActorRef<WorkerMsg, R>>"
+
+[[context.fields]]
+name = "worker_ctrls"
+type = "Vec<ActorRef<PeerCtrl<WorkerMsg, R>, R>>"
+
+[[context.fields]]
+name = "pending"
+type = "u32"
+
+# Blox-specific dynamic spawn fields (gated by Pool's `dynamic` feature).
+# These are Pool-specific constructor params and state — no accessor traits.
+# Types are imported via feature_imports above.
+[[context.uses]]
+feature = "dynamic"
+fields = [
+    { name = "spawn_fn", ty = "SpawnFn<R, SpawnRequest<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>>", role = "ctor" },
+    { name = "spawn_ref", ty = "ActorRef<ChildCtrl<R>, R>", role = "ctor" },
+    { name = "notify_ref", ty = "ActorRef<ChildLifecycleEvent, R>", role = "ctor" },
+    { name = "spawn_reply_ref", ty = "ActorRef<SpawnedWorker<bloxide_peers::PeerCtrl<WorkerMsg, R>, R>, R>", role = "ctor" },
+    { name = "pending_task_id", ty = "u32", role = "state" },
+    { name = "spawn_in_flight", ty = "bool", role = "state" },
+    { name = "spawn_queue", ty = "Vec<u32>", role = "state" },
+]
+
+# --- Action declarations (Phase 3 system codegen) ---
+
+[[context.actions]]
+name = "handle_spawn_worker"
+fields = ["self_id", "self_ref:ref", "spawn_fn:ref", "spawn_ref:ref", "notify_ref:ref", "spawn_reply_ref:ref", "pending_task_id:mut", "spawn_in_flight:mut", "pending:mut"]
+event_payload = "spawn_worker"
+impl_required = true
+feature = "dynamic"
+returns = "ActionResult"
+
+[[context.actions]]
+name = "handle_spawned_worker"
+fields = ["self_id", "self_ref:ref", "spawn_fn:ref", "spawn_ref:ref", "notify_ref:ref", "spawn_reply_ref:ref", "pending_task_id:mut", "spawn_in_flight:mut", "spawn_queue:mut", "worker_refs:mut", "worker_ctrls:mut"]
+event_payload = "spawned_worker"
+impl_required = true
+feature = "dynamic"
+returns = "ActionResult"
+
+[[context.actions]]
+name = "handle_spawn_worker_queued"
+fields = ["spawn_queue:mut", "pending:mut"]
+event_payload = "spawn_worker"
+impl_required = true
+feature = "dynamic"
+returns = "ActionResult"
+
+[[context.actions]]
+name = "handle_work_done"
+fields = ["pending:mut"]
+event_payload = "work_done"
+impl_required = true
+returns = "ActionResult"
+
+[topology]
+
+
+[[topology.states]]
+name = "Idle"
+initial = true
+
+[[topology.states]]
+name = "Spawning"
+
+[[topology.states]]
+name = "Active"
+
+# --- Declarative transitions ---
+
+# Idle: SpawnWorker → Spawning (dynamic only)
+[[topology.transitions]]
+state = "Idle"
+event = "PoolMsg::SpawnWorker(_)"
+target = "Spawning"
+actions = ["Self::handle_spawn_worker"]
+feature = "dynamic"
+
+# Spawning: SpawnedWorker reply → Active (or stay Spawning if more spawns in-flight/queued, or stop if all workers already finished)
+[[topology.transitions]]
+state = "Spawning"
+event = "PoolEvent::SpawnReply(_)"
+target = "Active"
+actions = ["Self::handle_spawned_worker"]
+feature = "dynamic"
+
+[[topology.transitions.guards]]
+condition = "ctx.spawn_in_flight || !ctx.spawn_queue.is_empty()"
+target = "Spawning"
+
+[[topology.transitions.guards]]
+condition = "ctx.pending == 0 && !ctx.worker_refs.is_empty()"
+target = "stop"
+
+# Spawning: buffer additional SpawnWorker requests while waiting for reply
+[[topology.transitions]]
+state = "Spawning"
+event = "PoolMsg::SpawnWorker(_)"
+target = "stay"
+actions = ["Self::handle_spawn_worker_queued"]
+feature = "dynamic"
+
+# Spawning: handle WorkDone while waiting for spawn reply
+[[topology.transitions]]
+state = "Spawning"
+event = "PoolMsg::WorkDone(_)"
+target = "stay"
+actions = ["Self::handle_work_done"]
+
+# Active: SpawnWorker → Spawning (async spawn, dynamic only)
+[[topology.transitions]]
+state = "Active"
+event = "PoolMsg::SpawnWorker(_)"
+target = "Spawning"
+actions = ["Self::handle_spawn_worker"]
+feature = "dynamic"
+
+# Active: WorkDone with guard
+[[topology.transitions]]
+state = "Active"
+event = "PoolMsg::WorkDone(_)"
+target = "stay"
+actions = ["Self::handle_work_done"]
+
+[[topology.transitions.guards]]
+condition = "ctx.pending == 0"
+target = "stop"
+

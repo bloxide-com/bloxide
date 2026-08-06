@@ -2,7 +2,7 @@
 //! Integration tests for the `cargo-blox add-supervision` and `set-policy`
 //! commands: strategy validation and supervision-group targeting.
 //!
-//! Each test creates a temporary workspace with an `apps/<app>/system.toml`
+//! Each test creates a temporary workspace with an `examples/<app>/system.toml`
 //! fixture, spawns the `cargo-blox` binary as a subprocess, and reads back
 //! the system.toml to verify the edit.
 
@@ -56,10 +56,10 @@ strategy = \"when_all_done\"
 children = [\"worker\"]
 ";
 
-/// Writes a system.toml fixture to `<temp>/apps/<app>/system.toml`.
+/// Writes a system.toml fixture to `<temp>/examples/<app>/system.toml`.
 fn write_fixture(app: &str, content: &str) -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
-    let app_dir = dir.path().join("apps").join(app);
+    let app_dir = dir.path().join("examples").join(app);
     fs::create_dir_all(&app_dir).expect("create app dir");
     fs::write(app_dir.join("system.toml"), content).expect("write system.toml");
     dir
@@ -84,7 +84,7 @@ fn run_blox(dir: &TempDir, args: &[&str]) -> (String, String, i32) {
 
 /// Reads back the system.toml as a parsed `toml::Value`.
 fn read_back_system(dir: &TempDir, app: &str) -> toml::Value {
-    let path = dir.path().join("apps").join(app).join("system.toml");
+    let path = dir.path().join("examples").join(app).join("system.toml");
     let content = fs::read_to_string(&path).expect("read system.toml back");
     toml::from_str(&content).expect("parse system.toml back")
 }

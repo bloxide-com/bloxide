@@ -40,10 +40,7 @@ pub(crate) fn new_impl_in(root: &Path, name: &str, blox_name: &str) -> Result<()
     let blox_snake = blox_name.to_lowercase().replace('-', "_");
 
     // ── Load and parse the blox.toml ────────────────────────────────────────
-    let blox_toml_path = root
-        .join("crates/bloxes")
-        .join(&blox_snake)
-        .join("blox.toml");
+    let blox_toml_path = root.join("bloxes").join(&blox_snake).join("blox.toml");
     if !blox_toml_path.exists() {
         return Err(crate::exit::not_found(format!(
             "blox.toml not found for blox '{}' at {}",

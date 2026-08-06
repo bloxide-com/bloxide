@@ -54,11 +54,11 @@ name = \"Test\"
 [topology]
 ";
 
-/// Writes a fixture to `<temp>/crates/bloxes/<blox_name>/blox.toml` and returns
+/// Writes a fixture to `<temp>/bloxes/<blox_name>/blox.toml` and returns
 /// the temp dir (kept alive for the duration of the test).
 fn write_fixture(blox_name: &str, content: &str) -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
-    let blox_dir = dir.path().join("crates/bloxes").join(blox_name);
+    let blox_dir = dir.path().join("bloxes").join(blox_name);
     fs::create_dir_all(&blox_dir).expect("create blox dir");
     fs::write(blox_dir.join("blox.toml"), content).expect("write blox.toml");
     dir

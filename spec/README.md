@@ -107,10 +107,10 @@ spec/
 1. Copy `spec/templates/blox-spec.md` → `spec/bloxes/<your-blox-name>.md`
 2. Fill in every section (delete the instructional blockquotes as you go)
 3. Get the spec reviewed before creating any Rust code
-4. Create crates under `crates/`: `crates/bloxes/<your-blox-name>/`, and when needed `crates/messages/<your-blox-name>-messages/`, `crates/context/blox-ctx-<name>/` (action functions), and — only for runtime-specific behavior such as spawn factories — an impl crate such as `crates/impl/<name>-impl/` consumed by the wiring binary
-5. Write unit tests in the blox crate using `TestRuntime`, one test per acceptance criterion
-6. Implement `MachineSpec` to make the tests pass
-7. Add wiring in the application crate
+4. Create the pure-TOML blox source at `bloxes/<your-blox-name>/` (`blox.toml`; `cargo blox new` scaffolds this), and when needed real crates under `crates/`: `crates/messages/<your-blox-name>-messages/`, `crates/context/blox-ctx-<name>/` (action functions), and — only for runtime-specific behavior such as spawn factories — an impl crate such as `crates/impl/<name>-impl/` consumed by the wiring binary
+5. Write integration tests at `bloxes/<your-blox-name>/tests/<your-blox-name>.rs` using `TestRuntime`, one test per acceptance criterion
+6. Run `cargo blox generate` to materialize the crate into `target/bloxide-generated/`, then implement action functions to make the tests pass
+7. Add wiring in an example's `examples/<name>/system.toml`
 
 ## Key Invariants
 

@@ -49,7 +49,7 @@ fn state_row_from_value(table: &toml_edit::Table) -> Option<StateRow> {
 
 /// List the states in a blox's topology.
 ///
-/// Reads `crates/bloxes/<blox_name>/blox.toml` and prints the states in
+/// Reads `bloxes/<blox_name>/blox.toml` and prints the states in
 /// either a padded table (default) or a pretty-printed JSON array
 /// (`--json`).
 pub fn list_states(blox_name: &str, json: bool) -> anyhow::Result<()> {
@@ -266,7 +266,7 @@ fn transition_row_from_value(table: &toml_edit::Table) -> Option<TransitionRow> 
 
 /// List the transitions in a blox's topology.
 ///
-/// Reads `crates/bloxes/<blox_name>/blox.toml` and prints the transitions in
+/// Reads `bloxes/<blox_name>/blox.toml` and prints the transitions in
 /// either a padded table (default) or a pretty-printed JSON array
 /// (`--json`).
 pub fn list_transitions(blox_name: &str, json: bool) -> anyhow::Result<()> {
@@ -382,7 +382,7 @@ fn crate_candidates(message_path: &str) -> Vec<&str> {
 /// `crates/messages/<crate>/blox.toml` exists (crate underscores map to
 /// directory hyphens, e.g. `ping_pong_messages` → `ping-pong-messages`);
 /// non-messages crates (context crates, feature crates) are skipped. Like
-/// the `crates/bloxes` scan, the lookup is relative to the current
+/// the `bloxes` scan, the lookup is relative to the current
 /// directory. Each messages crate is returned at most once.
 fn messages_crates_for_blox(doc: &toml_edit::DocumentMut) -> Vec<std::path::PathBuf> {
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
@@ -412,16 +412,18 @@ fn messages_crates_for_blox(doc: &toml_edit::DocumentMut) -> Vec<std::path::Path
 
 /// List all blox crates in the workspace.
 ///
-/// Scans `crates/bloxes/*/blox.toml` and prints a summary table (NAME,
-/// STATES, TRANSITIONS, MESSAGES) or a pretty-printed JSON array
-/// (`--json`). MESSAGES counts the total variants across the
+/// Scans `bloxes/*/blox.toml` (pure-TOML layout) and prints a
+/// summary table (NAME, STATES, TRANSITIONS, MESSAGES) or a pretty-printed
+/// JSON array (`--json`). MESSAGES counts the total variants across the
 /// `crates/messages/*` crates referenced by the blox's
 /// `[[event.mailboxes]]`. Results are sorted alphabetically by blox name.
 pub fn list_bloxes(json: bool) -> anyhow::Result<()> {
-    let bloxes_dir = std::path::Path::new("crates/bloxes");
     let mut rows: Vec<BloxSummaryRow> = Vec::new();
 
-    if bloxes_dir.exists() {
+    for bloxes_dir in [std::path::Path::new("bloxes")] {
+        if !bloxes_dir.exists() {
+            continue;
+        }
         let entries = std::fs::read_dir(bloxes_dir)
             .with_context(|| format!("failed to read {}", bloxes_dir.display()))?;
         for entry in entries {

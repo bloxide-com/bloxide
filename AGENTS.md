@@ -28,6 +28,13 @@ bloxide/
       reference.md             ← deep-dive companion: macro syntax, timer/supervision patterns, worked example
     contributing-to-bloxide/
       SKILL.md                 ← how to evolve the framework: engine, runtimes, stdlib crates, macros
+  bloxes/                      ← pure-TOML blox sources: each holds ONLY blox.toml + tests/<name>.rs (integration tests)
+    ping/                      ← declarative Ping actor; depends on context crates (blox-ctx-rounds, blox-ctx-ping-pong) and bloxide-timer
+    pong/                      ← declarative Pong actor; depends on context crates (blox-ctx-ping-pong)
+    worker/                    ← declarative Worker actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
+    pool/                      ← declarative Pool actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
+    counter/                   ← declarative Counter actor; depends on context crates (blox-ctx-ticks)
+    bhsm-tst/                  ← declarative Miro Samek HSM test blox (states S/S1/S11/S2/S21/S211); depends on context crate (blox-ctx-noop)
   crates/
     bloxide-core/              ← HSM engine, BloxRuntime trait, channel traits, messaging data types (ActorRef, Envelope, ActorId) (no_std)
     bloxide-log/               ← feature-gated logging macros (log / defmt backends); no_std
@@ -48,15 +55,8 @@ bloxide/
       blox-ctx-pool-ref/       ← domain context crate + notify_pool_done action function
       blox-ctx-rounds/         ← increment_round action function
       blox-ctx-ticks/          ← increment_count action function
-    bloxes/
-      ping/                    ← declarative Ping actor; depends on context crates (blox-ctx-rounds, blox-ctx-ping-pong) and bloxide-timer
-      pong/                    ← declarative Pong actor; depends on context crates (blox-ctx-ping-pong)
-      worker/                  ← declarative Worker actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
-      pool/                    ← declarative Pool actor; depends on context crates (blox-ctx-pool-ref, bloxide-peers)
-      counter/                 ← declarative Counter actor; depends on context crates (blox-ctx-ticks)
-      bhsm-tst/                ← declarative Miro Samek HSM test blox (states S/S1/S11/S2/S21/S211); depends on context crate (blox-ctx-noop)
     impl/
-      tokio-pool-demo-impl/    ← impl crate: free functions (process_work, build_worker, pool action handlers) for pool demo
+      tokio-pool-demo-impl/    ← impl crate: free functions (process_work, build_worker, pool action handlers) for pool demo (standalone committed crate, NOT a root workspace member — root `exclude` entry; built as a path dep of the generated example crates; tests run via the `cargo blox test` impl-crate step)
     tools/
       bloxide-codegen/         ← TOML-driven code generator library
       cargo-blox/              ← CLI: cargo blox generate / new / build / check / test / run
@@ -67,14 +67,26 @@ bloxide/
     bloxide-embassy/           ← Embassy runtime implementation
     bloxide-tokio/             ← Tokio runtime implementation; implements SpawnCap and DynamicChannelCap
     bloxide-test-runtime/      ← test runtime for executor-free unit testing (no async executor; implements DynamicChannelCap + SpawnCap — kill is a documented no-op)
-  apps/
-    embassy-demo/             ← system.toml + generated main.rs: ping/pong on Embassy
-    tokio-demo/               ← system.toml + generated main.rs: ping/pong on Tokio
-    tokio-minimal-demo/       ← system.toml + generated main.rs: counter actor on Tokio
-    tokio-pool-demo/          ← system.toml + generated main.rs: pool/worker on Tokio
+  examples/                    ← pure-TOML wiring sources: each holds system.toml (+ tests/ for tokio-pool-demo)
+    embassy-demo/              ← system.toml: ping/pong on Embassy (host-runnable)
+    tokio-demo/                ← system.toml: ping/pong on Tokio
+    tokio-minimal-demo/        ← system.toml: counter actor on Tokio
+    tokio-pool-demo/           ← system.toml + tests/: pool/worker on Tokio
   scripts/                     ← CI helper scripts (ci.sh)
   AGENTS.md                    ← this file
 ```
+
+`cargo blox generate` materializes a complete cargo workspace at
+`target/bloxide-generated/` (build artifact, gitignored): members `crates/*`
+(the six generated blox crates — Cargo.toml, build.rs, src/lib.rs with prelude
+re-exports + `[[consts]]`, src/generated/*, mirrored tests/) and `examples/*`
+(the four generated example crates). Each generated crate has a build.rs that
+re-syncs from the source blox.toml/system.toml, so plain cargo commands work
+inside `target/bloxide-generated/` after one `cargo blox generate`. Generated
+crate name = kebab actor name + `-blox` (Ping → `ping-blox`). `generate` also
+writes `.vscode/settings.json` (gitignored) with
+`rust-analyzer.linkedProjects = ["./Cargo.toml", "./target/bloxide-generated/Cargo.toml"]`,
+so IDE indexing covers both workspaces.
 
 ## Three Mental Models
 
@@ -208,6 +220,28 @@ only values.
 
 All mutable state lives as direct fields on the context struct.
 
+### Crate Packaging: `[package]` and `[[consts]]`
+
+Blox sources are pure TOML — `bloxes/<name>/` contains only `blox.toml` and
+`tests/<name>.rs`; the cargo crate is materialized into
+`target/bloxide-generated/crates/<name>-blox/` by `cargo blox generate`.
+Packaging for that crate is declared in `blox.toml`:
+
+- `[package]` — `description` for the generated Cargo.toml.
+- `[package.features]` — feature flags. Regular dependencies are derived from
+  the message paths, context imports, and action crates declared below; only
+  features need declaring here. E.g. ping: `default = ["std"]`,
+  `std = ["bloxide-core/std", "bloxide-timer/std"]`; pool also declares
+  `dynamic = []` and its default is `["std", "dynamic"]`.
+- `[package.dependencies]` / `[package.dev-dependencies]` — explicit deps when
+  derivation isn't enough. Dev-dependencies cover everything
+  `tests/<name>.rs` imports (integration tests do not see the crate's regular
+  dependencies — declare everything they import).
+- `[[consts]]` — `name`, `ty`, `value`, optional `doc`; emitted at the
+  generated crate root (e.g. ping's `MAX_ROUNDS`/`PAUSE_AT_ROUND`, counter's
+  `DONE_AT_COUNT`). Guards reference them via `spec_imports` —
+  `spec_imports = ["crate::MAX_ROUNDS"]` keeps working.
+
 ### Action Declarations
 
 Actions are declared in `[[context.actions]]` entries in `blox.toml`. There is no `kind` key — the use site (transition vs entry/exit slot) determines the closure signature the codegen generates; a stale `kind` key is a hard parse error. Each action specifies:
@@ -222,7 +256,8 @@ Actions are declared in `[[context.actions]]` entries in `blox.toml`. There is n
 ### Example
 
 ```rust
-// Generated ctx.rs — plain fields, no accessor traits
+// Generated ctx (materialized crate target/bloxide-generated/crates/ping-blox/src/generated/)
+// — plain fields, no accessor traits
 pub struct PingCtx<R: BloxRuntime> {
     pub self_id: ActorId,
     pub peer_ref: ActorRef<PingPongMsg, R>,
@@ -258,18 +293,24 @@ of restating the list — this is the single canonical copy.
 
 16. **Dynamic actor spawning via factory injection** — Blox crates never declare `R: SpawnCap`. Dynamic spawning uses factory injection via constructor fields in blox context structs (declared as `[[context.uses]]` entries with `role = "ctor"`, e.g. `spawn_fn: SpawnFn<R, Req>`). The binary (or impl crate) provides the concrete factory function at construction time. Impl-crate factories do pure construction and return `bloxide_spawn::ActorParts` (no `run()`, `RunConfig`, or `SpawnCap`); the platform helper `bloxide_spawn::spawn_actor_task` — composed with the factory at the wiring site by the system codegen — owns `RunConfig`, task spawn, and kill-handle derivation. This keeps blox crates portable across all runtimes, including Embassy which lacks `SpawnCap`.
 17. **KillCapability is a runtime capability, not a message** — `KillCapability::kill(handle)` immediately aborts the child's task without any callbacks firing. No `on_exit` handlers run; the task is dropped in-place. KillCapability is for (1) unresponsive actors that cannot process Stop, or (2) cleanup of stopped actors whose resources should be freed immediately. Kill works for both static and dynamic actors; killed actors are permanently dead and cannot be restarted — normal lifecycle uses Reset/Stop through dispatch(). `KillCapability` lives in `bloxide-core` as a trait (with `NoKill` for static runtimes); the `Kill` type lives in `bloxide-spawn` because it requires the `SpawnCap` bound. Each runtime picks one via the `BloxRuntime::Kill` associated type (`NoKill` for Embassy, `Kill` for Tokio and TestRuntime). The trait carries a `CAN_KILL` associated const (`false` for `NoKill`, `true` for `Kill`): `ChildPolicy::Kill` is refused at registration on `!CAN_KILL` runtimes — a no-op kill must never let a supervisor mark a live child dead. TestRuntime's kill is **recorded, not executed** (`drain_killed()` / `kill_count()`), so kill paths are exercisable in unit tests. Supervisors store the concrete `KillHandle` per child (cloneable, so action functions can extract it from `&Event`); actors never see it.
-18. **System.toml is the single source of truth for concrete action wiring** — Blox-crate-level codegen ALWAYS produces stub `spec_skeletons`. The system-level codegen (from `system.toml`) ALWAYS produces concrete action closures, for every actor including dynamically spawned ones. There is no `crate = "crate"` path at the blox-crate level. The action contract is uniform: a transition action function returns `ActionResult`, `Result<(), E>`, or `()` — the codegen wrapper normalizes via `ActionResult::from(...)`; declare `returns = "ActionResult"` on the `[[context.actions]]` entry to skip the wrapper when the function already returns `ActionResult` (any other `returns` value is a hard error). Entry/exit functions are infallible `fn(&mut Ctx)` (any return value is discarded). Dynamic actors are declared in `system.toml` with `kind = "dynamic"` — they get a concrete spec generated but no channels/tasks/bootstrap in main.rs. The impl crate's spawn function is generic over the spec type; the generated main.rs monomorphizes it with the system-level concrete spec. Supervision strategy vocabulary in `system.toml` is `when_any_done` / `when_all_done` (maps to `GroupShutdown` variants; unknown values are hard errors).
+18. **System.toml is the single source of truth for concrete action wiring** — Blox-crate-level codegen ALWAYS produces stub `spec_skeletons`. ("Blox-crate level" means the materialized crate under `target/bloxide-generated/crates/` — there is no committed blox crate; blox integration tests run from the materialized crate.) The system-level codegen (from `system.toml`) ALWAYS produces concrete action closures, for every actor including dynamically spawned ones. There is no `crate = "crate"` path at the blox-crate level. The action contract is uniform: a transition action function returns `ActionResult`, `Result<(), E>`, or `()` — the codegen wrapper normalizes via `ActionResult::from(...)`; declare `returns = "ActionResult"` on the `[[context.actions]]` entry to skip the wrapper when the function already returns `ActionResult` (any other `returns` value is a hard error). Entry/exit functions are infallible `fn(&mut Ctx)` (any return value is discarded). Dynamic actors are declared in `system.toml` with `kind = "dynamic"` — they get a concrete spec generated but no channels/tasks/bootstrap in main.rs. The impl crate's spawn function is generic over the spec type; the generated main.rs monomorphizes it with the system-level concrete spec. Supervision strategy vocabulary in `system.toml` is `when_any_done` / `when_all_done` (maps to `GroupShutdown` variants; unknown values are hard errors).
 19. **Platform features are consumed uniformly** (spec 18) — a platform feature crate owns its message set, context field declarations, and consumer-side action functions (concrete params or extracted payloads, never the consumer's event enum). Blox crates compose features via `[[context.uses]]` / `[[context.actions]]` and never own feature logic or feature message sets. The supervisor is the reference consumer: topology only, everything else from `bloxide-child-management` + `bloxide-spawn`. Factory/capability features (spawn) are the documented exception to message-set ownership.
 20. **The supervision control plane is confirm-before-record** — `ChildGroup` phase transitions happen only on confirmed delivery or observed lifecycle reports, never on attempted sends. `try_send` error kinds are load-bearing: `Closed` proves the child's task is gone (terminal `Gone` phase, shutdown evaluated); `Full` queues the command in the per-child `pending_cmd` slot, retried by `flush_pending` on every event pass. Registration is fallible (`try_add`/`try_add_dynamic` → `RegistrationError`, warn-and-drop) — never a panic on message data. `ShuttingDown` records every terminal signal (`Stopped`/`Done`/`Failed`/`Aborted`/`Killed`/`Gone`) and waits forever by design (no timeout — an unresponsive child cannot be killed on static runtimes anyway). Reporting-side semantics: `Ping` is answered with `Alive` only from operational, non-error states; redundant `Start` is acknowledged with `Started` (mirroring `Stop`-in-Init); `Started(error)` is normalized to `Failed` at the source; a run loop whose domain streams ALL close while operational (all-streams-close — the actor became unreachable while the supervisor lives) reports `Failed` before exiting, while lifecycle/abort stream closure and all-streams-close in Init are the expected supervisor-teardown cascade and stay silent. Health checks require `MAX_MISSES` (2) consecutive unanswered delivered Pings before declaring a child rogue; an undelivered Ping is never a miss.
 
 ## Development Workflow
 
+0. **Bootstrap (fresh clone)** — Install the CLI (`cargo install --path crates/tools/cargo-blox`), then run `cargo blox generate`. This is mandatory after checkout: it materializes `target/bloxide-generated/` and writes `.vscode/settings.json`, so both cargo and IDE indexing work.
 1. **Spec first** — Write/update `spec/bloxes/<name>.md` with state diagram, events, transitions
-2. **Generate** — Run `cargo blox generate` to regenerate boilerplate from `blox.toml` specs
-3. **Tests next** — Write `TestRuntime`-based tests per acceptance criteria
+2. **Generate** — Run `cargo blox generate` to (re)materialize the generated workspace from `bloxes/*/blox.toml` and `examples/*/system.toml`
+3. **Tests next** — Write `TestRuntime`-based integration tests in `bloxes/<name>/tests/<name>.rs` per acceptance criteria
 4. **Then code** — Implement `MachineSpec` to pass tests
 5. **Review** — Verify impl matches spec; update tests if gaps found
 6. **Keep in sync** — Update spec diagrams if implementation reveals spec errors
+
+`cargo blox build` / `check` / `test` with no flags run BOTH the repo workspace
+and the generated workspace (`--example <name>` scopes to one example).
+`cargo blox run --example <name> [-- args]` runs an example; without
+`--example` it errors and lists the available examples.
 
 See `skills/building-with-bloxide/SKILL.md` for the full step-by-step workflow.
 

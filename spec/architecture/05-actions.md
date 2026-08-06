@@ -203,14 +203,15 @@ impl<R: BloxRuntime> PingSpec<R> {
 The same `cargo blox generate` run (also triggered by `cargo blox build` /
 `check` / `test` / `run`) then processes every `system.toml`: it resolves
 context/impl crates and generates **concrete action closures** with real,
-fully-qualified function calls into the app's `src/generated/`. Guards are
+fully-qualified function calls into the materialized example crate's
+`src/generated/` (under `target/bloxide-generated/examples/`). Guards are
 unchanged from blox-level (already real). Before emitting anything,
 `validate_concrete_actions` hard-fails on any `Self::` action that is not
 declared in `[[context.actions]]` or has no resolvable crate (or no `impl_crate`
 for `impl_required = true`) — there are no placeholder fallbacks.
 
 ```rust
-// apps/<app>/src/generated/ping_spec_skeleton.rs — concrete, context fns inlined
+// target/bloxide-generated/examples/<app>/src/generated/ping_spec_skeleton.rs — concrete, context fns inlined
 impl<R: BloxRuntime> PingSpec<R> {
     const ACTIVE_FNS: StateFns<Self> = StateFns {
         on_entry: &[

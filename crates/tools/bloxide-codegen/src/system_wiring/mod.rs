@@ -10,5 +10,7 @@ mod payload;
 mod validate;
 
 pub use emit::generate;
-pub(crate) use fmt::rustfmt_source;
+// Public so the pure-TOML blox crate materializer formats generated sources
+// byte-identically to `cargo blox generate` (crate_root::rustfmt_source).
+pub use fmt::rustfmt_source;
 pub use paths::extract_crates_from_path;

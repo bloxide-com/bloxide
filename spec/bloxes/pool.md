@@ -18,7 +18,7 @@ This blox showcases:
 
 ## Crate Location
 
-- Blox crate: `crates/bloxes/pool/`
+- Blox crate: `bloxes/pool/` (pure-TOML source; materialized to `target/bloxide-generated/crates/pool-blox/`)
 - Messages crate: `crates/messages/pool-messages/` (plain data only — `PoolMsg`, `WorkerMsg`; no `ActorRef`)
 - Context crate: `crates/context/blox-ctx-pool-ref/` (provides `SpawnRequest` / `SpawnedWorker` — they carry `ActorRef`s, so they live in this domain context crate rather than in `pool-messages`)
 - Impl crate: `crates/impl/tokio-pool-demo-impl/` (provides all pool action functions and the worker spawn factory)
@@ -39,7 +39,7 @@ stateDiagram-v2
 
 ## blox.toml
 
-The full declarative source is `crates/bloxes/pool/blox.toml`. Key excerpts:
+The full declarative source is `bloxes/pool/blox.toml`. Key excerpts:
 
 ```toml
 # Two mailboxes: Msg (always) and SpawnReply (dynamic-only — carries
@@ -212,7 +212,7 @@ Blox-crate unit tests run against the blox-level **stub** spec (per invariant #1
 they verify topology and stub-level lifecycle only — with stub actions the ctx fields
 never change from their defaults. Behavior that lives in the concrete actions (spawn
 accounting, queue processing, `DoWork` dispatch, `WorkDone` accounting) is verified at
-the app level by `apps/tokio-pool-demo/tests/`, which drives the system-generated
+the app level by `examples/tokio-pool-demo/tests/`, which drives the system-generated
 concrete spec.
 
 - [x] Topology is flat: three leaf states (`Idle`, `Spawning`, `Active`), initial `Idle`, no error state
@@ -231,8 +231,9 @@ concrete spec.
 
 ## Acceptance Criteria → Test Mapping
 
-Blox-level tests live in `crates/bloxes/pool/src/tests.rs` (TestRuntime, stub actions;
-run with `cargo test -p pool-blox --features std,dynamic`):
+Blox-level tests live in `bloxes/pool/tests/pool.rs` (TestRuntime, stub actions;
+run with `cargo blox generate`, then
+`cargo test --manifest-path target/bloxide-generated/Cargo.toml -p pool-blox`):
 
 | Acceptance Criterion | Test Function |
 |---|---|
@@ -244,7 +245,7 @@ run with `cargo test -p pool-blox --features std,dynamic`):
 | WorkDone with `pending == 0` → Decision::Stop, restartable | `work_done_with_zero_pending_stops_to_init` |
 | WorkDone in Spawning → stay | `work_done_in_spawning_is_absorbed` |
 
-Behavior tests live in `apps/tokio-pool-demo/tests/pool_behavior.rs` (system-level
+Behavior tests live in `examples/tokio-pool-demo/tests/pool_behavior.rs` (system-level
 concrete spec, real actions from `tokio-pool-demo-impl`):
 
 | Acceptance Criterion | Test Function |
@@ -290,4 +291,4 @@ None currently.
 ## Related Docs
 
 - See `spec/bloxes/worker.md` for the worker perspective
-- See `apps/tokio-pool-demo/` for the wiring example
+- See `examples/tokio-pool-demo/` for the wiring example

@@ -797,7 +797,7 @@ mod tests {
     #[test]
     fn generate_concrete_spec_skeleton_ping() {
         // Parse the actual ping blox.toml
-        let ping_toml = include_str!("../../../bloxes/ping/blox.toml");
+        let ping_toml = include_str!("../../../../bloxes/ping/blox.toml");
         let blox_config: BloxConfig = toml::from_str(ping_toml).expect("parse ping blox.toml");
 
         // Generate the concrete spec skeleton (no impl crate for ping)
@@ -931,7 +931,7 @@ mod tests {
     fn generate_concrete_spec_skeleton_bhsm_tst() {
         // Parse the actual bhsm-tst blox.toml — every declared action routes to
         // the shared blox-ctx-noop crate (fn_name = "noop").
-        let bhsm_toml = include_str!("../../../bloxes/bhsm-tst/blox.toml");
+        let bhsm_toml = include_str!("../../../../bloxes/bhsm-tst/blox.toml");
         let blox_config: BloxConfig = toml::from_str(bhsm_toml).expect("parse bhsm-tst blox.toml");
 
         let generated = generate_concrete_spec_skeleton(

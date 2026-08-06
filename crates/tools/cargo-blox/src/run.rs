@@ -3,6 +3,6 @@
 
 use clap_cargo::Features;
 
-pub fn run(cargo: Features, args: Vec<String>) -> anyhow::Result<()> {
-    crate::forward::generate_then_forward("run", cargo, args)
+pub fn run(cargo: Features, example: Option<String>, args: Vec<String>) -> anyhow::Result<()> {
+    crate::forward::generate_then_forward("run", cargo, example, args)
 }

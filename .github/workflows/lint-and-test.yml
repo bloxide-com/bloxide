@@ -7,7 +7,7 @@ on:
   pull_request:
     paths:
       - ".github/**"
-      - "apps/**"
+      - "examples/**"
       - "crates/**"
       - "runtimes/**"
       - "spec/**"
@@ -41,7 +41,7 @@ jobs:
       - name: Install cargo-blox
         run: cargo install --path crates/tools/cargo-blox
 
-      # Generated artifacts (src/generated/, apps/*/main.rs, apps/*/Cargo.toml)
+      # Generated artifacts (src/generated/, target/bloxide-generated/)
       # are gitignored — the workspace does not compile from a pristine
       # checkout until codegen runs. `cargo blox build` runs `generate` first,
       # so no separate codegen step is needed.

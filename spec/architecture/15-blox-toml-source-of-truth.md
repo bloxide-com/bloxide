@@ -2,11 +2,15 @@
 
 ## Principle
 
-`blox.toml` is the actor's source of truth. The codegen produces Rust source from it.
-Generated files are **build artifacts — they are NOT checked into the repository**.
-`src/generated/`, `apps/*/src/main.rs`, and `apps/*/Cargo.toml` are all gitignored; only
-the TOML files are committed. Generated files are never hand-edited, and no tool treats
-them as authoritative.
+`blox.toml` is the actor's source of truth. A blox crate is **pure TOML plus tests**:
+`bloxes/<name>/` contains only `blox.toml` and `tests/<name>.rs` (integration tests) —
+no Cargo.toml, no src/. The codegen produces Rust source from the TOML, materializing a
+full cargo workspace at `target/bloxide-generated/`: one crate per blox under
+`crates/*-blox/` (Cargo.toml, build.rs, src/lib.rs, src/generated/*, tests/) and one
+crate per example under `examples/*`. Everything in `target/bloxide-generated/` is a
+**build artifact — it is NOT checked into the repository** (the whole directory is
+gitignored); only the TOML files and the blox tests are committed. Generated files are
+never hand-edited, and no tool treats them as authoritative.
 
 > **Generate first.** After a fresh checkout (or any TOML edit), the mandatory first
 > step is:
@@ -15,10 +19,13 @@ them as authoritative.
 > cargo blox generate
 > ```
 >
-> `generate` runs the lint pass first and then rewrites every `src/generated/` and the
-> app binaries from the TOML. Without this step there is nothing to compile — the
-> generated sources do not exist in a clean clone. CI mirrors this exactly: the
-> round-trip job runs `cargo blox generate` before building and testing.
+> `generate` runs the lint pass first and then materializes the entire generated
+> workspace from the TOML. Without this step there is nothing to compile — the
+> generated sources do not exist in a clean clone. It also writes a gitignored
+> `.vscode/settings.json` with `rust-analyzer.linkedProjects` pointing at both the
+> source and generated manifests, so IDE support works out of the box. CI mirrors
+> this exactly: the round-trip job runs `cargo blox generate` before building and
+> testing.
 
 This means:
 
@@ -39,6 +46,8 @@ top-level sections are:
 | Section | Rust type | Purpose |
 |---------|-----------|---------|
 | `[actor]` | `ActorConfig` | Actor name (used for state enum, spec struct, event enum). |
+| `[package]` | `PackageConfig` | Crate packaging for the materialized blox crate: `description`, `[package.features]`, `[package.dependencies]`, `[package.dev-dependencies]`. |
+| `[[consts]]` | `Vec<ConstConfig>` | Crate-root constants (`name` / `ty` / `value`, optional `doc`) emitted into the generated crate root. |
 | `[[messages]]` | `Vec<MessageEnumConfig>` | Message enums with variants, fields, `Copy`, and visibility. |
 | `[event]` | `EventConfig` | Event enum name, generics, `derives` list, feature gates, and mailbox variants. |
 | `[topology]` | `TopologyConfig` | States, parent/initial/error flags, declarative transitions, entry/exit actions, and `spec_imports`. |
@@ -56,7 +65,62 @@ See `spec/architecture/14-declarative-wiring.md`.
 name = "Ping"
 ```
 
-This name drives `PingState`, `PingEvent`, `PingCtx`, `PingSpec`, and the generated module prefix.
+This name drives `PingState`, `PingEvent`, `PingCtx`, `PingSpec`, and the generated module prefix. The materialized crate name is the kebab-case actor name plus `-blox` (e.g. `Ping` → `ping-blox`).
+
+#### `[package]` and `[[consts]]` — crate packaging
+
+Pure-TOML bloxes have no hand-written Cargo.toml, so the materialized crate's
+packaging metadata comes from `[package]`:
+
+```toml
+[package]
+description = "Ping actor blox — runtime-agnostic"
+
+[package.features]
+default = ["std"]
+std = ["bloxide-core/std", "bloxide-timer/std"]
+
+[package.dev-dependencies]
+bloxide-core = { features = ["std"] }
+ping-pong-messages = {}
+bloxide-test-runtime = {}
+```
+
+- `description` — emitted as the Cargo.toml `description` and the lib.rs `//!` doc line.
+- `[package.features]` — the crate's `[features]` table (feature name → feature
+  strings). The pool blox declares an empty `dynamic = []` gate here and defaults to
+  `["std", "dynamic"]`.
+- `[package.dependencies]` — extra dependencies not derivable from the other sections;
+  regular dependencies are otherwise derived automatically from message paths, context
+  imports, spec imports, and action crates.
+- `[package.dev-dependencies]` — everything the integration tests in
+  `bloxes/<name>/tests/` import (integration tests do not see the crate's regular
+  dependencies). Both dependency tables resolve as path dependencies via the
+  workspace root's `[workspace.dependencies]`.
+
+`[package]` is ignored for in-crate blox.toml files (stdlib crates with their own
+hand-written Cargo.toml — see *In-crate generation* below).
+
+`[[consts]]` entries are emitted as `pub const` items at the generated crate root
+(lib.rs); guards reference them via `spec_imports` entries like
+`crate::{MAX_ROUNDS, PAUSE_AT_ROUND}`:
+
+```toml
+[[consts]]
+name = "MAX_ROUNDS"
+ty = "u8"
+value = "5"
+
+[[consts]]
+name = "PAUSE_AT_ROUND"
+ty = "u8"
+value = "2"
+doc = "After receiving `Pong(PAUSE_AT_ROUND)`, Active transitions to Paused. ..."
+```
+
+`value` is a literal emitted verbatim; `doc` (optional) becomes a one-line `///`
+doc comment above the const. Ping declares `MAX_ROUNDS` / `PAUSE_AT_ROUND`;
+counter declares `DONE_AT_COUNT`.
 
 #### `[[messages]]` — message enums
 
@@ -106,7 +170,7 @@ A mailbox may also declare `variants = [...]`, the full variant set of its messa
 
 #### `[topology]` — states and transitions
 
-From `crates/bloxes/pool/blox.toml`:
+From `bloxes/pool/blox.toml`:
 
 ```toml
 [topology]
@@ -165,7 +229,7 @@ target = "stop"
 
 #### `[context]` — context struct
 
-From `crates/bloxes/ping/blox.toml`:
+From `bloxes/ping/blox.toml`:
 
 ```toml
 [context]
@@ -265,7 +329,7 @@ into `SystemConfig` (defined in the same `schema.rs`, also with
 no `WiringConfig`, and no `connections` tables anywhere in the schema.
 
 ```toml
-# system.toml (from apps/tokio-demo)
+# system.toml (from examples/tokio-demo)
 [system]
 runtime = "tokio"          # "tokio" or "embassy" — anything else is a hard error
 name = "tokio-demo"
@@ -305,6 +369,29 @@ children = ["ping", "pong"]
    a declared actor; unknown `strategy` values are hard errors.
 
 See `spec/architecture/14-declarative-wiring.md` for the full manifest reference.
+
+### Materialization into `target/bloxide-generated/`
+
+`cargo blox generate` materializes a complete cargo workspace at
+`target/bloxide-generated/` (gitignored) from the TOML sources:
+
+- **Blox crates** — one per `bloxes/<name>/blox.toml`, named `<kebab-actor-name>-blox`
+  (e.g. `Ping` → target/bloxide-generated/crates/ping-blox/). Each materialized crate contains a generated
+  `Cargo.toml` (dependencies derived from the blox.toml sections plus `[package]`),
+  a `build.rs`, `src/lib.rs`, `src/generated/*`, and a copy of the blox's `tests/`.
+- **Example crates** — one per `examples/<name>/system.toml`, under `examples/`
+  (Cargo.toml, build.rs, `src/main.rs` from the system wiring).
+
+The generated `build.rs` files **re-sync the crate from the source TOML at build
+time**: a plain `cargo build` / `cargo test` inside `target/bloxide-generated/`
+picks up TOML edits without re-running `cargo blox generate`. Output of a direct
+`generate` run and of the build.rs re-sync is byte-identical, so the two paths
+never fight each other.
+
+Two stdlib crates still use **in-crate generation** instead: `bloxide-supervisor`
+keeps a real Cargo.toml with generated files under `src/generated/`, and
+bloxide-core's `build.rs` generates `mailboxes_impls.rs` into `$OUT_DIR` from its
+`[mailboxes]`-only blox.toml. The `[package]` section is ignored for these.
 
 ### What the codegen generates
 
@@ -349,7 +436,7 @@ It also emits `From` impls and `Debug` when requested.
 2. A `StateTopology` impl with `parent`, `is_leaf`, `path`, and `as_index`.
 3. A `<state>_handler_table!` macro that assembles the `HANDLER_TABLE` slice from the per-state `StateFns` associated constants. The `StateFns` constants themselves — raw `StateRule { ... }` struct literals built from `[[topology.transitions]]` entries, plus the `ROOT_RULES` constant from `state = "root"` entries — are emitted by `spec_skeleton.rs`, not `topology.rs`.
 
-From `crates/bloxes/ping/src/generated/topology.rs`:
+From the generated `topology.rs`:
 
 ```rust
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -381,7 +468,7 @@ macro_rules! ping_state_handler_table {
 
 `ctx.rs` emits the context struct with all imports and field attributes, plus a `new()`
 constructor whose parameters are exactly the `ctor` fields (`state` fields are
-zero-initialized). From `crates/bloxes/ping/src/generated/ctx.rs`:
+zero-initialized). From the generated `ctx.rs`:
 
 ```rust
 use ::bloxide_core::{capability::BloxRuntime, messaging::ActorRef};
@@ -419,7 +506,7 @@ impl<R: BloxRuntime> PingCtx<R> {
 `spec_skeleton.rs` emits the `MachineSpec` impl plus one `StateFns` constant per state,
 built from raw `StateRule { ... }` struct literals. Actions the impl crate will provide
 are emitted as **stub closures** marked with `let _stub = "name";` (a marker binding,
-not a comment). From `crates/bloxes/ping/src/generated/spec_skeleton.rs` (trimmed):
+not a comment). From the generated `spec_skeleton.rs` (trimmed):
 
 ```rust
 pub struct PingSpec<R: BloxRuntime> {
@@ -485,27 +572,27 @@ references). See `crates/tools/bloxide-codegen/src/system_spec.rs`.
 
 #### `wiring_main.rs`
 
-From `system.toml`, the codegen emits a complete `main.rs` that creates channels, constructs contexts, builds machines, wires the supervisor tree, and starts the system. See `spec/architecture/14-declarative-wiring.md` for the generated structure and `apps/tokio-pool-demo/src/main.rs` for real output.
+From `system.toml`, the codegen emits a complete `main.rs` that creates channels, constructs contexts, builds machines, wires the supervisor tree, and starts the system. See `spec/architecture/14-declarative-wiring.md` for the generated structure and `target/bloxide-generated/examples/tokio-pool-demo/src/main.rs` for real output.
 
 ### What remains hand-written
 
-Not everything can be expressed in TOML. The following pieces remain hand-written and live *outside* `src/generated/`:
+Not everything can be expressed in TOML. The following pieces remain hand-written and live *outside* the generated workspace:
 
-1. **Action function implementations** — the bodies referenced by `topology.transitions[].actions` and `topology.entry/exit[].actions`. These live in context crates (or the app's impl crate). The contract is uniform:
+1. **Action function implementations** — the bodies referenced by `topology.transitions[].actions` and `topology.entry/exit[].actions`. These live in context crates (or the example's impl crate). The contract is uniform:
    - **Transition actions** are fallible: `fn(...) -> ActionResult`. The generated
      guard receives the collected `ActionResults` and can react to failures (e.g.
      `results.any_failed()` → error state).
    - **Entry/exit actions** are infallible: `fn(&mut Ctx)`-style functions with no
      return value.
 2. **Complex guard logic** — when a guard cannot be expressed as a simple TOML condition string, it is written as a Rust function and referenced from the TOML.
-3. **Tests** — `TestRuntime`-based tests in `tests.rs` or inline in `src/lib.rs`.
+3. **Tests** — `TestRuntime`-based integration tests at `bloxes/<name>/tests/<name>.rs` (committed next to the blox.toml; materialized into the generated crate's `tests/`).
 
 Until an action is implemented, the codegen's stub closures keep the skeleton
 compiling: a stub transition action emits `let _stub = "name";` and returns
 `ActionResult::Ok`; a stub entry/exit action emits just `let _stub = "name";`. The
 marker is a binding, not a comment, so it survives `cargo fmt` and greps cleanly.
 
-The rule is: if it is in `src/generated/`, it is produced by `cargo blox generate`. If it is anywhere else, it is hand-written and preserved across regeneration.
+The rule is: if it is in `target/bloxide-generated/`, it is produced by `cargo blox generate` (or the generated `build.rs` re-sync). If it is anywhere else, it is hand-written and preserved across regeneration.
 
 ### Round-trip contract
 
@@ -516,17 +603,18 @@ Edit blox.toml
       ↓
 cargo blox generate
       ↓
-Updated Rust code in src/generated/
+Updated Rust code in target/bloxide-generated/
       ↑
 Never edit generated files by hand
 ```
 
 - `blox.toml` is the only editable spec.
-- `cargo blox generate` (and `cargo blox watch`) rewrites `src/generated/` from the TOML.
-  `generate` runs the lint pass first — a lint failure stops the regeneration.
+- `cargo blox generate` (and `cargo blox watch`) re-materializes the generated
+  workspace from the TOML. `generate` runs the lint pass first — a lint failure
+  stops the regeneration.
 - Generated files carry the header `// Auto-generated by bloxide-codegen. Do not edit manually.`
 - Editing generated Rust is forbidden. If a generated file is wrong, fix `blox.toml` or the codegen, not the file.
-- Hand-written Rust (actions, tests) is allowed, but it is never placed inside `src/generated/`.
+- Hand-written Rust (actions, tests) is allowed, but it never lives under `target/bloxide-generated/`.
 
 #### `cargo blox` exit codes
 
@@ -582,7 +670,7 @@ The visualizer reads `blox.toml` directly (not Rust source):
 1. The visualizer loads `blox.toml`, not Rust source.
 2. All diagrams, state tables, and wiring graphs are derived from the TOML sections.
 3. Edits in the UI write back to `blox.toml`.
-4. After writing, the UI triggers `cargo blox generate` to update `src/generated/`.
+4. After writing, the UI triggers `cargo blox generate` to re-materialize the generated workspace.
 5. The developer reviews the regenerated Rust and runs tests.
 6. The visualizer never writes Rust directly.
 
@@ -664,12 +752,13 @@ The key is that every extension is opt-in and schema-driven. The codegen does no
 ### What works today
 
 - `blox.toml` is the primary input for `cargo blox generate`.
-- The codegen produces `ctx.rs`, `topology.rs`, `spec_skeleton.rs`, `events.rs`, `messages_*.rs`, and `wiring_main.rs`. (`mailboxes_impls.rs` is the exception: bloxide-core generates it at build time via its `build.rs` into `$OUT_DIR`.)
+- Blox crates are pure TOML plus tests (`bloxes/<name>/blox.toml` + `bloxes/<name>/tests/<name>.rs`); `cargo blox generate` materializes them, together with the example crates from `examples/*/system.toml`, into the gitignored `target/bloxide-generated/` workspace.
+- The codegen produces `ctx.rs`, `topology.rs`, `spec_skeleton.rs`, `events.rs`, `messages_*.rs`, and `wiring_main.rs`. (`mailboxes_impls.rs` is the exception: bloxide-core generates it at build time via its `build.rs` into `$OUT_DIR`; bloxide-supervisor still uses in-crate `src/generated/` generation.)
 - Generated files carry the "Do not edit manually" header and are **not committed** —
-  `src/generated/`, `apps/*/src/main.rs`, and `apps/*/Cargo.toml` are gitignored, so
+  the whole `target/bloxide-generated/` tree is gitignored, so
   `cargo blox generate` (which runs lint first) is the mandatory first step after
   checkout.
-- `cargo blox generate` and `cargo blox watch` regenerate files from TOML.
+- `cargo blox generate` and `cargo blox watch` regenerate files from TOML; `generate` also emits `.vscode/settings.json` (`rust-analyzer.linkedProjects`) for IDE support.
 - `bloxide-viz-export` parses `blox.toml` directly (not Rust source) to produce the visualizer model.
 - Round-trip verification is enforced by 9 integration tests and the `cargo blox verify` CLI command, both running in CI.
 - Wiring validation (`system_wiring/validate.rs::validate`) checks blox references, inject source actors, inject target names and coverage, secondary-mailbox bindings, and supervision children.

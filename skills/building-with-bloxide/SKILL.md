@@ -105,12 +105,52 @@ Every action function returns `ActionResult` (uniform contract) so guards can re
 
 ## Layer 3: Blox Crate
 
-A blox crate is purely declarative. It contains zero logic — no `actions.rs`, no `Self::` methods, no logging, no computation. It defines:
+A blox is purely declarative. Its source is a directory `bloxes/<name>/` containing **only** `blox.toml` and `tests/<name>.rs` (integration tests) — no `Cargo.toml`, no `src/`, no `actions.rs`, no `Self::` methods, no logging, no computation. `cargo blox generate` materializes it into a full crate at `target/bloxide-generated/crates/<name>-blox/` (gitignored): `Cargo.toml`, `build.rs`, `src/lib.rs` with prelude re-exports and crate-root consts, `src/generated/*`, and a mirrored `tests/`. The crate name is the kebab-case actor name plus `-blox` (`Ping` → `ping-blox`). The generated `build.rs` re-syncs from the source `blox.toml`, so plain `cargo build`/`cargo test` inside `target/bloxide-generated/` stay fresh after one `cargo blox generate`.
 
-1. **State topology** via `blox.toml` + `cargo blox generate`
+The `blox.toml` defines:
+
+1. **State topology** via `cargo blox generate`
 2. **Context struct** via codegen from `[[context.fields]]` and `[[context.uses]]`
-3. **Event enum** via `blox.toml` + `cargo blox generate`
+3. **Event enum** via `cargo blox generate`
 4. **`MachineSpec`** with `StateFns` tables generated from `[[topology.transitions]]` entries in `blox.toml`
+
+### Crate Packaging (`[package]`, `[[consts]]`)
+
+The materialized crate's manifest is derived from `blox.toml`. Regular dependencies are inferred from message paths, context imports, and action crates; only extras need declaring:
+
+```toml
+// bloxes/ping/blox.toml
+[package]
+description = "Ping actor blox — runtime-agnostic"
+
+[package.features]
+default = ["std"]
+std = ["bloxide-core/std", "bloxide-timer/std"]
+
+# Integration tests do not see the crate's regular dependencies —
+# declare everything tests/<name>.rs imports here.
+[package.dev-dependencies]
+bloxide-core = { features = ["std"] }
+bloxide-test-runtime = {}
+ping-pong-messages = {}
+
+# Crate-root constants, referenced by guards via spec_imports "crate::MAX_ROUNDS"
+[[consts]]
+name = "MAX_ROUNDS"
+ty = "u8"
+value = "5"
+
+[[consts]]
+name = "PAUSE_AT_ROUND"
+ty = "u8"
+value = "2"
+doc = "After receiving `Pong(PAUSE_AT_ROUND)`, Active transitions to Paused."
+```
+
+- `[package]` — crate metadata (`description`)
+- `[package.features]` — cargo features for the materialized crate (e.g. the pool blox declares `dynamic = []` with `default = ["std", "dynamic"]` to gate spawn support)
+- `[package.dependencies]` / `[package.dev-dependencies]` — extra deps; dev-dependencies cover everything the integration tests import
+- `[[consts]]` — `name`/`ty`/`value` plus optional `doc`; emitted as `pub const` at the generated crate root, so `spec_imports = ["crate::MAX_ROUNDS"]` keeps working
 
 ### Context Struct
 
@@ -170,7 +210,7 @@ Unknown TOML keys are hard errors (`deny_unknown_fields`). On `[[context.uses]]`
 Define the unified event type in `blox.toml`:
 
 ```toml
-// crates/bloxes/ping/blox.toml
+// bloxes/ping/blox.toml
 [event]
 name = "PingEvent"
 
@@ -180,11 +220,17 @@ message = "PingPongMsg"
 message_path = "ping_pong_messages::PingPongMsg"
 ```
 
-After running `cargo blox generate`, the event is re-exported at the crate root — `src/lib.rs` carries an explicit re-export of the generated types:
+After running `cargo blox generate`, the event is re-exported at the materialized crate root — `target/bloxide-generated/crates/ping-blox/src/lib.rs` carries an explicit re-export of the generated types, plus a `prelude` module and any `[[consts]]`:
 
 ```rust
-// crates/bloxes/ping/src/lib.rs
+// target/bloxide-generated/crates/ping-blox/src/lib.rs (generated)
+pub mod prelude {
+    pub use crate::{PingCtx, PingEvent, PingSpec, PingState};
+}
+
 pub use generated::{PingCtx, PingEvent, PingSpec, PingState};
+
+pub const MAX_ROUNDS: u8 = 5;
 ```
 
 This generates:
@@ -199,7 +245,7 @@ This generates:
 Define state topology in `blox.toml`:
 
 ```toml
-// crates/bloxes/ping/blox.toml
+// bloxes/ping/blox.toml
 [topology]
 
 [[topology.states]]
@@ -259,22 +305,22 @@ actions = ["Self::increment_round", "Self::forward_ping"]
 
 **Stage 1 — Blox-level (`cargo blox generate`):**
 
-Generates stub action closures (no-op) with real guards. The blox compiles standalone without any impl dependency.
+Generates stub action closures (no-op) with real guards, into the materialized blox crate. The blox compiles standalone without any impl dependency.
 
 ```rust
-// generated/spec_skeleton.rs — stub actions, REAL guards
+// target/bloxide-generated/crates/ping-blox/src/generated/spec_skeleton.rs — stub actions, REAL guards
 |_ctx, _ev| {
     let _stub = "forward_ping";
     ::bloxide_core::transition::ActionResult::Ok
 }
 ```
 
-**Stage 2 — System-level (`cargo blox build`):**
+**Stage 2 — System-level (`cargo blox build` / `cargo blox run --example <name>`):**
 
-Reads `system.toml`, resolves impl crates, generates concrete action closures with real function calls. Each closure returns the action function's `ActionResult` verbatim, so a failed send makes `results.any_failed()` true. Guards are unchanged from blox-level (already real).
+Reads `examples/<name>/system.toml`, resolves impl crates, and generates concrete action closures with real function calls into the materialized example crate. Each closure returns the action function's `ActionResult` verbatim, so a failed send makes `results.any_failed()` true. Guards are unchanged from blox-level (already real).
 
 ```rust
-// generated/ping_spec_skeleton.rs — concrete, impl inlined
+// target/bloxide-generated/examples/tokio-demo/src/generated/ping_spec_skeleton.rs — concrete, impl inlined
 |ctx, _ev| {
     ::blox_ctx_ping_pong::send_ping(ctx.self_id, &ctx.peer_ref, ctx.round)
 }
@@ -285,7 +331,7 @@ Reads `system.toml`, resolves impl crates, generates concrete action closures wi
 The `MachineSpec` impl is generated by the codegen. `Spec<R>` has no `B` type parameter:
 
 ```rust
-// src/spec.rs
+// target/bloxide-generated/crates/ping-blox/src/generated/spec_skeleton.rs
 pub use crate::generated::topology::PingState;
 use crate::generated::topology::ping_state_handler_table;
 
@@ -312,10 +358,10 @@ impl<R: BloxRuntime> MachineSpec for PingSpec<R> {
 
 ## Layer 4: Binary
 
-Creates channels, constructs contexts, spawns tasks. The `system.toml` declares actors, wiring, and impl crates:
+Creates channels, constructs contexts, spawns tasks. The binary source is `examples/<name>/system.toml` (nothing else — `tokio-pool-demo` additionally has `tests/`); `cargo blox generate` materializes the full example crate into `target/bloxide-generated/examples/<name>/`. The `system.toml` declares actors, wiring, and impl crates:
 
 ```toml
-# apps/tokio-demo/system.toml
+# examples/tokio-demo/system.toml
 [[actors]]
 name = "ping"
 blox = "ping-blox"
@@ -333,7 +379,7 @@ impl_crate = "tokio_pool_demo_impl"  # Provides process_work, the build_worker f
 ```
 
 ```rust
-// apps/tokio-demo/src/main.rs (generated)
+// target/bloxide-generated/examples/tokio-demo/src/main.rs (generated)
 use bloxide_tokio::prelude::*;
 
 // Create channels
@@ -369,10 +415,13 @@ cargo blox new my-actor
 
 This scaffolds:
 - `spec/bloxes/my-actor.md` — the spec document (from the template)
-- `crates/bloxes/my-actor/` — the blox crate skeleton (`blox.toml` + generated stubs)
+- `bloxes/my-actor/blox.toml` — the pure-TOML blox source (the crate is materialized into `target/bloxide-generated/crates/` by `cargo blox generate`)
 
 Message and context crates are scaffolded separately when needed
-(`cargo blox new-messages`, `cargo blox new-context`).
+(`cargo blox new-messages`, `cargo blox new-context`). A new binary is
+scaffolded with `cargo blox new-binary <name>`, which creates
+`examples/<name>/system.toml`. No workspace registration is needed for any
+of these — blox and example crates are materialized by `cargo blox generate`.
 
 ### Generating Boilerplate
 
@@ -384,7 +433,9 @@ cargo blox generate
 
 Generation runs the linter first and is idempotent — regenerating an unchanged `blox.toml` produces identical output.
 
-**Generate first.** Generated artifacts (`src/generated/`) are gitignored, so a fresh checkout has none — `cargo build`/`cargo test` fail until you run `cargo blox generate`. In a source checkout of the bloxide repo, prefer `cargo run -p cargo-blox -- blox ...` over the installed `cargo blox` binary, which may be stale relative to the checked-out codegen.
+**Generate first.** Generated artifacts (`src/generated/`, `target/bloxide-generated/`) are gitignored, so a fresh checkout has none — `cargo build`/`cargo test` fail until you run `cargo blox generate`. In a source checkout of the bloxide repo, prefer `cargo run -p cargo-blox -- blox ...` over the installed `cargo blox` binary, which may be stale relative to the checked-out codegen.
+
+**IDE indexing.** The same `cargo blox generate` also emits `.vscode/settings.json` with `rust-analyzer.linkedProjects` pointing at both the root `Cargo.toml` and `target/bloxide-generated/Cargo.toml`. After this one-time step rust-analyzer indexes both workspaces; on other editors, configure the equivalent linked-projects setting with those two manifests.
 
 This regenerates:
 - Message structs and enums from `messages` tables
@@ -396,10 +447,16 @@ This regenerates:
 ### Building with Code Generation
 
 ```bash
-cargo blox build    # blox generate + system codegen + cargo build
-cargo blox check    # blox generate + system codegen + cargo check (fastest)
-cargo blox test     # blox generate + system codegen + cargo test
-cargo blox run      # blox generate + system codegen + cargo run
+cargo blox build                     # blox generate + cargo build (repo workspace AND generated workspace)
+cargo blox check                     # blox generate + cargo check (fastest)
+cargo blox test                      # blox generate + cargo test (both workspaces)
+cargo blox run --example tokio-demo  # blox generate + run the example; pass args after `--`
+```
+
+Plain `cargo blox build`/`check`/`test` cover both the repo workspace and `target/bloxide-generated/`. Bare `cargo blox run` errors and lists the available examples — examples are materialized crates, so a name is always required (`embassy-demo` is host-runnable). To test one blox directly:
+
+```bash
+cargo test --manifest-path target/bloxide-generated/Cargo.toml -p ping-blox
 ```
 
 ## Key Invariants
@@ -417,27 +474,28 @@ architecture. The most relevant ones when creating a blox:
 
 ## Test Pattern
 
+Blox tests are integration tests living at `bloxes/<name>/tests/<name>.rs`, mirrored into the materialized crate by `cargo blox generate` and run via `cargo blox test` (or `cargo test --manifest-path target/bloxide-generated/Cargo.toml -p <name>-blox`). Declare everything the test imports under `[package.dev-dependencies]` in `blox.toml` — integration tests do not see the crate's regular dependencies.
+
 Use `TestRuntime` for unit tests without an executor. Tests use the blox-level stub `Spec` for guard and transition logic. Action functions are tested by calling the context/impl crate functions directly.
 
 ```rust
-#[cfg(all(test, feature = "std"))]
-mod tests {
-    use bloxide_core::{spec::MachineSpec, MachineState, StateMachine};
-    use counter_messages::{CounterMsg, Tick};
+// bloxes/counter/tests/counter.rs — integration test, no #[cfg(test)] wrapper
+use bloxide_core::{spec::MachineSpec, MachineState, StateMachine};
+use counter_blox::{CounterCtx, CounterEvent, CounterSpec, CounterState};
+use counter_messages::{CounterMsg, Tick};
 
-    // CounterSpec is non-generic — the ctx holds no ActorRef fields.
-    // Specs with refs are generic: MySpec<TestRuntime>.
-    fn make_machine() -> StateMachine<CounterSpec> {
-        let ctx = CounterCtx::new(bloxide_core::next_actor_id!());
-        StateMachine::new(ctx)
-    }
+// CounterSpec is non-generic — the ctx holds no ActorRef fields.
+// Specs with refs are generic: MySpec<TestRuntime>.
+fn make_machine() -> StateMachine<CounterSpec> {
+    let ctx = CounterCtx::new(bloxide_core::next_actor_id!());
+    StateMachine::new(ctx)
+}
 
-    #[test]
-    fn test_start_enters_ready() {
-        let mut machine = make_machine();
-        machine.dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start));
-        assert!(matches!(machine.current_state(), MachineState::State(CounterState::Ready)));
-    }
+#[test]
+fn test_start_enters_ready() {
+    let mut machine = make_machine();
+    machine.dispatch(CounterEvent::Lifecycle(LifecycleCommand::Start));
+    assert!(matches!(machine.current_state(), MachineState::State(CounterState::Ready)));
 }
 ```
 
