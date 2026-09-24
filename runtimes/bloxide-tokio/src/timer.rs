@@ -10,19 +10,13 @@ use tokio::time::{sleep_until, Duration, Instant};
 use crate::channel::TokioStream;
 use crate::TokioRuntime;
 
-fn now_ms() -> u64 {
-    // Tokio's Instant does not expose `as_millis()` directly; compute relative
-    // to a fixed epoch by measuring elapsed time from a lazy static. The epoch
-    // uses tokio::time::Instant — the same clock as the sleep primitive below —
-    // so a paused Tokio clock (e.g. in tests) cannot make the two diverge.
-    use std::sync::OnceLock;
-    static EPOCH: OnceLock<Instant> = OnceLock::new();
-    let epoch = EPOCH.get_or_init(Instant::now);
-    epoch.elapsed().as_millis() as u64
-}
-
 impl TimerService for TokioRuntime {
     async fn run_timer_service(mut stream: TokioStream<TimerCommand>) {
+        // Runtime clocks (especially paused clocks) advance independently.
+        // Keep the epoch local to this service and use Tokio time for both
+        // queue timestamps and sleeping.
+        let epoch = Instant::now();
+        let now_ms = || epoch.elapsed().as_millis() as u64;
         let mut queue = TimerQueue::new();
         loop {
             match queue.next_deadline() {
@@ -136,16 +130,66 @@ mod tests {
         let_service_run().await;
         assert!(!fired.load(Ordering::SeqCst), "timer must not fire early");
 
-        // At the deadline the delivery callback runs.
+        // Allow one timer-wheel tick after the deadline for the callback.
         tokio::time::advance(Duration::from_millis(1)).await;
         let_service_run().await;
-        assert!(fired.load(Ordering::SeqCst), "timer fires at its deadline");
+        tokio::time::advance(Duration::from_millis(1)).await;
+        let_service_run().await;
+        assert!(
+            fired.load(Ordering::SeqCst),
+            "timer fires within one clock tick of its deadline"
+        );
 
         // The queue is empty now; closing the channel ends the service loop.
         drop(timer_ref);
         service
             .await
             .expect("service exits when the command channel closes");
+    }
+
+    #[test]
+    fn timer_services_have_independent_clock_epochs() {
+        // Seed the first service on a clock far ahead of the second runtime.
+        // A process-global epoch makes the second service's elapsed time clamp
+        // to zero, so its timer never fires at the requested deadline.
+        for offset_ms in [60_000, 0] {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                tokio::time::pause();
+                tokio::time::advance(Duration::from_millis(offset_ms)).await;
+                set_fires_on_this_clock().await;
+            });
+        }
+    }
+
+    async fn set_fires_on_this_clock() {
+        let (timer_ref, service) = spawn_timer_service();
+        let fired = Arc::new(AtomicBool::new(false));
+        let deliver_flag = Arc::clone(&fired);
+        timer_ref
+            .try_send(
+                TIMER_ACTOR_ID,
+                TimerCommand::Set {
+                    id: next_timer_id(),
+                    after_ms: 1_000,
+                    deliver: Box::new(move || deliver_flag.store(true, Ordering::SeqCst)),
+                },
+            )
+            .unwrap();
+        let_service_run().await;
+        tokio::time::advance(Duration::from_millis(1_000)).await;
+        let_service_run().await;
+        // Tokio's timer wheel rounds deadlines to millisecond ticks. Allow
+        // one tick to wake the service when the epoch lies between ticks.
+        tokio::time::advance(Duration::from_millis(1)).await;
+        let_service_run().await;
+        let delivered = fired.load(Ordering::SeqCst);
+        drop(timer_ref);
+        service.await.unwrap();
+        assert!(delivered, "each runtime must use its own timer epoch");
     }
 
     #[tokio::test(start_paused = true)]

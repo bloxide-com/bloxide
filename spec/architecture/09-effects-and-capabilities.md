@@ -148,6 +148,15 @@ pub fn cancel_timer_by_id<R: BloxRuntime>(
 ) -> ActionResult { ... }
 ```
 
+### Tokio timer clock isolation
+
+Each Tokio timer service owns its clock epoch, measured with `tokio::time::Instant`
+(the same clock used for sleeping). Epochs must not be shared across runtime
+instances: paused runtimes may advance independently. Starting a service on an
+advanced paused runtime must not delay timers on a subsequently created runtime.
+The Tokio runtime regression suite verifies delivery after the requested duration
+on both clocks, allowing one millisecond tick for Tokio timer-wheel rounding.
+
 ### Timer Pool in Embassy
 
 `bloxide-embassy` provides `timer_task!` and `spawn_timer!` macros:
