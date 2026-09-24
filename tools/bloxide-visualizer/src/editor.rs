@@ -56,16 +56,19 @@ pub(crate) fn EditorPanel(spec: BloxSpec, specs: Signal<Vec<BloxSpec>>) -> Eleme
         }
         if show_state_form() {
             div {
+                id: "state-form",
                 style: "margin-bottom: 12px; padding: 12px; background: #f9fafb; border-radius: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;",
                 input {
                     style: "{input_style}",
                     placeholder: "StateName",
+                    name: "state-name",
                     value: "{state_name}",
                     oninput: move |e| state_name.set(e.value()),
                 }
                 input {
                     style: "{input_style}",
                     placeholder: "parent (optional)",
+                    name: "state-parent",
                     value: "{state_parent}",
                     oninput: move |e| state_parent.set(e.value()),
                 }
@@ -73,6 +76,7 @@ pub(crate) fn EditorPanel(spec: BloxSpec, specs: Signal<Vec<BloxSpec>>) -> Eleme
                     style: "font-size: 13px; color: #374151;",
                     input {
                         r#type: "checkbox",
+                        name: "state-composite",
                         checked: "{state_composite}",
                         onchange: move |e| state_composite.set(e.checked()),
                     }
@@ -82,6 +86,7 @@ pub(crate) fn EditorPanel(spec: BloxSpec, specs: Signal<Vec<BloxSpec>>) -> Eleme
                     style: "font-size: 13px; color: #374151;",
                     input {
                         r#type: "checkbox",
+                        name: "state-error",
                         checked: "{state_error}",
                         onchange: move |e| state_error.set(e.checked()),
                     }
@@ -119,34 +124,40 @@ pub(crate) fn EditorPanel(spec: BloxSpec, specs: Signal<Vec<BloxSpec>>) -> Eleme
         }
         if show_trans_form() {
             div {
+                id: "transition-form",
                 style: "margin-bottom: 12px; padding: 12px; background: #f9fafb; border-radius: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;",
                 input {
                     style: "{input_style}",
                     placeholder: "from state",
+                    name: "trans-state",
                     value: "{t_state}",
                     oninput: move |e| t_state.set(e.value()),
                 }
                 input {
                     style: "{input_style} min-width: 280px;",
                     placeholder: "event pattern (e.g. MyMsg::Tick(_))",
+                    name: "trans-event",
                     value: "{t_event}",
                     oninput: move |e| t_event.set(e.value()),
                 }
                 input {
                     style: "{input_style}",
                     placeholder: "target (state | stay | done | stop | reset | fail)",
+                    name: "trans-target",
                     value: "{t_target}",
                     oninput: move |e| t_target.set(e.value()),
                 }
                 input {
                     style: "{input_style}",
                     placeholder: "actions (csv, optional)",
+                    name: "trans-actions",
                     value: "{t_actions}",
                     oninput: move |e| t_actions.set(e.value()),
                 }
                 input {
                     style: "{input_style} min-width: 220px;",
                     placeholder: "guards (csv cond:target, optional)",
+                    name: "trans-guards",
                     value: "{t_guards}",
                     oninput: move |e| t_guards.set(e.value()),
                 }
