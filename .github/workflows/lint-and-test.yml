@@ -128,7 +128,7 @@ jobs:
 
       - name: Run tests and report code coverage
         run: |
-          RUSTC_BOOTSTRAP=1 cargo tarpaulin -o xml -o lcov -o html --doc --tests
+          RUSTC_BOOTSTRAP=1 cargo tarpaulin --workspace --timeout 300 -o xml -o lcov -o html --doc --tests
 
       - name: Upload coverage report (xml)
         uses: actions/upload-artifact@v4
