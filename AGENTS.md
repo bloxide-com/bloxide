@@ -66,7 +66,7 @@ bloxide/
   runtimes/
     bloxide-embassy/           ← Embassy runtime implementation
     bloxide-tokio/             ← Tokio runtime implementation; implements SpawnCap and DynamicChannelCap
-    bloxide-test-runtime/      ← test runtime for executor-free unit testing (no async executor; implements DynamicChannelCap + SpawnCap — kill is a documented no-op)
+    bloxide-test-runtime/      ← test runtime for executor-free unit testing (no async executor; implements DynamicChannelCap + SpawnCap — kill calls are recorded, not executed)
   examples/                    ← pure-TOML wiring sources: each holds system.toml (+ tests/ for tokio-pool-demo)
     embassy-demo/              ← system.toml: ping/pong on Embassy (host-runnable)
     tokio-demo/                ← system.toml: ping/pong on Tokio

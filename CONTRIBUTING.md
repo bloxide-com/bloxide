@@ -9,12 +9,13 @@
 
 ## Development Setup
 
-Run the full CI suite locally (same commands as the GitHub workflow):
+Run the main CI matrix locally using the CLI from this checkout:
 
 ```bash
-./scripts/ci.sh          # all checks: copyright, build, fmt, clippy, tests, docs
-./scripts/ci.sh lint     # only build / check / fmt / clippy
-./scripts/ci.sh test     # only tests
+./scripts/ci.sh
+# Individual checks also use the current sources:
+cargo run -p cargo-blox -- blox lint
+cargo run -p cargo-blox -- blox test
 ```
 
 ## Spec-Driven Development
@@ -35,11 +36,17 @@ Before modifying any code, review the **Key Invariants** section in `AGENTS.md`.
 
 ## CI Checks
 
-`scripts/ci.sh` runs the same checks as CI:
+`scripts/ci.sh` builds both workspaces, then runs `cargo blox ci`:
 
-- Copyright header check
+- Copyright header check and TOML/spec/documentation lint
 - `cargo blox build` (runs codegen first) + feature-matrix `cargo check` runs
 - `cargo fmt --check`
 - `cargo clippy --all-targets -- -W warnings -D warnings`
-- `cargo blox test` (workspace default) + feature-specific `cargo test` runs
+- `cargo blox test` (root and generated workspaces, standalone impl crates)
+- Isolated `bloxide-core` and `bloxide-embassy` tests with `std`
 - `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS=-Dwarnings`
+- `cargo deny check` when cargo-deny is installed (otherwise explicitly skipped)
+
+The workflow also runs separate optional-feature tests (`tracing` and `bloxide-log/log`),
+round-trip verification, and coverage. Run these separately when relevant; the local
+script does not claim coverage for those jobs.

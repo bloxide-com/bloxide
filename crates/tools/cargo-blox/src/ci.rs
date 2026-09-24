@@ -115,15 +115,16 @@ pub fn ci() -> anyhow::Result<()> {
         println!("OK: cargo blox lint");
     }
 
-    // Test suites (mirrors scripts/ci.sh): bloxide-core and bloxide-embassy
+    // Test suites: bloxide-core and bloxide-embassy
     // need --features std for their cfg-gated tests, then the full workspace
-    // with default features. bloxide-embassy is tested in isolation because
+    // and generated workspaces plus standalone impl crates with default features.
+    // bloxide-embassy is tested in isolation because
     // workspace-level feature unification masks its host link requirements
     // (critical-section std impl) that only surface with `-p`.
     for test_args in [
         vec!["test", "-p", "bloxide-core", "--features", "std"],
         vec!["test", "-p", "bloxide-embassy", "--features", "std"],
-        vec!["test"],
+        vec!["run", "-p", "cargo-blox", "--quiet", "--", "blox", "test"],
     ] {
         println!();
         println!("========================================");

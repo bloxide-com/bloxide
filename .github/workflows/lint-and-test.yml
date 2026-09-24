@@ -7,11 +7,16 @@ on:
   pull_request:
     paths:
       - ".github/**"
+      - "bloxes/**"
       - "examples/**"
       - "crates/**"
       - "runtimes/**"
       - "spec/**"
       - "tools/**"
+      - "scripts/**"
+      - ".cargo/**"
+      - "rust-toolchain.toml"
+      - "**/*.md"
       - "Cargo.toml"
       - "Cargo.lock"
       - "deny.toml"
