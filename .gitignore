@@ -40,3 +40,6 @@ crates/impl/*/Cargo.lock
 .hermes/
 .codegraph/
 .serena/
+
+# JSON exports are derived from current TOML, not portable source fixtures.
+bloxide-viz-output/

@@ -19,6 +19,8 @@ Example against the main bloxide repo:
 cargo run -- /repos/internal/bloxide
 ```
 
+Exported JSON contains local source paths and is gitignored; regenerate it from the checkout you intend to visualize.
+
 Output goes to `./bloxide-viz-output/` by default (or `[output-dir]` if provided). One `.json` file is written per discovered blox crate, plus one per `system.toml` application manifest (see below).
 
 ## How it works

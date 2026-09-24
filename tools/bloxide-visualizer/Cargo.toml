@@ -21,4 +21,7 @@ anyhow = "1.0.104"
 web = ["dioxus/web"]
 server = ["dioxus/server", "dep:bloxide-viz-export", "dep:bloxide-codegen"]
 
+[dev-dependencies]
+bloxide-viz-export = { path = "../bloxide-viz-export" }
+
 [workspace]

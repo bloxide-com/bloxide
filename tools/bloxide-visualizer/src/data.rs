@@ -17,14 +17,15 @@ mod tests {
 
     #[test]
     fn parse_json_counter() {
-        // This test verifies that JSON exported by bloxide-viz-export can be loaded
-        // Run `cargo run` in ../bloxide-viz-export to generate the fixture first.
-        let json = std::fs::read_to_string("../bloxide-viz-export/bloxide-viz-output/counter.json");
-        if let Ok(json) = json {
-            let spec = parse_json_spec("Counter", &json).unwrap();
-            assert!(spec.states.iter().any(|s| s.name == "Ready"));
-            // Should have at least one handler extracted from the transition rules
-            assert!(!spec.handlers.is_empty());
-        }
+        // Exercise the real exporter and current TOML source. A missing fixture
+        // must fail the test rather than silently skipping all assertions.
+        let workspace = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let specs = bloxide_viz_export::export_workspace(&workspace).unwrap();
+        let counter = specs.iter().find(|spec| spec.name == "Counter").unwrap();
+        let json = serde_json::to_string(counter).unwrap();
+        let spec = parse_json_spec("ImportedCounter", &json).unwrap();
+        assert_eq!(spec.name, "ImportedCounter");
+        assert!(spec.states.iter().any(|s| s.name == "Ready"));
+        assert!(!spec.handlers.is_empty());
     }
 }
